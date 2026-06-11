@@ -28,6 +28,7 @@ from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
+from src.roles.roles_router import router as roles_router
 
 # Configure logging so our INFO records actually print. uvicorn only
 # configures its own loggers (`uvicorn`, `uvicorn.access`,
@@ -91,6 +92,7 @@ app.include_router(jobs_router)
 app.include_router(journeys_router)
 app.include_router(progress_router)
 app.include_router(reminders_router)
+app.include_router(roles_router)
 
 app.add_middleware(
     CORSMiddleware,
