@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: nidria-dev-db
+    restart: unless-stopped
+    ports:
+      # Host :5435 maps to container :5432 so this stack coexists with the
+      # native Postgres on :5432 and the other dev projects on :5433/:5434.
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: nidria
+      POSTGRES_PASSWORD: nidria
+      POSTGRES_DB: nidria
+    volumes:
+      - nidria_dev_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nidria -d nidria"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  nidria_dev_db_data:

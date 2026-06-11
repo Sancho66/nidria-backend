@@ -1,0 +1,87 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main, dev, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancel only PR runs when superseded. Pushes to main / manual
+  # dispatches run to completion — cancelling a mid-flight deploy
+  # could leave fly in a half-rolled state.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run ruff check src/ shared/ tests/ scripts/ alembic/env.py
+      - run: uv run ruff format --check src/ shared/ tests/ scripts/ alembic/env.py
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run mypy src/ shared/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No GHA `services.postgres` — tests/conftest.py spins up its own
+    # postgres:16-alpine via testcontainers (PARTIE 8). Each xdist
+    # worker is a separate process → its own PostgresContainer, so
+    # isolation matches serial mode while halving wall-clock on the
+    # 2-core free runners.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run pytest tests/ -x -q -n auto
+
+  deploy:
+    name: Deploy to Fly.io
+    needs: [lint, typecheck, test]
+    # Gated on main (+ manual dispatch). NOT exercised for real yet —
+    # no Fly account wired today; this job validates the yml contract.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only -a nidria-api
+
+      - name: Healthcheck
+        run: |
+          sleep 30
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://nidria-api.fly.dev/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Healthcheck passed"
+              exit 0
+            fi
+            echo "Attempt $i - status $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Healthcheck failed"
+          exit 1

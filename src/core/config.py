@@ -1,0 +1,87 @@
+from functools import lru_cache
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Database
+    database_url: str
+    database_url_sync: str
+
+    # Auth (JWT) — two access audiences (agent / expat) with separate
+    # secrets, plus a single refresh secret. The refresh token carries
+    # an `audience` claim validated by each refresh endpoint.
+    jwt_agent_secret: str
+    jwt_expat_secret: str
+    jwt_refresh_secret: str
+    jwt_algorithm: str = "HS256"
+    access_token_expires_minutes: int = 30
+    refresh_token_expires_days: int = 7
+    password_reset_token_expires_minutes: int = 60
+    agent_invitation_expires_days: int = 7
+    # Expats are clients, not staff — longer runway than agent invites.
+    case_invitation_expires_days: int = 14
+
+    # Scheduler (reminder dispatch). Job crons live in DATA (job_config);
+    # only the auto-follow-up thresholds are global config.
+    scheduler_enabled: bool = False
+    auto_reminder_thresholds_days: list[int] = [20, 30]
+
+    # Global mock toggle. When True (default, for safety), all external
+    # services return realistic mock data instead of hitting the real
+    # APIs. Per-service overrides below let you flip a single integration
+    # to real while keeping the rest mocked.
+    mock_services: bool = True
+    # Per-service override, `bool | None`:
+    #   None  → fall back to the global `mock_services`
+    #   True  → force mock even if the global is False
+    #   False → force real calls even if the global is True
+    mock_email: bool | None = None
+    mock_storage: bool | None = None
+
+    # Documents (immigration pieces: scanned passports, certificates,
+    # photos — doc/docx waits for a real ask)
+    max_document_size_mb: int = 10
+    allowed_document_extensions: Annotated[list[str], NoDecode] = ["pdf", "jpg", "jpeg", "png"]
+
+    # API
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+    environment: str = "development"
+    frontend_url: str = "http://localhost:5173"
+
+    # Resend transactional email (invitations + mail reminders).
+    resend_api_key: str | None = None
+    email_from: str = "Nidria <notifications@nidria.com>"
+
+    # Supabase Storage — documents bucket. `supabase_service_role_key`
+    # is the SERVICE ROLE key (not the anon key): it bypasses RLS so
+    # the backend can upload/delete/sign on a private bucket. Optional
+    # so the app boots in test/CI without these secrets; the storage
+    # client lazily errors at first use if they're missing.
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_storage_bucket: str = "documents"
+
+    @field_validator("cors_origins", "allowed_document_extensions", mode="before")
+    @classmethod
+    def _parse_comma_list(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

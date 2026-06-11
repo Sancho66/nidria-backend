@@ -1,0 +1,109 @@
+from enum import StrEnum
+
+
+class Audience(StrEnum):
+    """Access audience of a `protected_resource` binding.
+
+    PUBLIC is binding-only (route open, no token). AGENT and EXPAT are
+    also the two JWT audiences — a token is signed with its audience's
+    secret and carries an `audience` claim, so the two flows are not
+    interchangeable.
+    """
+
+    PUBLIC = "public"
+    AGENT = "agent"
+    EXPAT = "expat"
+
+
+class ActorType(StrEnum):
+    """Who performed an action (`activity_log.actor_type`,
+    `document.uploaded_by_type`)."""
+
+    AGENT = "agent"
+    EXPAT = "expat"
+    SYSTEM = "system"
+
+
+class CaseStatus(StrEnum):
+    PROSPECT = "prospect"
+    IN_PROGRESS = "in_progress"
+    AWAITING_DOCUMENTS = "awaiting_documents"
+    SUBMITTED = "submitted"
+    VALIDATED = "validated"
+    CLOSED = "closed"
+
+
+class StepStatus(StrEnum):
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    DONE = "done"
+
+
+class ResponsibleType(StrEnum):
+    """Polymorphic responsible of a step (also used for
+    `journey_template_step.default_responsible_type`)."""
+
+    AGENT = "agent"
+    EXPAT = "expat"
+    EXTERNAL = "external"
+
+
+class ReminderChannel(StrEnum):
+    MAIL = "mail"
+    WHATSAPP = "whatsapp"
+    IN_APP = "in_app"
+
+
+class ReminderStatus(StrEnum):
+    """Mandatory manual approval: TO_APPROVE → APPROVED → SENT,
+    or CANCELLED. No send ever happens before APPROVED."""
+
+    TO_APPROVE = "to_approve"
+    APPROVED = "approved"
+    SENT = "sent"
+    CANCELLED = "cancelled"
+
+
+class RecipientType(StrEnum):
+    """Recipient of a reminder (`reminder.recipient_type`)."""
+
+    EXPAT = "expat"
+    EXTERNAL = "external"
+
+
+class DocValidationStatus(StrEnum):
+    OK = "ok"
+    INCOMPLETE = "incomplete"
+    TO_FIX = "to_fix"
+
+
+class ExternalContactType(StrEnum):
+    NOTARY = "notary"
+    LAWYER = "lawyer"
+    BANK = "bank"
+    TAX_ADVISOR = "tax_advisor"
+    OTHER = "other"
+
+
+class JobRunStatus(StrEnum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class JobTriggeredBy(StrEnum):
+    SCHEDULER = "scheduler"
+    MANUAL = "manual"
+
+
+class InvitationStatus(StrEnum):
+    """CANCELLED is a human act (admin withdraws the invitation) and is
+    kept distinct from EXPIRED (time ran out, also derivable from
+    expires_at) — the audit trail must not lie about the cause."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
