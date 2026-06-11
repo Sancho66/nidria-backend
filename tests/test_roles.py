@@ -469,3 +469,71 @@ async def test_cross_agency_scoping(
         json={"role_ids": []},
     )
     assert assign_foreign_agent.status_code == 404
+
+
+# --- GET /agencies/me/roles/{role_id} (step 20: the read mirror) -------------------
+
+
+async def test_get_system_role_matrix(
+    roles_client: AsyncClient,
+    admin: Agent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    source = system_roles["case_manager"]
+    response = await roles_client.get(
+        f"/agencies/me/roles/{source.id}", headers=agent_headers(admin)
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(source.id)
+    assert body["is_system"] is True
+    expected = {p.value for p in SYSTEM_ROLE_MATRIX["case_manager"]}
+    assert {p["key"] for p in body["permissions"]} == expected
+
+
+async def test_get_custom_role_matrix(
+    roles_client: AsyncClient,
+    admin: Agent,
+    make_role: MakeRole,
+    agent_headers: AuthHeaders,
+) -> None:
+    role = await make_role(
+        permissions=[Permission.CASE_VIEW, Permission.DOCUMENT_VALIDATE],
+        agency_id=admin.agency_id,
+        name="doc-reader",
+    )
+    response = await roles_client.get(f"/agencies/me/roles/{role.id}", headers=agent_headers(admin))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "doc-reader"
+    assert body["is_system"] is False
+    assert {p["key"] for p in body["permissions"]} == {"case.view", "document.validate"}
+
+
+async def test_get_foreign_custom_role_404(
+    roles_client: AsyncClient,
+    admin: Agent,
+    make_agency: MakeAgency,
+    make_role: MakeRole,
+    agent_headers: AuthHeaders,
+) -> None:
+    other_agency = await make_agency()
+    foreign_role = await make_role(permissions=[Permission.CASE_VIEW], agency_id=other_agency.id)
+    response = await roles_client.get(
+        f"/agencies/me/roles/{foreign_role.id}", headers=agent_headers(admin)
+    )
+    assert response.status_code == 404
+
+
+async def test_get_role_requires_role_manage(
+    roles_client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    member = await make_agent(roles=[system_roles["member"]])
+    response = await roles_client.get(
+        f"/agencies/me/roles/{system_roles['member'].id}", headers=agent_headers(member)
+    )
+    assert response.status_code == 403

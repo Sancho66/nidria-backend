@@ -27,6 +27,7 @@ router = APIRouter(tags=["roles"])
 
 BINDINGS = [
     RouteBinding("GET", "/permissions", Audience.AGENT, Permission.ROLE_MANAGE),
+    RouteBinding("GET", "/agencies/me/roles/{role_id}", Audience.AGENT, Permission.ROLE_MANAGE),
     RouteBinding("POST", "/agencies/me/roles", Audience.AGENT, Permission.ROLE_MANAGE),
     RouteBinding("PATCH", "/agencies/me/roles/{role_id}", Audience.AGENT, Permission.ROLE_MANAGE),
     RouteBinding(
@@ -81,6 +82,12 @@ def _member(agent: Agent) -> AgencyMemberResponse:
 async def list_permissions(agent: AgentDep, db: DbDep) -> list[PermissionResponse]:
     permissions = await RolesManager(db).list_permissions()
     return [PermissionResponse.model_validate(p) for p in permissions]
+
+
+@router.get("/agencies/me/roles/{role_id}", response_model=RoleDetailResponse)
+async def get_role(role_id: uuid.UUID, agent: AgentDep, db: DbDep) -> RoleDetailResponse:
+    role = await RolesManager(db).get_role(agent, role_id)
+    return _role_detail(role)
 
 
 @router.post("/agencies/me/roles", response_model=RoleDetailResponse, status_code=201)

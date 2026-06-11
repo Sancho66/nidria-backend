@@ -111,6 +111,14 @@ class RolesManager:
 
     # --- custom roles --------------------------------------------------------------------
 
+    async def get_role(self, actor: Agent, role_id: uuid.UUID) -> Role:
+        """Read mirror of the mutations: system role OR own custom;
+        a foreign custom role is a 404, same rule everywhere."""
+        role = await self.repo.get_role_with_permissions(role_id)
+        if role is None or (not role.is_system and role.agency_id != actor.agency_id):
+            raise NotFoundError("Role not found.")
+        return role
+
     async def create_role(
         self, actor: Agent, name: str, permission_ids: Sequence[uuid.UUID]
     ) -> Role:
