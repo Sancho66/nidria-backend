@@ -53,13 +53,17 @@ def create_access_token(
     subject: str,
     audience: Audience,
     extra_claims: dict[str, Any] | None = None,
+    expires_minutes: int | None = None,
 ) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
+    minutes = (
+        expires_minutes if expires_minutes is not None else settings.access_token_expires_minutes
+    )
     payload: dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=settings.access_token_expires_minutes)).timestamp()),
+        "exp": int((now + timedelta(minutes=minutes)).timestamp()),
         "type": "access",
         "audience": audience.value,
     }

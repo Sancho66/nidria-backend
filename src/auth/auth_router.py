@@ -1,6 +1,7 @@
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -12,6 +13,7 @@ from src.auth.auth_schema import (
     AgentMeResponse,
     ExpatMeResponse,
     ForgotPasswordRequest,
+    ImpersonatorInfo,
     LoginRequest,
     LogoutRequest,
     MessageResponse,
@@ -71,8 +73,28 @@ async def agent_logout(
     return MessageResponse(detail="Logged out.")
 
 
+async def _impersonator_info(request: Request, db: AsyncSession) -> ImpersonatorInfo | None:
+    """Resolved from the claim the enforcement dependency stashed in
+    request.state — no token re-decode."""
+    impersonator_id = getattr(request.state, "impersonator_id", None)
+    if impersonator_id is None:
+        return None
+    impersonator = await db.get(Agent, uuid.UUID(str(impersonator_id)))
+    if impersonator is None:
+        return None
+    return ImpersonatorInfo(
+        agent_id=impersonator.id,
+        first_name=impersonator.first_name,
+        last_name=impersonator.last_name,
+    )
+
+
 @router.get("/agent/me", response_model=AgentMeResponse)
-async def agent_me(agent: Annotated[Agent, Depends(get_current_agent)]) -> AgentMeResponse:
+async def agent_me(
+    request: Request,
+    agent: Annotated[Agent, Depends(get_current_agent)],
+    db: DbDep,
+) -> AgentMeResponse:
     return AgentMeResponse(
         id=agent.id,
         first_name=agent.first_name,
@@ -81,6 +103,7 @@ async def agent_me(agent: Annotated[Agent, Depends(get_current_agent)]) -> Agent
         agency_id=agent.agency_id,
         roles=sorted(role.name for role in agent.roles),
         effective_permissions=sorted(effective_permissions(agent)),
+        impersonator=await _impersonator_info(request, db),
     )
 
 
@@ -126,7 +149,9 @@ async def expat_logout(
 
 @router.get("/expat/me", response_model=ExpatMeResponse)
 async def expat_me(
+    request: Request,
     expat: Annotated[ExpatUser, Depends(get_current_expat)],
+    db: DbDep,
 ) -> ExpatMeResponse:
     return ExpatMeResponse(
         id=expat.id,
@@ -134,6 +159,7 @@ async def expat_me(
         last_name=expat.last_name,
         email=expat.email,
         preferred_lang=expat.preferred_lang,
+        impersonator=await _impersonator_info(request, db),
     )
 
 

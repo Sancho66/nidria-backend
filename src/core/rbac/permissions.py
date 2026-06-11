@@ -24,6 +24,7 @@ class Permission(StrEnum):
     NOTE_VIEW_CONFIDENTIAL = "note.view_confidential"
     AGENCY_MANAGE = "agency.manage"
     AGENT_MANAGE = "agent.manage"
+    AGENT_IMPERSONATE = "agent.impersonate"
     ROLE_MANAGE = "role.manage"
     JOB_MANAGE = "job.manage"
 

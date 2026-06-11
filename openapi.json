@@ -2585,6 +2585,102 @@
         }
       }
     },
+    "/agencies/me/members/{agent_id}/impersonate": {
+      "post": {
+        "tags": [
+          "impersonation"
+        ],
+        "summary": "Impersonate Agent",
+        "operationId": "impersonate_agent_agencies_me_members__agent_id__impersonate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat-users/{expat_user_id}/impersonate": {
+      "post": {
+        "tags": [
+          "impersonation"
+        ],
+        "summary": "Impersonate Expat",
+        "operationId": "impersonate_expat_expat_users__expat_user_id__impersonate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "expat_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Expat User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/jobs": {
       "get": {
         "tags": [
@@ -5016,6 +5112,16 @@
             },
             "type": "array",
             "title": "Effective Permissions"
+          },
+          "impersonator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImpersonatorInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -6141,6 +6247,16 @@
           "preferred_lang": {
             "type": "string",
             "title": "Preferred Lang"
+          },
+          "impersonator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImpersonatorInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -6531,6 +6647,60 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImpersonationTokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "audience": {
+            "type": "string",
+            "title": "Audience"
+          },
+          "expires_in_minutes": {
+            "type": "integer",
+            "title": "Expires In Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "audience",
+          "expires_in_minutes"
+        ],
+        "title": "ImpersonationTokenResponse",
+        "description": "Access token ONLY — no refresh token by design: the 30-minute\nexpiry IS the exit from impersonation."
+      },
+      "ImpersonatorInfo": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "first_name",
+          "last_name"
+        ],
+        "title": "ImpersonatorInfo",
+        "description": "Present on /me when the token was issued by impersonation —\nthe frontend banner reads it."
       },
       "JobConfigResponse": {
         "properties": {

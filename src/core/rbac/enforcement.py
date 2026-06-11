@@ -15,6 +15,39 @@ from src.core.exceptions import ForbiddenError, UnauthorizedError
 from src.core.rbac.integrity import INFRA_WHITELIST
 from src.core.security import decode_access_token, token_subject
 
+# Routes an IMPERSONATED token (claim `impersonator_id` present) may
+# never reach, whatever the target's permissions. Security boundary in
+# code — same status as the infra whitelist, not product config. Three
+# families: session lifecycle of the target, impersonation chaining,
+# and structure mutations (administering identities/permissions under
+# someone else's name poisons attribution), plus expat-side document
+# writes (uploaded_by=EXPAT means "the client provided this" in the
+# validation flow — the agent has their own correctly-attributed path).
+# Boot check: integrity.assert_impersonation_denied_routes_declared.
+IMPERSONATION_DENIED: frozenset[tuple[str, str]] = frozenset(
+    {
+        # target session lifecycle
+        ("POST", "/auth/agent/logout"),
+        ("POST", "/auth/expat/logout"),
+        # chaining
+        ("POST", "/agencies/me/members/{agent_id}/impersonate"),
+        ("POST", "/expat-users/{expat_user_id}/impersonate"),
+        # structure mutations
+        ("PATCH", "/agencies/me"),
+        ("POST", "/agencies/me/invitations"),
+        ("DELETE", "/agencies/me/invitations/{invitation_id}"),
+        ("POST", "/agencies/me/roles"),
+        ("PATCH", "/agencies/me/roles/{role_id}"),
+        ("PUT", "/agencies/me/roles/{role_id}/permissions"),
+        ("DELETE", "/agencies/me/roles/{role_id}"),
+        ("POST", "/agencies/me/roles/{role_id}/duplicate"),
+        ("PUT", "/agencies/me/members/{agent_id}/roles"),
+        # expat portal is read-only under impersonation
+        ("POST", "/expat/cases/{case_id}/documents"),
+        ("DELETE", "/expat/cases/{case_id}/documents/{document_id}"),
+    }
+)
+
 
 async def resolve_binding(db: AsyncSession, method: str, route: str) -> ProtectedResource | None:
     """One indexed SELECT per hit on the unique (method, route) — no
@@ -33,7 +66,7 @@ def effective_permissions(agent: Agent) -> set[str]:
     return {perm.key for role in agent.roles for perm in role.permissions}
 
 
-async def _resolve_agent(request: Request, db: AsyncSession) -> Agent:
+async def _resolve_agent(request: Request, db: AsyncSession) -> tuple[Agent, dict[str, object]]:
     token = await agent_oauth2_scheme(request)
     if token is None:
         raise UnauthorizedError("Missing authentication token.")
@@ -47,10 +80,10 @@ async def _resolve_agent(request: Request, db: AsyncSession) -> Agent:
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:
         raise UnauthorizedError("Agent not found.")
-    return agent
+    return agent, payload
 
 
-async def _resolve_expat(request: Request, db: AsyncSession) -> ExpatUser:
+async def _resolve_expat(request: Request, db: AsyncSession) -> tuple[ExpatUser, dict[str, object]]:
     token = await expat_oauth2_scheme(request)
     if token is None:
         raise UnauthorizedError("Missing authentication token.")
@@ -60,7 +93,16 @@ async def _resolve_expat(request: Request, db: AsyncSession) -> ExpatUser:
         raise UnauthorizedError("User not found.")
     if expat.activated_at is None:
         raise UnauthorizedError("Account not activated.")
-    return expat
+    return expat, payload
+
+
+def _deny_if_impersonated(
+    request: Request, payload: dict[str, object], method: str, path: str
+) -> None:
+    impersonator_id = payload.get("impersonator_id")
+    request.state.impersonator_id = impersonator_id
+    if impersonator_id is not None and (method, path) in IMPERSONATION_DENIED:
+        raise ForbiddenError("This action is not allowed under impersonation.")
 
 
 async def enforce(
@@ -100,7 +142,8 @@ async def enforce(
         return
 
     if binding.audience == Audience.AGENT:
-        agent = await _resolve_agent(request, db)
+        agent, payload = await _resolve_agent(request, db)
+        _deny_if_impersonated(request, payload, method, path)
         # NULL permission on an AGENT binding = any authenticated agent
         # (identity endpoints: /me, /logout) — symmetric with EXPAT.
         if binding.permission is not None and binding.permission.key not in effective_permissions(
@@ -110,5 +153,6 @@ async def enforce(
         request.state.actor = agent
         return
 
-    expat = await _resolve_expat(request, db)
+    expat, payload = await _resolve_expat(request, db)
+    _deny_if_impersonated(request, payload, method, path)
     request.state.actor = expat

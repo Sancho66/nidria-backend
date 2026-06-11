@@ -46,6 +46,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
         not in {
             Permission.AGENCY_MANAGE,
             Permission.AGENT_MANAGE,
+            # Built by exclusion: every new structure permission MUST be
+            # listed here or case_manager silently inherits it.
+            Permission.AGENT_IMPERSONATE,
             Permission.ROLE_MANAGE,
             Permission.JOB_MANAGE,
             Permission.NOTE_VIEW_CONFIDENTIAL,
@@ -77,6 +80,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
     from src.documents.documents_router import BINDINGS as documents_bindings
     from src.expat.expat_router import BINDINGS as expat_bindings
+    from src.impersonation.impersonation_router import BINDINGS as impersonation_bindings
     from src.jobs.jobs_router import BINDINGS as jobs_bindings
     from src.journeys.journeys_router import BINDINGS as journeys_bindings
     from src.progress.progress_router import BINDINGS as progress_bindings
@@ -87,6 +91,7 @@ def collect_bindings() -> list[RouteBinding]:
         *auth_bindings,
         *agencies_bindings,
         *roles_bindings,
+        *impersonation_bindings,
         *journeys_bindings,
         *cases_bindings,
         *progress_bindings,

@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expires_minutes: int = 30
     refresh_token_expires_days: int = 7
+    # Impersonation: short-lived access token, NO refresh — expiry IS the exit.
+    impersonation_token_expires_minutes: int = 30
     password_reset_token_expires_minutes: int = 60
     agent_invitation_expires_days: int = 7
     # Expats are clients, not staff — longer runway than agent invites.

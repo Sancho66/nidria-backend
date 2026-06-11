@@ -84,6 +84,11 @@ class AuthManager:
         a plain 401 — no reprisals.
         """
         payload = decode_refresh_token(refresh_token, audience)
+        # Defensive: no code path issues a refresh token under
+        # impersonation (expiry IS the exit) — if one ever carries the
+        # claim, reject it BEFORE the jti lookup could honor it.
+        if payload.get("impersonator_id") is not None:
+            raise UnauthorizedError("Impersonation tokens cannot be refreshed.")
         actor_id = token_subject(payload)
         raw_jti = payload.get("jti")
         if not raw_jti:

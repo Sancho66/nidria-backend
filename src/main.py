@@ -17,13 +17,17 @@ from src.core.config import get_settings
 from src.core.database import async_session_maker, get_db
 from src.core.exceptions import register_exception_handlers
 from src.core.rbac.enforcement import enforce
-from src.core.rbac.integrity import assert_all_routes_bound
+from src.core.rbac.integrity import (
+    assert_all_routes_bound,
+    assert_impersonation_denylist_declared,
+)
 from src.core.rbac.permissions import sync_permissions
 from src.core.scheduler import build_scheduler, make_session_local
 from src.dashboard.dashboard_router import router as dashboard_router
 from src.documents.documents_router import agent_router as documents_agent_router
 from src.documents.documents_router import expat_router as documents_expat_router
 from src.expat.expat_router import router as expat_portal_router
+from src.impersonation.impersonation_router import router as impersonation_router
 from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
 from src.progress.progress_router import router as progress_router
@@ -58,6 +62,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     async with async_session_maker() as session:
         await sync_permissions(session)
         await assert_all_routes_bound(application, session)
+    assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()
     scheduler = None
     if settings.scheduler_enabled:
@@ -88,6 +93,7 @@ app.include_router(dashboard_router)
 app.include_router(documents_agent_router)
 app.include_router(documents_expat_router)
 app.include_router(expat_portal_router)
+app.include_router(impersonation_router)
 app.include_router(jobs_router)
 app.include_router(journeys_router)
 app.include_router(progress_router)

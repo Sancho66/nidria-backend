@@ -26,6 +26,15 @@ class MessageResponse(BaseModel):
     detail: str
 
 
+class ImpersonatorInfo(BaseModel):
+    """Present on /me when the token was issued by impersonation —
+    the frontend banner reads it."""
+
+    agent_id: uuid.UUID
+    first_name: str
+    last_name: str
+
+
 class AgentMeResponse(BaseModel):
     id: uuid.UUID
     first_name: str
@@ -34,6 +43,7 @@ class AgentMeResponse(BaseModel):
     agency_id: uuid.UUID
     roles: list[str]
     effective_permissions: list[str]
+    impersonator: ImpersonatorInfo | None = None
 
 
 class ExpatMeResponse(BaseModel):
@@ -42,6 +52,7 @@ class ExpatMeResponse(BaseModel):
     last_name: str
     email: str
     preferred_lang: str
+    impersonator: ImpersonatorInfo | None = None
 
 
 class ActivateRequest(BaseModel):

@@ -49,3 +49,27 @@ async def assert_all_routes_bound(app: FastAPI, db: AsyncSession) -> None:
         raise StartupError(
             f"Routes without protected_resource binding (deny by default): {sorted(missing)}"
         )
+
+
+def _declared_routes(app: FastAPI) -> set[tuple[str, str]]:
+    declared: set[tuple[str, str]] = set()
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        for method in route.methods or set():
+            declared.add((method, route.path))
+    return declared
+
+
+def assert_impersonation_denylist_declared(app: FastAPI) -> None:
+    """The impersonation denylist is a security boundary: a typo'd
+    entry protects nothing, silently. Every entry must match a declared
+    route of the REAL app — separate from assert_all_routes_bound so
+    synthetic test apps can keep exercising the binding check alone."""
+    from src.core.rbac.enforcement import IMPERSONATION_DENIED
+
+    unknown = IMPERSONATION_DENIED - _declared_routes(app)
+    if unknown:
+        raise StartupError(
+            f"IMPERSONATION_DENIED entries matching no declared route: {sorted(unknown)}"
+        )

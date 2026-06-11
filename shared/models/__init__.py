@@ -10,6 +10,7 @@ from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.family_member import FamilyMember
+from shared.models.impersonation import ImpersonationLog
 from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.job import JobConfig, JobRun
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
@@ -32,6 +33,7 @@ __all__ = [
     "ExpatUser",
     "ExternalContact",
     "FamilyMember",
+    "ImpersonationLog",
     "JobConfig",
     "JobRun",
     "JourneyTemplate",
