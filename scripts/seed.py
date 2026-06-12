@@ -4,11 +4,17 @@ duplicated logic) + the 3 demo agencies/agents + the 3 brief cases
 
 IDEMPOTENT: get-or-create on natural keys (slug, email, template name);
 a case found for (agency, principal) skips its whole block. Re-run at
-will, no duplicates.
+will, no duplicates. start.sh runs it on EVERY boot.
 
-Run: uv run python scripts/seed.py
+Modes:
+  --mode dev  (default): baseline + demo agencies/cases/passwords.
+  --mode prod: baseline ONLY (catalogue, system roles, matrix,
+               bindings, job configs) — never the Demo1234! accounts.
+
+Run: uv run python scripts/seed.py [--mode dev|prod]
 """
 
+import argparse
 import asyncio
 import sys
 import uuid
@@ -492,11 +498,22 @@ async def seed_dupont(db: AsyncSession, agency: Agency, sidney: Agent) -> str:
 # --- main ------------------------------------------------------------------------------
 
 
-async def seed() -> None:
+async def seed(mode: str = "dev") -> None:
     async with async_session_maker() as db:
         # SHARED baselines — the exact functions the test harness uses.
+        # Strictly idempotent on every branch: insert-missing catalogue,
+        # additive system-role matrix, declarative binding upsert,
+        # create-if-absent job configs — safe on every deploy.
         await seed_rbac_baseline(db, bindings=collect_bindings())
         await seed_job_configs(db)
+
+        if mode == "prod":
+            print("=" * 72)
+            print("Nidria seed complete (prod mode: baseline only).")
+            print(f"  RBAC baseline: {len(collect_bindings())} bindings, 4 system roles")
+            print("  Job configs: dispatch_reminders (* * * * *), auto_reminders (0 7 * * *)")
+            print("=" * 72)
+            return
 
         roles = {
             role.name: role
@@ -558,4 +575,6 @@ async def seed() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(seed())
+    parser = argparse.ArgumentParser(description="Seed the Nidria database (idempotent).")
+    parser.add_argument("--mode", choices=["dev", "prod"], default="dev")
+    asyncio.run(seed(parser.parse_args().mode))
