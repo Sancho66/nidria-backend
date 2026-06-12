@@ -6,16 +6,22 @@ IDEMPOTENT: get-or-create on natural keys (slug, email, template name);
 a case found for (agency, principal) skips its whole block. Re-run at
 will, no duplicates. start.sh runs it on EVERY boot.
 
-Modes:
-  --mode dev  (default): baseline + demo agencies/cases/passwords.
-  --mode prod: baseline ONLY (catalogue, system roles, matrix,
-               bindings, job configs) — never the Demo1234! accounts.
+Modes (--mode or SEED_MODE env):
+  --mode dev  (default): baseline + the 3 demo agencies/cases with the
+              printed Demo1234! password.
+  --mode prod: REFUSES outside ENVIRONMENT=production (mirror of the
+              db-reset guard). Baseline + ONE agency (Nidria Demo) with
+              real-email accounts whose passwords are random and thrown
+              away — first login goes through forgot-password. No
+              password is ever printed.
 
 Run: uv run python scripts/seed.py [--mode dev|prod]
 """
 
 import argparse
 import asyncio
+import os
+import secrets
 import sys
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -42,6 +48,7 @@ from shared.models import (  # noqa: E402
     Role,
     StepPrerequisite,
 )
+from src.core.config import get_settings  # noqa: E402
 from src.core.database import async_session_maker  # noqa: E402
 from src.core.rbac.baseline import collect_bindings, seed_rbac_baseline  # noqa: E402
 from src.core.security import hash_password  # noqa: E402
@@ -72,6 +79,7 @@ async def get_or_create_agent(
     first_name: str,
     last_name: str,
     email: str,
+    password: str | None = None,
 ) -> Agent:
     agent = (await db.execute(select(Agent).where(Agent.email == email))).scalar_one_or_none()
     if agent is None:
@@ -80,7 +88,7 @@ async def get_or_create_agent(
             first_name=first_name,
             last_name=last_name,
             email=email,
-            password_hash=hash_password(DEMO_PASSWORD),
+            password_hash=hash_password(password or DEMO_PASSWORD),
         )
         db.add(agent)
         await db.flush()
@@ -89,7 +97,12 @@ async def get_or_create_agent(
 
 
 async def get_or_create_expat(
-    db: AsyncSession, first_name: str, last_name: str, email: str, lang: str = "fr"
+    db: AsyncSession,
+    first_name: str,
+    last_name: str,
+    email: str,
+    lang: str = "fr",
+    password: str | None = None,
 ) -> ExpatUser:
     expat = (
         await db.execute(select(ExpatUser).where(ExpatUser.email == email))
@@ -100,8 +113,8 @@ async def get_or_create_expat(
             last_name=last_name,
             email=email,
             preferred_lang=lang,
-            password_hash=hash_password(DEMO_PASSWORD),
-            activated_at=NOW,  # the front needs expat logins
+            password_hash=hash_password(password or DEMO_PASSWORD),
+            activated_at=NOW,  # activated: expat login + forgot-password both work
         )
         db.add(expat)
         await db.flush()
@@ -222,8 +235,14 @@ def _progress(
 # --- the three brief cases -----------------------------------------------------------
 
 
-async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Agent) -> str:
-    expat = await get_or_create_expat(db, "Jean", "Martin", "jean.martin@example.com")
+async def seed_martin(
+    db: AsyncSession,
+    agency: Agency,
+    expat: ExpatUser,
+    owner: Agent,
+    second_agent: Agent,
+    label: str,
+) -> str:
     steps = await get_or_create_template(
         db,
         agency,
@@ -249,11 +268,11 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
     )
 
     if await case_exists(db, agency, expat):
-        return "Famille Martin: already seeded, skipped"
+        return f"{label}: already seeded, skipped"
     case = ClientCase(
         agency_id=agency.id,
         principal_expat_user_id=expat.id,
-        owner_agent_id=eloise.id,
+        owner_agent_id=owner.id,
         journey_template_id=steps[0].template_id,
         origin_country="FR",
         dest_country="PY",
@@ -275,7 +294,7 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
         steps[0],
         status="done",
         completed_at=done_1,
-        completed_by_agent_id=eloise.id,
+        completed_by_agent_id=owner.id,
         updated_at=done_1,
     )
     _progress(
@@ -284,7 +303,7 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
         steps[1],
         status="done",
         completed_at=done_2,
-        completed_by_agent_id=selim.id,
+        completed_by_agent_id=second_agent.id,
         updated_at=done_2,
     )
     step3 = _progress(db, case, steps[2], status="in_progress", responsible_type="expat")
@@ -292,12 +311,12 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
     _progress(db, case, steps[4])
     await db.flush()
 
-    _log(db, case.id, "agent", eloise.id, "case.created", {}, NOW - timedelta(days=45))
+    _log(db, case.id, "agent", owner.id, "case.created", {}, NOW - timedelta(days=45))
     _log(
         db,
         case.id,
         "agent",
-        eloise.id,
+        owner.id,
         "step.completed",
         {"step_progress_id": str(steps[0].id)},
         done_1,
@@ -306,7 +325,7 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
         db,
         case.id,
         "agent",
-        selim.id,
+        second_agent.id,
         "step.completed",
         {"step_progress_id": str(steps[1].id)},
         done_2,
@@ -315,7 +334,7 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
         db,
         case.id,
         "agent",
-        eloise.id,
+        owner.id,
         "step.started",
         {"step_progress_id": str(step3.id)},
         NOW,
@@ -351,18 +370,18 @@ async def seed_martin(db: AsyncSession, agency: Agency, eloise: Agent, selim: Ag
             status="to_approve",
             recipient_type="expat",
             message_body=(
-                "Bonjour Jean Martin, il reste 10 jours pour finaliser l'étape "
-                "Dépôt de la demande de résidence. Merci de déposer vos documents."
+                f"Bonjour {expat.first_name} {expat.last_name}, il reste 10 jours pour "
+                "finaliser l'étape Dépôt de la demande de résidence. "
+                "Merci de déposer vos documents."
             ),
         )
     )
-    return "Famille Martin: 5 steps (2 done, step 3 in progress), J+10 reminder TO_APPROVE"
+    return f"{label}: 5 steps (2 done, step 3 in progress), J+10 reminder TO_APPROVE"
 
 
-async def seed_volkov(db: AsyncSession, agency: Agency, artur: Agent) -> str:
-    expat = await get_or_create_expat(
-        db, "Aleksei", "Volkov", "aleksei.volkov@example.com", lang="ru"
-    )
+async def seed_volkov(
+    db: AsyncSession, agency: Agency, expat: ExpatUser, owner: Agent, label: str
+) -> str:
     steps = await get_or_create_template(
         db,
         agency,
@@ -380,11 +399,11 @@ async def seed_volkov(db: AsyncSession, agency: Agency, artur: Agent) -> str:
     )
 
     if await case_exists(db, agency, expat):
-        return "Aleksei Volkov: already seeded, skipped"
+        return f"{label}: already seeded, skipped"
     case = ClientCase(
         agency_id=agency.id,
         principal_expat_user_id=expat.id,
-        owner_agent_id=artur.id,
+        owner_agent_id=owner.id,
         journey_template_id=steps[0].template_id,
         origin_country="RU",
         dest_country="BG",
@@ -402,7 +421,7 @@ async def seed_volkov(db: AsyncSession, agency: Agency, artur: Agent) -> str:
         steps[0],
         status="done",
         completed_at=done_1,
-        completed_by_agent_id=artur.id,
+        completed_by_agent_id=owner.id,
         responsible_type=None,
         updated_at=done_1,
     )
@@ -411,12 +430,12 @@ async def seed_volkov(db: AsyncSession, agency: Agency, artur: Agent) -> str:
         _progress(db, case, step)
     await db.flush()
 
-    _log(db, case.id, "agent", artur.id, "case.created", {}, NOW - timedelta(days=10))
+    _log(db, case.id, "agent", owner.id, "case.created", {}, NOW - timedelta(days=10))
     _log(
         db,
         case.id,
         "agent",
-        artur.id,
+        owner.id,
         "step.completed",
         {"step_progress_id": str(steps[0].id)},
         done_1,
@@ -425,16 +444,17 @@ async def seed_volkov(db: AsyncSession, agency: Agency, artur: Agent) -> str:
         db,
         case.id,
         "agent",
-        artur.id,
+        owner.id,
         "step.started",
         {"step_progress_id": str(step2.id)},
         NOW,
     )
-    return "Aleksei Volkov: 7 steps (1 done, step 2 in progress), preferred_lang=ru"
+    return f"{label}: 7 steps (1 done, step 2 in progress), lang={expat.preferred_lang}"
 
 
-async def seed_dupont(db: AsyncSession, agency: Agency, sidney: Agent) -> str:
-    expat = await get_or_create_expat(db, "Sophie", "Dupont", "sophie.dupont@example.com")
+async def seed_dupont(
+    db: AsyncSession, agency: Agency, expat: ExpatUser, owner: Agent, label: str
+) -> str:
     steps = await get_or_create_template(
         db,
         agency,
@@ -454,11 +474,11 @@ async def seed_dupont(db: AsyncSession, agency: Agency, sidney: Agent) -> str:
     )
 
     if await case_exists(db, agency, expat):
-        return "Sophie Dupont: already seeded, skipped"
+        return f"{label}: already seeded, skipped"
     case = ClientCase(
         agency_id=agency.id,
         principal_expat_user_id=expat.id,
-        owner_agent_id=sidney.id,
+        owner_agent_id=owner.id,
         journey_template_id=steps[0].template_id,
         origin_country="FR",
         dest_country="PT",
@@ -475,106 +495,179 @@ async def seed_dupont(db: AsyncSession, agency: Agency, sidney: Agent) -> str:
         steps[0],
         status="in_progress",
         responsible_type="agent",
-        responsible_agent_id=sidney.id,
+        responsible_agent_id=owner.id,
     )
     for step in steps[1:]:
         _progress(db, case, step)
     await db.flush()
 
-    _log(db, case.id, "agent", sidney.id, "case.created", {}, NOW - timedelta(days=2))
+    _log(db, case.id, "agent", owner.id, "case.created", {}, NOW - timedelta(days=2))
     _log(
         db,
         case.id,
         "agent",
-        sidney.id,
+        owner.id,
         "step.started",
         {"step_progress_id": str(step1.id)},
         NOW,
     )
     # Didier's demo: with 2←1 and 3←2, step 3 projects as BLOCKED.
-    return "Sophie Dupont: 4 steps (step 1 in progress), step 3 projects BLOCKED"
+    return f"{label}: 4 steps (step 1 in progress), step 3 projects BLOCKED"
 
 
 # --- main ------------------------------------------------------------------------------
 
+PROD_AGENT_ADMIN = "alexandre.montilla@gmail.com"
+PROD_AGENT_MEMBER = "sasha.montilla.66@gmail.com"
+PROD_EXPAT_MARTIN = "alexandre.montilla@procuroma.com"
+PROD_EXPAT_VOLKOV = "sasha.montilla.66@gmail.com"
+PROD_EXPAT_DUPONT = "alexandre.montilla@gmail.com"
+
+
+def _throwaway_password() -> str:
+    """Random, never stored, never printed: first login goes through
+    forgot-password (the prod emails are real, Resend delivers)."""
+    return secrets.token_urlsafe(32)
+
+
+async def seed_dev(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
+    admin, member = roles["admin"], roles["member"]
+
+    # Reside Paraguay — Eloïse is a MEMBER: the approval scenario.
+    reside = await get_or_create_agency(db, "reside-paraguay", "Reside Paraguay")
+    await get_or_create_agent(db, reside, admin, "Alexis", "Renard", "alexis@reside-paraguay.com")
+    eloise = await get_or_create_agent(
+        db, reside, member, "Eloïse", "Bertin", "eloise@reside-paraguay.com"
+    )
+    selim = await get_or_create_agent(
+        db, reside, member, "Sélim", "Haddad", "selim@reside-paraguay.com"
+    )
+    await get_or_create_agent(db, reside, member, "Inès", "Costa", "ines@reside-paraguay.com")
+    await get_or_create_agent(db, reside, member, "Mathias", "Leroy", "mathias@reside-paraguay.com")
+
+    bulgarie = await get_or_create_agency(db, "domiciliation-bulgarie", "Domiciliation Bulgarie")
+    artur = await get_or_create_agent(
+        db, bulgarie, admin, "Artur", "Dimitrov", "artur@domiciliation-bulgarie.com"
+    )
+
+    expatriation = await get_or_create_agency(db, "expatriation-io", "Expatriation.io")
+    sidney = await get_or_create_agent(
+        db, expatriation, admin, "Sidney", "Moreau", "sidney@expatriation.io"
+    )
+
+    martin = await get_or_create_expat(db, "Jean", "Martin", "jean.martin@example.com")
+    volkov = await get_or_create_expat(
+        db, "Aleksei", "Volkov", "aleksei.volkov@example.com", lang="ru"
+    )
+    dupont = await get_or_create_expat(db, "Sophie", "Dupont", "sophie.dupont@example.com")
+
+    return [
+        await seed_martin(db, reside, martin, eloise, selim, "Famille Martin"),
+        await seed_volkov(db, bulgarie, volkov, artur, "Aleksei Volkov"),
+        await seed_dupont(db, expatriation, dupont, sidney, "Sophie Dupont"),
+    ]
+
+
+async def seed_prod(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
+    """One real agency, real emails, throwaway passwords. Same journeys
+    /steps/prerequisites/required documents as the dev cases."""
+    agency = await get_or_create_agency(db, "nidria-demo", "Nidria Demo")
+    alexandre = await get_or_create_agent(
+        db,
+        agency,
+        roles["admin"],
+        "Alexandre",
+        "Montilla",
+        PROD_AGENT_ADMIN,
+        password=_throwaway_password(),
+    )
+    sasha = await get_or_create_agent(
+        db,
+        agency,
+        roles["member"],
+        "Sasha",
+        "Montilla",
+        PROD_AGENT_MEMBER,
+        password=_throwaway_password(),
+    )
+
+    martin = await get_or_create_expat(
+        db, "Alexandre", "Montilla", PROD_EXPAT_MARTIN, password=_throwaway_password()
+    )
+    volkov = await get_or_create_expat(
+        db, "Sasha", "Montilla", PROD_EXPAT_VOLKOV, password=_throwaway_password()
+    )
+    dupont = await get_or_create_expat(
+        db, "Alexandre", "Montilla", PROD_EXPAT_DUPONT, password=_throwaway_password()
+    )
+
+    return [
+        await seed_martin(db, agency, martin, sasha, alexandre, "Martin-like"),
+        await seed_volkov(db, agency, volkov, alexandre, "Volkov-like"),
+        await seed_dupont(db, agency, dupont, alexandre, "Dupont-like"),
+    ]
+
+
+async def run_seed(db: AsyncSession, mode: str) -> list[str]:
+    """The whole seed against an EXISTING session — testable on the
+    harness DB. The prod guard lives here so no entry point skips it."""
+    if mode not in {"dev", "prod"}:
+        raise SystemExit(f"Unknown seed mode {mode!r} — use dev|prod.")
+    if mode == "prod" and get_settings().environment != "production":
+        raise SystemExit(
+            "Refusing --mode prod: ENVIRONMENT != production (mirror of the db-reset guard)."
+        )
+
+    # SHARED baselines — the exact functions the test harness uses.
+    # Strictly idempotent on every branch: insert-missing catalogue,
+    # additive system-role matrix, declarative binding upsert,
+    # create-if-absent job configs — safe on every deploy.
+    await seed_rbac_baseline(db, bindings=collect_bindings())
+    await seed_job_configs(db)
+
+    roles = {
+        role.name: role for role in (await db.execute(select(Role).where(Role.is_system))).scalars()
+    }
+    results = await (seed_prod(db, roles) if mode == "prod" else seed_dev(db, roles))
+    await db.commit()
+    return results
+
 
 async def seed(mode: str = "dev") -> None:
     async with async_session_maker() as db:
-        # SHARED baselines — the exact functions the test harness uses.
-        # Strictly idempotent on every branch: insert-missing catalogue,
-        # additive system-role matrix, declarative binding upsert,
-        # create-if-absent job configs — safe on every deploy.
-        await seed_rbac_baseline(db, bindings=collect_bindings())
-        await seed_job_configs(db)
-
-        if mode == "prod":
-            print("=" * 72)
-            print("Nidria seed complete (prod mode: baseline only).")
-            print(f"  RBAC baseline: {len(collect_bindings())} bindings, 4 system roles")
-            print("  Job configs: dispatch_reminders (* * * * *), auto_reminders (0 7 * * *)")
-            print("=" * 72)
-            return
-
-        roles = {
-            role.name: role
-            for role in (await db.execute(select(Role).where(Role.is_system))).scalars()
-        }
-        admin, member = roles["admin"], roles["member"]
-
-        # Reside Paraguay — Eloïse is a MEMBER: the approval scenario.
-        reside = await get_or_create_agency(db, "reside-paraguay", "Reside Paraguay")
-        await get_or_create_agent(
-            db, reside, admin, "Alexis", "Renard", "alexis@reside-paraguay.com"
-        )
-        eloise = await get_or_create_agent(
-            db, reside, member, "Eloïse", "Bertin", "eloise@reside-paraguay.com"
-        )
-        selim = await get_or_create_agent(
-            db, reside, member, "Sélim", "Haddad", "selim@reside-paraguay.com"
-        )
-        await get_or_create_agent(db, reside, member, "Inès", "Costa", "ines@reside-paraguay.com")
-        await get_or_create_agent(
-            db, reside, member, "Mathias", "Leroy", "mathias@reside-paraguay.com"
-        )
-
-        bulgarie = await get_or_create_agency(
-            db, "domiciliation-bulgarie", "Domiciliation Bulgarie"
-        )
-        artur = await get_or_create_agent(
-            db, bulgarie, admin, "Artur", "Dimitrov", "artur@domiciliation-bulgarie.com"
-        )
-
-        expatriation = await get_or_create_agency(db, "expatriation-io", "Expatriation.io")
-        sidney = await get_or_create_agent(
-            db, expatriation, admin, "Sidney", "Moreau", "sidney@expatriation.io"
-        )
-
-        results = [
-            await seed_martin(db, reside, eloise, selim),
-            await seed_volkov(db, bulgarie, artur),
-            await seed_dupont(db, expatriation, sidney),
-        ]
-        await db.commit()
+        results = await run_seed(db, mode)
 
     print("=" * 72)
-    print("Nidria seed complete.")
+    print(f"Nidria seed complete ({mode} mode).")
     print(f"  RBAC baseline: {len(collect_bindings())} bindings, 4 system roles")
     print("  Job configs: dispatch_reminders (* * * * *), auto_reminders (0 7 * * *)")
     for line in results:
         print(f"  {line}")
     print("-" * 72)
-    print(f"  ALL demo passwords (agents AND expats): {DEMO_PASSWORD}")
-    print("  Agents:")
-    print("    Reside Paraguay        alexis@reside-paraguay.com (admin)")
-    print("                           eloise@ / selim@ / ines@ / mathias@reside-paraguay.com")
-    print("    Domiciliation Bulgarie artur@domiciliation-bulgarie.com (admin)")
-    print("    Expatriation.io        sidney@expatriation.io (admin)")
-    print("  Expats:")
-    print("    jean.martin@example.com / aleksei.volkov@example.com / sophie.dupont@example.com")
+    if mode == "prod":
+        print("  Agency: Nidria Demo (nidria-demo)")
+        print(f"  Agents: {PROD_AGENT_ADMIN} (admin), {PROD_AGENT_MEMBER} (member)")
+        print(f"  Expats: {PROD_EXPAT_MARTIN} / {PROD_EXPAT_VOLKOV} / {PROD_EXPAT_DUPONT}")
+        print('  First login: use "Forgot password" — no seeded password is usable.')
+    else:
+        print(f"  ALL demo passwords (agents AND expats): {DEMO_PASSWORD}")
+        print("  Agents:")
+        print("    Reside Paraguay        alexis@reside-paraguay.com (admin)")
+        print("                           eloise@ / selim@ / ines@ / mathias@reside-paraguay.com")
+        print("    Domiciliation Bulgarie artur@domiciliation-bulgarie.com (admin)")
+        print("    Expatriation.io        sidney@expatriation.io (admin)")
+        print("  Expats:")
+        print(
+            "    jean.martin@example.com / aleksei.volkov@example.com / sophie.dupont@example.com"
+        )
     print("=" * 72)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed the Nidria database (idempotent).")
-    parser.add_argument("--mode", choices=["dev", "prod"], default="dev")
+    parser.add_argument(
+        "--mode",
+        choices=["dev", "prod"],
+        default=os.environ.get("SEED_MODE", "dev"),
+    )
     asyncio.run(seed(parser.parse_args().mode))
