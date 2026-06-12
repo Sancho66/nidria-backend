@@ -578,56 +578,48 @@ async def seed_dev(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
         await seed_martin(db, reside, martin, eloise, selim, "Famille Martin"),
         await seed_volkov(db, bulgarie, volkov, artur, "Aleksei Volkov"),
         await seed_dupont(db, expatriation, dupont, sidney, "Sophie Dupont"),
+        # The prod dataset, mirrored in dev (DEMO_PASSWORD credentials).
+        *await seed_nidria_demo(db, roles, throwaway_passwords=False),
     ]
 
 
-async def seed_prod(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
-    """One real agency, real emails, throwaway passwords. Same journeys
-    /steps/prerequisites/required documents as the dev cases."""
+async def seed_nidria_demo(
+    db: AsyncSession, roles: dict[str, Role], *, throwaway_passwords: bool
+) -> list[str]:
+    """The Nidria Demo agency — IDENTICAL dataset in prod and dev so
+    what you test locally is what runs live. Only the credentials
+    differ: throwaway (forgot-password first login) in prod, the
+    printed DEMO_PASSWORD in dev."""
+
+    def pwd() -> str | None:
+        return _throwaway_password() if throwaway_passwords else None
+
     agency = await get_or_create_agency(db, "nidria-demo", "Nidria Demo")
     alexandre = await get_or_create_agent(
-        db,
-        agency,
-        roles["admin"],
-        "Alexandre",
-        "Montilla",
-        PROD_AGENT_ADMIN,
-        password=_throwaway_password(),
+        db, agency, roles["admin"], "Alexandre", "Montilla", PROD_AGENT_ADMIN, password=pwd()
     )
     await get_or_create_agent(
-        db,
-        agency,
-        roles["admin"],
-        "Eric",
-        "Schalk",
-        PROD_AGENT_ADMIN_2,
-        password=_throwaway_password(),
+        db, agency, roles["admin"], "Eric", "Schalk", PROD_AGENT_ADMIN_2, password=pwd()
     )
     membre = await get_or_create_agent(
-        db,
-        agency,
-        roles["member"],
-        "Membre",
-        "Démo",
-        PROD_AGENT_MEMBER,
-        password=_throwaway_password(),
+        db, agency, roles["member"], "Membre", "Démo", PROD_AGENT_MEMBER, password=pwd()
     )
 
-    martin = await get_or_create_expat(
-        db, "Client", "Martin", PROD_EXPAT_MARTIN, password=_throwaway_password()
-    )
-    volkov = await get_or_create_expat(
-        db, "Client", "Volkov", PROD_EXPAT_VOLKOV, password=_throwaway_password()
-    )
-    dupont = await get_or_create_expat(
-        db, "Client", "Dupont", PROD_EXPAT_DUPONT, password=_throwaway_password()
-    )
+    martin = await get_or_create_expat(db, "Client", "Martin", PROD_EXPAT_MARTIN, password=pwd())
+    volkov = await get_or_create_expat(db, "Client", "Volkov", PROD_EXPAT_VOLKOV, password=pwd())
+    dupont = await get_or_create_expat(db, "Client", "Dupont", PROD_EXPAT_DUPONT, password=pwd())
 
     return [
         await seed_martin(db, agency, martin, membre, alexandre, "Martin-like"),
         await seed_volkov(db, agency, volkov, alexandre, "Volkov-like"),
         await seed_dupont(db, agency, dupont, alexandre, "Dupont-like"),
     ]
+
+
+async def seed_prod(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
+    """One real agency, real emails, throwaway passwords. Same journeys
+    /steps/prerequisites/required documents as the dev cases."""
+    return await seed_nidria_demo(db, roles, throwaway_passwords=True)
 
 
 async def run_seed(db: AsyncSession, mode: str) -> list[str]:
@@ -682,10 +674,13 @@ async def seed(mode: str = "dev") -> None:
         print("                           eloise@ / selim@ / ines@ / mathias@reside-paraguay.com")
         print("    Domiciliation Bulgarie artur@domiciliation-bulgarie.com (admin)")
         print("    Expatriation.io        sidney@expatriation.io (admin)")
+        print(f"    Nidria Demo            {PROD_AGENT_ADMIN} / {PROD_AGENT_ADMIN_2} (admins)")
+        print(f"                           {PROD_AGENT_MEMBER} (member)")
         print("  Expats:")
         print(
             "    jean.martin@example.com / aleksei.volkov@example.com / sophie.dupont@example.com"
         )
+        print(f"    {PROD_EXPAT_MARTIN} / {PROD_EXPAT_VOLKOV} / {PROD_EXPAT_DUPONT}")
     print("=" * 72)
 
 
