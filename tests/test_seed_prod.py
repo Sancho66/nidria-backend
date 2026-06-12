@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from scripts.seed import (
     PROD_AGENT_ADMIN,
+    PROD_AGENT_ADMIN_2,
     PROD_AGENT_MEMBER,
     PROD_EXPAT_DUPONT,
     PROD_EXPAT_MARTIN,
@@ -46,7 +47,16 @@ async def test_prod_seed_creates_demo_agency_with_unusable_passwords(
         .scalars()
         .all()
     )
-    assert {a.email for a in agents} == {PROD_AGENT_ADMIN, PROD_AGENT_MEMBER}
+    assert {a.email for a in agents} == {
+        PROD_AGENT_ADMIN,
+        PROD_AGENT_ADMIN_2,
+        PROD_AGENT_MEMBER,
+    }
+    by_email = {a.email: a for a in agents}
+    assert (by_email[PROD_AGENT_ADMIN_2].first_name, by_email[PROD_AGENT_ADMIN_2].last_name) == (
+        "Eric",
+        "Schalk",
+    )
 
     expat_emails = [PROD_EXPAT_MARTIN, PROD_EXPAT_VOLKOV, PROD_EXPAT_DUPONT]
     expats = (
@@ -55,8 +65,19 @@ async def test_prod_seed_creates_demo_agency_with_unusable_passwords(
         .all()
     )
     assert len(expats) == 3
+    # Personas are named by their role; "Alexandre Montilla" exists
+    # exactly ONCE across both identity tables.
+    assert {(e.first_name, e.last_name) for e in expats} == {
+        ("Client", "Martin"),
+        ("Client", "Volkov"),
+        ("Client", "Dupont"),
+    }
+    full_names = [(a.first_name, a.last_name) for a in agents] + [
+        (e.first_name, e.last_name) for e in expats
+    ]
+    assert full_names.count(("Alexandre", "Montilla")) == 1
 
-    # The 5 accounts have no usable password — first login is
+    # The 6 accounts have no usable password — first login is
     # forgot-password, nothing was printed.
     for account in [*agents, *expats]:
         assert not verify_password("Demo1234!", account.password_hash)
@@ -71,4 +92,24 @@ async def test_prod_seed_creates_demo_agency_with_unusable_passwords(
         .scalars()
         .all()
     )
-    assert len(count) == 2
+    assert len(count) == 3
+
+
+async def test_seed_name_sync_renames_existing_rows(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mechanism that makes a seed rename reach an ALREADY-seeded
+    database (prod was seeded with the old names): get-or-create aligns
+    the names of seed-owned rows on re-run."""
+    monkeypatch.setattr(get_settings(), "environment", "production")
+    await run_seed(db_session, "prod")
+
+    agent = (
+        await db_session.execute(select(Agent).where(Agent.email == PROD_AGENT_MEMBER))
+    ).scalar_one()
+    agent.first_name, agent.last_name = "Sasha", "Montilla"  # the pre-rename state
+    await db_session.commit()
+
+    await run_seed(db_session, "prod")
+    await db_session.refresh(agent)
+    assert (agent.first_name, agent.last_name) == ("Membre", "Démo")

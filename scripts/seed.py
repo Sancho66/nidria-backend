@@ -93,6 +93,12 @@ async def get_or_create_agent(
         db.add(agent)
         await db.flush()
         db.add(AgentRole(agent_id=agent.id, role_id=role.id))
+    elif (agent.first_name, agent.last_name) != (first_name, last_name):
+        # Seed-owned demo identity: the seed stays the source of truth
+        # for these rows' NAMES (a rename in the seed must reach
+        # already-seeded databases). Password and roles never touched.
+        agent.first_name, agent.last_name = first_name, last_name
+        await db.flush()
     return agent
 
 
@@ -117,6 +123,10 @@ async def get_or_create_expat(
             activated_at=NOW,  # activated: expat login + forgot-password both work
         )
         db.add(expat)
+        await db.flush()
+    elif (expat.first_name, expat.last_name) != (first_name, last_name):
+        # Same name-sync rule as agents (seed-owned demo identities).
+        expat.first_name, expat.last_name = first_name, last_name
         await db.flush()
     return expat
 
@@ -517,11 +527,14 @@ async def seed_dupont(
 
 # --- main ------------------------------------------------------------------------------
 
-PROD_AGENT_ADMIN = "alexandre.montilla@gmail.com"
-PROD_AGENT_MEMBER = "sasha.montilla.66@gmail.com"
-PROD_EXPAT_MARTIN = "alexandre.montilla@procuroma.com"
-PROD_EXPAT_VOLKOV = "sasha.montilla.66@gmail.com"
-PROD_EXPAT_DUPONT = "alexandre.montilla@gmail.com"
+# Real inboxes; names encode the ROLE (one single human name each for
+# Alexandre and Eric, the demo personas are named by what they are).
+PROD_AGENT_ADMIN = "alexandre.montilla@gmail.com"  # Alexandre Montilla
+PROD_AGENT_ADMIN_2 = "mr.schalk.eric@gmail.com"  # Eric Schalk
+PROD_AGENT_MEMBER = "sasha.montilla.66@gmail.com"  # Membre Démo
+PROD_EXPAT_MARTIN = "alexandre.montilla@procuroma.com"  # Client Martin
+PROD_EXPAT_VOLKOV = "sasha.montilla.66@gmail.com"  # Client Volkov
+PROD_EXPAT_DUPONT = "alexandre.montilla@gmail.com"  # Client Dupont
 
 
 def _throwaway_password() -> str:
@@ -581,28 +594,37 @@ async def seed_prod(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
         PROD_AGENT_ADMIN,
         password=_throwaway_password(),
     )
-    sasha = await get_or_create_agent(
+    await get_or_create_agent(
+        db,
+        agency,
+        roles["admin"],
+        "Eric",
+        "Schalk",
+        PROD_AGENT_ADMIN_2,
+        password=_throwaway_password(),
+    )
+    membre = await get_or_create_agent(
         db,
         agency,
         roles["member"],
-        "Sasha",
-        "Montilla",
+        "Membre",
+        "Démo",
         PROD_AGENT_MEMBER,
         password=_throwaway_password(),
     )
 
     martin = await get_or_create_expat(
-        db, "Alexandre", "Montilla", PROD_EXPAT_MARTIN, password=_throwaway_password()
+        db, "Client", "Martin", PROD_EXPAT_MARTIN, password=_throwaway_password()
     )
     volkov = await get_or_create_expat(
-        db, "Sasha", "Montilla", PROD_EXPAT_VOLKOV, password=_throwaway_password()
+        db, "Client", "Volkov", PROD_EXPAT_VOLKOV, password=_throwaway_password()
     )
     dupont = await get_or_create_expat(
-        db, "Alexandre", "Montilla", PROD_EXPAT_DUPONT, password=_throwaway_password()
+        db, "Client", "Dupont", PROD_EXPAT_DUPONT, password=_throwaway_password()
     )
 
     return [
-        await seed_martin(db, agency, martin, sasha, alexandre, "Martin-like"),
+        await seed_martin(db, agency, martin, membre, alexandre, "Martin-like"),
         await seed_volkov(db, agency, volkov, alexandre, "Volkov-like"),
         await seed_dupont(db, agency, dupont, alexandre, "Dupont-like"),
     ]
@@ -646,8 +668,12 @@ async def seed(mode: str = "dev") -> None:
     print("-" * 72)
     if mode == "prod":
         print("  Agency: Nidria Demo (nidria-demo)")
-        print(f"  Agents: {PROD_AGENT_ADMIN} (admin), {PROD_AGENT_MEMBER} (member)")
-        print(f"  Expats: {PROD_EXPAT_MARTIN} / {PROD_EXPAT_VOLKOV} / {PROD_EXPAT_DUPONT}")
+        print(f"  Agents: {PROD_AGENT_ADMIN} (admin, Alexandre Montilla)")
+        print(f"          {PROD_AGENT_ADMIN_2} (admin, Eric Schalk)")
+        print(f"          {PROD_AGENT_MEMBER} (member, Membre Démo)")
+        print(f"  Expats: {PROD_EXPAT_MARTIN} (Client Martin)")
+        print(f"          {PROD_EXPAT_VOLKOV} (Client Volkov)")
+        print(f"          {PROD_EXPAT_DUPONT} (Client Dupont)")
         print('  First login: use "Forgot password" — no seeded password is usable.')
     else:
         print(f"  ALL demo passwords (agents AND expats): {DEMO_PASSWORD}")
