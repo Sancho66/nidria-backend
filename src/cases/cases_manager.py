@@ -34,6 +34,7 @@ from src.cases.cases_schema import (
 )
 from src.core.config import get_settings
 from src.core.email import send_email
+from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.core.rbac.enforcement import effective_permissions
@@ -121,20 +122,18 @@ class CasesManager:
         await self.db.commit()
         await self.db.refresh(case)
 
+        agency = await self.repo.get_agency(agent.agency_id)
+        agency_name = agency.name if agency else "Votre agence"
         if expat.activated_at is None:
-            subject = "Nidria — Activate your account"
-            body = (
-                "An expatriation case has been opened for you. Activate your "
-                f"account to follow it: {settings.frontend_url}/expat/activate"
-                f"?token={invitation.token}"
+            link = f"{settings.frontend_url}/expat/activate?token={invitation.token}"
+            content = expat_activation_email(
+                agency_name, link, settings.case_invitation_expires_days
             )
         else:
-            subject = "Nidria — A new case awaits you"
-            body = (
-                "A new expatriation case has been opened for you. "
-                f"Log in to follow it: {settings.frontend_url}/expat/login"
-            )
-        await asyncio.to_thread(send_email, payload.email, subject, body)
+            content = new_case_email(agency_name, f"{settings.frontend_url}/expat/login")
+        await asyncio.to_thread(
+            send_email, payload.email, content.subject, content.text, content.html
+        )
         return case
 
     # --- read ---------------------------------------------------------------------

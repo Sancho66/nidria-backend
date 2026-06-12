@@ -226,6 +226,10 @@ async def test_approved_due_is_dispatched_future_is_not(
     assert due.status == "sent"
     assert future.status == "approved"
     assert len(email.outbox) == 1
+    # The interpolated message_body lands in BOTH multipart parts.
+    sent_mail = email.outbox[0]
+    assert due.message_body in sent_mail.body
+    assert sent_mail.html is not None and due.message_body in sent_mail.html
 
     log = (
         await db_session.execute(

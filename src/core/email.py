@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 class OutboxEmail:
     to: str
     subject: str
-    body: str
+    body: str  # plain-text part (multipart fallback)
+    html: str | None = None
 
 
 # Mock-mode sink, inspectable by tests (cleared per test by an autouse
@@ -27,21 +28,23 @@ def _is_mocked() -> bool:
     return settings.mock_services
 
 
-def send_email(to: str, subject: str, body: str) -> None:
-    """Plain-text transactional email. Mocked by default (MOCK_SERVICES /
-    MOCK_EMAIL): logs + appends to `outbox` instead of calling Resend.
-    Blocking — call via asyncio.to_thread from async code."""
+def send_email(to: str, subject: str, body: str, html: str | None = None) -> None:
+    """Transactional email, multipart when `html` is given (text part is
+    the fallback). Mocked by default (MOCK_SERVICES / MOCK_EMAIL): logs +
+    appends to `outbox` instead of calling Resend. Blocking — call via
+    asyncio.to_thread from async code."""
     if _is_mocked():
         logger.info("MOCK email to=%s subject=%r", to, subject)
-        outbox.append(OutboxEmail(to=to, subject=subject, body=body))
+        outbox.append(OutboxEmail(to=to, subject=subject, body=body, html=html))
         return
     settings = get_settings()
     resend.api_key = settings.resend_api_key
-    resend.Emails.send(
-        {
-            "from": settings.email_from,
-            "to": [to],
-            "subject": subject,
-            "text": body,
-        }
-    )
+    payload: dict[str, object] = {
+        "from": settings.email_from,
+        "to": [to],
+        "subject": subject,
+        "text": body,
+    }
+    if html is not None:
+        payload["html"] = html
+    resend.Emails.send(payload)  # type: ignore[arg-type]

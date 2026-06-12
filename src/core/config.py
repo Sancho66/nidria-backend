@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # Resend transactional email (invitations + mail reminders).
     resend_api_key: str | None = None
-    email_from: str = "Nidria <notifications@nidria.com>"
+    email_from: str = "Nidria <no-reply@nidria.com>"
 
     # Supabase Storage — documents bucket. `supabase_service_role_key`
     # is the SERVICE ROLE key (not the anon key): it bypasses RLS so

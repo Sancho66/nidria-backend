@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from shared.models.activity import ActivityLog
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_note import CaseNote
 from shared.models.client_case import ClientCase
@@ -18,6 +19,9 @@ from shared.models.invitation import CaseInvitation
 class CasesRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
+        return await self.db.get(Agency, agency_id)
 
     # --- cases -------------------------------------------------------------------
 

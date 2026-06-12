@@ -16,6 +16,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.invitation import CaseInvitation
 from shared.models.rbac import Role
 from src.core import email
+from src.core.config import get_settings
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeCaseNote, MakeClientCase
@@ -85,7 +86,10 @@ async def test_create_case_new_expat_full_flow(
     assert invitation.status == "pending"
 
     assert len(email.outbox) == 1
-    assert invitation.token in email.outbox[0].body  # activation link
+    sent = email.outbox[0]
+    activation_link = f"{get_settings().frontend_url}/expat/activate?token={invitation.token}"
+    assert activation_link in sent.body  # text fallback
+    assert sent.html is not None and activation_link in sent.html
 
     types = await _activity_types(db_session, body["id"])
     assert types == ["case.created", "case.invitation_sent"]
@@ -131,7 +135,11 @@ async def test_create_case_existing_activated_expat(
     ).scalar_one()
     assert invitation.status == "pending"
     assert len(email.outbox) == 1
-    assert "new case" in email.outbox[0].subject.lower()
+    sent = email.outbox[0]
+    assert "nouveau dossier" in sent.subject.lower()
+    login_link = f"{get_settings().frontend_url}/expat/login"
+    assert login_link in sent.body
+    assert sent.html is not None and login_link in sent.html
 
 
 async def test_create_case_owner_not_in_agency_422(

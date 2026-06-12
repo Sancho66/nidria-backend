@@ -15,6 +15,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.invitation import CaseInvitation
 from shared.models.rbac import Role
 from src.core import email
+from src.core.config import get_settings
 from src.core.enums import InvitationStatus
 from src.core.rbac.integrity import assert_all_routes_bound
 from src.main import app
@@ -334,9 +335,14 @@ async def test_forgot_password_does_not_reveal_accounts(
     )
     assert existing.status_code == unknown.status_code == 200
     assert existing.json() == unknown.json()
-    # Mail only for the real account.
+    # Mail only for the real account — with the frontend reset link in
+    # BOTH multipart parts (text fallback and HTML).
     assert len(email.outbox) == 1
-    assert email.outbox[0].to == "real@example.com"
+    sent = email.outbox[0]
+    assert sent.to == "real@example.com"
+    link_prefix = f"{get_settings().frontend_url}/agent/reset-password?token="
+    assert link_prefix in sent.body
+    assert sent.html is not None and link_prefix in sent.html
 
 
 async def test_forgot_password_non_activated_expat_is_silent(

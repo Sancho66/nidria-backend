@@ -25,6 +25,7 @@ from shared.models.journey import JourneyTemplateStep
 from shared.models.reminder import Reminder
 from src.core.config import get_settings
 from src.core.email import send_email
+from src.core.email_templates import reminder_email
 from src.core.enums import (
     ActorType,
     RecipientType,
@@ -76,7 +77,8 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
                 # Creation-time validation prevents this; defensive skip.
                 log(f"reminder {reminder.id}: no recipient email, left approved")
                 continue
-            send_email(to, "Nidria — Reminder", reminder.message_body)
+            content = reminder_email(reminder.message_body)
+            send_email(to, content.subject, content.text, content.html)
         # IN_APP: the SENT reminder itself IS the notification read by
         # the expat space (no notifications table).
         reminder.status = ReminderStatus.SENT.value

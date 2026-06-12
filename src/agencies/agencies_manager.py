@@ -15,6 +15,7 @@ from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.core.config import get_settings
 from src.core.email import send_email
+from src.core.email_templates import agent_invitation_email
 from src.core.enums import Audience, InvitationStatus
 from src.core.exceptions import (
     BadRequestError,
@@ -93,13 +94,8 @@ class AgenciesManager:
 
         agency = await self.get_my_agency(agent)
         link = f"{settings.frontend_url}/agent/accept-invitation?token={invitation.token}"
-        await asyncio.to_thread(
-            send_email,
-            email,
-            f"Nidria — Invitation to join {agency.name}",
-            f"You have been invited to join {agency.name} on Nidria. "
-            f"Accept here (valid {settings.agent_invitation_expires_days} days): {link}",
-        )
+        content = agent_invitation_email(agency.name, link, settings.agent_invitation_expires_days)
+        await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
         return invitation
 
     async def list_invitations(self, agent: Agent) -> list[AgentInvitation]:

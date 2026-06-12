@@ -12,6 +12,7 @@ from shared.models.agent import Agent
 from shared.models.invitation import AgentInvitation
 from shared.models.rbac import Role
 from src.core import email
+from src.core.config import get_settings
 from src.core.enums import InvitationStatus
 from src.core.rbac.permissions import Permission
 from tests.plugins.agency_plugin import MakeAgency, MakeAgentInvitation
@@ -137,7 +138,13 @@ async def test_create_invitation_with_system_role(
     assert body["status"] == "pending"
     assert body["invited_by_agent_id"] == str(admin.id)
     assert len(email.outbox) == 1
-    assert email.outbox[0].to == "newagent@example.com"
+    sent = email.outbox[0]
+    assert sent.to == "newagent@example.com"
+    # The accept link is built on frontend_url, in BOTH multipart parts.
+    link_prefix = f"{get_settings().frontend_url}/agent/accept-invitation?token="
+    assert link_prefix in sent.body
+    assert sent.html is not None and link_prefix in sent.html
+    assert "Accepter l&#x27;invitation" in sent.html
 
 
 async def test_create_invitation_with_own_custom_role(

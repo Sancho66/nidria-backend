@@ -11,6 +11,7 @@ from src.auth.auth_repository import AuthRepository
 from src.auth.auth_schema import ActivateResponse, TokenPairResponse
 from src.core.config import get_settings
 from src.core.email import send_email
+from src.core.email_templates import password_reset_email
 from src.core.enums import Audience, InvitationStatus
 from src.core.exceptions import BadRequestError, UnauthorizedError
 from src.core.security import (
@@ -182,13 +183,10 @@ class AuthManager:
             self.repo.add_reset_token(audience.value, actor.id, token, expires_at)
             await self.db.commit()
             reset_link = f"{settings.frontend_url}/{audience.value}/reset-password?token={token}"
-            await asyncio.to_thread(
-                send_email,
-                email,
-                "Nidria — Password reset",
-                f"Use this link to reset your password (valid "
-                f"{settings.password_reset_token_expires_minutes} minutes): {reset_link}",
+            content = password_reset_email(
+                reset_link, settings.password_reset_token_expires_minutes
             )
+            await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
         return _FORGOT_PASSWORD_DETAIL
 
     async def reset_password(self, token: str, password: str, audience: Audience) -> None:
