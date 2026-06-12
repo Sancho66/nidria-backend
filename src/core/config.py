@@ -61,8 +61,6 @@ class Settings(BaseSettings):
         "http://localhost:5173",
     ]
     environment: str = "development"
-    # Injected at image build time (ci.yml --build-arg from the git tag).
-    app_version: str = "dev"
     frontend_url: str = "http://localhost:5173"
 
     # Resend transactional email (invitations + mail reminders).

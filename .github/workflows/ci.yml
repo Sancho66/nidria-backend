@@ -5,13 +5,15 @@ on:
     branches: [main, dev, develop]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Cancel only PR runs when superseded. Pushes to main / manual
-  # dispatches run to completion — cancelling a mid-flight deploy
-  # could leave fly in a half-rolled state.
+  # Cancel only PR runs when superseded. Pushes to main / releases /
+  # manual dispatches run to completion — cancelling a mid-flight
+  # deploy could leave fly in a half-rolled state.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -23,6 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --frozen
+      # Scope matches `make lint` so shared/ + tests/ + scripts/
+      # + alembic/env.py also get caught here.
       - run: uv run ruff check src/ shared/ tests/ scripts/ alembic/env.py
       - run: uv run ruff format --check src/ shared/ tests/ scripts/ alembic/env.py
 
@@ -34,6 +38,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --frozen
+      # Shared models are critical paths — type errors there surface
+      # as runtime exceptions (no safety net).
       - run: uv run mypy src/ shared/
 
   test:
@@ -41,52 +47,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # No GHA `services.postgres` — tests/conftest.py spins up its own
-    # postgres:16-alpine via testcontainers (PARTIE 8). Each xdist
-    # worker is a separate process → its own PostgresContainer, so
-    # isolation matches serial mode while halving wall-clock on the
-    # 2-core free runners.
+    # postgres:16-alpine via testcontainers (per CLAUDE.md rule #5).
+    # Adding a service postgres on top is wasted boot time + RAM,
+    # since the testcontainer is what the test sessions actually
+    # connect to.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --frozen
+      # `-n auto` runs pytest in parallel across all available CPU
+      # cores (2 on GH free runners, more on self-hosted). Each
+      # xdist worker is a separate process → its own
+      # PostgresContainer via conftest, so test isolation is the
+      # same as serial mode. Cuts the test job from ~10min to ~5min
+      # on GH's 2-core runners; larger gain locally.
       - run: uv run pytest tests/ -x -q -n auto
 
   deploy:
     name: Deploy to Fly.io
     needs: [lint, typecheck, test]
-    # Gated on main (+ manual dispatch). NOT exercised for real yet —
-    # no Fly account wired today; this job validates the yml contract.
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Full history: `git describe --tags` needs the release tags.
-          fetch-depth: 0
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: >-
-          flyctl deploy --remote-only -a nidria-api
-          --build-arg APP_VERSION=$(git describe --tags --always)
+        run: flyctl deploy --remote-only -a nidria-api
 
       - name: Healthcheck
         run: |
           sleep 30
           for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://nidria-api.fly.dev/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.nidria.com/health)
             if [ "$STATUS" = "200" ]; then
-              echo "Healthcheck passed"
+              echo "✅ Healthcheck passed"
               exit 0
             fi
-            echo "Attempt $i - status $STATUS, retrying in 10s..."
+            echo "⏳ Attempt $i — status $STATUS, retrying in 10s..."
             sleep 10
           done
-          echo "Healthcheck failed"
+          echo "❌ Healthcheck failed"
           exit 1
