@@ -93,7 +93,7 @@ class AgenciesManager:
         await self.db.refresh(invitation)
 
         agency = await self.get_my_agency(agent)
-        link = f"{settings.frontend_url}/agent/accept-invitation?token={invitation.token}"
+        link = f"{settings.frontend_url}/accept-invitation/{invitation.token}"
         content = agent_invitation_email(agency.name, link, settings.agent_invitation_expires_days)
         await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
         return invitation

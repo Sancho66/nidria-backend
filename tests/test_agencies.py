@@ -141,7 +141,7 @@ async def test_create_invitation_with_system_role(
     sent = email.outbox[0]
     assert sent.to == "newagent@example.com"
     # The accept link is built on frontend_url, in BOTH multipart parts.
-    link_prefix = f"{get_settings().frontend_url}/agent/accept-invitation?token="
+    link_prefix = f"{get_settings().frontend_url}/accept-invitation/"
     assert link_prefix in sent.body
     assert sent.html is not None and link_prefix in sent.html
     assert "Accepter l&#x27;invitation" in sent.html

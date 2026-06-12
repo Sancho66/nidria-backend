@@ -125,12 +125,12 @@ class CasesManager:
         agency = await self.repo.get_agency(agent.agency_id)
         agency_name = agency.name if agency else "Votre agence"
         if expat.activated_at is None:
-            link = f"{settings.frontend_url}/expat/activate?token={invitation.token}"
+            link = f"{settings.frontend_url}/space/activate/{invitation.token}"
             content = expat_activation_email(
                 agency_name, link, settings.case_invitation_expires_days
             )
         else:
-            content = new_case_email(agency_name, f"{settings.frontend_url}/expat/login")
+            content = new_case_email(agency_name, f"{settings.frontend_url}/space/login")
         await asyncio.to_thread(
             send_email, payload.email, content.subject, content.text, content.html
         )

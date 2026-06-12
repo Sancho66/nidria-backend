@@ -340,7 +340,23 @@ async def test_forgot_password_does_not_reveal_accounts(
     assert len(email.outbox) == 1
     sent = email.outbox[0]
     assert sent.to == "real@example.com"
-    link_prefix = f"{get_settings().frontend_url}/agent/reset-password?token="
+    link_prefix = f"{get_settings().frontend_url}/reset-password/"
+    assert link_prefix in sent.body
+    assert sent.html is not None and link_prefix in sent.html
+
+
+async def test_forgot_password_activated_expat_gets_space_link(
+    auth_client: AsyncClient, make_expat_user: MakeExpatUser
+) -> None:
+    await make_expat_user(activated=True, email="active@example.com")
+    response = await auth_client.post(
+        "/auth/expat/forgot-password", json={"email": "active@example.com"}
+    )
+    assert response.status_code == 200
+    assert len(email.outbox) == 1
+    sent = email.outbox[0]
+    # The expat space lives under /space on the frontend route map.
+    link_prefix = f"{get_settings().frontend_url}/space/reset-password/"
     assert link_prefix in sent.body
     assert sent.html is not None and link_prefix in sent.html
 

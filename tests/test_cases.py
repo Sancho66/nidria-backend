@@ -87,7 +87,7 @@ async def test_create_case_new_expat_full_flow(
 
     assert len(email.outbox) == 1
     sent = email.outbox[0]
-    activation_link = f"{get_settings().frontend_url}/expat/activate?token={invitation.token}"
+    activation_link = f"{get_settings().frontend_url}/space/activate/{invitation.token}"
     assert activation_link in sent.body  # text fallback
     assert sent.html is not None and activation_link in sent.html
 
@@ -137,7 +137,7 @@ async def test_create_case_existing_activated_expat(
     assert len(email.outbox) == 1
     sent = email.outbox[0]
     assert "nouveau dossier" in sent.subject.lower()
-    login_link = f"{get_settings().frontend_url}/expat/login"
+    login_link = f"{get_settings().frontend_url}/space/login"
     assert login_link in sent.body
     assert sent.html is not None and login_link in sent.html
 

@@ -182,7 +182,10 @@ class AuthManager:
             )
             self.repo.add_reset_token(audience.value, actor.id, token, expires_at)
             await self.db.commit()
-            reset_link = f"{settings.frontend_url}/{audience.value}/reset-password?token={token}"
+            # Frontend route map: agent flows live at the root,
+            # the expat space under /space; tokens are PATH params.
+            prefix = "" if audience is Audience.AGENT else "/space"
+            reset_link = f"{settings.frontend_url}{prefix}/reset-password/{token}"
             content = password_reset_email(
                 reset_link, settings.password_reset_token_expires_minutes
             )
