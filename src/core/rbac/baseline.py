@@ -86,6 +86,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.progress.progress_router import BINDINGS as progress_bindings
     from src.reminders.reminders_router import BINDINGS as reminders_bindings
     from src.roles.roles_router import BINDINGS as roles_bindings
+    from src.views.views_router import BINDINGS as views_bindings
 
     return [
         *auth_bindings,
@@ -94,6 +95,7 @@ def collect_bindings() -> list[RouteBinding]:
         *impersonation_bindings,
         *journeys_bindings,
         *cases_bindings,
+        *views_bindings,
         *progress_bindings,
         *documents_bindings,
         *reminders_bindings,

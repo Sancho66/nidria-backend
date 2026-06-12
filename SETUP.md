@@ -302,6 +302,8 @@ Sous-étapes :
   - **3 dossiers seed** avec parcours/étapes/progress/rappels : **Famille Martin** (5 étapes, étape 3/5, rappel J+10 à approuver), **Aleksei Volkov** (7 étapes, étape 2/7), **Sophie Dupont** (4 étapes, étape 1/4, **étape 3 verrouillée**).
 - Régénérer `openapi.json` (`make openapi`).
 
+> **Vues sauvegardées & filtres (parité Prism)** : `GET /cases` porte les filtres complets Prism — params par champ + arbre `filters` JSON-encodé (conditions/groupes and-or, opérateurs eq…between, dates coercées) + multi-tri `sort_by`/`order` whitelisté (422 strict). Les vues (filtres + colonnes + tri) persistent en table `saved_view` (scope agent, `is_shared` visible agence, vue par défaut, « All » personnalisable via `/views/default-all`) ; catalogue des colonnes sur `GET /cases/columns`.
+
 > **Boot = migrations + seed** : `start.sh` enchaîne `alembic upgrade head` → `seed.py` (mode dérivé d'`ENVIRONMENT` : `production` → `--mode prod`, baseline seule sans comptes démo ; sinon `--mode dev`) → uvicorn. Le seed est idempotent par construction — **un déploiement initial n'a besoin d'aucune étape manuelle**. Échec du seed = boot refusé (exit non-zéro).
 Checklist finale (les commandes du quotidien vivent dans le `Makefile` — `make help`) :
 - [ ] `make test-cov` — tout passe

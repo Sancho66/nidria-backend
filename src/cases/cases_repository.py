@@ -14,6 +14,25 @@ from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.family_member import FamilyMember
 from shared.models.invitation import CaseInvitation
+from src.cases.filter_builder import build_advanced_clauses
+
+# Field → column resolution for ?sort_by= (Prism convention: single
+# source of truth next to the SQL columns; the manager validates the
+# field keys against this map). `principal_last_name` is the one
+# extension over Prism — the frontend's Client column must sort, and
+# the principal join already exists.
+SORTABLE_FIELD_MAP: dict[str, Any] = {
+    "created_at": ClientCase.created_at,
+    "updated_at": ClientCase.updated_at,
+    "status": ClientCase.status,
+    "origin_country": ClientCase.origin_country,
+    "dest_country": ClientCase.dest_country,
+    "source": ClientCase.source,
+    "principal_last_name": ExpatUser.last_name,
+}
+
+# Sort keys that read from the joined principal row.
+_PRINCIPAL_SORT_FIELDS: frozenset[str] = frozenset({"principal_last_name"})
 
 
 class CasesRepository:
@@ -31,10 +50,16 @@ class CasesRepository:
         stmt = select(ClientCase).where(ClientCase.id == case_id, ClientCase.agency_id == agency_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    def _filtered_stmt(self, agency_id: uuid.UUID, filters: dict[str, Any]) -> Select[Any]:
+    def _filtered_stmt(
+        self,
+        agency_id: uuid.UUID,
+        filters: dict[str, Any],
+        *,
+        join_principal: bool = False,
+    ) -> Select[Any]:
         stmt = select(ClientCase).where(ClientCase.agency_id == agency_id)
-        # One join serves both principal-based filters.
-        if filters.get("q") or filters.get("preferred_lang"):
+        # One join serves the principal-based filters AND principal sorts.
+        if join_principal or filters.get("q") or filters.get("preferred_lang"):
             stmt = stmt.join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
         if filters.get("status"):
             stmt = stmt.where(ClientCase.status.in_([s.value for s in filters["status"]]))
@@ -58,6 +83,11 @@ class CasesRepository:
                     ExpatUser.email.ilike(pattern),
                 )
             )
+        if filters.get("advanced") is not None:
+            # The AdvancedFilters tree (Prism filter bar) — clauses are
+            # AND-combined with the per-field params above.
+            for clause in build_advanced_clauses(filters["advanced"]):
+                stmt = stmt.where(clause)
         return stmt
 
     async def list_cases(
@@ -66,8 +96,11 @@ class CasesRepository:
         filters: dict[str, Any],
         page: int,
         page_size: int,
+        sorts: list[tuple[str, str]] | None = None,
     ) -> tuple[list[ClientCase], int]:
-        stmt = self._filtered_stmt(agency_id, filters)
+        sorts = sorts or []
+        join_principal = any(field in _PRINCIPAL_SORT_FIELDS for field, _ in sorts)
+        stmt = self._filtered_stmt(agency_id, filters, join_principal=join_principal)
         total = (
             await self.db.execute(select(func.count()).select_from(stmt.subquery()))
         ).scalar_one()
@@ -75,9 +108,18 @@ class CasesRepository:
         # rows can repeat or vanish across pages (Prism's lesson).
         # selectinload over add_columns: one extra query for the whole
         # page (no N+1), and the filter join / pagination stay untouched.
+        if sorts:
+            clauses = [
+                SORTABLE_FIELD_MAP[field].desc()
+                if direction == "desc"
+                else SORTABLE_FIELD_MAP[field].asc()
+                for field, direction in sorts
+            ]
+        else:
+            clauses = [ClientCase.created_at.desc()]
         stmt = (
             stmt.options(selectinload(ClientCase.principal))
-            .order_by(ClientCase.created_at.desc(), ClientCase.id.desc())
+            .order_by(*clauses, ClientCase.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

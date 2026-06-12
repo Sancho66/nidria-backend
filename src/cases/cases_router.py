@@ -1,12 +1,14 @@
+import json
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from src.auth.auth_schema import MessageResponse
-from src.cases.cases_manager import CasesManager
+from src.cases.cases_manager import CasesManager, parse_sorts
 from src.cases.cases_schema import (
     CaseCreateRequest,
     CaseDetailResponse,
@@ -23,12 +25,32 @@ from src.cases.cases_schema import (
     FamilyMemberRequest,
     FamilyMemberResponse,
 )
+from src.cases.filter_schema import AdvancedFilters
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience, CaseStatus
+from src.core.exceptions import ValidationError
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 
 router = APIRouter(prefix="/cases", tags=["cases"])
+
+
+def _parse_advanced_filters(raw: str | None) -> AdvancedFilters | None:
+    """Decode the JSON-encoded `filters` query param into the validated
+    AdvancedFilters tree (Prism). Malformed JSON or shape → 422."""
+    if raw is None or not raw.strip():
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"`filters` is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValidationError("`filters` must be a JSON object")
+    try:
+        return AdvancedFilters(**payload)
+    except PydanticValidationError as exc:
+        raise ValidationError(f"Invalid filter tree: {exc}") from exc
+
 
 _VIEW = Permission.CASE_VIEW
 _EDIT = Permission.CASE_EDIT
@@ -77,10 +99,41 @@ async def list_cases(
     preferred_lang: Annotated[str | None, Query()] = None,
     tag: Annotated[list[str] | None, Query()] = None,
     q: Annotated[str | None, Query()] = None,
+    filters: Annotated[
+        str | None,
+        Query(
+            description=(
+                "JSON-encoded AdvancedFilters tree from the filter-bar UI. "
+                "Shape: {conditions: [...], groups: [{logic, conditions: [...]}]}. "
+                "AND-combined with the per-field query params."
+            ),
+        ),
+    ] = None,
+    sort_by: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Comma-separated sortable field keys (e.g. `status,created_at`), "
+                "paired 1-to-1 with `order`. Omit both for the default ordering "
+                "(created_at desc, id desc)."
+            ),
+        ),
+    ] = None,
+    order: Annotated[
+        str | None,
+        Query(description="Comma-separated directions matching `sort_by` (`asc`/`desc`)."),
+    ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> CaseListResponse:
-    filters = CaseFilters(
+    # Multi-sort parse + validate (Prism): ValueError → 422 with the
+    # standard error body, same path as the filter-tree errors.
+    try:
+        sorts = parse_sorts(sort_by, order)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    case_filters = CaseFilters(
         status=status,
         origin_country=origin_country,
         dest_country=dest_country,
@@ -88,8 +141,9 @@ async def list_cases(
         preferred_lang=preferred_lang,
         tag=tag,
         q=q,
+        advanced=_parse_advanced_filters(filters),
     )
-    return await CasesManager(db).list_cases(agent, filters, page, page_size)
+    return await CasesManager(db).list_cases(agent, case_filters, page, page_size, sorts=sorts)
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)

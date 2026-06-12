@@ -33,6 +33,7 @@ from src.journeys.journeys_router import router as journeys_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
+from src.views.views_router import router as views_router
 
 # Configure logging so our INFO records actually print. uvicorn only
 # configures its own loggers (`uvicorn`, `uvicorn.access`,
@@ -88,6 +89,9 @@ register_exception_handlers(app)
 app.include_router(auth_router)
 app.include_router(activity_router)
 app.include_router(agencies_router)
+# views BEFORE cases: GET /cases/columns (literal) must register ahead
+# of GET /cases/{case_id} or "columns" 422s against the UUID parser.
+app.include_router(views_router)
 app.include_router(cases_router)
 app.include_router(dashboard_router)
 app.include_router(documents_agent_router)

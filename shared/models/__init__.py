@@ -17,6 +17,7 @@ from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrer
 from shared.models.message_template import MessageTemplate
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
+from shared.models.saved_view import SavedView
 
 __all__ = [
     "ActivityLog",
@@ -44,6 +45,7 @@ __all__ = [
     "RefreshToken",
     "Reminder",
     "Role",
+    "SavedView",
     "RolePermission",
     "StepPrerequisite",
 ]

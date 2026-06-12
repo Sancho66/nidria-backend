@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from src.cases.filter_schema import AdvancedFilters
 from src.core.enums import CaseStatus, ExternalContactType
 from src.progress.progress_schema import StepProgressResponse
 
@@ -159,6 +160,8 @@ class CaseDetailResponse(CaseResponse):
 class CaseFilters(BaseModel):
     """Query-side contract of GET /cases."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     status: list[CaseStatus] | None = None
     origin_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
     dest_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
@@ -166,6 +169,12 @@ class CaseFilters(BaseModel):
     preferred_lang: str | None = None
     tag: list[str] | None = None  # contains-ALL semantics
     q: str | None = None  # ilike on principal first/last name + email
+    # Parsed AdvancedFilters tree (the `filters` query param, Prism
+    # filter bar) — AND-combined with the per-field filters above.
+    advanced: AdvancedFilters | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return self.model_dump(exclude_none=True)
+        data = self.model_dump(exclude_none=True, exclude={"advanced"})
+        if self.advanced is not None:
+            data["advanced"] = self.advanced
+        return data

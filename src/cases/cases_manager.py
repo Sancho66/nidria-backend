@@ -13,7 +13,7 @@ from shared.models.external_contact import ExternalContact
 from shared.models.family_member import FamilyMember
 from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
-from src.cases.cases_repository import CasesRepository
+from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
 from src.cases.cases_schema import (
     CaseCreateRequest,
     CaseDetailResponse,
@@ -139,10 +139,15 @@ class CasesManager:
     # --- read ---------------------------------------------------------------------
 
     async def list_cases(
-        self, agent: Agent, filters: CaseFilters, page: int, page_size: int
+        self,
+        agent: Agent,
+        filters: CaseFilters,
+        page: int,
+        page_size: int,
+        sorts: list[tuple[str, str]] | None = None,
     ) -> CaseListResponse:
         cases, total = await self.repo.list_cases(
-            agent.agency_id, filters.as_dict(), page, page_size
+            agent.agency_id, filters.as_dict(), page, page_size, sorts=sorts
         )
         return CaseListResponse(
             items=[CaseListItemResponse.model_validate(case) for case in cases],
@@ -415,3 +420,38 @@ class CasesManager:
         return build_case_pdf(
             case=case, principal=principal, owner=owner, activity_rows=activity_rows
         )
+
+
+# --- Multi-sort (cases list) --------------------------------------------------
+#
+# Field → column resolution lives in `cases_repository.SORTABLE_FIELD_MAP`
+# (single source of truth, next to the SQL columns). Ported from Prism:
+# `?sort_by=a,b&order=asc,desc`, paired 1-to-1, strict 422 on unknown
+# field/direction or length mismatch.
+
+ALLOWED_SORTABLE_FIELDS: frozenset[str] = frozenset(SORTABLE_FIELD_MAP.keys())
+_ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
+
+
+def parse_sorts(sort_by: str | None, order: str | None) -> list[tuple[str, str]]:
+    """Parse `?sort_by=a,b&order=asc,desc` into `[("a","asc"),("b","desc")]`.
+
+    Both omitted/empty → `[]` (default-order branch in the repo).
+    Different lengths, unknown field or unknown direction →
+    `ValueError`, translated to 422 by the router."""
+    fields = [f.strip() for f in (sort_by or "").split(",") if f.strip()]
+    directions = [d.strip().lower() for d in (order or "").split(",") if d.strip()]
+    if not fields and not directions:
+        return []
+    if len(fields) != len(directions):
+        raise ValueError("sort_by and order must have the same number of comma-separated values")
+    sorts: list[tuple[str, str]] = []
+    for field, direction in zip(fields, directions, strict=True):
+        if field not in ALLOWED_SORTABLE_FIELDS:
+            raise ValueError(
+                f"Unknown sort field {field!r} — allowed: {sorted(ALLOWED_SORTABLE_FIELDS)}"
+            )
+        if direction not in _ALLOWED_SORT_DIRS:
+            raise ValueError(f"Unknown sort direction {direction!r} — use asc or desc")
+        sorts.append((field, direction))
+    return sorts

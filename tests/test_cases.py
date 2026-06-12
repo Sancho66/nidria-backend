@@ -7,7 +7,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
@@ -613,3 +613,277 @@ async def test_export_pdf(
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF")
+
+
+# --- multi-sort (Prism parity) ---------------------------------------------------
+
+
+async def test_sort_single_and_multi(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(member)
+    a = await make_client_case(agency_id=member.agency_id, status="prospect", dest_country="BG")
+    b = await make_client_case(agency_id=member.agency_id, status="validated", dest_country="PY")
+    c = await make_client_case(agency_id=member.agency_id, status="in_progress", dest_country="PY")
+
+    asc = await cases_client.get("/cases?sort_by=status&order=asc", headers=headers)
+    assert [i["id"] for i in asc.json()["items"]] == [str(c.id), str(a.id), str(b.id)]
+
+    multi = await cases_client.get(
+        "/cases?sort_by=dest_country,status&order=asc,desc", headers=headers
+    )
+    assert [i["id"] for i in multi.json()["items"]] == [str(a.id), str(b.id), str(c.id)]
+
+
+async def test_sort_by_principal_last_name(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+) -> None:
+    zoe = await make_expat_user(last_name="Zima")
+    abad = await make_expat_user(last_name="Abad")
+    case_z = await make_client_case(agency_id=member.agency_id, principal_expat_user_id=zoe.id)
+    case_a = await make_client_case(agency_id=member.agency_id, principal_expat_user_id=abad.id)
+    response = await cases_client.get(
+        "/cases?sort_by=principal_last_name&order=asc", headers=agent_headers(member)
+    )
+    assert [i["id"] for i in response.json()["items"]] == [str(case_a.id), str(case_z.id)]
+
+
+async def test_sort_validation_422(
+    cases_client: AsyncClient, member: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(member)
+    unknown = await cases_client.get("/cases?sort_by=ghost&order=asc", headers=headers)
+    assert unknown.status_code == 422
+    assert "ghost" in unknown.json()["detail"]
+    mismatch = await cases_client.get("/cases?sort_by=status,created_at&order=asc", headers=headers)
+    assert mismatch.status_code == 422
+    bad_dir = await cases_client.get("/cases?sort_by=status&order=sideways", headers=headers)
+    assert bad_dir.status_code == 422
+
+
+async def test_sort_pagination_stable(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    for _ in range(3):
+        await make_client_case(agency_id=member.agency_id, status="prospect")
+    headers = agent_headers(member)
+    q = "/cases?sort_by=status&order=asc&page_size=2"
+    page1 = (await cases_client.get(f"{q}&page=1", headers=headers)).json()
+    page2 = (await cases_client.get(f"{q}&page=2", headers=headers)).json()
+    ids1 = {c["id"] for c in page1["items"]}
+    ids2 = {c["id"] for c in page2["items"]}
+    assert len(ids1) == 2 and len(ids2) == 1 and ids1.isdisjoint(ids2)
+
+
+# --- AdvancedFilters tree (Prism parity) ---------------------------------------------
+
+
+def _tree(*conditions: dict, groups: list | None = None) -> str:
+    import json as _json
+
+    return _json.dumps({"conditions": list(conditions), "groups": groups or []})
+
+
+async def _tree_ids(client: AsyncClient, headers: dict[str, str], tree: str) -> set[str]:
+    from urllib.parse import quote
+
+    response = await client.get(f"/cases?filters={quote(tree)}", headers=headers)
+    assert response.status_code == 200, response.text
+    return {c["id"] for c in response.json()["items"]}
+
+
+async def test_advanced_filters_every_operator(
+    cases_client: AsyncClient,
+    member: Agent,
+    db_session: AsyncSession,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(member)
+    expat = await make_expat_user(email="aleksei.volkov@example.com", preferred_lang="ru")
+    old = await make_client_case(
+        agency_id=member.agency_id,
+        status="prospect",
+        source="referral",
+        principal_expat_user_id=expat.id,
+        tags=["vip"],
+    )
+    new = await make_client_case(
+        agency_id=member.agency_id, status="in_progress", source=None, tags=[]
+    )
+    # Distinct created_at values for the date operators.
+    from datetime import datetime
+
+    t_old = datetime(2026, 1, 10, 12, 0, 0)
+    t_new = datetime(2026, 6, 1, 12, 0, 0)
+    from shared.models.client_case import ClientCase as CC
+
+    await db_session.execute(
+        update(CC).where(CC.id == old.id).values(created_at=t_old, updated_at=t_old)
+    )
+    await db_session.execute(
+        update(CC).where(CC.id == new.id).values(created_at=t_new, updated_at=t_new)
+    )
+    await db_session.commit()
+
+    oid, nid = str(old.id), str(new.id)
+
+    # eq / neq
+    assert await _tree_ids(
+        cases_client, headers, _tree({"field": "status", "operator": "eq", "value": "prospect"})
+    ) == {oid}
+    assert await _tree_ids(
+        cases_client, headers, _tree({"field": "status", "operator": "neq", "value": "prospect"})
+    ) == {nid}
+    # in / not_in
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "status", "operator": "in", "value": ["prospect", "closed"]}),
+    ) == {oid}
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "status", "operator": "not_in", "value": ["prospect", "closed"]}),
+    ) == {nid}
+    # gt / gte / lt / lte on created_at (dates coerced from strings)
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "created_at", "operator": "gt", "value": "2026-03-01"}),
+    ) == {nid}
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "created_at", "operator": "gte", "value": "2026-06-01T12:00:00"}),
+    ) == {nid}
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "created_at", "operator": "lt", "value": "2026-03-01"}),
+    ) == {oid}
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "created_at", "operator": "lte", "value": "2026-01-10T12:00:00"}),
+    ) == {oid}
+    # between on created_at (the date-picker pair)
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree(
+            {"field": "created_at", "operator": "between", "value": ["2026-01-01", "2026-02-01"]}
+        ),
+    ) == {oid}
+    # contains / not_contains on a joined principal field
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "principal_email", "operator": "contains", "value": "volkov"}),
+    ) == {oid}
+    assert await _tree_ids(
+        cases_client,
+        headers,
+        _tree({"field": "principal_email", "operator": "not_contains", "value": "volkov"}),
+    ) == {nid}
+    # is_empty / is_not_empty on a nullable column
+    assert await _tree_ids(
+        cases_client, headers, _tree({"field": "source", "operator": "is_empty"})
+    ) == {nid}
+    assert await _tree_ids(
+        cases_client, headers, _tree({"field": "source", "operator": "is_not_empty"})
+    ) == {oid}
+    # tags: contains (ANY-of) + is_empty
+    assert await _tree_ids(
+        cases_client, headers, _tree({"field": "tags", "operator": "contains", "value": ["vip"]})
+    ) == {oid}
+    assert await _tree_ids(
+        cases_client, headers, _tree({"field": "tags", "operator": "is_empty"})
+    ) == {nid}
+
+
+async def test_advanced_filters_is_empty_on_joined_field(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+) -> None:
+    """is_empty on principal_preferred_lang: matches the case whose
+    principal has an empty-string lang, not the 'fr' one."""
+    blank = await make_expat_user(preferred_lang="")
+    case_blank = await make_client_case(
+        agency_id=member.agency_id, principal_expat_user_id=blank.id
+    )
+    await make_client_case(agency_id=member.agency_id)  # principal lang "fr"
+    matched = await _tree_ids(
+        cases_client,
+        agent_headers(member),
+        _tree({"field": "principal_preferred_lang", "operator": "is_empty"}),
+    )
+    assert matched == {str(case_blank.id)}
+
+
+async def test_advanced_filters_or_group_and_param_combination(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(member)
+    a = await make_client_case(agency_id=member.agency_id, status="prospect", dest_country="BG")
+    b = await make_client_case(agency_id=member.agency_id, status="validated", dest_country="PY")
+    await make_client_case(agency_id=member.agency_id, status="in_progress", dest_country="DE")
+
+    or_tree = _tree(
+        groups=[
+            {
+                "logic": "or",
+                "conditions": [
+                    {"field": "dest_country", "operator": "eq", "value": "BG"},
+                    {"field": "status", "operator": "eq", "value": "validated"},
+                ],
+            }
+        ]
+    )
+    assert await _tree_ids(cases_client, headers, or_tree) == {str(a.id), str(b.id)}
+
+    # Tree AND legacy param compose: the status param narrows the OR group.
+    from urllib.parse import quote
+
+    combined = await cases_client.get(
+        f"/cases?status=validated&filters={quote(or_tree)}", headers=headers
+    )
+    assert {c["id"] for c in combined.json()["items"]} == {str(b.id)}
+
+
+async def test_advanced_filters_validation_422(
+    cases_client: AsyncClient, member: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(member)
+    from urllib.parse import quote
+
+    bad_json = await cases_client.get("/cases?filters={not-json", headers=headers)
+    assert bad_json.status_code == 422
+    unknown_field = await cases_client.get(
+        f"/cases?filters={quote(_tree({'field': 'ghost', 'operator': 'eq', 'value': 1}))}",
+        headers=headers,
+    )
+    assert unknown_field.status_code == 422
+    bad_date_tree = _tree({"field": "created_at", "operator": "gt", "value": "not-a-date"})
+    bad_date = await cases_client.get(f"/cases?filters={quote(bad_date_tree)}", headers=headers)
+    assert bad_date.status_code == 422
+    between_tree = _tree({"field": "created_at", "operator": "between", "value": ["2026-01-01"]})
+    bad_between = await cases_client.get(f"/cases?filters={quote(between_tree)}", headers=headers)
+    assert bad_between.status_code == 422
