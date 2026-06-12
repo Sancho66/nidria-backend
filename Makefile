@@ -8,7 +8,7 @@ LINT_PATHS := src/ shared/ tests/ scripts/ alembic/env.py
 
 .PHONY: help dev dev-scheduler openapi db-upgrade db-downgrade db-current \
 	db-history db-migration db-reset seed lint format format-check \
-	typecheck test test-cov check
+	typecheck test test-cov check version release
 
 # --- Help ----------------------------------------------------------------
 
@@ -94,3 +94,42 @@ test-cov: ## Test suite with coverage on src/
 
 check: lint format-check typecheck test ## The full pre-push gate in one command
 	@echo "All checks passed — CI should be green."
+
+# --- Versioning (semver) ----------------------------------------------------
+
+version: ## Show current version (latest tag + pyproject, flags drift)
+	@TAG=$$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0); \
+	PY=$$(grep -m1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
+	echo "tag:       $$TAG"; \
+	echo "pyproject: $$PY"; \
+	if [ "$${TAG#v}" != "$$PY" ]; then \
+		echo "WARNING: tag and pyproject.toml version are out of sync"; \
+	fi
+
+release: ## Cut a release: make release type=patch|minor|major (clean main only)
+	@if [ "$(type)" != "patch" ] && [ "$(type)" != "minor" ] && [ "$(type)" != "major" ]; then \
+		echo 'ERROR: make release type=patch|minor|major'; exit 1; \
+	fi
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "ERROR: working tree not clean — commit or stash first."; exit 1; \
+	fi
+	@if [ "$$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then \
+		echo "ERROR: releases are cut from main."; exit 1; \
+	fi
+	@LAST=$$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0); \
+	VER=$${LAST#v}; \
+	MAJOR=$${VER%%.*}; REST=$${VER#*.}; MINOR=$${REST%%.*}; PATCH=$${REST#*.}; \
+	case "$(type)" in \
+		major) MAJOR=$$((MAJOR+1)); MINOR=0; PATCH=0;; \
+		minor) MINOR=$$((MINOR+1)); PATCH=0;; \
+		patch) PATCH=$$((PATCH+1));; \
+	esac; \
+	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
+	echo "Releasing v$$NEW (from $$LAST)..."; \
+	sed -i.bak "s/^version = \".*\"/version = \"$$NEW\"/" pyproject.toml && rm pyproject.toml.bak; \
+	uv lock; \
+	git add pyproject.toml uv.lock; \
+	git commit -m "chore(release): v$$NEW"; \
+	git tag -a "v$$NEW" -m "v$$NEW"; \
+	git push && git push --tags; \
+	echo "Released v$$NEW — the CI deploy will embed it via APP_VERSION."

@@ -27,9 +27,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim AS runtime
 
+ARG APP_VERSION=dev
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    APP_VERSION=${APP_VERSION}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \

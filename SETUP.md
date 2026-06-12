@@ -304,6 +304,8 @@ Sous-étapes :
 
 > **Boot = migrations + seed** : `start.sh` enchaîne `alembic upgrade head` → `seed.py` (mode dérivé d'`ENVIRONMENT` : `production` → `--mode prod`, baseline seule sans comptes démo ; sinon `--mode dev`) → uvicorn. Le seed est idempotent par construction — **un déploiement initial n'a besoin d'aucune étape manuelle**. Échec du seed = boot refusé (exit non-zéro).
 
+> **Versionnage (semver)** : `make release type=patch|minor|major` (depuis `main` propre) bumpe `pyproject.toml` + `uv.lock`, committe `chore(release): vX.Y.Z`, pose le tag annoté et pushe. Le push déclenche la CI, dont le deploy embarque la version (`--build-arg APP_VERSION=$(git describe --tags --always)` → `ENV` Docker → `/health.version`). `make version` affiche tag + pyproject et signale un désalignement.
+
 Checklist finale (les commandes du quotidien vivent dans le `Makefile` — `make help`) :
 - [ ] `make test-cov` — tout passe
 - [ ] `make typecheck` — clean

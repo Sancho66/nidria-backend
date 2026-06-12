@@ -63,13 +63,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: `git describe --tags` needs the release tags.
+          fetch-depth: 0
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only -a nidria-api
+        run: >-
+          flyctl deploy --remote-only -a nidria-api
+          --build-arg APP_VERSION=$(git describe --tags --always)
 
       - name: Healthcheck
         run: |

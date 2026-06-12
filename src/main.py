@@ -130,4 +130,4 @@ async def health(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
             status_code=503,
             content={"status": "unhealthy", "db": str(exc)[:200]},
         )
-    return JSONResponse(content={"status": "ok", "db": "ok"})
+    return JSONResponse(content={"status": "ok", "db": "ok", "version": settings.app_version})
