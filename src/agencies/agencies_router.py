@@ -69,7 +69,8 @@ async def list_members(agent: AgentDep, db: DbDep) -> list[AgencyMemberResponse]
             first_name=member.first_name,
             last_name=member.last_name,
             email=member.email,
-            roles=sorted(role.name for role in member.roles),
+            role=member.role.name,
+            role_id=member.role_id,
         )
         for member in members
     ]

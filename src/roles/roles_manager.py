@@ -16,7 +16,7 @@ from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.roles.roles_repository import RolesRepository
 
-_SYSTEM_ROLE_LOCKED = "System roles are shared across agencies and cannot be modified."
+_SYSTEM_ROLE_LOCKED = "System roles are shared across agencies and cannot be deleted."
 
 
 class RolesManager:
@@ -33,19 +33,6 @@ class RolesManager:
         missing = sorted(set(requested_keys) - effective_permissions(actor))
         if missing:
             raise ForbiddenError(f"Beyond your permission ceiling: {', '.join(missing)}.")
-
-    async def _get_custom_role_in_agency(self, actor: Agent, role_id: uuid.UUID) -> Role:
-        """System role → explicit 403; foreign custom role → 404 (no
-        cross-agency existence leak). Order matters: system roles have
-        agency_id NULL and would 404 under a plain agency filter."""
-        role = await self.repo.get_role_with_permissions(role_id)
-        if role is None:
-            raise NotFoundError("Role not found.")
-        if role.is_system:
-            raise ForbiddenError(_SYSTEM_ROLE_LOCKED)
-        if role.agency_id != actor.agency_id:
-            raise NotFoundError("Role not found.")
-        return role
 
     async def _resolve_permissions(
         self, permission_ids: Sequence[uuid.UUID]
@@ -71,32 +58,20 @@ class RolesManager:
         """Anti-lockout (system integrity, not business preference):
         with no platform superadmin, an agency that loses its last
         agent.manage holder is unrecoverable. The capability is what
-        counts, not the role — a custom role can carry it.
+        counts, not the role.
 
-        Simulates the post-mutation state: `reassigned_agent` replaces
-        one agent's whole role set (PUT members/{id}/roles);
-        `edited_role` replaces one custom role's matrix for everyone
-        holding it (PUT roles/{id}/permissions) — the vector where the
-        sole manager can strip the capability from their OWN role.
-        On the assignment path the caller necessarily holds
-        agent.manage today (binding) and cannot self-modify, but the
-        guard is the invariant, not an analysis of current callers —
-        it must survive impersonation or any future relaxation."""
+        Simulates the post-mutation state on the SINGLE-role model:
+        `reassigned_agent` swaps one agent's role (PUT member role);
+        `edited_role` swaps the permission set of one role for all its
+        wearers (matrix edit, copy-on-write rebind, clone deletion)."""
         agents = await self.repo.list_agents_with_permissions(agency_id)
         for agent in agents:
             if reassigned_agent is not None and agent.id == reassigned_agent[0]:
                 keys = set(reassigned_agent[1])
+            elif edited_role is not None and agent.role_id == edited_role[0]:
+                keys = set(edited_role[1])
             else:
-                keys = {
-                    perm.key
-                    for role in agent.roles
-                    if edited_role is None or role.id != edited_role[0]
-                    for perm in role.permissions
-                }
-                if edited_role is not None and any(
-                    role.id == edited_role[0] for role in agent.roles
-                ):
-                    keys |= edited_role[1]
+                keys = effective_permissions(agent)
             if Permission.AGENT_MANAGE.value in keys:
                 return
         raise ConflictError(
@@ -104,12 +79,53 @@ class RolesManager:
             "(no agent holding agent.manage)."
         )
 
+    # --- copy-on-write -----------------------------------------------------------------
+
+    async def _clone_for_edit(self, actor: Agent, system_role: Role) -> Role:
+        """Copy-on-write: editing a system role never touches it. The
+        agency gets (or reuses) a CUSTOM clone — same name, same matrix,
+        `cloned_from_role_id` set — and every agent of THIS agency
+        wearing the system role is rebound to the clone. The rebind
+        copies the exact permission set, so it can never trip the
+        anti-lockout guard by itself."""
+        existing = await self.repo.get_clone_of(actor.agency_id, system_role.id)
+        if existing is not None:
+            return existing
+        conflicting = await self.repo.get_role_by_name(actor.agency_id, system_role.name)
+        if conflicting is not None:
+            raise ConflictError(
+                f"A custom role named {system_role.name!r} already exists in this "
+                "agency and is not a clone of the system role."
+            )
+        clone = self.repo.add_role(
+            actor.agency_id, system_role.name, cloned_from_role_id=system_role.id
+        )
+        await self.db.flush()
+        await self.repo.replace_role_permissions(clone.id, [p.id for p in system_role.permissions])
+        await self.repo.rebind_agents(actor.agency_id, system_role.id, clone.id)
+        await self.db.flush()
+        await self.db.refresh(clone, ["permissions"])
+        return clone
+
+    async def _editable_role(self, actor: Agent, role_id: uuid.UUID) -> Role:
+        """Resolve a role for mutation: a system role yields its
+        copy-on-write clone; a foreign custom role is a 404 (no
+        cross-agency existence leak)."""
+        role = await self.repo.get_role_with_permissions(role_id)
+        if role is None:
+            raise NotFoundError("Role not found.")
+        if role.is_system:
+            return await self._clone_for_edit(actor, role)
+        if role.agency_id != actor.agency_id:
+            raise NotFoundError("Role not found.")
+        return role
+
     # --- catalogue ---------------------------------------------------------------------
 
     async def list_permissions(self) -> list[PermissionRow]:
         return await self.repo.list_permissions()
 
-    # --- custom roles --------------------------------------------------------------------
+    # --- roles ---------------------------------------------------------------------------
 
     async def get_role(self, actor: Agent, role_id: uuid.UUID) -> Role:
         """Read mirror of the mutations: system role OR own custom;
@@ -129,20 +145,22 @@ class RolesManager:
         await self.db.flush()
         await self.repo.replace_role_permissions(role.id, [p.id for p in permissions])
         await self.db.commit()
-        return await self._reload(role.id)
+        await self.db.refresh(role, ["permissions"])
+        return role
 
     async def rename_role(self, actor: Agent, role_id: uuid.UUID, name: str) -> Role:
-        role = await self._get_custom_role_in_agency(actor, role_id)
+        role = await self._editable_role(actor, role_id)
         if name != role.name:
             await self._assert_name_free(actor.agency_id, name)
             role.name = name
-            await self.db.commit()
-        return await self._reload(role.id)
+        await self.db.commit()
+        await self.db.refresh(role, ["permissions"])
+        return role
 
     async def set_role_permissions(
         self, actor: Agent, role_id: uuid.UUID, permission_ids: Sequence[uuid.UUID]
     ) -> Role:
-        role = await self._get_custom_role_in_agency(actor, role_id)
+        role = await self._editable_role(actor, role_id)
         permissions = await self._resolve_permissions(permission_ids)
         self._assert_within_ceiling(actor, (p.key for p in permissions))
         new_keys = {p.key for p in permissions}
@@ -155,7 +173,29 @@ class RolesManager:
         return role
 
     async def delete_role(self, actor: Agent, role_id: uuid.UUID) -> None:
-        role = await self._get_custom_role_in_agency(actor, role_id)
+        role = await self.repo.get_role_with_permissions(role_id)
+        if role is None:
+            raise NotFoundError("Role not found.")
+        if role.is_system:
+            raise ForbiddenError(_SYSTEM_ROLE_LOCKED)
+        if role.agency_id != actor.agency_id:
+            raise NotFoundError("Role not found.")
+
+        if role.cloned_from_role_id is not None:
+            # Deleting a clone = un-masking: wearers fall back to the
+            # original system role (its matrix), anti-lockout permitting.
+            origin = await self.repo.get_role_with_permissions(role.cloned_from_role_id)
+            if origin is None:
+                raise ConflictError("Origin system role of this clone no longer exists.")
+            origin_keys = {p.key for p in origin.permissions}
+            await self._assert_agency_keeps_manager(
+                actor.agency_id, edited_role=(role.id, origin_keys)
+            )
+            await self.repo.rebind_agents(actor.agency_id, role.id, origin.id)
+            await self.repo.delete_role(role)
+            await self.db.commit()
+            return
+
         assigned = await self.repo.count_role_assignments(role.id)
         if assigned:
             raise ConflictError(f"Role is assigned to {assigned} agent(s).")
@@ -163,58 +203,52 @@ class RolesManager:
         await self.db.commit()
 
     async def duplicate_role(self, actor: Agent, role_id: uuid.UUID, name: str) -> Role:
-        """The 'start from a system role' path: clones the matrix into
-        a CUSTOM role of the actor's agency. Subject to the ceiling —
+        """The explicit 'start from a role' path: clones the matrix into
+        a CUSTOM role of the actor's agency, with NO copy-on-write link
+        (a duplicate never masks its source). Subject to the ceiling —
         otherwise duplicating an oversized role is the copy bypass."""
         source = await self.repo.get_role_with_permissions(role_id)
         if source is None or (not source.is_system and source.agency_id != actor.agency_id):
             raise NotFoundError("Role not found.")
         self._assert_within_ceiling(actor, (p.key for p in source.permissions))
         await self._assert_name_free(actor.agency_id, name)
-        clone = self.repo.add_role(actor.agency_id, name)
+        duplicate = self.repo.add_role(actor.agency_id, name)
         await self.db.flush()
-        await self.repo.replace_role_permissions(clone.id, [p.id for p in source.permissions])
+        await self.repo.replace_role_permissions(duplicate.id, [p.id for p in source.permissions])
         await self.db.commit()
-        return await self._reload(clone.id)
-
-    async def _reload(self, role_id: uuid.UUID) -> Role:
-        role = await self.repo.get_role_with_permissions(role_id)
-        assert role is not None
-        return role
+        await self.db.refresh(duplicate, ["permissions"])
+        return duplicate
 
     # --- member role assignment --------------------------------------------------------
 
-    async def set_member_roles(
-        self, actor: Agent, agent_id: uuid.UUID, role_ids: Sequence[uuid.UUID]
-    ) -> Agent:
+    async def set_member_role(self, actor: Agent, agent_id: uuid.UUID, role_id: uuid.UUID) -> Agent:
         if agent_id == actor.id:
-            raise ForbiddenError("You cannot modify your own roles.")
+            raise ForbiddenError("You cannot modify your own role.")
         target = await self.repo.get_agent_in_agency(actor.agency_id, agent_id)
         if target is None:
             raise NotFoundError("Agent not found.")
 
-        unique_ids = list(dict.fromkeys(role_ids))
-        roles = await self.repo.get_roles_with_permissions(unique_ids)
-        unknown = sorted(str(i) for i in set(unique_ids) - {role.id for role in roles})
-        if unknown:
-            raise ValidationError(f"Unknown role ids: {', '.join(unknown)}.")
-        foreign = sorted(
-            str(role.id)
-            for role in roles
-            if not role.is_system and role.agency_id != actor.agency_id
-        )
-        if foreign:
-            raise ValidationError(f"Roles do not belong to this agency: {', '.join(foreign)}.")
+        role = await self.repo.get_role_with_permissions(role_id)
+        if role is None or (not role.is_system and role.agency_id != actor.agency_id):
+            raise ValidationError("Role does not exist or does not belong to this agency.")
+        if role.is_system:
+            # Masking holds for assignment too: an agent must never wear
+            # a role that GET /roles no longer lists for their agency.
+            clone = await self.repo.get_clone_of(actor.agency_id, role.id)
+            if clone is not None:
+                raise ConflictError(
+                    f"This system role is masked by the agency clone {clone.id} — "
+                    "assign the clone instead."
+                )
 
-        new_keys = {p.key for role in roles for p in role.permissions}
+        new_keys = {p.key for p in role.permissions}
         self._assert_within_ceiling(actor, new_keys)
         await self._assert_agency_keeps_manager(
             actor.agency_id, reassigned_agent=(target.id, new_keys)
         )
 
-        await self.repo.replace_agent_roles(target.id, [role.id for role in roles])
+        target.role_id = role.id
         await self.db.commit()
-        # Explicit refresh: with expire_on_commit=False the identity map
-        # would hand back the stale pre-edit collection.
-        await self.db.refresh(target, ["roles"])
+        # Explicit refresh: the role relationship must reflect the swap.
+        await self.db.refresh(target, ["role"])
         return target

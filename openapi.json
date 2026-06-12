@@ -4465,6 +4465,7 @@
           "roles"
         ],
         "summary": "Rename Role",
+        "description": "On a system role this is copy-on-write: the agency gets a custom\nclone (rebinding its wearers) and the rename lands on the clone.",
         "operationId": "rename_role_agencies_me_roles__role_id__patch",
         "security": [
           {
@@ -4569,6 +4570,7 @@
           "roles"
         ],
         "summary": "Set Role Permissions",
+        "description": "Copy-on-write on system roles, same as PATCH.",
         "operationId": "set_role_permissions_agencies_me_roles__role_id__permissions_put",
         "security": [
           {
@@ -4679,13 +4681,13 @@
         }
       }
     },
-    "/agencies/me/members/{agent_id}/roles": {
+    "/agencies/me/members/{agent_id}/role": {
       "put": {
         "tags": [
           "roles"
         ],
-        "summary": "Set Member Roles",
-        "operationId": "set_member_roles_agencies_me_members__agent_id__roles_put",
+        "summary": "Set Member Role",
+        "operationId": "set_member_role_agencies_me_members__agent_id__role_put",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4708,7 +4710,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MemberRolesSetRequest"
+                "$ref": "#/components/schemas/MemberRoleSetRequest"
               }
             }
           }
@@ -4966,12 +4968,14 @@
             "type": "string",
             "title": "Email"
           },
-          "roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Roles"
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
           }
         },
         "type": "object",
@@ -4980,7 +4984,8 @@
           "first_name",
           "last_name",
           "email",
-          "roles"
+          "role",
+          "role_id"
         ],
         "title": "AgencyMemberResponse"
       },
@@ -5145,12 +5150,9 @@
             "format": "uuid",
             "title": "Agency Id"
           },
-          "roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Roles"
+          "role": {
+            "type": "string",
+            "title": "Role"
           },
           "effective_permissions": {
             "items": {
@@ -5177,7 +5179,7 @@
           "last_name",
           "email",
           "agency_id",
-          "roles",
+          "role",
           "effective_permissions"
         ],
         "title": "AgentMeResponse"
@@ -7192,22 +7194,19 @@
         ],
         "title": "LogoutRequest"
       },
-      "MemberRolesSetRequest": {
+      "MemberRoleSetRequest": {
         "properties": {
-          "role_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Role Ids"
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
           }
         },
         "type": "object",
         "required": [
-          "role_ids"
+          "role_id"
         ],
-        "title": "MemberRolesSetRequest"
+        "title": "MemberRoleSetRequest"
       },
       "MessageResponse": {
         "properties": {
@@ -7830,6 +7829,18 @@
             "type": "boolean",
             "title": "Is System"
           },
+          "cloned_from_role_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloned From Role Id"
+          },
           "permissions": {
             "items": {
               "$ref": "#/components/schemas/PermissionResponse"
@@ -7843,10 +7854,11 @@
           "id",
           "name",
           "is_system",
+          "cloned_from_role_id",
           "permissions"
         ],
         "title": "RoleDetailResponse",
-        "description": "Mutation responses carry the full matrix so the Settings screen\nnever needs a follow-up GET."
+        "description": "Mutation responses carry the full matrix so the Settings screen\nnever needs a follow-up GET. `cloned_from_role_id` set = this is\nthe agency's copy-on-write clone of a system role."
       },
       "RoleDuplicateRequest": {
         "properties": {
@@ -7909,13 +7921,26 @@
           "is_system": {
             "type": "boolean",
             "title": "Is System"
+          },
+          "cloned_from_role_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloned From Role Id"
           }
         },
         "type": "object",
         "required": [
           "id",
           "name",
-          "is_system"
+          "is_system",
+          "cloned_from_role_id"
         ],
         "title": "RoleResponse"
       },

@@ -31,7 +31,7 @@ def docs_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def member(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["member"]])
+    return await make_agent(role=system_roles["member"])
 
 
 @pytest_asyncio.fixture
@@ -306,7 +306,7 @@ async def test_validation_requires_permission(
             f"/cases/{case.id}/documents", headers=agent_headers(member), files=_file()
         )
     ).json()
-    viewer = await make_agent(agency_id=member.agency_id, roles=[system_roles["viewer"]])
+    viewer = await make_agent(agency_id=member.agency_id, role=system_roles["viewer"])
     response = await docs_client.patch(
         f"/cases/{case.id}/documents/{uploaded['id']}/validation",
         headers=agent_headers(viewer),
@@ -399,7 +399,7 @@ async def test_agent_documents_scoped_to_agency(
 ) -> None:
     # Foreign agent WITH case.view: the matrix passes, tenant scoping
     # in the Manager must still seal the case (404).
-    foreign_agent = await make_agent(roles=[system_roles["member"]])
+    foreign_agent = await make_agent(role=system_roles["member"])
     response = await docs_client.get(
         f"/cases/{case.id}/documents", headers=agent_headers(foreign_agent)
     )

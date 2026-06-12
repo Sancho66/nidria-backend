@@ -36,7 +36,6 @@ from shared.models import (  # noqa: E402
     ActivityLog,
     Agency,
     Agent,
-    AgentRole,
     CaseStepProgress,
     ClientCase,
     ExpatUser,
@@ -85,6 +84,7 @@ async def get_or_create_agent(
     if agent is None:
         agent = Agent(
             agency_id=agency.id,
+            role_id=role.id,
             first_name=first_name,
             last_name=last_name,
             email=email,
@@ -92,7 +92,6 @@ async def get_or_create_agent(
         )
         db.add(agent)
         await db.flush()
-        db.add(AgentRole(agent_id=agent.id, role_id=role.id))
     elif (agent.first_name, agent.last_name) != (first_name, last_name):
         # Seed-owned demo identity: the seed stays the source of truth
         # for these rows' NAMES (a rename in the seed must reach

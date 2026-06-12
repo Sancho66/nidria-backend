@@ -124,7 +124,7 @@ Model  →  Schema  →  Repository  →  Manager  →  Router
 
 ## PARTIE 4 — MODÈLE DE DONNÉES
 
-**21 tables cœur + 5 tables RBAC.** Une seule base PostgreSQL. UUID en PK partout, `created_at`/`updated_at` via `TimestampMixin`.
+**22 tables cœur + 4 tables RBAC.** Une seule base PostgreSQL. UUID en PK partout, `created_at`/`updated_at` via `TimestampMixin`.
 
 Pièce centrale : `client_case` (le dossier) est le hub. `agency` est la racine multi-tenant.
 
@@ -133,7 +133,7 @@ Pièce centrale : `client_case` (le dossier) est le hub. `agency` est la racine 
 > **Deux tables users distinctes, deux flux d'auth.** Ce n'est PAS deux bases (décision Alex : une seule base). La séparation se joue sur l'**identité**, pas l'infra. Un token expatrié ne peut pas atteindre un endpoint agent. En code, `Agent` et `ExpatUser` partagent un `PersonNameMixin` (first_name, last_name, email) — DRY au niveau code, pas une table commune.
 
 - **`agency`** — `id`, `name`, `slug` (unique), `settings` (JSONB). Le tenant.
-- **`agent`** — `id`, `agency_id` FK, first/last_name, `email` (unique), `password_hash`. Rôles via `agent_role` (PARTIE 5), **pas** d'enum `role` en dur sur la table.
+- **`agent`** — `id`, `agency_id` FK, `role_id` FK (**un seul rôle par agent**, modèle Prism — PARTIE 5), first/last_name, `email` (unique), `password_hash`. **Pas** d'enum `role` en dur sur la table.
 - **`agent_invitation`** — `id`, `agency_id` FK, `email`, `role_id` FK, `token` (unique), `status` (PENDING/ACCEPTED/EXPIRED), `invited_by_agent_id` FK, `expires_at`, `accepted_at`.
 - **`expat_user`** — `id`, first/last_name, `email` (unique), `preferred_lang`, `password_hash`, `activated_at`. **Pas d'`agency_id`** : un expatrié peut avoir des dossiers chez plusieurs agences. Le lien se fait via `client_case.principal_expat_user_id`.
 - **`case_invitation`** — `id`, `case_id` FK, `email`, `token` (unique), `status`, `expires_at` (14 j), `accepted_at`. **La liaison au dossier, c'est `principal_expat_user_id`, posée à la création du dossier ; l'invitation est notification + trace d'audit, jamais le mécanisme de liaison.** Envoyée à chaque création de dossier, expat nouveau (mail d'activation) ou existant (mail « un dossier vous attend » ; s'il ne clique jamais, elle expire sans conséquence).
@@ -202,7 +202,8 @@ class Permission(str, Enum):
 permission         (id, key UNIQUE, label, category)                       -- synchronisée depuis l'enum
 role               (id, agency_id NULL, name, is_system)                    -- agency_id NULL = rôle système partagé
 role_permission    (role_id FK, permission_id FK)                           -- LA matrice, éditable
-agent_role         (agent_id FK, role_id FK)                                -- M2M : un agent cumule plusieurs rôles
+-- l'affectation vit sur agent.role_id (FK role, NOT NULL) : UN rôle par agent
+-- role.cloned_from_role_id (FK role, NULL) : lien copy-on-write d'un clone vers son rôle système d'origine
 protected_resource (id, method, route, audience, permission_id NULL)        -- binding route→audience(+permission), en data
 ```
 
@@ -210,8 +211,9 @@ protected_resource (id, method, route, audience, permission_id NULL)        -- b
 
 - **Rôles système** (`agency_id` NULL, `is_system=true`) : admin / member / viewer / case_manager livrés par défaut, partagés par toutes les agences (pas dupliqués).
 - **Rôles custom** (`agency_id` rempli) : une agence crée les siens.
-- **Validation** : `agent_role.role_id` pointe un rôle système OU un rôle de la propre agence de l'agent (jamais d'une autre).
-- **Cumul** : `agent_role` est une M2M → un agent peut cumuler plusieurs rôles. `effective_permissions` = union des permissions de tous ses rôles.
+- **Validation** : `agent.role_id` pointe un rôle système (non masqué) OU un rôle de la propre agence de l'agent (jamais d'une autre).
+- **Un rôle unique** : `effective_permissions` = les permissions du rôle de l'agent — pas de cumul, pas d'union.
+- **Copy-on-write des rôles système** : une agence qui édite un rôle système (PATCH nom / PUT matrice) obtient un CLONE custom (`cloned_from_role_id`) avec rebind de ses agents ; le clone **masque** son origine pour cette agence (listing ET assignation — assigner l'original masqué → 409 nommant le clone) ; DELETE du clone = retour des agents sur le rôle système (sauf anti-lockout). Les rôles système ne sont JAMAIS modifiés en base par une agence — le seed les réaligne au boot sans risque.
 
 ### L'enforcement (dépendance globale, ne nomme aucune permission)
 
@@ -322,7 +324,7 @@ nidria-backend/
 │       ├── client_case.py, family_member.py, case_note.py, invitation.py
 │       ├── journey.py, case_step_progress.py
 │       ├── reminder.py, message_template.py, document.py, activity.py, job.py
-│       └── rbac.py                   # permission, role, role_permission, agent_role, protected_resource
+│       └── rbac.py                   # permission, role (+cloned_from), role_permission, protected_resource
 ├── scripts/
 │   └── seed.py                       # permissions, rôles système+matrice, bindings, agences, 3 dossiers
 ├── tests/

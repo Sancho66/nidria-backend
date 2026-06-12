@@ -53,7 +53,7 @@ def portal_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def manager_agent(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["case_manager"]])
+    return await make_agent(role=system_roles["case_manager"])
 
 
 @pytest_asyncio.fixture

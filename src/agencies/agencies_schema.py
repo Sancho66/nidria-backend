@@ -27,7 +27,8 @@ class AgencyMemberResponse(BaseModel):
     first_name: str
     last_name: str
     email: str
-    roles: list[str]
+    role: str
+    role_id: uuid.UUID
 
 
 class RoleResponse(BaseModel):
@@ -36,6 +37,7 @@ class RoleResponse(BaseModel):
     id: uuid.UUID
     name: str
     is_system: bool
+    cloned_from_role_id: uuid.UUID | None
 
 
 class AgentInvitationCreateRequest(BaseModel):

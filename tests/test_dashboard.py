@@ -17,7 +17,7 @@ def dash_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def viewer(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["viewer"]])
+    return await make_agent(role=system_roles["viewer"])
 
 
 async def test_dashboard_counts_scoped(

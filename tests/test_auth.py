@@ -70,12 +70,12 @@ async def test_agent_me_payload(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    agent = await make_agent(roles=[system_roles["member"]])
+    agent = await make_agent(role=system_roles["member"])
     response = await auth_client.get("/auth/agent/me", headers=agent_headers(agent))
     assert response.status_code == 200
     body = response.json()
     assert body["agency_id"] == str(agent.agency_id)
-    assert body["roles"] == ["member"]
+    assert body["role"] == "member"
     assert "reminder.approve" in body["effective_permissions"]
     assert "note.view_confidential" not in body["effective_permissions"]
 

@@ -34,7 +34,7 @@ def imp_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["admin"]], first_name="Alice", last_name="Admin")
+    return await make_agent(role=system_roles["admin"], first_name="Alice", last_name="Admin")
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -66,7 +66,7 @@ async def test_impersonate_agent_emission_and_me_banner(
     agent_headers: AuthHeaders,
 ) -> None:
     target = await make_agent(
-        agency_id=admin.agency_id, roles=[system_roles["member"]], first_name="Tom"
+        agency_id=admin.agency_id, role=system_roles["member"], first_name="Tom"
     )
     token = await _impersonate_agent(imp_client, agent_headers(admin), target.id)
 
@@ -143,7 +143,7 @@ async def test_without_permission_403_including_case_manager(
     pins that agent.impersonate was added to its exclusion set and not
     silently inherited."""
     for role_name in ("member", "viewer", "case_manager"):
-        actor = await make_agent(roles=[system_roles[role_name]])
+        actor = await make_agent(role=system_roles[role_name])
         colleague = await make_agent(agency_id=actor.agency_id)
         response = await imp_client.post(
             f"/agencies/me/members/{colleague.id}/impersonate",
@@ -200,7 +200,7 @@ async def test_chaining_403_on_both_endpoints(
 ) -> None:
     """Even impersonating an ADMIN (who holds agent.impersonate), the
     claim forbids issuing further tokens."""
-    other_admin = await make_agent(agency_id=admin.agency_id, roles=[system_roles["admin"]])
+    other_admin = await make_agent(agency_id=admin.agency_id, role=system_roles["admin"])
     third = await make_agent(agency_id=admin.agency_id)
     expat = await make_expat_user()
     await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
@@ -264,7 +264,7 @@ async def test_denied_surface_under_impersonation(
     """Impersonating an ADMIN: the target's permissions would allow all
     of this — the claim alone forbids it (structure mutations + session
     lifecycle), with attribution poisoning as the criterion."""
-    other_admin = await make_agent(agency_id=admin.agency_id, roles=[system_roles["admin"]])
+    other_admin = await make_agent(agency_id=admin.agency_id, role=system_roles["admin"])
     third = await make_agent(agency_id=admin.agency_id)
     token = await _impersonate_agent(imp_client, agent_headers(admin), other_admin.id)
     headers = _bearer(token)
@@ -277,7 +277,7 @@ async def test_denied_surface_under_impersonation(
             {"email": "x@example.com", "role_id": str(uuid.uuid4())},
         ),
         ("POST", "/agencies/me/roles", {"name": "x", "permission_ids": []}),
-        ("PUT", f"/agencies/me/members/{third.id}/roles", {"role_ids": []}),
+        ("PUT", f"/agencies/me/members/{third.id}/role", {"role_id": str(uuid.uuid4())}),
         ("POST", "/auth/agent/logout", {"refresh_token": "whatever"}),
     ]
     for method, url, payload in attempts:
@@ -329,7 +329,7 @@ async def test_no_elevation_target_permissions_apply(
     """Step-18 invariant confirmed: an admin impersonating a
     case_manager works with the TARGET's permissions — role.manage is
     refused, the ceiling cannot be bypassed from below or above."""
-    case_manager = await make_agent(agency_id=admin.agency_id, roles=[system_roles["case_manager"]])
+    case_manager = await make_agent(agency_id=admin.agency_id, role=system_roles["case_manager"])
     token = await _impersonate_agent(imp_client, agent_headers(admin), case_manager.id)
     response = await imp_client.get("/permissions", headers=_bearer(token))
     assert response.status_code == 403  # target lacks role.manage; admin's rights don't leak

@@ -20,7 +20,12 @@ class Permission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """`agency_id` NULL = system role (admin/member/viewer/case_manager),
     shared by all agencies. Non-NULL = agency custom role.
-    `nulls_not_distinct` so two system roles can't share a name."""
+    `nulls_not_distinct` so two system roles can't share a name.
+
+    `cloned_from_role_id` = copy-on-write link: an agency that edits a
+    system role gets a custom CLONE carrying this FK; the clone masks
+    its origin (listing AND assignment) for that agency, robust to
+    renames. Plain customs and explicit duplicates carry NULL."""
 
     __tablename__ = "role"
     __table_args__ = (UniqueConstraint("agency_id", "name", postgresql_nulls_not_distinct=True),)
@@ -30,6 +35,9 @@ class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_system: Mapped[bool] = mapped_column(default=False, nullable=False)
+    cloned_from_role_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("role.id", ondelete="SET NULL"), index=True
+    )
 
     permissions: Mapped[list[Permission]] = relationship(Permission, secondary="role_permission")
 
@@ -44,20 +52,6 @@ class RolePermission(Base):
     )
     permission_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("permission.id", ondelete="CASCADE"), primary_key=True
-    )
-
-
-class AgentRole(Base):
-    """M2M: an agent can hold several roles; effective_permissions is
-    the union across them."""
-
-    __tablename__ = "agent_role"
-
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("agent.id", ondelete="CASCADE"), primary_key=True
-    )
-    role_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("role.id", ondelete="CASCADE"), primary_key=True
     )
 
 

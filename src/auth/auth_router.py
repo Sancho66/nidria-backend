@@ -101,7 +101,7 @@ async def agent_me(
         last_name=agent.last_name,
         email=agent.email,
         agency_id=agent.agency_id,
-        roles=sorted(role.name for role in agent.roles),
+        role=agent.role.name,
         effective_permissions=sorted(effective_permissions(agent)),
         impersonator=await _impersonator_info(request, db),
     )

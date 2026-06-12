@@ -83,7 +83,7 @@ async def get_current_agent(
     stmt = (
         select(Agent)
         .where(Agent.id == agent_id)
-        .options(selectinload(Agent.roles).selectinload(Role.permissions))
+        .options(selectinload(Agent.role).selectinload(Role.permissions))
     )
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:

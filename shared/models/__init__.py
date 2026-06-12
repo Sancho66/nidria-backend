@@ -15,7 +15,7 @@ from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.job import JobConfig, JobRun
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
 from shared.models.message_template import MessageTemplate
-from shared.models.rbac import AgentRole, Permission, ProtectedResource, Role, RolePermission
+from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
 
 __all__ = [
@@ -23,7 +23,6 @@ __all__ = [
     "Agency",
     "Agent",
     "AgentInvitation",
-    "AgentRole",
     "Base",
     "CaseInvitation",
     "CaseNote",

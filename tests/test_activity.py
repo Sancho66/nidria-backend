@@ -19,7 +19,7 @@ def activity_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def member(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["member"]])
+    return await make_agent(role=system_roles["member"])
 
 
 @pytest_asyncio.fixture
@@ -90,7 +90,7 @@ async def test_activity_scoped_and_audience_sealed(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    foreign = await make_agent(roles=[system_roles["member"]])  # other agency
+    foreign = await make_agent(role=system_roles["member"])  # other agency
     assert (
         await activity_client.get(f"/cases/{busy_case.id}/activity", headers=agent_headers(foreign))
     ).status_code == 404

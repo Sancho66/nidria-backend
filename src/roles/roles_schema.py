@@ -29,15 +29,17 @@ class RoleDuplicateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
-class MemberRolesSetRequest(BaseModel):
-    role_ids: list[uuid.UUID]
+class MemberRoleSetRequest(BaseModel):
+    role_id: uuid.UUID
 
 
 class RoleDetailResponse(BaseModel):
     """Mutation responses carry the full matrix so the Settings screen
-    never needs a follow-up GET."""
+    never needs a follow-up GET. `cloned_from_role_id` set = this is
+    the agency's copy-on-write clone of a system role."""
 
     id: uuid.UUID
     name: str
     is_system: bool
+    cloned_from_role_id: uuid.UUID | None
     permissions: list[PermissionResponse]

@@ -128,16 +128,17 @@ class AgenciesManager:
             raise ConflictError(_EMAIL_TAKEN)
 
         # The agent is created in the INVITATION's agency — never in
-        # any context derived from the caller.
+        # any context derived from the caller. Single-role model: the
+        # invitation's role_id becomes the agent's role directly.
         agent = self.repo.add_agent(
             agency_id=invitation.agency_id,
+            role_id=invitation.role_id,
             email=invitation.email,
             first_name=first_name,
             last_name=last_name,
             password_hash=hash_password(password),
         )
         await self.db.flush()
-        self.repo.add_agent_role(agent.id, invitation.role_id)
         invitation.status = InvitationStatus.ACCEPTED
         invitation.accepted_at = now
 

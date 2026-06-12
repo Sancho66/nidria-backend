@@ -25,7 +25,7 @@ class AuthRepository:
         stmt = (
             select(Agent)
             .where(Agent.email == email)
-            .options(selectinload(Agent.roles).selectinload(Role.permissions))
+            .options(selectinload(Agent.role).selectinload(Role.permissions))
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

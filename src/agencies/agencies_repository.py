@@ -1,14 +1,14 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.invitation import AgentInvitation
-from shared.models.rbac import AgentRole, Role
+from shared.models.rbac import Role
 from src.core.enums import InvitationStatus
 
 
@@ -25,16 +25,29 @@ class AgenciesRepository:
     async def list_agents_with_roles(self, agency_id: uuid.UUID) -> list[Agent]:
         stmt = (
             select(Agent)
-            .options(selectinload(Agent.roles))
+            .options(selectinload(Agent.role))
             .where(Agent.agency_id == agency_id)
             .order_by(Agent.last_name, Agent.first_name)
         )
         return list((await self.db.execute(stmt)).scalars())
 
     async def list_roles(self, agency_id: uuid.UUID) -> list[Role]:
+        """System roles + the agency's customs — minus the system roles
+        MASKED by one of the agency's copy-on-write clones (the clone is
+        in the list, its origin is not)."""
+        masked = (
+            select(Role.cloned_from_role_id)
+            .where(Role.agency_id == agency_id, Role.cloned_from_role_id.is_not(None))
+            .scalar_subquery()
+        )
         stmt = (
             select(Role)
-            .where(or_(Role.is_system, Role.agency_id == agency_id))
+            .where(
+                or_(
+                    Role.agency_id == agency_id,
+                    and_(Role.is_system, Role.id.not_in(masked)),
+                )
+            )
             .order_by(Role.is_system.desc(), Role.name)
         )
         return list((await self.db.execute(stmt)).scalars())
@@ -100,6 +113,7 @@ class AgenciesRepository:
         self,
         *,
         agency_id: uuid.UUID,
+        role_id: uuid.UUID,
         email: str,
         first_name: str,
         last_name: str,
@@ -107,6 +121,7 @@ class AgenciesRepository:
     ) -> Agent:
         agent = Agent(
             agency_id=agency_id,
+            role_id=role_id,
             email=email,
             first_name=first_name,
             last_name=last_name,
@@ -114,6 +129,3 @@ class AgenciesRepository:
         )
         self.db.add(agent)
         return agent
-
-    def add_agent_role(self, agent_id: uuid.UUID, role_id: uuid.UUID) -> None:
-        self.db.add(AgentRole(agent_id=agent_id, role_id=role_id))

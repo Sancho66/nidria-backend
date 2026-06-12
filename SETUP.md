@@ -81,7 +81,7 @@ Sous-étapes (crée TOUS les modèles d'un coup, voir CLAUDE.md PARTIE 4) :
 - `shared/models/message_template.py` — `MessageTemplate`
 - `shared/models/document.py` — `Document`
 - `shared/models/activity.py` — `ActivityLog`
-- `shared/models/rbac.py` — `Permission`, `Role`, `RolePermission`, `AgentRole`, `ProtectedResource`
+- `shared/models/rbac.py` — `Permission`, `Role` (+`cloned_from_role_id`), `RolePermission`, `ProtectedResource` (l'affectation vit sur `agent.role_id`)
 
 Update `shared/models/__init__.py` + `alembic/env.py`.
 Migration : `alembic revision --autogenerate -m "create_all_tables"` puis `alembic upgrade head`.
@@ -100,12 +100,12 @@ Sous-étapes :
 - `src/core/rbac/permissions.py` : l'enum `Permission` (catalogue) + `sync_permissions(db)` (insert des manquantes au boot, jamais de delete).
 - `src/core/rbac/enforcement.py` : `enforce()` en **dépendance FastAPI globale** (`FastAPI(dependencies=[Depends(enforce)])` — PAS un middleware Starlette : le template de route n'est dans le scope qu'après routing). Résout le binding (`protected_resource`) sur le **template de route**, deny par défaut si non lié ; branche sur **`audience`** : PUBLIC passe ; AGENT → token agent + check `effective_permissions` ; EXPAT → token expat valide, pas de matrice (ownership en Manager). Stocke l'acteur résolu dans `request.state.actor`.
 - `src/core/rbac/integrity.py` : `assert_all_routes_bound(app, db)` — **plante le démarrage** si une route déclarée (hors whitelist infra `/ping`, `/health`, `/docs`, `/openapi.json`, `/redoc`) n'a pas de binding.
-- Résolution `effective_permissions` (union des rôles via `agent_role` → `role_permission`).
+- Résolution `effective_permissions` (les permissions du rôle unique de l'agent — `agent.role_id` → `role_permission` ; modèle Prism, pas d'union).
 - Brancher dans `src/main.py` lifespan : `sync_permissions` → `assert_all_routes_bound` → (scheduler plus tard).
 - Harnais : fixture qui **seed la baseline RBAC** (catalogue + rôles système + matrice + bindings) sur la DB testcontainer — le boot check tourne aussi en test, jamais désactivé.
 
 Tests (`tests/test_rbac.py`) :
-- route non bindée → 403 ; binding `audience=PUBLIC` → passe sans token ; AGENT avec permission → 200 ; AGENT sans permission → 403 ; binding EXPAT + token expat → passe (pas de matrice) ; agent multi-rôles → union correcte ; **`assert_all_routes_bound` lève si binding manquant** (et ignore la whitelist infra).
+- route non bindée → 403 ; binding `audience=PUBLIC` → passe sans token ; AGENT avec permission → 200 ; AGENT sans permission → 403 ; binding EXPAT + token expat → passe (pas de matrice) ; permissions = exactement la matrice du rôle unique ; **`assert_all_routes_bound` lève si binding manquant** (et ignore la whitelist infra).
 
 **Vérif APRÈS** : `pytest tests/test_rbac.py`, `mypy`/`ruff` clean.
 

@@ -73,7 +73,7 @@ async def test_patch_my_agency_as_admin(
     agent_headers: AuthHeaders,
 ) -> None:
     agency = await make_agency(name="Old Name", slug="stable-slug")
-    admin = await make_agent(agency_id=agency.id, roles=[system_roles["admin"]])
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"])
     response = await agencies_client.patch(
         "/agencies/me",
         headers=agent_headers(admin),
@@ -93,7 +93,7 @@ async def test_patch_my_agency_without_permission_403(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     response = await agencies_client.patch(
         "/agencies/me", headers=agent_headers(member), json={"name": "Hacked"}
     )
@@ -109,11 +109,11 @@ async def test_patch_does_not_leak_cross_tenant(
 ) -> None:
     agency_a = await make_agency(name="A")
     agency_b = await make_agency(name="B")
-    admin_a = await make_agent(agency_id=agency_a.id, roles=[system_roles["admin"]])
+    admin_a = await make_agent(agency_id=agency_a.id, role=system_roles["admin"])
     await agencies_client.patch(
         "/agencies/me", headers=agent_headers(admin_a), json={"name": "A renamed"}
     )
-    admin_b = await make_agent(agency_id=agency_b.id, roles=[system_roles["admin"]])
+    admin_b = await make_agent(agency_id=agency_b.id, role=system_roles["admin"])
     response = await agencies_client.get("/agencies/me", headers=agent_headers(admin_b))
     assert response.json()["name"] == "B"
 
@@ -127,7 +127,7 @@ async def test_create_invitation_with_system_role(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     response = await agencies_client.post(
         "/agencies/me/invitations",
         headers=agent_headers(admin),
@@ -154,7 +154,7 @@ async def test_create_invitation_with_own_custom_role(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     custom = await make_role(permissions=[Permission.CASE_VIEW], agency_id=admin.agency_id)
     response = await agencies_client.post(
         "/agencies/me/invitations",
@@ -172,7 +172,7 @@ async def test_create_invitation_foreign_or_unknown_role_422(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     other_agency = await make_agency()
     foreign_role = await make_role(permissions=[Permission.CASE_VIEW], agency_id=other_agency.id)
     foreign = await agencies_client.post(
@@ -197,7 +197,7 @@ async def test_create_invitation_email_already_agent_409(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     # Same agency.
     await make_agent(agency_id=admin.agency_id, email="taken@example.com")
     same_agency = await agencies_client.post(
@@ -225,7 +225,7 @@ async def test_create_invitation_duplicate_pending_409(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     payload = {"email": "dup@example.com", "role_id": str(system_roles["member"].id)}
     first = await agencies_client.post(
         "/agencies/me/invitations", headers=agent_headers(admin), json=payload
@@ -243,7 +243,7 @@ async def test_create_invitation_requires_agent_manage(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     response = await agencies_client.post(
         "/agencies/me/invitations",
         headers=agent_headers(member),
@@ -263,7 +263,7 @@ async def test_list_invitations_scoped_to_agency(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     other_agency = await make_agency()
     mine = await make_agent_invitation(agency_id=admin.agency_id, role_id=system_roles["member"].id)
     await make_agent_invitation(agency_id=other_agency.id, role_id=system_roles["member"].id)
@@ -281,7 +281,7 @@ async def test_cancel_invitation_then_accept_fails(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     invitation = await make_agent_invitation(
         agency_id=admin.agency_id, role_id=system_roles["member"].id
     )
@@ -312,7 +312,7 @@ async def test_cancel_foreign_invitation_404(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]])
+    admin = await make_agent(role=system_roles["admin"])
     other_agency = await make_agency()
     foreign = await make_agent_invitation(
         agency_id=other_agency.id, role_id=system_roles["member"].id
@@ -358,7 +358,7 @@ async def test_accept_creates_agent_in_invitations_agency(
     assert me.status_code == 200
     body = me.json()
     assert body["agency_id"] == str(agency_a.id)
-    assert body["roles"] == ["member"]
+    assert body["role"] == "member"
     assert "reminder.approve" in body["effective_permissions"]
 
     invitation_row = await db_session.get(AgentInvitation, invitation.id)
@@ -483,10 +483,10 @@ async def test_list_members_with_roles_sorted_by_name(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    admin = await make_agent(roles=[system_roles["admin"]], first_name="Zoe", last_name="Zima")
+    admin = await make_agent(role=system_roles["admin"], first_name="Zoe", last_name="Zima")
     colleague = await make_agent(
         agency_id=admin.agency_id,
-        roles=[system_roles["member"], system_roles["viewer"]],
+        role=system_roles["member"],
         first_name="Ana",
         last_name="Abad",
     )
@@ -495,8 +495,9 @@ async def test_list_members_with_roles_sorted_by_name(
     body = response.json()
     assert [m["email"] for m in body] == [colleague.email, admin.email]
     by_id = {m["id"]: m for m in body}
-    assert by_id[str(colleague.id)]["roles"] == ["member", "viewer"]
-    assert by_id[str(admin.id)]["roles"] == ["admin"]
+    assert by_id[str(colleague.id)]["role"] == "member"
+    assert by_id[str(colleague.id)]["role_id"] == str(system_roles["member"].id)
+    assert by_id[str(admin.id)]["role"] == "admin"
     assert by_id[str(colleague.id)]["first_name"] == "Ana"
     assert by_id[str(colleague.id)]["last_name"] == "Abad"
 
@@ -522,7 +523,7 @@ async def test_member_accesses_reference_lists_token_only(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     for path in ("/agencies/me/members", "/agencies/me/roles"):
         response = await agencies_client.get(path, headers=agent_headers(member))
         assert response.status_code == 200
@@ -539,7 +540,7 @@ async def test_list_roles_system_plus_own_custom_only(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    agent = await make_agent(roles=[system_roles["member"]])
+    agent = await make_agent(role=system_roles["member"])
     custom = await make_role(name="visa-specialist", agency_id=agent.agency_id)
     other_agency = await make_agency()
     await make_role(name="foreign-role", agency_id=other_agency.id)

@@ -25,7 +25,7 @@ def journeys_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 @pytest_asyncio.fixture
 async def configurer(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
     """case_manager: holds journey.configure without being admin."""
-    return await make_agent(roles=[system_roles["case_manager"]])
+    return await make_agent(role=system_roles["case_manager"])
 
 
 async def _create_template_with_steps(
@@ -63,7 +63,7 @@ async def test_create_template_member_403(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     response = await journeys_client.post(
         "/journeys", headers=agent_headers(member), json={"name": "Nope"}
     )
@@ -92,7 +92,7 @@ async def test_member_can_read_templates(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     template = await make_journey_template(agency_id=member.agency_id)
     listing = await journeys_client.get("/journeys", headers=agent_headers(member))
     assert listing.status_code == 200

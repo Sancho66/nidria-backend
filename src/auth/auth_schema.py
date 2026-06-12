@@ -41,7 +41,7 @@ class AgentMeResponse(BaseModel):
     last_name: str
     email: str
     agency_id: uuid.UUID
-    roles: list[str]
+    role: str
     effective_permissions: list[str]
     impersonator: ImpersonatorInfo | None = None
 

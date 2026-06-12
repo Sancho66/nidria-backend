@@ -122,7 +122,7 @@ async def test_agent_with_permission_passes(
     agent_headers: AuthHeaders,
 ) -> None:
     role = await make_role(permissions=[Permission.CASE_VIEW])
-    agent = await make_agent(roles=[role])
+    agent = await make_agent(role=role)
     response = await rbac_client.get("/t/agent", headers=agent_headers(agent))
     assert response.status_code == 200
     assert response.json() == {"actor_id": str(agent.id)}
@@ -135,7 +135,7 @@ async def test_agent_without_permission_403(
     agent_headers: AuthHeaders,
 ) -> None:
     role = await make_role(permissions=[Permission.REMINDER_CREATE])
-    agent = await make_agent(roles=[role])
+    agent = await make_agent(role=role)
     response = await rbac_client.get("/t/agent", headers=agent_headers(agent))
     assert response.status_code == 403
 
@@ -145,20 +145,23 @@ async def test_agent_missing_token_401(rbac_client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
-async def test_multi_role_union(
+async def test_single_role_permissions_are_exact(
     rbac_client: AsyncClient,
     make_agent: MakeAgent,
     make_role: MakeRole,
     agent_headers: AuthHeaders,
 ) -> None:
+    """Single-role model: an agent's permissions are EXACTLY their
+    role's matrix — nothing accumulates from anywhere else."""
     role_view = await make_role(permissions=[Permission.CASE_VIEW])
-    role_approve = await make_role(permissions=[Permission.REMINDER_APPROVE])
-    multi = await make_agent(roles=[role_view, role_approve])
-    single = await make_agent(roles=[role_view])
+    role_both = await make_role(permissions=[Permission.CASE_VIEW, Permission.REMINDER_APPROVE])
+    viewer = await make_agent(role=role_view)
+    approver = await make_agent(role=role_both)
 
-    assert (await rbac_client.get("/t/agent", headers=agent_headers(multi))).status_code == 200
-    assert (await rbac_client.get("/t/approve", headers=agent_headers(multi))).status_code == 200
-    assert (await rbac_client.get("/t/approve", headers=agent_headers(single))).status_code == 403
+    assert (await rbac_client.get("/t/agent", headers=agent_headers(approver))).status_code == 200
+    assert (await rbac_client.get("/t/approve", headers=agent_headers(approver))).status_code == 200
+    assert (await rbac_client.get("/t/agent", headers=agent_headers(viewer))).status_code == 200
+    assert (await rbac_client.get("/t/approve", headers=agent_headers(viewer))).status_code == 403
 
 
 async def test_member_system_role_can_approve(
@@ -168,7 +171,7 @@ async def test_member_system_role_can_approve(
     agent_headers: AuthHeaders,
 ) -> None:
     # The Eloïse scenario: a plain member approves reminders.
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     response = await rbac_client.get("/t/approve", headers=agent_headers(member))
     assert response.status_code == 200
 

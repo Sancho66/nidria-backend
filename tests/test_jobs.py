@@ -40,7 +40,7 @@ async def jobs_client(
 
 @pytest_asyncio.fixture
 async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["admin"]])
+    return await make_agent(role=system_roles["admin"])
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ async def test_jobs_require_job_manage(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    member = await make_agent(roles=[system_roles["member"]])
+    member = await make_agent(role=system_roles["member"])
     assert (await jobs_client.get("/jobs", headers=agent_headers(member))).status_code == 403
     response = await jobs_client.get("/jobs", headers=agent_headers(admin))
     assert response.status_code == 200

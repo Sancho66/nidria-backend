@@ -41,7 +41,7 @@ IMPERSONATION_DENIED: frozenset[tuple[str, str]] = frozenset(
         ("PUT", "/agencies/me/roles/{role_id}/permissions"),
         ("DELETE", "/agencies/me/roles/{role_id}"),
         ("POST", "/agencies/me/roles/{role_id}/duplicate"),
-        ("PUT", "/agencies/me/members/{agent_id}/roles"),
+        ("PUT", "/agencies/me/members/{agent_id}/role"),
         # expat portal is read-only under impersonation
         ("POST", "/expat/cases/{case_id}/documents"),
         ("DELETE", "/expat/cases/{case_id}/documents/{document_id}"),
@@ -61,9 +61,10 @@ async def resolve_binding(db: AsyncSession, method: str, route: str) -> Protecte
 
 
 def effective_permissions(agent: Agent) -> set[str]:
-    """Union of permission keys across the agent's roles. Pure Python
-    over the eager-loaded roles→permissions chain — zero queries."""
-    return {perm.key for role in agent.roles for perm in role.permissions}
+    """Permission keys of the agent's SINGLE role (Prism model — no
+    union). Pure Python over the eager-loaded role→permissions chain —
+    zero queries."""
+    return {perm.key for perm in agent.role.permissions}
 
 
 async def _resolve_agent(request: Request, db: AsyncSession) -> tuple[Agent, dict[str, object]]:
@@ -75,7 +76,7 @@ async def _resolve_agent(request: Request, db: AsyncSession) -> tuple[Agent, dic
     stmt = (
         select(Agent)
         .where(Agent.id == agent_id)
-        .options(selectinload(Agent.roles).selectinload(Role.permissions))
+        .options(selectinload(Agent.role).selectinload(Role.permissions))
     )
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:

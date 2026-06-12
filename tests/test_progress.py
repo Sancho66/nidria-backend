@@ -28,7 +28,7 @@ def progress_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 @pytest_asyncio.fixture
 async def manager_agent(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
     """case_manager: journey.configure + case.edit + step.complete."""
-    return await make_agent(roles=[system_roles["case_manager"]])
+    return await make_agent(role=system_roles["case_manager"])
 
 
 async def _make_template(
@@ -524,7 +524,7 @@ async def test_viewer_cannot_patch_steps(
     case = await make_client_case(agency_id=manager_agent.agency_id)
     by_name = _by_name(await _assign(progress_client, headers, case, template_id))
 
-    viewer = await make_agent(agency_id=manager_agent.agency_id, roles=[system_roles["viewer"]])
+    viewer = await make_agent(agency_id=manager_agent.agency_id, role=system_roles["viewer"])
     response = await progress_client.patch(
         f"/cases/{case.id}/steps/{by_name['A']['id']}",
         headers=agent_headers(viewer),

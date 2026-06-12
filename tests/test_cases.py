@@ -30,13 +30,13 @@ def cases_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def member(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["member"]])
+    return await make_agent(role=system_roles["member"])
 
 
 @pytest_asyncio.fixture
 async def admin(member: Agent, make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
     """Admin of the SAME agency as `member`."""
-    return await make_agent(agency_id=member.agency_id, roles=[system_roles["admin"]])
+    return await make_agent(agency_id=member.agency_id, role=system_roles["admin"])
 
 
 def _payload(email_addr: str = "client@example.com", **overrides: object) -> dict[str, object]:
@@ -163,7 +163,7 @@ async def test_create_case_requires_case_edit(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    viewer = await make_agent(roles=[system_roles["viewer"]])
+    viewer = await make_agent(role=system_roles["viewer"])
     response = await cases_client.post("/cases", headers=agent_headers(viewer), json=_payload())
     assert response.status_code == 403
 

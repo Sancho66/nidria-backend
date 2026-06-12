@@ -36,7 +36,7 @@ def rem_client(client: AsyncClient, rbac_baseline: None) -> AsyncClient:
 
 @pytest_asyncio.fixture
 async def manager_agent(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
-    return await make_agent(roles=[system_roles["case_manager"]])
+    return await make_agent(role=system_roles["case_manager"])
 
 
 @pytest_asyncio.fixture
@@ -466,7 +466,7 @@ async def test_auto_reminders_disabled_by_agency_settings(
     agent_headers: AuthHeaders,
 ) -> None:
     agency = await make_agency(settings={"auto_reminders_enabled": False})  # type: ignore[operator]
-    agent = await make_agent(agency_id=agency.id, roles=[system_roles["case_manager"]])
+    agent = await make_agent(agency_id=agency.id, role=system_roles["case_manager"])
     await _stalled_step(
         rem_client, db_session, agent, make_client_case, agent_headers(agent), days=25
     )
@@ -514,7 +514,7 @@ async def test_viewer_cannot_create_reminders(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    viewer = await make_agent(agency_id=case.agency_id, roles=[system_roles["viewer"]])
+    viewer = await make_agent(agency_id=case.agency_id, role=system_roles["viewer"])
     response = await rem_client.post(
         f"/cases/{case.id}/reminders",
         headers=agent_headers(viewer),
