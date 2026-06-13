@@ -1,7 +1,6 @@
 import uuid
 
 from sqlalchemy import CheckConstraint, ForeignKey, String, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -39,13 +38,6 @@ class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default="agency_validation",
         server_default=text("'agency_validation'"),
         nullable=False,
-    )
-    # Step 15 (Eric): free-label list of the pieces the agency expects
-    # at this step. INFORMATIVE at MVP — the lock stays prerequisites
-    # only; piece↔requirement matching is V1.5. server_default so the
-    # additive migration backfills existing rows.
-    required_documents: Mapped[list[str]] = mapped_column(
-        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
 
 

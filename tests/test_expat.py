@@ -39,10 +39,6 @@ STEP_KEYS = {
     "completed_at",
     "blocked_by",
     "responsible",
-    # Step 15 (Eric): "documents attendus" shown to the expat — an
-    # EXPLICIT, assumed addition to the exclusion contract (free
-    # labels, no internal ids).
-    "required_documents",
     # NEW WAVE 2: the concrete requirements the client can fill.
     "requirements",
     # NEW WAVE: lets the client phrase the right close message.
@@ -85,14 +81,11 @@ async def _case_with_journey(
     """Template A→B (B requires A), assigned; A started."""
     template = (await portal_client.post("/journeys", headers=headers, json={"name": "T"})).json()
     steps = []
-    for name, estimated, documents in [
-        ("Visa", 15, ["Casier judiciaire apostillé"]),
-        ("Residence card", None, []),
-    ]:
+    for name, estimated in [("Visa", 15), ("Residence card", None)]:
         response = await portal_client.post(
             f"/journeys/{template['id']}/steps",
             headers=headers,
-            json={"name": name, "estimated_days": estimated, "required_documents": documents},
+            json={"name": name, "estimated_days": estimated},
         )
         steps.append(response.json())
     await portal_client.put(
@@ -222,8 +215,6 @@ async def test_detail_projected_timeline_and_referent(
     assert by_name["Visa"]["status"] == "todo"
     assert by_name["Residence card"]["status"] == "blocked"
     assert by_name["Residence card"]["blocked_by"] == ["Visa"]  # NAMES, no ids
-    # Step 15: the expected pieces flow into the client timeline.
-    assert by_name["Visa"]["required_documents"] == ["Casier judiciaire apostillé"]
     assert detail["referent"]["email"] == manager_agent.email
     assert detail["status"] == "prospect"  # raw data; labels are frontend
 
@@ -263,6 +254,16 @@ async def test_responsible_displayable(
         "type": "external",
         "name": "Maitre Robert",
     }
+
+    # Expat-responsible (the client themselves) → "you".
+    await portal_client.patch(
+        f"/cases/{case.id}/steps/{step_a}", headers=headers, json={"responsible_type": "expat"}
+    )
+    refetched = (
+        await portal_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))
+    ).json()
+    visa = next(s for s in refetched["timeline"] if s["name"] == "Visa")
+    assert visa["responsible"] == {"type": "you", "name": None}
 
 
 async def test_ownership_404_and_agent_token_401(

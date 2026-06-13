@@ -135,12 +135,11 @@ async def get_or_create_template(
     db: AsyncSession,
     agency: Agency,
     name: str,
-    steps_spec: list[tuple[str, int | None, str | None, list[str]]],
+    steps_spec: list[tuple[str, int | None, str | None]],
     prerequisites: dict[int, list[int]],
 ) -> list[JourneyTemplateStep]:
-    """steps_spec: (name, estimated_days, default_responsible_type,
-    required_documents), prerequisites: {step_index: [prereq_indexes]}
-    (0-based)."""
+    """steps_spec: (name, estimated_days, default_responsible_type),
+    prerequisites: {step_index: [prereq_indexes]} (0-based)."""
     template = (
         await db.execute(
             select(JourneyTemplate).where(
@@ -158,27 +157,19 @@ async def get_or_create_template(
                 )
             ).scalars()
         )
-        # Step-15 fill-if-empty: bring required_documents to templates
-        # seeded before the field existed — never overwrite a non-empty
-        # (possibly runtime-edited) list.
-        for step, spec in zip(steps, steps_spec, strict=False):
-            if not step.required_documents and spec[3]:
-                step.required_documents = spec[3]
-        await db.flush()
         return steps
 
     template = JourneyTemplate(agency_id=agency.id, name=name)
     db.add(template)
     await db.flush()
     steps = []
-    for position, (step_name, estimated_days, responsible, documents) in enumerate(steps_spec):
+    for position, (step_name, estimated_days, responsible) in enumerate(steps_spec):
         step = JourneyTemplateStep(
             template_id=template.id,
             name=step_name,
             position=position,
             estimated_days=estimated_days,
             default_responsible_type=responsible,
-            required_documents=documents,
         )
         db.add(step)
         steps.append(step)
@@ -283,21 +274,11 @@ async def seed_martin(
         agency,
         "Résidence permanente Paraguay",
         [
-            (
-                "Collecte des documents",
-                10,
-                "expat",
-                ["Passeport (copie certifiée)", "Acte de naissance apostillé"],
-            ),
-            ("Casier judiciaire & apostilles", 15, "expat", ["Casier judiciaire apostillé"]),
-            (
-                "Dépôt de la demande de résidence",
-                20,
-                "expat",
-                ["Casier judiciaire apostillé", "Acte de naissance traduit"],
-            ),
-            ("Retrait de la carte de résident", 30, None, []),
-            ("Cédula & RUC", 15, None, ["Photo d'identité"]),
+            ("Collecte des documents", 10, "expat"),
+            ("Casier judiciaire & apostilles", 15, "expat"),
+            ("Dépôt de la demande de résidence", 20, "expat"),
+            ("Retrait de la carte de résident", 30, None),
+            ("Cédula & RUC", 15, None),
         ],
         {3: [2], 4: [3]},  # 4←3, 5←4 (0-based)
     )
@@ -427,13 +408,13 @@ async def seed_volkov(
         agency,
         "Domiciliation Bulgarie",
         [
-            ("Entretien initial", 3, "agent", []),
-            ("Collecte des documents", 10, "expat", ["Passeport", "Justificatif de ressources"]),
-            ("Traduction certifiée", 7, None, ["Actes d'état civil originaux"]),
-            ("Enregistrement de l'adresse", 5, None, ["Contrat de bail"]),
-            ("Dépôt du dossier de résidence", 20, None, []),
-            ("Carte d'identité bulgare", 14, None, []),
-            ("Numéro fiscal", 7, None, []),
+            ("Entretien initial", 3, "agent"),
+            ("Collecte des documents", 10, "expat"),
+            ("Traduction certifiée", 7, None),
+            ("Enregistrement de l'adresse", 5, None),
+            ("Dépôt du dossier de résidence", 20, None),
+            ("Carte d'identité bulgare", 14, None),
+            ("Numéro fiscal", 7, None),
         ],
         {2: [1], 3: [2], 4: [3], 5: [2], 6: [5]},  # 3←2, 4←3, 5←4, 6←3, 7←6
     )
@@ -501,15 +482,10 @@ async def seed_dupont(
         agency,
         "Pack expatriation",
         [
-            ("Bilan d'expatriation", 5, "agent", []),
-            ("Choix de la destination & visa", 10, None, ["Passeport en cours de validité"]),
-            (
-                "Constitution du dossier",
-                15,
-                None,
-                ["Justificatifs de revenus", "Attestation d'assurance"],
-            ),
-            ("Installation & formalités locales", 30, None, []),
+            ("Bilan d'expatriation", 5, "agent"),
+            ("Choix de la destination & visa", 10, None),
+            ("Constitution du dossier", 15, None),
+            ("Installation & formalités locales", 30, None),
         ],
         {1: [0], 2: [1], 3: [2]},  # 2←1, 3←2, 4←3
     )

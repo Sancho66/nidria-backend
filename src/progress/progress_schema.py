@@ -45,9 +45,6 @@ class StepProgressResponse(BaseModel):
     name: str
     position: int
     estimated_days: int | None
-    # Read from the template step (informative at MVP — the lock stays
-    # prerequisites only).
-    required_documents: list[str]
     status: str  # PROJECTED: todo / in_progress / done / blocked
     responsible_type: str | None
     responsible_agent_id: uuid.UUID | None

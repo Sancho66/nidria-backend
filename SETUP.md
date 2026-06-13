@@ -335,17 +335,9 @@ Checklist finale (les commandes du quotidien vivent dans le `Makefile` — `make
 
 ---
 
-## ÉTAPE 15 — Documents requis par étape (dégel ciblé, demande Eric)
+## ÉTAPE 15 — Documents requis par étape (dégel ciblé, demande Eric) — RETIRÉ
 
-**Objectif** : l'agence déclare les pièces attendues par étape de parcours ; l'expat les voit dans sa timeline (« documents attendus : casier judiciaire, acte de naissance »).
-
-Périmètre exact (rien de plus) :
-- `journey_template_step.required_documents` : JSONB, liste de chaînes (libellés libres), default `[]` — migration additive avec `server_default` (backfill des rows existantes).
-- Éditable via les endpoints steps **existants** (champ ajouté aux schemas POST/PATCH step). Pas de nouvel endpoint.
-- Exposé dans `GET /journeys/{id}`, `GET /cases/{id}/steps` + bloc progress (agent), et la timeline expat — **le test du contrat exact de clés expat est mis à jour explicitement** (ajout assumé au contrat, commenté).
-- **Informatif au MVP** : aucune validation « pièces uploadées avant de valider » — le verrou reste les prérequis seuls (matching pièce↔exigence = V1.5).
-- Backfill : rien — le champ vit sur le template_step, la projection le lit naturellement.
-- Seed : `required_documents` réalistes sur les 3 parcours, **fill-if-empty** pour les templates déjà seedés (jamais d'écrasement d'une liste non vide).
+> **RETIRÉ** (dégel ultérieur). Le système legacy `journey_template_step.required_documents` (libellés libres de pièces attendues, informatif) faisait **doublon** avec les réquisits de type `document` (vague 1 : suivis, liés à un fichier, statut pending/provided). Supprimé partout — modèle, schémas (TemplateStep Create/Update/Response), projection agent (`StepProgressResponse`), timeline expat (`ExpatTimelineStepResponse`), seed, tests. Migration `b7f3c1a9d2e4` : `DROP COLUMN` (downgrade = `ADD COLUMN` nullable JSONB, symétrique ; perte de données acceptée, legacy remplacé). Les pièces attendues s'expriment désormais comme des **réquisits document** (CRUD `/journeys/{tid}/steps/{sid}/requirements`).
 
 ---
 

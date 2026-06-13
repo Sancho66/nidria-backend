@@ -83,9 +83,6 @@ class ExpatTimelineStepResponse(BaseModel):
     completed_at: datetime | None
     blocked_by: list[str]  # step NAMES, never ids
     responsible: ExpatResponsibleResponse
-    # Step 15: the pieces the agency expects here ("documents attendus")
-    # — free labels, informative.
-    required_documents: list[str]
     # NEW WAVE 2: the concrete requirements the client can fill on this
     # step (writable while the step is active).
     requirements: list[ExpatRequirementResponse]

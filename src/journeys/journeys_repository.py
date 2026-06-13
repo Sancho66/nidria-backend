@@ -76,7 +76,6 @@ class JourneysRepository:
         position: int,
         estimated_days: int | None,
         default_responsible_type: str | None,
-        required_documents: list[str],
         completion_mode: str,
     ) -> JourneyTemplateStep:
         step = JourneyTemplateStep(
@@ -85,7 +84,6 @@ class JourneysRepository:
             position=position,
             estimated_days=estimated_days,
             default_responsible_type=default_responsible_type,
-            required_documents=required_documents,
             completion_mode=completion_mode,
         )
         self.db.add(step)

@@ -81,7 +81,6 @@ class JourneysManager:
                     position=step.position,
                     estimated_days=step.estimated_days,
                     default_responsible_type=step.default_responsible_type,
-                    required_documents=step.required_documents,
                     completion_mode=step.completion_mode,
                     prerequisite_step_ids=by_step.get(step.id, []),
                 )
@@ -129,7 +128,6 @@ class JourneysManager:
             position=(max_position if max_position is not None else -1) + 1,
             estimated_days=payload.estimated_days,
             default_responsible_type=payload.default_responsible_type,
-            required_documents=payload.required_documents,
             completion_mode=payload.completion_mode.value,
         )
         await self.db.flush()

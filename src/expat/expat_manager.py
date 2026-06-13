@@ -125,7 +125,6 @@ class ExpatPortalManager:
                 completed_at=step.completed_at,
                 blocked_by=[blocking.name for blocking in step.blocked_by],
                 responsible=_displayable_responsible(step, external_names),
-                required_documents=step.required_documents,
                 completion_mode=step.completion_mode,
                 requirements=[
                     ExpatRequirementResponse(

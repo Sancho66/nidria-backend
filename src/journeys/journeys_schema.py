@@ -25,8 +25,6 @@ class TemplateStepCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
-    # Free labels of the expected pieces — informative at MVP.
-    required_documents: list[str] = Field(default_factory=list)
     completion_mode: CompletionMode = CompletionMode.AGENCY_VALIDATION
 
 
@@ -34,7 +32,6 @@ class TemplateStepUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
-    required_documents: list[str] | None = None
     completion_mode: CompletionMode | None = None
 
 
@@ -89,7 +86,6 @@ class TemplateStepResponse(BaseModel):
     position: int
     estimated_days: int | None
     default_responsible_type: str | None
-    required_documents: list[str]
     completion_mode: str
     prerequisite_step_ids: list[uuid.UUID]
 

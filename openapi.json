@@ -8615,13 +8615,6 @@
           "responsible": {
             "$ref": "#/components/schemas/ExpatResponsibleResponse"
           },
-          "required_documents": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Required Documents"
-          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/ExpatRequirementResponse"
@@ -8643,7 +8636,6 @@
           "completed_at",
           "blocked_by",
           "responsible",
-          "required_documents",
           "requirements",
           "completion_mode"
         ],
@@ -11027,13 +11019,6 @@
             ],
             "title": "Estimated Days"
           },
-          "required_documents": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Required Documents"
-          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -11127,7 +11112,6 @@
           "name",
           "position",
           "estimated_days",
-          "required_documents",
           "status",
           "responsible_type",
           "responsible_agent_id",
@@ -11335,13 +11319,6 @@
               }
             ]
           },
-          "required_documents": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Required Documents"
-          },
           "completion_mode": {
             "$ref": "#/components/schemas/CompletionMode",
             "default": "agency_validation"
@@ -11391,13 +11368,6 @@
             ],
             "title": "Default Responsible Type"
           },
-          "required_documents": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Required Documents"
-          },
           "completion_mode": {
             "type": "string",
             "title": "Completion Mode"
@@ -11418,7 +11388,6 @@
           "position",
           "estimated_days",
           "default_responsible_type",
-          "required_documents",
           "completion_mode",
           "prerequisite_step_ids"
         ],
@@ -11460,20 +11429,6 @@
                 "type": "null"
               }
             ]
-          },
-          "required_documents": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Required Documents"
           },
           "completion_mode": {
             "anyOf": [

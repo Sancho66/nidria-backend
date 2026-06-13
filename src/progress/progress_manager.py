@@ -245,7 +245,6 @@ class ProgressManager:
                     name=step.name,
                     position=step.position,
                     estimated_days=step.estimated_days,
-                    required_documents=step.required_documents,
                     status=projected,
                     responsible_type=row.responsible_type,
                     responsible_agent_id=row.responsible_agent_id,
