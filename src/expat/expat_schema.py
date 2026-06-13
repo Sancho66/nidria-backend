@@ -12,6 +12,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+# Same inline custom-field schema the agency face embeds on CaseDetailResponse
+# — reused (not re-declared) so both faces describe a custom field identically.
+from src.cases.cases_schema import CustomFieldDefinitionInline
+
 
 class ExpatAgencyResponse(BaseModel):
     name: str
@@ -60,6 +64,15 @@ class ExpatRequirementResponse(BaseModel):
     scope: str
     status: str  # pending | provided (derived live for fields)
     person_label: str
+    # NEW WAVE: read parity with the agency face.
+    # Live value at the source so the client can see/re-edit what was
+    # already provided (None for documents and when pending). For a
+    # custom_field, the matching custom_field_definitions entry (by
+    # `reference` = its key) tells the frontend how to render it.
+    value: Any = None
+    # The document the client deposited for a document requirement — join
+    # to GET /expat/cases/{id}/documents for filename + download link.
+    document_id: uuid.UUID | None = None
 
 
 class ExpatTimelineStepResponse(BaseModel):
@@ -76,6 +89,10 @@ class ExpatTimelineStepResponse(BaseModel):
     # NEW WAVE 2: the concrete requirements the client can fill on this
     # step (writable while the step is active).
     requirements: list[ExpatRequirementResponse]
+    # How the step closes — lets the client UX phrase the right message:
+    # `auto` (closes by itself once all provided) vs `agency_validation`
+    # (awaits the agency's validation).
+    completion_mode: str
 
 
 class RequirementValueRequest(BaseModel):
@@ -89,6 +106,12 @@ class RequirementValueRequest(BaseModel):
 class ExpatCaseDetailResponse(ExpatCaseSummaryResponse):
     referent: ExpatReferentResponse | None
     timeline: list[ExpatTimelineStepResponse]
+    # Active custom-field definitions of the agency (archived filtered) —
+    # same shape the agency face embeds on CaseDetailResponse, so the
+    # client renders a custom_field requirement correctly (select as a
+    # select, human label, options) by matching its `reference` to a
+    # definition `key`.
+    custom_field_definitions: list[CustomFieldDefinitionInline]
 
 
 class ExpatNotificationResponse(BaseModel):

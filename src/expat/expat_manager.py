@@ -10,7 +10,7 @@ from shared.models.case_person import CasePerson
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
-from src.cases.cases_schema import PersonUpdateRequest
+from src.cases.cases_schema import CustomFieldDefinitionInline, PersonUpdateRequest
 from src.core.enums import (
     RequirementStatus,
     ResponsibleType,
@@ -126,6 +126,7 @@ class ExpatPortalManager:
                 blocked_by=[blocking.name for blocking in step.blocked_by],
                 responsible=_displayable_responsible(step, external_names),
                 required_documents=step.required_documents,
+                completion_mode=step.completion_mode,
                 requirements=[
                     ExpatRequirementResponse(
                         id=req.id,
@@ -134,6 +135,8 @@ class ExpatPortalManager:
                         scope=req.scope,
                         status=req.status,
                         person_label=req.person_label,  # resolved upstream (single source)
+                        value=req.value,  # resolved upstream (single source)
+                        document_id=req.document_id,
                     )
                     # Archived custom-field requirements are not surfaced:
                     # never ask the client to fill a retired field.
@@ -143,10 +146,16 @@ class ExpatPortalManager:
             )
             for step in internal_timeline
         ]
+        # Same active definitions the agency face embeds — so the client
+        # renders a custom_field requirement identically (no divergence).
+        definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
         return ExpatCaseDetailResponse(
             **self._summary(case, agency, counts).model_dump(),
             referent=referent,
             timeline=timeline,
+            custom_field_definitions=[
+                CustomFieldDefinitionInline.model_validate(d) for d in definitions
+            ],
         )
 
     # --- requirement fulfillment (NEW WAVE 2) --------------------------------------

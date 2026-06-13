@@ -40,7 +40,7 @@ from src.progress.progress_schema import (
     StepProgressResponse,
     StepProgressUpdateRequest,
 )
-from src.progress.requirements_eval import is_provided
+from src.progress.requirements_eval import current_value, is_provided
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +211,7 @@ class ProgressManager:
                         if provided
                         else RequirementStatus.PENDING.value
                     ),
+                    value=current_value(req, person),
                     is_archived=is_archived,
                     document_id=req.document_id,
                 )

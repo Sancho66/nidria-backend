@@ -8291,6 +8291,13 @@
             },
             "type": "array",
             "title": "Timeline"
+          },
+          "custom_field_definitions": {
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldDefinitionInline"
+            },
+            "type": "array",
+            "title": "Custom Field Definitions"
           }
         },
         "type": "object",
@@ -8305,7 +8312,8 @@
           "created_at",
           "updated_at",
           "referent",
-          "timeline"
+          "timeline",
+          "custom_field_definitions"
         ],
         "title": "ExpatCaseDetailResponse"
       },
@@ -8498,6 +8506,21 @@
           "person_label": {
             "type": "string",
             "title": "Person Label"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
           }
         },
         "type": "object",
@@ -8605,6 +8628,10 @@
             },
             "type": "array",
             "title": "Requirements"
+          },
+          "completion_mode": {
+            "type": "string",
+            "title": "Completion Mode"
           }
         },
         "type": "object",
@@ -8617,7 +8644,8 @@
           "blocked_by",
           "responsible",
           "required_documents",
-          "requirements"
+          "requirements",
+          "completion_mode"
         ],
         "title": "ExpatTimelineStepResponse"
       },
@@ -10307,6 +10335,9 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "value": {
+            "title": "Value"
           },
           "is_archived": {
             "type": "boolean",

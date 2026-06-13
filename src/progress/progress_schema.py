@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -31,6 +32,9 @@ class RequirementStateResponse(BaseModel):
     reference: str
     scope: str
     status: str  # pending / provided (computed)
+    # Live value at the source (case_person column / custom_fields JSONB)
+    # for base/custom fields; None for documents and when pending.
+    value: Any = None
     is_archived: bool
     document_id: uuid.UUID | None
 

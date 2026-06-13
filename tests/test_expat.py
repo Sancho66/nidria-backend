@@ -30,7 +30,7 @@ SUMMARY_KEYS = {
     "created_at",
     "updated_at",
 }
-DETAIL_KEYS = SUMMARY_KEYS | {"referent", "timeline"}
+DETAIL_KEYS = SUMMARY_KEYS | {"referent", "timeline", "custom_field_definitions"}
 STEP_KEYS = {
     "name",
     "position",
@@ -45,8 +45,19 @@ STEP_KEYS = {
     "required_documents",
     # NEW WAVE 2: the concrete requirements the client can fill.
     "requirements",
+    # NEW WAVE: lets the client phrase the right close message.
+    "completion_mode",
 }
-REQUIREMENT_KEYS = {"id", "kind", "reference", "scope", "status", "person_label"}
+REQUIREMENT_KEYS = {
+    "id",
+    "kind",
+    "reference",
+    "scope",
+    "status",
+    "person_label",
+    "value",
+    "document_id",
+}
 
 
 @pytest.fixture

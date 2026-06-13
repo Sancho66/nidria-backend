@@ -40,6 +40,20 @@ def _field_value(person: CasePerson, reference: str) -> Any:
     return (person.custom_fields or {}).get(reference)
 
 
+def current_value(requirement: CaseStepRequirement, person: CasePerson | None) -> Any:
+    """The live value backing a base/custom requirement, read at the
+    source (case_person column or custom_fields JSONB) — the SINGLE
+    resolution shared by both faces. None for a document requirement
+    (the document is the artifact, carried by document_id) and None when
+    pending (empty/missing)."""
+    if requirement.kind == StepRequirementKind.DOCUMENT.value:
+        return None
+    if person is None:
+        return None
+    value = _field_value(person, requirement.reference)
+    return None if _is_empty(value) else value
+
+
 def is_provided(requirement: CaseStepRequirement, person: CasePerson | None) -> bool:
     """base_field / custom_field → derived from the live person value;
     document → the explicit stored status. A missing person (should not

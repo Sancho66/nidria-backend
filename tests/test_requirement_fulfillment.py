@@ -774,3 +774,212 @@ async def test_mail_failure_never_blocks_write(
         if s["id"] == pid
     )
     assert step["status"] == "done"  # auto-completion committed, mail failure swallowed
+
+
+# --- read parity with the agency face (enriched expat read surface) ------------------
+
+REQUIREMENT_KEYS = {
+    "id",
+    "kind",
+    "reference",
+    "scope",
+    "status",
+    "person_label",
+    "value",
+    "document_id",
+}
+
+
+async def test_expat_value_pending_then_provided(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    tid, sid = await _step(rf_client, headers)
+    await _add_req(
+        rf_client,
+        headers,
+        tid,
+        sid,
+        kind="base_field",
+        reference="passport_number",
+        scope="principal",
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    req = await _find_req(rf_client, expat_headers, expat, str(case.id), "passport_number")
+    assert set(req.keys()) == REQUIREMENT_KEYS
+    assert req["value"] is None  # pending → null
+
+    await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "AB12345"},
+    )
+    after = await _find_req(rf_client, expat_headers, expat, str(case.id), "passport_number")
+    assert after["value"] == "AB12345"  # the real provided value, re-editable
+
+
+async def test_expat_exposes_active_custom_definitions_only(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    await rf_client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={
+            "key": "visa_type",
+            "label": "Type de visa",
+            "field_type": "select",
+            "options": ["A", "B"],
+        },
+    )
+    old = await rf_client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={"key": "old_field", "label": "Old", "field_type": "text"},
+    )
+    await rf_client.post(
+        f"/agencies/me/custom-fields/{old.json()['id']}/archive", headers=headers
+    )  # archived → must not be exposed
+    tid, sid = await _step(rf_client, headers)
+    await _add_req(
+        rf_client, headers, tid, sid, kind="custom_field", reference="visa_type", scope="principal"
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+
+    detail = (await rf_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))).json()
+    defs = {d["key"]: d for d in detail["custom_field_definitions"]}
+    assert "visa_type" in defs
+    assert "old_field" not in defs  # archived filtered
+    assert defs["visa_type"]["field_type"] == "select"
+    assert defs["visa_type"]["options"] == ["A", "B"]
+    assert defs["visa_type"]["label"] == "Type de visa"  # human label, not the key
+
+
+async def test_expat_exposes_document_id(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    tid, sid = await _step(rf_client, headers)
+    await _add_req(
+        rf_client, headers, tid, sid, kind="document", reference="Passeport", scope="principal"
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    req = await _find_req(rf_client, expat_headers, expat, str(case.id), "Passeport")
+    assert req["document_id"] is None  # nothing uploaded yet
+
+    await rf_client.post(
+        f"/expat/cases/{case.id}/requirements/{req['id']}/document",
+        headers=expat_headers(expat),
+        files={"file": ("passport.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+    after = await _find_req(rf_client, expat_headers, expat, str(case.id), "Passeport")
+    assert after["document_id"] is not None
+    # document_id joins to the expat documents listing → filename + download.
+    docs = (
+        await rf_client.get(f"/expat/cases/{case.id}/documents", headers=expat_headers(expat))
+    ).json()
+    by_id = {d["id"]: d for d in docs}
+    assert after["document_id"] in by_id
+    assert by_id[after["document_id"]]["filename"] == "passport.pdf"
+
+
+async def test_expat_exposes_completion_mode_per_step(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    tid, sid = await _step(rf_client, headers, completion_mode="auto")
+    await _add_req(
+        rf_client, headers, tid, sid, kind="base_field", reference="phone", scope="principal"
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    detail = (await rf_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))).json()
+    assert detail["timeline"][0]["completion_mode"] == "auto"
+
+
+async def test_value_and_definitions_consistent_across_faces(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """The whole point of factoring: for the SAME requirement, the value
+    and the custom definition seen by the client are byte-for-byte what
+    the agency sees — one resolution, no drift."""
+    headers = agent_headers(admin)
+    await rf_client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={
+            "key": "visa_type",
+            "label": "Type de visa",
+            "field_type": "select",
+            "options": ["A", "B"],
+        },
+    )
+    tid, sid = await _step(rf_client, headers)
+    await _add_req(
+        rf_client, headers, tid, sid, kind="custom_field", reference="visa_type", scope="principal"
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    req = await _find_req(rf_client, expat_headers, expat, str(case.id), "visa_type")
+    await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "B"},
+    )
+
+    # Agency view of the same case.
+    agent_detail = (await rf_client.get(f"/cases/{case.id}", headers=headers)).json()
+    agent_req = next(
+        r for step in agent_detail["progress"] for r in step["requirements"] if r["id"] == req["id"]
+    )
+    agent_defs = {d["key"]: d for d in agent_detail["custom_field_definitions"]}
+
+    # Client view of the same case.
+    expat_detail = (
+        await rf_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))
+    ).json()
+    expat_req = next(
+        r for step in expat_detail["timeline"] for r in step["requirements"] if r["id"] == req["id"]
+    )
+    expat_defs = {d["key"]: d for d in expat_detail["custom_field_definitions"]}
+
+    assert expat_req["value"] == agent_req["value"] == "B"  # same resolution
+    assert expat_defs["visa_type"] == agent_defs["visa_type"]  # same definition shape
