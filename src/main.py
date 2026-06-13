@@ -16,6 +16,7 @@ from src.cases.cases_router import router as cases_router
 from src.core.config import get_settings
 from src.core.database import async_session_maker, get_db
 from src.core.exceptions import register_exception_handlers
+from src.core.rbac.baseline import collect_bindings, seed_bindings
 from src.core.rbac.enforcement import enforce
 from src.core.rbac.integrity import (
     assert_all_routes_bound,
@@ -58,11 +59,20 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    """Boot order: mirror the permission catalogue into the DB, refuse
-    to start if any declared route lacks a binding (deny by default
-    made loud), then start the scheduler (job crons read from DB)."""
+    """Boot order: mirror the permission catalogue into the DB,
+    self-reconcile the route bindings from code (insert-missing only —
+    the code is the source of truth, so a DB lagging the code never
+    fails the boot for a mere seed gap), then refuse to start if any
+    declared route STILL lacks a binding (a genuine code omission — deny
+    by default made loud), then start the scheduler (job crons read from
+    DB).
+
+    The reconcile is strictly additive (see seed_bindings): a binding
+    removed from code is NOT deleted from the DB, so assert_all_routes_bound
+    keeps catching real orphans rather than silently papering over them."""
     async with async_session_maker() as session:
         await sync_permissions(session)
+        await seed_bindings(session, collect_bindings())
         await assert_all_routes_bound(application, session)
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()

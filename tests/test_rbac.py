@@ -17,7 +17,7 @@ from shared.models.rbac import ProtectedResource, Role, RolePermission
 from src.core.database import get_db
 from src.core.enums import Audience
 from src.core.exceptions import register_exception_handlers
-from src.core.rbac.baseline import RouteBinding, seed_bindings
+from src.core.rbac.baseline import RouteBinding, collect_bindings, seed_bindings
 from src.core.rbac.enforcement import enforce
 from src.core.rbac.integrity import StartupError, assert_all_routes_bound
 from src.core.rbac.permissions import Permission, sync_permissions
@@ -266,6 +266,21 @@ async def test_boot_check_passes_when_all_routes_bound(
 ) -> None:
     await seed_bindings(db_session, [*TEST_BINDINGS, UNBOUND_BINDING])
     await assert_all_routes_bound(rbac_app, db_session)  # must not raise
+
+
+async def test_real_app_every_route_is_bound(db_session: AsyncSession, rbac_baseline: None) -> None:
+    """THE missing safety net: the boot check never runs against the
+    REAL app in the suite (ASGITransport skips the lifespan), so a route
+    shipped without a binding stays invisible to `make check` and only
+    blows up at deploy. This runs the genuine boot-check function against
+    the FULL real route table + the code-declared bindings (rbac_baseline
+    seeds collect_bindings, exactly what the boot reconcile does). A new
+    route added without a RouteBinding fails HERE, at commit time."""
+    from src.main import app
+
+    # Sanity: the fixture really seeds the code's full binding set.
+    assert len(collect_bindings()) > 0
+    await assert_all_routes_bound(app, db_session)  # must not raise
 
 
 async def test_boot_check_fails_on_missing_binding(
