@@ -78,3 +78,18 @@ class CustomFieldsManager:
             await self.db.commit()
             await self.db.refresh(definition)
         return definition
+
+    async def unarchive(self, agent: Agent, field_id: uuid.UUID) -> CustomFieldDefinition:
+        """Symmetric to archive: clears archived_at. The field reappears
+        in forms and its previously-orphaned JSONB values become exposed
+        and validable again — the (agency_id, key) UNIQUE covers archived
+        rows too, so resurrection can never collide. Idempotent: a no-op
+        if already active."""
+        definition = await self.repo.get_in_agency(agent.agency_id, field_id)
+        if definition is None:
+            raise NotFoundError("Custom field not found.")
+        if definition.archived_at is not None:
+            definition.archived_at = None
+            await self.db.commit()
+            await self.db.refresh(definition)
+        return definition

@@ -33,6 +33,12 @@ BINDINGS = [
         Audience.AGENT,
         Permission.FIELD_MANAGE,
     ),
+    RouteBinding(
+        "POST",
+        "/agencies/me/custom-fields/{field_id}/unarchive",
+        Audience.AGENT,
+        Permission.FIELD_MANAGE,
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -75,4 +81,14 @@ async def archive_custom_field(
 ) -> CustomFieldDefinitionResponse:
     """Soft archive (the only removal). Saved values are kept."""
     definition = await CustomFieldsManager(db).archive(agent, field_id)
+    return CustomFieldDefinitionResponse.model_validate(definition)
+
+
+@router.post("/{field_id}/unarchive", response_model=CustomFieldDefinitionResponse)
+async def unarchive_custom_field(
+    field_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> CustomFieldDefinitionResponse:
+    """Resurrect an archived field — it reappears in forms and its kept
+    JSONB values become exposed/validable again. Idempotent."""
+    definition = await CustomFieldsManager(db).unarchive(agent, field_id)
     return CustomFieldDefinitionResponse.model_validate(definition)

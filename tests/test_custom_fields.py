@@ -379,3 +379,78 @@ async def test_detail_exposes_definitions_and_values(
     )
     pdf = await cf_client.get(f"/cases/{case.id}/export", headers=headers)
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+
+
+# --- unarchive (resurrection) --------------------------------------------------------
+
+
+async def test_unarchive_resurrects_field_and_orphan_value(
+    cf_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """define → set value → archive (value hidden) → unarchive → the
+    value reappears, exposed and validable again."""
+    headers = agent_headers(admin)
+    field = await _define(cf_client, headers, key="vnum", label="N° visa", field_type="text")
+    case = await make_client_case(agency_id=admin.agency_id)
+    person_id = (await cf_client.get(f"/cases/{case.id}", headers=headers)).json()[
+        "principal_person_id"
+    ]
+    await cf_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"custom_fields": {"vnum": "AB123"}},
+    )
+
+    # Archive → value hidden, definition gone from the form.
+    await cf_client.post(f"/agencies/me/custom-fields/{field['id']}/archive", headers=headers)
+    archived_detail = (await cf_client.get(f"/cases/{case.id}", headers=headers)).json()
+    principal = next(p for p in archived_detail["persons"] if p["kind"] == "principal")
+    assert principal["custom_fields"] == {}
+    assert archived_detail["custom_field_definitions"] == []
+
+    # Unarchive → field active again, the kept JSONB value re-exposed.
+    resurrected = await cf_client.post(
+        f"/agencies/me/custom-fields/{field['id']}/unarchive", headers=headers
+    )
+    assert resurrected.status_code == 200 and resurrected.json()["archived_at"] is None
+    after = (await cf_client.get(f"/cases/{case.id}", headers=headers)).json()
+    principal = next(p for p in after["persons"] if p["kind"] == "principal")
+    assert principal["custom_fields"] == {"vnum": "AB123"}  # value resurrected
+    assert [d["key"] for d in after["custom_field_definitions"]] == ["vnum"]
+
+    # The resurrected field is validable again on a PATCH.
+    revalidate = await cf_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"custom_fields": {"vnum": "CD456"}},
+    )
+    assert revalidate.status_code == 200
+    assert revalidate.json()["custom_fields"]["vnum"] == "CD456"
+
+
+async def test_unarchive_idempotent_on_active_field(
+    cf_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    field = await _define(cf_client, headers, key="vnum", label="N° visa", field_type="text")
+    # Already active → no-op, not an error (symmetric with archive).
+    response = await cf_client.post(
+        f"/agencies/me/custom-fields/{field['id']}/unarchive", headers=headers
+    )
+    assert response.status_code == 200 and response.json()["archived_at"] is None
+
+
+async def test_unarchive_gate_field_manage(
+    cf_client: AsyncClient, admin: Agent, member: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    field = await _define(cf_client, headers, key="vnum", label="N° visa", field_type="text")
+    await cf_client.post(f"/agencies/me/custom-fields/{field['id']}/archive", headers=headers)
+    # member has case.edit but NOT field.manage → 403.
+    denied = await cf_client.post(
+        f"/agencies/me/custom-fields/{field['id']}/unarchive", headers=agent_headers(member)
+    )
+    assert denied.status_code == 403

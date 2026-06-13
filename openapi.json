@@ -2771,6 +2771,55 @@
         }
       }
     },
+    "/agencies/me/custom-fields/{field_id}/unarchive": {
+      "post": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Unarchive Custom Field",
+        "description": "Resurrect an archived field — it reappears in forms and its kept\nJSONB values become exposed/validable again. Idempotent.",
+        "operationId": "unarchive_custom_field_agencies_me_custom_fields__field_id__unarchive_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/dashboard": {
       "get": {
         "tags": [
