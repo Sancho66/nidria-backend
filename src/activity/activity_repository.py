@@ -14,7 +14,11 @@ class ActivityRepository:
     async def get_case_in_agency(
         self, agency_id: uuid.UUID, case_id: uuid.UUID
     ) -> ClientCase | None:
-        stmt = select(ClientCase).where(ClientCase.id == case_id, ClientCase.agency_id == agency_id)
+        stmt = select(ClientCase).where(
+            ClientCase.id == case_id,
+            ClientCase.agency_id == agency_id,
+            ClientCase.deleted_at.is_(None),
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def list_case_activity(

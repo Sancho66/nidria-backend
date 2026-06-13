@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -178,3 +178,59 @@ class CaseFilters(BaseModel):
         if self.advanced is not None:
             data["advanced"] = self.advanced
         return data
+
+
+# --- bulk actions --------------------------------------------------------------
+
+# Hard cap on a single bulk call — a sane guard-rail, not a Prism port.
+_BULK_MAX_IDS = 500
+
+
+class _BulkBase(BaseModel):
+    case_ids: list[uuid.UUID] = Field(min_length=1, max_length=_BULK_MAX_IDS)
+
+
+class BulkSetStatusRequest(_BulkBase):
+    action: Literal["set_status"] = "set_status"
+    status: CaseStatus
+
+
+class BulkSetOwnerRequest(_BulkBase):
+    action: Literal["set_owner"] = "set_owner"
+    # null = unassign (mirrors the SET NULL FK and the unit PATCH).
+    owner_agent_id: uuid.UUID | None = None
+
+
+class BulkAddTagsRequest(_BulkBase):
+    action: Literal["add_tags"] = "add_tags"
+    tags: list[str] = Field(min_length=1)
+
+
+class BulkRemoveTagsRequest(_BulkBase):
+    action: Literal["remove_tags"] = "remove_tags"
+    tags: list[str] = Field(min_length=1)
+
+
+# Discriminated union: the `action` field routes to the right shape, so
+# a set_status payload missing `status` is a 422, not a silent no-op.
+BulkActionRequest = Annotated[
+    BulkSetStatusRequest | BulkSetOwnerRequest | BulkAddTagsRequest | BulkRemoveTagsRequest,
+    Field(discriminator="action"),
+]
+
+
+class BulkDeleteRequest(_BulkBase):
+    """Soft delete (case.delete). Separate route from bulk-action so the
+    RBAC engine gates each on its own permission (Prism splits these too)."""
+
+
+class BulkActionResponse(BaseModel):
+    """`examined` = ids submitted; `affected` = rows actually changed
+    (own-agency, mutation applied); `affected_ids` lets the frontend
+    refresh + deselect. examined − affected reveals ignored ids
+    (cross-agency, already-deleted, no-op)."""
+
+    action: str
+    examined: int
+    affected: int
+    affected_ids: list[uuid.UUID]

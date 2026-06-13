@@ -47,7 +47,15 @@ class CasesRepository:
     async def get_case_in_agency(
         self, agency_id: uuid.UUID, case_id: uuid.UUID
     ) -> ClientCase | None:
-        stmt = select(ClientCase).where(ClientCase.id == case_id, ClientCase.agency_id == agency_id)
+        # Soft-delete filter: a deleted case is a 404 everywhere — and
+        # every sub-resource (steps, notes, family, contacts, activity,
+        # reminders, export) reaches the case through this method, so
+        # this single guard 404s them all.
+        stmt = select(ClientCase).where(
+            ClientCase.id == case_id,
+            ClientCase.agency_id == agency_id,
+            ClientCase.deleted_at.is_(None),
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     def _filtered_stmt(
@@ -57,7 +65,12 @@ class CasesRepository:
         *,
         join_principal: bool = False,
     ) -> Select[Any]:
-        stmt = select(ClientCase).where(ClientCase.agency_id == agency_id)
+        # `deleted_at IS NULL`: soft-deleted cases never appear in the
+        # listing — including through saved views, which only produce
+        # params consumed here, and shared views (no leak across agents).
+        stmt = select(ClientCase).where(
+            ClientCase.agency_id == agency_id, ClientCase.deleted_at.is_(None)
+        )
         # One join serves the principal-based filters AND principal sorts.
         if join_principal or filters.get("q") or filters.get("preferred_lang"):
             stmt = stmt.join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
@@ -129,6 +142,21 @@ class CasesRepository:
         case = ClientCase(**kwargs)
         self.db.add(case)
         return case
+
+    async def list_by_ids(
+        self, agency_id: uuid.UUID, case_ids: list[uuid.UUID]
+    ) -> list[ClientCase]:
+        """Bulk target resolution: scoped to the agency AND live only.
+        Cross-agency or already-deleted ids simply don't come back
+        (silently ignored, Prism semantics) — no leak, no 404."""
+        if not case_ids:
+            return []
+        stmt = select(ClientCase).where(
+            ClientCase.agency_id == agency_id,
+            ClientCase.id.in_(case_ids),
+            ClientCase.deleted_at.is_(None),
+        )
+        return list((await self.db.execute(stmt)).scalars())
 
     # --- people -------------------------------------------------------------------
 

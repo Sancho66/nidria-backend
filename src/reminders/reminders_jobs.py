@@ -58,10 +58,19 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     during a tick — never process the same row twice.
     """
     now = datetime.now(UTC)
-    base = select(Reminder).where(
-        Reminder.status == ReminderStatus.APPROVED.value,
-        Reminder.scheduled_at <= now,
-        Reminder.channel.in_([ReminderChannel.MAIL.value, ReminderChannel.IN_APP.value]),
+    # Join ClientCase + deleted_at IS NULL: a soft-deleted case never
+    # dispatches — its APPROVED reminders are skipped at SELECT time, so
+    # the scheduler neither mails nor counts them (the most dangerous
+    # leak: a deleted case must not keep sending).
+    base = (
+        select(Reminder)
+        .join(ClientCase, ClientCase.id == Reminder.case_id)
+        .where(
+            Reminder.status == ReminderStatus.APPROVED.value,
+            Reminder.scheduled_at <= now,
+            Reminder.channel.in_([ReminderChannel.MAIL.value, ReminderChannel.IN_APP.value]),
+            ClientCase.deleted_at.is_(None),
+        )
     )
     if dry_run:
         due = len(db.execute(base).scalars().all())
@@ -128,6 +137,8 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                 CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
                 # updated_at as the "last movement" proxy.
                 CaseStepProgress.updated_at <= cutoff,
+                # No auto follow-up on a soft-deleted case.
+                ClientCase.deleted_at.is_(None),
                 ~already,
             )
         )

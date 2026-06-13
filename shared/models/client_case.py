@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,5 +43,10 @@ class ClientCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     source: Mapped[str | None] = mapped_column(String(100))
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # Soft delete: NULL = live. Every read path filters `deleted_at IS
+    # NULL` (listing, detail, expat space, reminders, the scheduler,
+    # dashboard) — a deleted case must surface NOWHERE. Bulk-delete
+    # stamps it; re-deleting is a no-op.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     principal: Mapped["ExpatUser"] = relationship("ExpatUser")

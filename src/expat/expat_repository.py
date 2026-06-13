@@ -20,7 +20,10 @@ class ExpatRepository:
         stmt = (
             select(ClientCase, Agency)
             .join(Agency, Agency.id == ClientCase.agency_id)
-            .where(ClientCase.principal_expat_user_id == expat_id)
+            .where(
+                ClientCase.principal_expat_user_id == expat_id,
+                ClientCase.deleted_at.is_(None),
+            )
             .order_by(ClientCase.created_at.desc(), ClientCase.id.desc())
         )
         return [(case, agency) for case, agency in (await self.db.execute(stmt)).all()]
@@ -34,6 +37,7 @@ class ExpatRepository:
             .where(
                 ClientCase.id == case_id,
                 ClientCase.principal_expat_user_id == expat_id,
+                ClientCase.deleted_at.is_(None),
             )
         )
         row = (await self.db.execute(stmt)).first()

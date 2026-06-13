@@ -19,7 +19,9 @@ class DashboardManager:
         column: InstrumentedAttribute[str] | InstrumentedAttribute[str | None],
     ) -> dict[str, int]:
         stmt = (
-            select(column, func.count()).where(ClientCase.agency_id == agency_id).group_by(column)
+            select(column, func.count())
+            .where(ClientCase.agency_id == agency_id, ClientCase.deleted_at.is_(None))
+            .group_by(column)
         )
         return {key: count for key, count in (await self.db.execute(stmt)).all() if key is not None}
 

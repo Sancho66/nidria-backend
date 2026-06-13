@@ -16,6 +16,7 @@ class Permission(StrEnum):
 
     CASE_VIEW = "case.view"
     CASE_EDIT = "case.edit"
+    CASE_DELETE = "case.delete"
     STEP_COMPLETE = "step.complete"
     REMINDER_CREATE = "reminder.create"
     REMINDER_APPROVE = "reminder.approve"

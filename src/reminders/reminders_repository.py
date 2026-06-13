@@ -24,7 +24,11 @@ class RemindersRepository:
     async def get_case_in_agency(
         self, agency_id: uuid.UUID, case_id: uuid.UUID
     ) -> ClientCase | None:
-        stmt = select(ClientCase).where(ClientCase.id == case_id, ClientCase.agency_id == agency_id)
+        stmt = select(ClientCase).where(
+            ClientCase.id == case_id,
+            ClientCase.agency_id == agency_id,
+            ClientCase.deleted_at.is_(None),
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_expat(self, expat_id: uuid.UUID) -> ExpatUser | None:
@@ -100,7 +104,11 @@ class RemindersRepository:
         stmt = (
             select(Reminder)
             .join(ClientCase, ClientCase.id == Reminder.case_id)
-            .where(Reminder.id == reminder_id, ClientCase.agency_id == agency_id)
+            .where(
+                Reminder.id == reminder_id,
+                ClientCase.agency_id == agency_id,
+                ClientCase.deleted_at.is_(None),
+            )
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
@@ -114,7 +122,7 @@ class RemindersRepository:
         stmt = (
             select(Reminder)
             .join(ClientCase, ClientCase.id == Reminder.case_id)
-            .where(ClientCase.agency_id == agency_id)
+            .where(ClientCase.agency_id == agency_id, ClientCase.deleted_at.is_(None))
         )
         if filters.get("status"):
             stmt = stmt.where(Reminder.status.in_([s.value for s in filters["status"]]))

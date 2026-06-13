@@ -15,6 +15,7 @@ from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
 from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
 from src.cases.cases_schema import (
+    BulkActionResponse,
     CaseCreateRequest,
     CaseDetailResponse,
     CaseFilters,
@@ -235,6 +236,118 @@ class CasesManager:
         await self.db.commit()
         await self.db.refresh(case)
         return case
+
+    # --- bulk actions --------------------------------------------------------------------
+
+    async def bulk_set_status(
+        self, agent: Agent, case_ids: list[uuid.UUID], status: str
+    ) -> BulkActionResponse:
+        cases = await self.repo.list_by_ids(agent.agency_id, case_ids)
+        affected: list[uuid.UUID] = []
+        for case in cases:
+            if case.status == status:
+                continue  # idempotent no-op
+            self._log(case.id, agent, "case.status_changed", {"old": case.status, "new": status})
+            case.status = status
+            affected.append(case.id)
+        await self.db.commit()
+        return BulkActionResponse(
+            action="set_status",
+            examined=len(case_ids),
+            affected=len(affected),
+            affected_ids=affected,
+        )
+
+    async def bulk_set_owner(
+        self, agent: Agent, case_ids: list[uuid.UUID], owner_agent_id: uuid.UUID | None
+    ) -> BulkActionResponse:
+        # Validate the owner ONCE (membership of the agency) — same gate
+        # as the unit PATCH; null means unassign.
+        if owner_agent_id is not None:
+            await self._validate_owner(agent, owner_agent_id)
+        cases = await self.repo.list_by_ids(agent.agency_id, case_ids)
+        affected: list[uuid.UUID] = []
+        for case in cases:
+            if case.owner_agent_id == owner_agent_id:
+                continue
+            self._log(
+                case.id,
+                agent,
+                "case.owner_changed",
+                {
+                    "old": str(case.owner_agent_id) if case.owner_agent_id else None,
+                    "new": str(owner_agent_id) if owner_agent_id else None,
+                },
+            )
+            case.owner_agent_id = owner_agent_id
+            affected.append(case.id)
+        await self.db.commit()
+        return BulkActionResponse(
+            action="set_owner",
+            examined=len(case_ids),
+            affected=len(affected),
+            affected_ids=affected,
+        )
+
+    async def bulk_add_tags(
+        self, agent: Agent, case_ids: list[uuid.UUID], tags: list[str]
+    ) -> BulkActionResponse:
+        cases = await self.repo.list_by_ids(agent.agency_id, case_ids)
+        affected: list[uuid.UUID] = []
+        for case in cases:
+            missing = [t for t in tags if t not in case.tags]
+            if not missing:
+                continue  # all already present → no-op
+            # Reassign a NEW list so SQLAlchemy flags the JSONB dirty.
+            case.tags = [*case.tags, *missing]
+            self._log(case.id, agent, "case.updated", {"tags_added": missing})
+            affected.append(case.id)
+        await self.db.commit()
+        return BulkActionResponse(
+            action="add_tags",
+            examined=len(case_ids),
+            affected=len(affected),
+            affected_ids=affected,
+        )
+
+    async def bulk_remove_tags(
+        self, agent: Agent, case_ids: list[uuid.UUID], tags: list[str]
+    ) -> BulkActionResponse:
+        cases = await self.repo.list_by_ids(agent.agency_id, case_ids)
+        to_remove = set(tags)
+        affected: list[uuid.UUID] = []
+        for case in cases:
+            present = [t for t in case.tags if t in to_remove]
+            if not present:
+                continue
+            case.tags = [t for t in case.tags if t not in to_remove]
+            self._log(case.id, agent, "case.updated", {"tags_removed": present})
+            affected.append(case.id)
+        await self.db.commit()
+        return BulkActionResponse(
+            action="remove_tags",
+            examined=len(case_ids),
+            affected=len(affected),
+            affected_ids=affected,
+        )
+
+    async def bulk_delete(self, agent: Agent, case_ids: list[uuid.UUID]) -> BulkActionResponse:
+        # list_by_ids already excludes deleted rows → re-deleting is a
+        # natural no-op (the row never comes back).
+        cases = await self.repo.list_by_ids(agent.agency_id, case_ids)
+        now = datetime.now(UTC)
+        affected: list[uuid.UUID] = []
+        for case in cases:
+            case.deleted_at = now
+            self._log(case.id, agent, "case.deleted", {})
+            affected.append(case.id)
+        await self.db.commit()
+        return BulkActionResponse(
+            action="delete",
+            examined=len(case_ids),
+            affected=len(affected),
+            affected_ids=affected,
+        )
 
     # --- family members -----------------------------------------------------------------
 

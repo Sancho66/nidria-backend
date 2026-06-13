@@ -10,6 +10,9 @@ from shared.models.agent import Agent
 from src.auth.auth_schema import MessageResponse
 from src.cases.cases_manager import CasesManager, parse_sorts
 from src.cases.cases_schema import (
+    BulkActionRequest,
+    BulkActionResponse,
+    BulkDeleteRequest,
     CaseCreateRequest,
     CaseDetailResponse,
     CaseFilters,
@@ -54,10 +57,16 @@ def _parse_advanced_filters(raw: str | None) -> AdvancedFilters | None:
 
 _VIEW = Permission.CASE_VIEW
 _EDIT = Permission.CASE_EDIT
+_DELETE = Permission.CASE_DELETE
 
 BINDINGS = [
     RouteBinding("POST", "/cases", Audience.AGENT, _EDIT),
     RouteBinding("GET", "/cases", Audience.AGENT, _VIEW),
+    # Bulk: edit-actions gate case.edit, soft delete gates case.delete —
+    # one binding per route, the engine does the gating (Prism splits
+    # bulk-action / bulk-delete the same way).
+    RouteBinding("POST", "/cases/bulk-action", Audience.AGENT, _EDIT),
+    RouteBinding("POST", "/cases/bulk-delete", Audience.AGENT, _DELETE),
     RouteBinding("GET", "/cases/{case_id}", Audience.AGENT, _VIEW),
     RouteBinding("PATCH", "/cases/{case_id}", Audience.AGENT, _EDIT),
     RouteBinding("GET", "/cases/{case_id}/export", Audience.AGENT, _VIEW),
@@ -86,6 +95,32 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 async def create_case(body: CaseCreateRequest, agent: AgentDep, db: DbDep) -> CaseResponse:
     case = await CasesManager(db).create_case(agent, body)
     return CaseResponse.model_validate(case)
+
+
+# --- bulk actions (literal segments: declared before /{case_id}) ----------------
+
+
+@router.post("/bulk-action", response_model=BulkActionResponse)
+async def bulk_action(body: BulkActionRequest, agent: AgentDep, db: DbDep) -> BulkActionResponse:
+    """Edit-actions on a selection of cases (gate case.edit). The
+    `action` discriminator routes to set_status / set_owner / add_tags /
+    remove_tags. Cross-agency ids are silently ignored; affected_ids
+    lets the frontend refresh and deselect."""
+    manager = CasesManager(db)
+    if body.action == "set_status":
+        return await manager.bulk_set_status(agent, body.case_ids, body.status.value)
+    if body.action == "set_owner":
+        return await manager.bulk_set_owner(agent, body.case_ids, body.owner_agent_id)
+    if body.action == "add_tags":
+        return await manager.bulk_add_tags(agent, body.case_ids, body.tags)
+    return await manager.bulk_remove_tags(agent, body.case_ids, body.tags)
+
+
+@router.post("/bulk-delete", response_model=BulkActionResponse)
+async def bulk_delete(body: BulkDeleteRequest, agent: AgentDep, db: DbDep) -> BulkActionResponse:
+    """Soft-delete a selection of cases (gate case.delete). Re-deleting
+    an already-deleted case is a no-op."""
+    return await CasesManager(db).bulk_delete(agent, body.case_ids)
 
 
 @router.get("", response_model=CaseListResponse)
