@@ -2954,6 +2954,74 @@
         }
       }
     },
+    "/cases/{case_id}/requirements/{requirement_id}/document": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Fulfill Requirement As Agent",
+        "operationId": "fulfill_requirement_as_agent_cases__case_id__requirements__requirement_id__document_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requirement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_fulfill_requirement_as_agent_cases__case_id__requirements__requirement_id__document_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/documents/{document_id}/download": {
       "get": {
         "tags": [
@@ -3224,7 +3292,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/DocumentResponse"
+                    "$ref": "#/components/schemas/ExpatDocumentResponse"
                   },
                   "title": "Response List Documents As Expat Expat Cases  Case Id  Documents Get"
                 }
@@ -7118,6 +7186,20 @@
         ],
         "title": "BlockingStep"
       },
+      "Body_fulfill_requirement_as_agent_cases__case_id__requirements__requirement_id__document_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_fulfill_requirement_as_agent_cases__case_id__requirements__requirement_id__document_post"
+      },
       "Body_fulfill_requirement_document_expat_cases__case_id__requirements__requirement_id__document_post": {
         "properties": {
           "file": {
@@ -8805,6 +8887,33 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Name"
+          },
+          "requirement_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Reference"
+          },
+          "is_requirement": {
+            "type": "boolean",
+            "title": "Is Requirement",
+            "default": false
           }
         },
         "type": "object",
@@ -8820,7 +8929,7 @@
           "created_at"
         ],
         "title": "DocumentResponse",
-        "description": "`storage_path` is deliberately NOT exposed — the path is\ntechnical, the (original) filename is the display data."
+        "description": "Agent-facing document. `storage_path` is deliberately NOT exposed —\nthe path is technical, the (original) filename is the display data.\nThe enrichment fields (default empty so a bare `model_validate(document)`\non the single-upload responses still works) carry the aggregated-view\ncontext: resolved step name, the requirement this doc answers (if any),\nand the linked-vs-free classifier `is_requirement`."
       },
       "DocumentValidationRequest": {
         "properties": {
@@ -9023,6 +9132,102 @@
           "updated_at"
         ],
         "title": "ExpatCaseSummaryResponse"
+      },
+      "ExpatDocumentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "uploaded_by_type": {
+            "type": "string",
+            "title": "Uploaded By Type"
+          },
+          "is_mine": {
+            "type": "boolean",
+            "title": "Is Mine"
+          },
+          "validation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Status"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Name"
+          },
+          "requirement_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Reference"
+          },
+          "is_requirement": {
+            "type": "boolean",
+            "title": "Is Requirement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "case_id",
+          "filename",
+          "uploaded_by_type",
+          "is_mine",
+          "validation_status",
+          "expires_at",
+          "created_at",
+          "step_name",
+          "requirement_reference",
+          "is_requirement"
+        ],
+        "title": "ExpatDocumentResponse",
+        "description": "Client-facing document — the exclusion contract: NO internal UUID\n(no uploaded_by_id). The uploader is conveyed by `uploaded_by_type`\n+ `is_mine` (the front renders \"Vous\" / \"Votre conseiller\"). Same\naggregated-view context as the agent face."
       },
       "ExpatMeResponse": {
         "properties": {

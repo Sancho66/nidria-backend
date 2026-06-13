@@ -5,8 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.document import Document
+from shared.models.journey import JourneyTemplateStep
 
 
 class DocumentsRepository:
@@ -47,6 +49,48 @@ class DocumentsRepository:
             CaseStepProgress.id == progress_id, CaseStepProgress.case_id == case_id
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_requirement_in_case(
+        self, case_id: uuid.UUID, requirement_id: uuid.UUID
+    ) -> tuple[CaseStepRequirement, CaseStepProgress] | None:
+        """Requirement + its owning progress, scoped to the case (the
+        agent perimeter — a requirement of another case is invisible)."""
+        stmt = (
+            select(CaseStepRequirement, CaseStepProgress)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+            )
+            .where(
+                CaseStepRequirement.id == requirement_id,
+                CaseStepProgress.case_id == case_id,
+            )
+        )
+        row = (await self.db.execute(stmt)).first()
+        return (row[0], row[1]) if row is not None else None
+
+    async def step_names(self, progress_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """{case_step_progress_id: step name} — one join, batched."""
+        if not progress_ids:
+            return {}
+        stmt = (
+            select(CaseStepProgress.id, JourneyTemplateStep.name)
+            .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
+            .where(CaseStepProgress.id.in_(progress_ids))
+        )
+        return {pid: name for pid, name in (await self.db.execute(stmt)).all()}
+
+    async def requirement_refs(self, document_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """Inverse join {document_id: requirement reference} — a document
+        is "linked" iff a case_step_requirement points at it. This is the
+        ONLY classifier for linked-vs-free: a freely-uploaded doc may carry
+        a step_progress_id yet answer no requirement."""
+        if not document_ids:
+            return {}
+        stmt = select(CaseStepRequirement.document_id, CaseStepRequirement.reference).where(
+            CaseStepRequirement.document_id.in_(document_ids)
+        )
+        return {doc_id: ref for doc_id, ref in (await self.db.execute(stmt)).all()}
 
     def add_document(self, **kwargs: Any) -> Document:
         document = Document(**kwargs)

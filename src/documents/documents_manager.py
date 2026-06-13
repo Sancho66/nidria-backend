@@ -13,15 +13,21 @@ from shared.models.expat_user import ExpatUser
 from src.activity.activity_manager import ActivityManager
 from src.core import storage
 from src.core.config import get_settings
-from src.core.enums import ActorType, DocValidationStatus
+from src.core.enums import ActorType, DocValidationStatus, StepRequirementKind, StepStatus
 from src.core.exceptions import (
+    ConflictError,
     ForbiddenError,
     NotFoundError,
     PayloadTooLargeError,
     ValidationError,
 )
 from src.documents.documents_repository import DocumentsRepository
-from src.documents.documents_schema import DocumentValidationRequest
+from src.documents.documents_schema import (
+    DocumentResponse,
+    DocumentValidationRequest,
+    ExpatDocumentResponse,
+)
+from src.progress.progress_manager import ProgressManager
 
 
 class DocumentsManager:
@@ -149,17 +155,95 @@ class DocumentsManager:
         case = await self._case_for_expat(expat, case_id)
         return await self._upload(case, file, step_progress_id, None, ActorType.EXPAT, expat.id)
 
+    async def fulfill_requirement_as_agent(
+        self, agent: Agent, case_id: uuid.UUID, requirement_id: uuid.UUID, file: UploadFile
+    ) -> Document:
+        """Agent equivalent of the wave-2 expat requirement upload (the
+        gap): upload + link the doc to the requirement + mark provided +
+        recompute (auto→DONE). Same shared core as the client path
+        (ProgressManager.fulfill_document_requirement); only the perimeter
+        (agency scope) and the upload audience differ."""
+        case = await self._case_for_agent(agent, case_id)  # border 1
+        found = await self.repo.get_requirement_in_case(case.id, requirement_id)  # border 2
+        if found is None:
+            raise NotFoundError("Requirement not found.")
+        requirement, progress = found
+        if progress.status != StepStatus.IN_PROGRESS.value:  # border 3 (mirror expat)
+            raise ConflictError("This step is not active; its requirements are read-only.")
+        if requirement.kind != StepRequirementKind.DOCUMENT.value:
+            raise ValidationError("This requirement does not expect a document.")
+
+        document = await self._upload(
+            case, file, requirement.case_step_progress_id, None, ActorType.AGENT, agent.id
+        )
+        progress_mgr = ProgressManager(self.db)
+        pending = await progress_mgr.fulfill_document_requirement(case, requirement, document.id)
+        await self.db.commit()
+        await progress_mgr.send_pending(pending)
+        return document
+
     # --- read ----------------------------------------------------------------------------
 
-    async def list_for_agent(self, agent: Agent, case_id: uuid.UUID) -> list[Document]:
-        case = await self._case_for_agent(agent, case_id)
-        return await self.repo.list_documents(case.id)
+    async def _enrich(
+        self, documents: list[Document]
+    ) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, str]]:
+        """Batched aggregated-view context (no N+1): step names by
+        progress id, requirement references by document id (inverse join)."""
+        step_names = await self.repo.step_names(
+            [d.step_progress_id for d in documents if d.step_progress_id is not None]
+        )
+        req_refs = await self.repo.requirement_refs([d.id for d in documents])
+        return step_names, req_refs
 
-    async def list_for_expat(self, expat: ExpatUser, case_id: uuid.UUID) -> list[Document]:
+    async def list_for_agent(self, agent: Agent, case_id: uuid.UUID) -> list[DocumentResponse]:
+        case = await self._case_for_agent(agent, case_id)
+        documents = await self.repo.list_documents(case.id)
+        step_names, req_refs = await self._enrich(documents)
+        return [
+            DocumentResponse(
+                id=d.id,
+                case_id=d.case_id,
+                step_progress_id=d.step_progress_id,
+                filename=d.filename,
+                uploaded_by_type=d.uploaded_by_type,
+                uploaded_by_id=d.uploaded_by_id,
+                validation_status=d.validation_status,
+                expires_at=d.expires_at,
+                created_at=d.created_at,
+                step_name=step_names.get(d.step_progress_id) if d.step_progress_id else None,
+                requirement_reference=req_refs.get(d.id),
+                is_requirement=d.id in req_refs,
+            )
+            for d in documents
+        ]
+
+    async def list_for_expat(
+        self, expat: ExpatUser, case_id: uuid.UUID
+    ) -> list[ExpatDocumentResponse]:
         # The expat sees ALL documents of their case — the agency
         # deposits pieces FOR the client (validated decision).
         case = await self._case_for_expat(expat, case_id)
-        return await self.repo.list_documents(case.id)
+        documents = await self.repo.list_documents(case.id)
+        step_names, req_refs = await self._enrich(documents)
+        return [
+            ExpatDocumentResponse(
+                id=d.id,
+                case_id=d.case_id,
+                filename=d.filename,
+                uploaded_by_type=d.uploaded_by_type,
+                # is_mine drives the delete affordance; no internal UUID exposed.
+                is_mine=(
+                    d.uploaded_by_type == ActorType.EXPAT.value and d.uploaded_by_id == expat.id
+                ),
+                validation_status=d.validation_status,
+                expires_at=d.expires_at,
+                created_at=d.created_at,
+                step_name=step_names.get(d.step_progress_id) if d.step_progress_id else None,
+                requirement_reference=req_refs.get(d.id),
+                is_requirement=d.id in req_refs,
+            )
+            for d in documents
+        ]
 
     async def _download(self, case: ClientCase, document_id: uuid.UUID) -> tuple[Document, bytes]:
         document = await self.repo.get_document_in_case(case.id, document_id)

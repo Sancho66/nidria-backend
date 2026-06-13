@@ -477,6 +477,20 @@ class ProgressManager:
         settings = (agency.settings if agency else None) or {}
         return bool(settings.get("step_notifications_enabled", True))
 
+    async def fulfill_document_requirement(
+        self, case: ClientCase, requirement: Any, document_id: uuid.UUID
+    ) -> list[PendingMail]:
+        """Mark a document requirement provided + link the uploaded file,
+        then recompute the active steps (auto→DONE / ready-to-validate
+        mail). The SINGLE core shared by both faces (agent + expat) — only
+        the perimeter and the upload call differ upstream. The caller
+        commits, then sends the returned mails (best-effort)."""
+        before = await self.snapshot_active_completion(case)  # requirement still pending here
+        requirement.status = RequirementStatus.PROVIDED.value
+        requirement.provided_at = datetime.now(UTC)
+        requirement.document_id = document_id
+        return await self.recompute_active(case, before)
+
     async def snapshot_active_completion(self, case: ClientCase) -> dict[uuid.UUID, bool]:
         """all_met per IN_PROGRESS step BEFORE a write — lets recompute
         fire the agency_validation mail only on the pending→met

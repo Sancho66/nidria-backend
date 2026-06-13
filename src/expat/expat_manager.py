@@ -1,5 +1,4 @@
 import uuid
-from datetime import UTC, datetime
 
 from fastapi import UploadFile
 from pydantic import ValidationError as PydanticValidationError
@@ -12,7 +11,6 @@ from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from src.cases.cases_schema import CustomFieldDefinitionInline, PersonUpdateRequest
 from src.core.enums import (
-    RequirementStatus,
     ResponsibleType,
     StepRequirementKind,
     StepStatus,
@@ -243,18 +241,14 @@ class ExpatPortalManager:
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
             raise ValidationError("This requirement does not expect a document.")
 
-        progress_mgr = ProgressManager(self.db)
-        before = await progress_mgr.snapshot_active_completion(case)
         # Reuse the documents path (storage + Document row + audit); it
         # commits the upload. The document is attached to the step.
         document = await DocumentsManager(self.db).upload_as_expat(
             expat, case_id, file, requirement.case_step_progress_id
         )
-        # Authoritative for document kind: mark provided + link.
-        requirement.status = RequirementStatus.PROVIDED.value
-        requirement.provided_at = datetime.now(UTC)
-        requirement.document_id = document.id
-        pending = await progress_mgr.recompute_active(case, before)
+        # Shared core: mark provided + link + recompute (auto→DONE etc.).
+        progress_mgr = ProgressManager(self.db)
+        pending = await progress_mgr.fulfill_document_requirement(case, requirement, document.id)
         await self.db.commit()
         await progress_mgr.send_pending(pending)
         return await self.get_my_case(expat, case_id)

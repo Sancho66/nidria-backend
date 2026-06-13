@@ -15,7 +15,11 @@ from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.documents.documents_manager import DocumentsManager
-from src.documents.documents_schema import DocumentResponse, DocumentValidationRequest
+from src.documents.documents_schema import (
+    DocumentResponse,
+    DocumentValidationRequest,
+    ExpatDocumentResponse,
+)
 
 agent_router = APIRouter(prefix="/cases", tags=["documents"])
 expat_router = APIRouter(prefix="/expat/cases", tags=["documents-expat"])
@@ -24,6 +28,13 @@ BINDINGS = [
     # Agent side: uploading/deleting = working the case (case.edit);
     # validating = committing the agency (document.validate).
     RouteBinding("POST", "/cases/{case_id}/documents", Audience.AGENT, Permission.CASE_EDIT),
+    # Agent equivalent of the wave-2 expat requirement upload (the gap).
+    RouteBinding(
+        "POST",
+        "/cases/{case_id}/requirements/{requirement_id}/document",
+        Audience.AGENT,
+        Permission.CASE_EDIT,
+    ),
     RouteBinding("GET", "/cases/{case_id}/documents", Audience.AGENT, Permission.CASE_VIEW),
     RouteBinding(
         "GET",
@@ -82,12 +93,29 @@ async def upload_document_as_agent(
     return DocumentResponse.model_validate(document)
 
 
+@agent_router.post(
+    "/{case_id}/requirements/{requirement_id}/document",
+    response_model=DocumentResponse,
+    status_code=201,
+)
+async def fulfill_requirement_as_agent(
+    case_id: uuid.UUID,
+    requirement_id: uuid.UUID,
+    file: UploadFile,
+    agent: AgentDep,
+    db: DbDep,
+) -> DocumentResponse:
+    document = await DocumentsManager(db).fulfill_requirement_as_agent(
+        agent, case_id, requirement_id, file
+    )
+    return DocumentResponse.model_validate(document)
+
+
 @agent_router.get("/{case_id}/documents", response_model=list[DocumentResponse])
 async def list_documents_as_agent(
     case_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> list[DocumentResponse]:
-    documents = await DocumentsManager(db).list_for_agent(agent, case_id)
-    return [DocumentResponse.model_validate(document) for document in documents]
+    return await DocumentsManager(db).list_for_agent(agent, case_id)
 
 
 @agent_router.get("/{case_id}/documents/{document_id}/download")
@@ -135,12 +163,11 @@ async def upload_document_as_expat(
     return DocumentResponse.model_validate(document)
 
 
-@expat_router.get("/{case_id}/documents", response_model=list[DocumentResponse])
+@expat_router.get("/{case_id}/documents", response_model=list[ExpatDocumentResponse])
 async def list_documents_as_expat(
     case_id: uuid.UUID, expat: ExpatDep, db: DbDep
-) -> list[DocumentResponse]:
-    documents = await DocumentsManager(db).list_for_expat(expat, case_id)
-    return [DocumentResponse.model_validate(document) for document in documents]
+) -> list[ExpatDocumentResponse]:
+    return await DocumentsManager(db).list_for_expat(expat, case_id)
 
 
 @expat_router.get("/{case_id}/documents/{document_id}/download")
