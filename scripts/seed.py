@@ -601,9 +601,7 @@ async def seed_dev(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
     )
 
     # Demo custom-field definitions on Reside Paraguay (DÉGEL 2).
-    await get_or_create_custom_field(
-        db, reside, "visa_number", "Numéro de visa", "text"
-    )
+    await get_or_create_custom_field(db, reside, "visa_number", "Numéro de visa", "text")
     await get_or_create_custom_field(
         db,
         reside,
