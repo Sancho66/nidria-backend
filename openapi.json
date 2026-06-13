@@ -1968,13 +1968,14 @@
         }
       }
     },
-    "/cases/{case_id}/family": {
+    "/cases/{case_id}/persons": {
       "post": {
         "tags": [
           "cases"
         ],
-        "summary": "Add Family Member",
-        "operationId": "add_family_member_cases__case_id__family_post",
+        "summary": "Add Person",
+        "description": "Add a FAMILY member (the principal exists with the case).",
+        "operationId": "add_person_cases__case_id__persons_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1997,7 +1998,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FamilyMemberRequest"
+                "$ref": "#/components/schemas/PersonCreateRequest"
               }
             }
           }
@@ -2008,7 +2009,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FamilyMemberResponse"
+                  "$ref": "#/components/schemas/PersonResponse"
                 }
               }
             }
@@ -2026,13 +2027,14 @@
         }
       }
     },
-    "/cases/{case_id}/family/{member_id}": {
+    "/cases/{case_id}/persons/{person_id}": {
       "patch": {
         "tags": [
           "cases"
         ],
-        "summary": "Update Family Member",
-        "operationId": "update_family_member_cases__case_id__family__member_id__patch",
+        "summary": "Update Person",
+        "description": "Edit any person's civil status. The PRINCIPAL's name stays on\nexpat_user (full_name/relationship ignored for it).",
+        "operationId": "update_person_cases__case_id__persons__person_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2050,13 +2052,13 @@
             }
           },
           {
-            "name": "member_id",
+            "name": "person_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Member Id"
+              "title": "Person Id"
             }
           }
         ],
@@ -2065,7 +2067,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FamilyMemberRequest"
+                "$ref": "#/components/schemas/PersonUpdateRequest"
               }
             }
           }
@@ -2076,7 +2078,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FamilyMemberResponse"
+                  "$ref": "#/components/schemas/PersonResponse"
                 }
               }
             }
@@ -2097,8 +2099,9 @@
         "tags": [
           "cases"
         ],
-        "summary": "Delete Family Member",
-        "operationId": "delete_family_member_cases__case_id__family__member_id__delete",
+        "summary": "Delete Person",
+        "description": "Remove a FAMILY member. The principal is never deletable (422).",
+        "operationId": "delete_person_cases__case_id__persons__person_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2116,13 +2119,13 @@
             }
           },
           {
-            "name": "member_id",
+            "name": "person_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Member Id"
+              "title": "Person Id"
             }
           }
         ],
@@ -6312,6 +6315,39 @@
             ],
             "title": "Origin Country"
           },
+          "origin_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Street"
+          },
+          "origin_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin City"
+          },
+          "origin_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Postal Code"
+          },
           "dest_country": {
             "anyOf": [
               {
@@ -6322,6 +6358,39 @@
               }
             ],
             "title": "Dest Country"
+          },
+          "dest_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Street"
+          },
+          "dest_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest City"
+          },
+          "dest_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Postal Code"
           },
           "status": {
             "type": "string",
@@ -6355,15 +6424,17 @@
             "format": "date-time",
             "title": "Updated At"
           },
-          "principal": {
-            "$ref": "#/components/schemas/PrincipalResponse"
-          },
-          "family_members": {
+          "persons": {
             "items": {
-              "$ref": "#/components/schemas/FamilyMemberResponse"
+              "$ref": "#/components/schemas/PersonResponse"
             },
             "type": "array",
-            "title": "Family Members"
+            "title": "Persons"
+          },
+          "principal_person_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Principal Person Id"
           },
           "external_contacts": {
             "items": {
@@ -6395,14 +6466,20 @@
           "owner_agent_id",
           "journey_template_id",
           "origin_country",
+          "origin_street",
+          "origin_city",
+          "origin_postal_code",
           "dest_country",
+          "dest_street",
+          "dest_city",
+          "dest_postal_code",
           "status",
           "source",
           "tags",
           "created_at",
           "updated_at",
-          "principal",
-          "family_members",
+          "persons",
+          "principal_person_id",
           "external_contacts",
           "notes",
           "progress"
@@ -6461,6 +6538,39 @@
             ],
             "title": "Origin Country"
           },
+          "origin_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Street"
+          },
+          "origin_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin City"
+          },
+          "origin_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Postal Code"
+          },
           "dest_country": {
             "anyOf": [
               {
@@ -6471,6 +6581,39 @@
               }
             ],
             "title": "Dest Country"
+          },
+          "dest_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Street"
+          },
+          "dest_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest City"
+          },
+          "dest_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Postal Code"
           },
           "status": {
             "type": "string",
@@ -6516,7 +6659,13 @@
           "owner_agent_id",
           "journey_template_id",
           "origin_country",
+          "origin_street",
+          "origin_city",
+          "origin_postal_code",
           "dest_country",
+          "dest_street",
+          "dest_city",
+          "dest_postal_code",
           "status",
           "source",
           "tags",
@@ -6692,6 +6841,39 @@
             ],
             "title": "Origin Country"
           },
+          "origin_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Street"
+          },
+          "origin_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin City"
+          },
+          "origin_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Postal Code"
+          },
           "dest_country": {
             "anyOf": [
               {
@@ -6702,6 +6884,39 @@
               }
             ],
             "title": "Dest Country"
+          },
+          "dest_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Street"
+          },
+          "dest_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest City"
+          },
+          "dest_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Postal Code"
           },
           "status": {
             "type": "string",
@@ -6744,7 +6959,13 @@
           "owner_agent_id",
           "journey_template_id",
           "origin_country",
+          "origin_street",
+          "origin_city",
+          "origin_postal_code",
           "dest_country",
+          "dest_street",
+          "dest_city",
+          "dest_postal_code",
           "status",
           "source",
           "tags",
@@ -6779,6 +7000,42 @@
             ],
             "title": "Origin Country"
           },
+          "origin_street": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Street"
+          },
+          "origin_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin City"
+          },
+          "origin_postal_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Postal Code"
+          },
           "dest_country": {
             "anyOf": [
               {
@@ -6790,6 +7047,42 @@
               }
             ],
             "title": "Dest Country"
+          },
+          "dest_street": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Street"
+          },
+          "dest_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest City"
+          },
+          "dest_postal_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Postal Code"
           },
           "status": {
             "anyOf": [
@@ -7507,52 +7800,6 @@
         "type": "object",
         "title": "ExternalContactUpdateRequest"
       },
-      "FamilyMemberRequest": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "relationship": {
-            "type": "string",
-            "maxLength": 50,
-            "minLength": 1,
-            "title": "Relationship"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "relationship"
-        ],
-        "title": "FamilyMemberRequest"
-      },
-      "FamilyMemberResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "relationship": {
-            "type": "string",
-            "title": "Relationship"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "relationship"
-        ],
-        "title": "FamilyMemberResponse"
-      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -8078,6 +8325,17 @@
         ],
         "title": "LogoutRequest"
       },
+      "MaritalStatus": {
+        "type": "string",
+        "enum": [
+          "single",
+          "married",
+          "divorced",
+          "widowed",
+          "partnership"
+        ],
+        "title": "MaritalStatus"
+      },
       "MemberRoleSetRequest": {
         "properties": {
           "role_id": {
@@ -8224,44 +8482,454 @@
         ],
         "title": "PermissionResponse"
       },
-      "PrincipalResponse": {
+      "PersonCreateRequest": {
         "properties": {
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "marital_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaritalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "residence_permit_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residence Permit Number"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "full_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Full Name"
+          },
+          "relationship": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Relationship"
+          }
+        },
+        "type": "object",
+        "required": [
+          "full_name",
+          "relationship"
+        ],
+        "title": "PersonCreateRequest",
+        "description": "Creates a FAMILY member (the PRINCIPAL exists with the case)."
+      },
+      "PersonResponse": {
+        "properties": {
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "marital_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaritalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "residence_permit_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residence Permit Number"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
             "title": "Id"
           },
-          "first_name": {
+          "kind": {
             "type": "string",
+            "title": "Kind"
+          },
+          "relationship": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "expat_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expat User Id"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "First Name"
           },
           "last_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Last Name"
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "preferred_lang": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Preferred Lang"
           },
           "activated": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Activated"
           }
         },
         "type": "object",
         "required": [
           "id",
+          "kind",
+          "relationship",
+          "full_name",
+          "expat_user_id",
           "first_name",
           "last_name",
           "email",
           "preferred_lang",
           "activated"
         ],
-        "title": "PrincipalResponse"
+        "title": "PersonResponse",
+        "description": "A person on the case — PRINCIPAL or FAMILY, one homogeneous shape.\nPRINCIPAL: identity (first/last/email/lang) resolved from the shared\nexpat_user (full_name NULL); FAMILY: carries full_name, identity\nfields NULL."
+      },
+      "PersonUpdateRequest": {
+        "properties": {
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "marital_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaritalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "residence_permit_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residence Permit Number"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "relationship": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship"
+          }
+        },
+        "type": "object",
+        "title": "PersonUpdateRequest",
+        "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user)."
       },
       "PrincipalSummaryResponse": {
         "properties": {
@@ -9214,6 +9882,15 @@
         },
         "type": "object",
         "title": "SavedViewUpdate"
+      },
+      "Sex": {
+        "type": "string",
+        "enum": [
+          "M",
+          "F",
+          "X"
+        ],
+        "title": "Sex"
       },
       "StepOrderRequest": {
         "properties": {

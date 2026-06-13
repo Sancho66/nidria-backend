@@ -300,20 +300,26 @@ async def test_get_detail_with_relations(
     cases_client: AsyncClient,
     member: Agent,
     make_client_case: MakeClientCase,
-    make_family_member: object,
+    make_case_person: object,
     make_external_contact: object,
     make_case_note: MakeCaseNote,
     agent_headers: AuthHeaders,
 ) -> None:
     case = await make_client_case(agency_id=member.agency_id)
-    await make_family_member(case=case, name="Lea Martin")  # type: ignore[operator]
+    await make_case_person(case=case, full_name="Lea Martin")  # type: ignore[operator]
     await make_external_contact(case=case, name="Maitre Robert")  # type: ignore[operator]
     await make_case_note(case=case, body="visible", author_agent_id=member.id)
     response = await cases_client.get(f"/cases/{case.id}", headers=agent_headers(member))
     assert response.status_code == 200
     body = response.json()
-    assert body["principal"]["activated"] is False
-    assert [m["name"] for m in body["family_members"]] == ["Lea Martin"]
+    # Unified persons list: principal (kind=principal) leads, then family.
+    persons = body["persons"]
+    principal = next(p for p in persons if p["kind"] == "principal")
+    assert principal["id"] == body["principal_person_id"]
+    assert principal["activated"] is False
+    assert principal["full_name"] is None and principal["first_name"]  # identity resolved
+    family = [p for p in persons if p["kind"] == "family"]
+    assert [p["full_name"] for p in family] == ["Lea Martin"]
     assert [c["name"] for c in body["external_contacts"]] == ["Maitre Robert"]
     assert [n["body"] for n in body["notes"]] == ["visible"]
 
@@ -424,10 +430,10 @@ async def test_patch_with_expat_token_401(
     assert response.status_code == 401
 
 
-# --- family + externals ----------------------------------------------------------------------
+# --- persons + externals ----------------------------------------------------------------------
 
 
-async def test_family_crud_with_activity(
+async def test_person_crud_with_civil_status_and_activity(
     cases_client: AsyncClient,
     db_session: AsyncSession,
     member: Agent,
@@ -436,26 +442,97 @@ async def test_family_crud_with_activity(
 ) -> None:
     headers = agent_headers(member)
     case = await make_client_case(agency_id=member.agency_id)
+    # Add a FAMILY member with civil status in one shot.
     created = await cases_client.post(
-        f"/cases/{case.id}/family",
+        f"/cases/{case.id}/persons",
         headers=headers,
-        json={"name": "Lea Martin", "relationship": "spouse"},
+        json={
+            "full_name": "Lea Martin",
+            "relationship": "spouse",
+            "passport_number": "12AB34567",
+            "date_of_birth": "1990-05-12",
+            "nationality": "French",
+            "sex": "F",
+            "marital_status": "married",
+        },
     )
     assert created.status_code == 201
-    member_id = created.json()["id"]
+    body = created.json()
+    person_id = body["id"]
+    assert body["kind"] == "family"
+    assert body["passport_number"] == "12AB34567"
+    assert body["date_of_birth"] == "1990-05-12"
+    assert body["sex"] == "F" and body["marital_status"] == "married"
 
     updated = await cases_client.patch(
-        f"/cases/{case.id}/family/{member_id}",
+        f"/cases/{case.id}/persons/{person_id}",
         headers=headers,
-        json={"name": "Lea Martin", "relationship": "child"},
+        json={"relationship": "child", "phone": "+33600000000"},
     )
     assert updated.status_code == 200
     assert updated.json()["relationship"] == "child"
+    assert updated.json()["phone"] == "+33600000000"
+    assert updated.json()["passport_number"] == "12AB34567"  # untouched field survives
 
-    deleted = await cases_client.delete(f"/cases/{case.id}/family/{member_id}", headers=headers)
+    deleted = await cases_client.delete(f"/cases/{case.id}/persons/{person_id}", headers=headers)
     assert deleted.status_code == 200
     types = await _activity_types(db_session, str(case.id))
-    assert types == ["family_member.added", "family_member.updated", "family_member.removed"]
+    assert types == ["person.added", "person.updated", "person.removed"]
+
+
+async def test_principal_civil_status_editable_not_deletable(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(member)
+    case = await make_client_case(agency_id=member.agency_id)
+    detail = (await cases_client.get(f"/cases/{case.id}", headers=headers)).json()
+    principal_id = detail["principal_person_id"]
+
+    # Edit the principal's civil status (name stays on expat_user).
+    edited = await cases_client.patch(
+        f"/cases/{case.id}/persons/{principal_id}",
+        headers=headers,
+        json={"passport_number": "PRINCIPAL99", "nationality": "Russian", "full_name": "ignored"},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["passport_number"] == "PRINCIPAL99"
+    assert edited.json()["full_name"] is None  # full_name ignored for principal
+    assert edited.json()["first_name"]  # identity still resolved from expat_user
+
+    # The principal is never deletable.
+    denied = await cases_client.delete(f"/cases/{case.id}/persons/{principal_id}", headers=headers)
+    assert denied.status_code == 422
+
+
+async def test_addresses_on_patch_case(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(member)
+    case = await make_client_case(agency_id=member.agency_id)
+    response = await cases_client.patch(
+        f"/cases/{case.id}",
+        headers=headers,
+        json={
+            "origin_street": "12 rue de Paris",
+            "origin_city": "Lyon",
+            "origin_postal_code": "69001",
+            "dest_street": "Av. España 100",
+            "dest_city": "Asunción",
+            "dest_postal_code": "001",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["origin_street"] == "12 rue de Paris" and body["origin_city"] == "Lyon"
+    assert body["dest_city"] == "Asunción" and body["dest_postal_code"] == "001"
+    # Country columns untouched (filters/views read them).
+    assert body["origin_country"] == "FR" and body["dest_country"] == "PY"
 
 
 async def test_external_contact_crud(
@@ -606,13 +683,73 @@ async def test_export_pdf(
     cases_client: AsyncClient,
     member: Agent,
     make_client_case: MakeClientCase,
+    make_case_person: object,
     agent_headers: AuthHeaders,
 ) -> None:
+    headers = agent_headers(member)
     case = await make_client_case(agency_id=member.agency_id)
-    response = await cases_client.get(f"/cases/{case.id}/export", headers=agent_headers(member))
+    # Civil status on a family member + addresses on the case → the PDF
+    # builder must include them without crashing (latin-1 path covered).
+    await make_case_person(  # type: ignore[operator]
+        case=case, full_name="Lea Martin", passport_number="X99", nationality="French"
+    )
+    await cases_client.patch(
+        f"/cases/{case.id}",
+        headers=headers,
+        json={"origin_street": "12 rue", "dest_city": "Asunción"},
+    )
+    response = await cases_client.get(f"/cases/{case.id}/export", headers=headers)
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF")
+
+
+# --- RGPD isolation: civil status is case-scoped, never on expat_user --------------
+
+
+async def test_civil_status_isolated_across_agencies_sharing_an_expat(
+    cases_client: AsyncClient,
+    make_agent: MakeAgent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Two agencies, one shared expat_user as principal of a case each.
+    Agency A sets the principal's civil status — agency B must NOT see
+    it (it lives on case_person scoped to A's case, never on the shared
+    expat_user)."""
+    shared_expat = await make_expat_user()
+    agent_a = await make_agent(role=system_roles["case_manager"])
+    agent_b = await make_agent(role=system_roles["case_manager"])  # other agency
+    case_a = await make_client_case(
+        agency_id=agent_a.agency_id, principal_expat_user_id=shared_expat.id
+    )
+    case_b = await make_client_case(
+        agency_id=agent_b.agency_id, principal_expat_user_id=shared_expat.id
+    )
+
+    detail_a = (
+        await cases_client.get(f"/cases/{case_a.id}", headers=agent_headers(agent_a))
+    ).json()
+    principal_a = detail_a["principal_person_id"]
+    set_status = await cases_client.patch(
+        f"/cases/{case_a.id}/persons/{principal_a}",
+        headers=agent_headers(agent_a),
+        json={"passport_number": "SECRET-A", "nationality": "French"},
+    )
+    assert set_status.status_code == 200
+
+    # Agency B's view of the SAME expat: civil status is empty.
+    detail_b = (
+        await cases_client.get(f"/cases/{case_b.id}", headers=agent_headers(agent_b))
+    ).json()
+    principal_b = next(p for p in detail_b["persons"] if p["kind"] == "principal")
+    assert principal_b["passport_number"] is None
+    assert principal_b["nationality"] is None
+    # Same human identity (shared expat_user), different case_person rows.
+    assert principal_b["email"] == detail_a["persons"][0]["email"]
+    assert principal_b["id"] != principal_a
 
 
 # --- multi-sort (Prism parity) ---------------------------------------------------

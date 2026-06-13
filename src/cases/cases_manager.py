@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.case_note import CaseNote
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.external_contact import ExternalContact
-from shared.models.family_member import FamilyMember
 from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
 from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
@@ -29,14 +29,14 @@ from src.cases.cases_schema import (
     ExternalContactCreateRequest,
     ExternalContactResponse,
     ExternalContactUpdateRequest,
-    FamilyMemberRequest,
-    FamilyMemberResponse,
-    PrincipalResponse,
+    PersonCreateRequest,
+    PersonResponse,
+    PersonUpdateRequest,
 )
 from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.email_templates import expat_activation_email, new_case_email
-from src.core.enums import ActorType
+from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
@@ -108,6 +108,16 @@ class CasesManager:
         )
         await self.db.flush()
 
+        # The PRINCIPAL person — civil-status carrier linked to the
+        # shared login identity. Exactly one per case (DB invariant);
+        # created with the case, never deletable.
+        self.repo.add_person(
+            case_id=case.id,
+            kind=CasePersonKind.PRINCIPAL.value,
+            expat_user_id=expat.id,
+        )
+        await self.db.flush()
+
         # The case link IS principal_expat_user_id (just set). The
         # invitation is notification + audit trail, never the linking
         # mechanism — sent for new AND existing expats.
@@ -159,25 +169,15 @@ class CasesManager:
 
     async def get_case_detail(self, agent: Agent, case_id: uuid.UUID) -> CaseDetailResponse:
         case = await self._get_case(agent, case_id)
-        principal = await self.repo.get_expat(case.principal_expat_user_id)
-        assert principal is not None  # RESTRICT FK guarantees it
         include_confidential = Permission.NOTE_VIEW_CONFIDENTIAL.value in effective_permissions(
             agent
         )
+        persons = await self.repo.list_persons(case_id)
+        principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
         return CaseDetailResponse(
             **CaseResponse.model_validate(case).model_dump(),
-            principal=PrincipalResponse(
-                id=principal.id,
-                first_name=principal.first_name,
-                last_name=principal.last_name,
-                email=principal.email,
-                preferred_lang=principal.preferred_lang,
-                activated=principal.activated_at is not None,
-            ),
-            family_members=[
-                FamilyMemberResponse.model_validate(member)
-                for member in await self.repo.list_family(case_id)
-            ],
+            persons=[self._person_response(p) for p in persons],
+            principal_person_id=principal_person.id,
             external_contacts=[
                 ExternalContactResponse.model_validate(contact)
                 for contact in await self.repo.list_external_contacts(case_id)
@@ -349,48 +349,109 @@ class CasesManager:
             affected_ids=affected,
         )
 
-    # --- family members -----------------------------------------------------------------
+    # --- persons (principal + family) ---------------------------------------------------
 
-    async def add_family_member(
-        self, agent: Agent, case_id: uuid.UUID, payload: FamilyMemberRequest
-    ) -> FamilyMember:
-        case = await self._get_case(agent, case_id)
-        member = self.repo.add_family_member(
-            case_id=case.id, name=payload.name, relationship=payload.relationship
+    _CIVIL_FIELDS = (
+        "passport_number",
+        "date_of_birth",
+        "nationality",
+        "place_of_birth",
+        "sex",
+        "marital_status",
+        "residence_permit_number",
+        "phone",
+    )
+
+    @staticmethod
+    def _person_response(person: CasePerson) -> PersonResponse:
+        """Homogeneous shape: PRINCIPAL resolves identity from the shared
+        expat_user (full_name NULL), FAMILY carries full_name."""
+        expat = person.expat_user
+        return PersonResponse(
+            id=person.id,
+            kind=person.kind,
+            relationship=person.relationship,
+            full_name=person.full_name,
+            expat_user_id=person.expat_user_id,
+            first_name=expat.first_name if expat else None,
+            last_name=expat.last_name if expat else None,
+            email=expat.email if expat else None,
+            preferred_lang=expat.preferred_lang if expat else None,
+            activated=(expat.activated_at is not None) if expat else None,
+            passport_number=person.passport_number,
+            date_of_birth=person.date_of_birth,
+            nationality=person.nationality,
+            place_of_birth=person.place_of_birth,
+            sex=person.sex,
+            marital_status=person.marital_status,
+            residence_permit_number=person.residence_permit_number,
+            phone=person.phone,
         )
-        await self.db.flush()
-        self._log(case.id, agent, "family_member.added", {"family_member_id": str(member.id)})
-        await self.db.commit()
-        await self.db.refresh(member)
-        return member
 
-    async def update_family_member(
+    def _apply_civil_fields(
+        self, person: CasePerson, payload: PersonCreateRequest | PersonUpdateRequest
+    ) -> None:
+        provided = payload.model_dump(exclude_unset=True)
+        for field in self._CIVIL_FIELDS:
+            if field in provided:
+                value = provided[field]
+                # Enums (sex, marital_status) → store their .value.
+                setattr(person, field, value.value if hasattr(value, "value") else value)
+
+    async def add_person(
+        self, agent: Agent, case_id: uuid.UUID, payload: PersonCreateRequest
+    ) -> PersonResponse:
+        case = await self._get_case(agent, case_id)
+        person = self.repo.add_person(
+            case_id=case.id,
+            kind=CasePersonKind.FAMILY.value,
+            full_name=payload.full_name,
+            relationship=payload.relationship,
+        )
+        self._apply_civil_fields(person, payload)
+        await self.db.flush()
+        self._log(case.id, agent, "person.added", {"person_id": str(person.id)})
+        await self.db.commit()
+        reloaded = await self.repo.get_person(case.id, person.id)
+        assert reloaded is not None
+        return self._person_response(reloaded)
+
+    async def update_person(
         self,
         agent: Agent,
         case_id: uuid.UUID,
-        member_id: uuid.UUID,
-        payload: FamilyMemberRequest,
-    ) -> FamilyMember:
+        person_id: uuid.UUID,
+        payload: PersonUpdateRequest,
+    ) -> PersonResponse:
         case = await self._get_case(agent, case_id)
-        member = await self.repo.get_family_member(case.id, member_id)
-        if member is None:
-            raise NotFoundError("Family member not found.")
-        member.name = payload.name
-        member.relationship = payload.relationship
-        self._log(case.id, agent, "family_member.updated", {"family_member_id": str(member.id)})
+        person = await self.repo.get_person(case.id, person_id)
+        if person is None:
+            raise NotFoundError("Person not found.")
+        provided = payload.model_dump(exclude_unset=True)
+        # full_name / relationship are FAMILY-only; the PRINCIPAL's name
+        # lives on expat_user and is never set here.
+        if person.kind == CasePersonKind.FAMILY.value:
+            if "full_name" in provided and provided["full_name"] is not None:
+                person.full_name = provided["full_name"]
+            if "relationship" in provided and provided["relationship"] is not None:
+                person.relationship = provided["relationship"]
+        self._apply_civil_fields(person, payload)
+        self._log(case.id, agent, "person.updated", {"person_id": str(person.id)})
         await self.db.commit()
-        await self.db.refresh(member)
-        return member
+        reloaded = await self.repo.get_person(case.id, person_id)
+        assert reloaded is not None
+        return self._person_response(reloaded)
 
-    async def delete_family_member(
-        self, agent: Agent, case_id: uuid.UUID, member_id: uuid.UUID
-    ) -> None:
+    async def delete_person(self, agent: Agent, case_id: uuid.UUID, person_id: uuid.UUID) -> None:
         case = await self._get_case(agent, case_id)
-        member = await self.repo.get_family_member(case.id, member_id)
-        if member is None:
-            raise NotFoundError("Family member not found.")
-        await self.repo.delete_row(member)
-        self._log(case.id, agent, "family_member.removed", {"family_member_id": str(member_id)})
+        person = await self.repo.get_person(case.id, person_id)
+        if person is None:
+            raise NotFoundError("Person not found.")
+        if person.kind == CasePersonKind.PRINCIPAL.value:
+            # The principal is the file holder — never deletable.
+            raise ValidationError("The principal cannot be removed from a case.")
+        await self.repo.delete_row(person)
+        self._log(case.id, agent, "person.removed", {"person_id": str(person_id)})
         await self.db.commit()
 
     # --- external contacts -----------------------------------------------------------------
@@ -529,9 +590,14 @@ class CasesManager:
         owner: Agent | None = None
         if case.owner_agent_id is not None:
             owner = await self.repo.get_agent_in_agency(agent.agency_id, case.owner_agent_id)
+        persons = await self.repo.list_persons(case.id)
         activity_rows = await self.repo.list_activity_chronological(case.id)
         return build_case_pdf(
-            case=case, principal=principal, owner=owner, activity_rows=activity_rows
+            case=case,
+            principal=principal,
+            owner=owner,
+            persons=persons,
+            activity_rows=activity_rows,
         )
 
 

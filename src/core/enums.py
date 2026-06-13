@@ -107,3 +107,26 @@ class InvitationStatus(StrEnum):
     ACCEPTED = "accepted"
     EXPIRED = "expired"
     CANCELLED = "cancelled"
+
+
+class CasePersonKind(StrEnum):
+    """A person attached to a case. Exactly one PRINCIPAL per case
+    (the file holder, linked to the shared expat_user for login);
+    any number of FAMILY members (no login)."""
+
+    PRINCIPAL = "principal"
+    FAMILY = "family"
+
+
+class Sex(StrEnum):
+    MALE = "M"
+    FEMALE = "F"
+    OTHER = "X"
+
+
+class MaritalStatus(StrEnum):
+    SINGLE = "single"
+    MARRIED = "married"
+    DIVORCED = "divorced"
+    WIDOWED = "widowed"
+    PARTNERSHIP = "partnership"

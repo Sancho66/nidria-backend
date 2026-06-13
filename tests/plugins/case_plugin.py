@@ -8,9 +8,9 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.case_note import CaseNote
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.external_contact import ExternalContact
-from shared.models.family_member import FamilyMember
 from shared.models.invitation import CaseInvitation
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.expat_plugin import MakeExpatUser
@@ -22,7 +22,7 @@ CASE_DEFAULTS: dict[str, Any] = {
 
 MakeClientCase = Callable[..., Awaitable[ClientCase]]
 MakeCaseInvitation = Callable[..., Awaitable[CaseInvitation]]
-MakeFamilyMember = Callable[..., Awaitable[FamilyMember]]
+MakeCasePerson = Callable[..., Awaitable[CasePerson]]
 MakeExternalContact = Callable[..., Awaitable[ExternalContact]]
 MakeCaseNote = Callable[..., Awaitable[CaseNote]]
 
@@ -42,6 +42,16 @@ async def make_client_case(
             data["principal_expat_user_id"] = expat.id
         case = ClientCase(**data)
         db_session.add(case)
+        await db_session.flush()
+        # The PRINCIPAL person — created with the case in real code; the
+        # detail endpoint requires exactly one per case.
+        db_session.add(
+            CasePerson(
+                case_id=case.id,
+                kind="principal",
+                expat_user_id=data["principal_expat_user_id"],
+            )
+        )
         await db_session.commit()
         await db_session.refresh(case)
         return case
@@ -70,14 +80,22 @@ async def make_case_invitation(db_session: AsyncSession) -> MakeCaseInvitation:
 
 
 @pytest_asyncio.fixture
-async def make_family_member(db_session: AsyncSession) -> MakeFamilyMember:
-    async def _make(*, case: ClientCase, **overrides: Any) -> FamilyMember:
-        data = {"case_id": case.id, "name": "Family Member", "relationship": "spouse", **overrides}
-        member = FamilyMember(**data)
-        db_session.add(member)
+async def make_case_person(db_session: AsyncSession) -> MakeCasePerson:
+    """A FAMILY person on a case (the principal is created with the case)."""
+
+    async def _make(*, case: ClientCase, **overrides: Any) -> CasePerson:
+        data = {
+            "case_id": case.id,
+            "kind": "family",
+            "full_name": "Family Member",
+            "relationship": "spouse",
+            **overrides,
+        }
+        person = CasePerson(**data)
+        db_session.add(person)
         await db_session.commit()
-        await db_session.refresh(member)
-        return member
+        await db_session.refresh(person)
+        return person
 
     return _make
 

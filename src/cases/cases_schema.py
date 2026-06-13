@@ -1,11 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.cases.filter_schema import AdvancedFilters
-from src.core.enums import CaseStatus, ExternalContactType
+from src.core.enums import CaseStatus, ExternalContactType, MaritalStatus, Sex
 from src.progress.progress_schema import StepProgressResponse
 
 _COUNTRY_PATTERN = r"^[A-Z]{2}$"
@@ -32,7 +32,13 @@ class CaseCreateRequest(BaseModel):
 
 class CaseUpdateRequest(BaseModel):
     origin_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
+    origin_street: str | None = Field(default=None, max_length=255)
+    origin_city: str | None = Field(default=None, max_length=100)
+    origin_postal_code: str | None = Field(default=None, max_length=20)
     dest_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
+    dest_street: str | None = Field(default=None, max_length=255)
+    dest_city: str | None = Field(default=None, max_length=100)
+    dest_postal_code: str | None = Field(default=None, max_length=20)
     status: CaseStatus | None = None
     source: str | None = Field(default=None, max_length=100)
     tags: list[str] | None = None
@@ -47,8 +53,16 @@ class CaseResponse(BaseModel):
     principal_expat_user_id: uuid.UUID
     owner_agent_id: uuid.UUID | None
     journey_template_id: uuid.UUID | None
+    # Addresses, flat. origin_country/dest_country unchanged (filters
+    # /sorts/views read them); street/city/postal_code are the additions.
     origin_country: str | None
+    origin_street: str | None
+    origin_city: str | None
+    origin_postal_code: str | None
     dest_country: str | None
+    dest_street: str | None
+    dest_city: str | None
+    dest_postal_code: str | None
     status: str
     source: str | None
     tags: list[str]
@@ -79,26 +93,54 @@ class CaseListResponse(BaseModel):
     page_size: int
 
 
-class PrincipalResponse(BaseModel):
-    id: uuid.UUID
-    first_name: str
-    last_name: str
-    email: str
-    preferred_lang: str
-    activated: bool
+class _CivilStatusFields(BaseModel):
+    """Case-scoped civil status — all optional, never on expat_user."""
+
+    passport_number: str | None = Field(default=None, max_length=50)
+    date_of_birth: date | None = None
+    nationality: str | None = Field(default=None, max_length=100)
+    place_of_birth: str | None = Field(default=None, max_length=200)
+    sex: Sex | None = None
+    marital_status: MaritalStatus | None = None
+    residence_permit_number: str | None = Field(default=None, max_length=50)
+    phone: str | None = Field(default=None, max_length=50)
 
 
-class FamilyMemberRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    relationship: str = Field(min_length=1, max_length=50)
+class PersonResponse(_CivilStatusFields):
+    """A person on the case — PRINCIPAL or FAMILY, one homogeneous shape.
+    PRINCIPAL: identity (first/last/email/lang) resolved from the shared
+    expat_user (full_name NULL); FAMILY: carries full_name, identity
+    fields NULL."""
 
-
-class FamilyMemberResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    name: str
-    relationship: str
+    kind: str
+    relationship: str | None
+    full_name: str | None
+    # Resolved from expat_user for PRINCIPAL (so the frontend shows the
+    # name without a second fetch); NULL for FAMILY.
+    expat_user_id: uuid.UUID | None
+    first_name: str | None
+    last_name: str | None
+    email: str | None
+    preferred_lang: str | None
+    activated: bool | None
+
+
+class PersonCreateRequest(_CivilStatusFields):
+    """Creates a FAMILY member (the PRINCIPAL exists with the case)."""
+
+    full_name: str = Field(min_length=1, max_length=200)
+    relationship: str = Field(min_length=1, max_length=50)
+
+
+class PersonUpdateRequest(_CivilStatusFields):
+    """Edits any person. For FAMILY, full_name/relationship are editable;
+    for PRINCIPAL they are ignored (its name lives on expat_user)."""
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    relationship: str | None = Field(default=None, min_length=1, max_length=50)
 
 
 class ExternalContactCreateRequest(BaseModel):
@@ -149,8 +191,11 @@ class CaseNoteResponse(BaseModel):
 
 
 class CaseDetailResponse(CaseResponse):
-    principal: PrincipalResponse
-    family_members: list[FamilyMemberResponse]
+    # Unified list: principal (kind=principal) + family, one shape. The
+    # principal is findable in O(1) via principal_person_id (invariant:
+    # exactly one kind=principal person per case).
+    persons: list[PersonResponse]
+    principal_person_id: uuid.UUID
     external_contacts: list[ExternalContactResponse]
     notes: list[CaseNoteResponse]
     # Projected timeline (BLOCKED computed at read time).

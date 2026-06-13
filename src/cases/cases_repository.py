@@ -9,10 +9,10 @@ from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_note import CaseNote
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
-from shared.models.family_member import FamilyMember
 from shared.models.invitation import CaseInvitation
 from src.cases.filter_builder import build_advanced_clauses
 
@@ -181,28 +181,31 @@ class CasesRepository:
         self.db.add(invitation)
         return invitation
 
-    # --- family members --------------------------------------------------------------
+    # --- persons (principal + family) ------------------------------------------------
 
-    async def list_family(self, case_id: uuid.UUID) -> list[FamilyMember]:
+    async def list_persons(self, case_id: uuid.UUID) -> list[CasePerson]:
+        # PRINCIPAL first, then family by creation order — the principal
+        # leads the homogeneous list in the detail response.
         stmt = (
-            select(FamilyMember)
-            .where(FamilyMember.case_id == case_id)
-            .order_by(FamilyMember.created_at)
+            select(CasePerson)
+            .options(selectinload(CasePerson.expat_user))
+            .where(CasePerson.case_id == case_id)
+            .order_by(CasePerson.kind.desc(), CasePerson.created_at)
         )
         return list((await self.db.execute(stmt)).scalars())
 
-    async def get_family_member(
-        self, case_id: uuid.UUID, member_id: uuid.UUID
-    ) -> FamilyMember | None:
-        stmt = select(FamilyMember).where(
-            FamilyMember.id == member_id, FamilyMember.case_id == case_id
+    async def get_person(self, case_id: uuid.UUID, person_id: uuid.UUID) -> CasePerson | None:
+        stmt = (
+            select(CasePerson)
+            .options(selectinload(CasePerson.expat_user))
+            .where(CasePerson.id == person_id, CasePerson.case_id == case_id)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    def add_family_member(self, **kwargs: Any) -> FamilyMember:
-        member = FamilyMember(**kwargs)
-        self.db.add(member)
-        return member
+    def add_person(self, **kwargs: Any) -> CasePerson:
+        person = CasePerson(**kwargs)
+        self.db.add(person)
+        return person
 
     async def delete_row(self, row: object) -> None:
         await self.db.delete(row)

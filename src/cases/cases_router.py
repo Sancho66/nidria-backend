@@ -25,8 +25,9 @@ from src.cases.cases_schema import (
     ExternalContactCreateRequest,
     ExternalContactResponse,
     ExternalContactUpdateRequest,
-    FamilyMemberRequest,
-    FamilyMemberResponse,
+    PersonCreateRequest,
+    PersonResponse,
+    PersonUpdateRequest,
 )
 from src.cases.filter_schema import AdvancedFilters
 from src.core.dependencies import get_current_agent, get_db
@@ -70,9 +71,9 @@ BINDINGS = [
     RouteBinding("GET", "/cases/{case_id}", Audience.AGENT, _VIEW),
     RouteBinding("PATCH", "/cases/{case_id}", Audience.AGENT, _EDIT),
     RouteBinding("GET", "/cases/{case_id}/export", Audience.AGENT, _VIEW),
-    RouteBinding("POST", "/cases/{case_id}/family", Audience.AGENT, _EDIT),
-    RouteBinding("PATCH", "/cases/{case_id}/family/{member_id}", Audience.AGENT, _EDIT),
-    RouteBinding("DELETE", "/cases/{case_id}/family/{member_id}", Audience.AGENT, _EDIT),
+    RouteBinding("POST", "/cases/{case_id}/persons", Audience.AGENT, _EDIT),
+    RouteBinding("PATCH", "/cases/{case_id}/persons/{person_id}", Audience.AGENT, _EDIT),
+    RouteBinding("DELETE", "/cases/{case_id}/persons/{person_id}", Audience.AGENT, _EDIT),
     RouteBinding("POST", "/cases/{case_id}/external-contacts", Audience.AGENT, _EDIT),
     RouteBinding("PATCH", "/cases/{case_id}/external-contacts/{contact_id}", Audience.AGENT, _EDIT),
     RouteBinding(
@@ -204,35 +205,37 @@ async def export_case(case_id: uuid.UUID, agent: AgentDep, db: DbDep) -> Respons
     )
 
 
-# --- family members -----------------------------------------------------------------
+# --- persons (principal + family) ----------------------------------------------------
 
 
-@router.post("/{case_id}/family", response_model=FamilyMemberResponse, status_code=201)
-async def add_family_member(
-    case_id: uuid.UUID, body: FamilyMemberRequest, agent: AgentDep, db: DbDep
-) -> FamilyMemberResponse:
-    member = await CasesManager(db).add_family_member(agent, case_id, body)
-    return FamilyMemberResponse.model_validate(member)
+@router.post("/{case_id}/persons", response_model=PersonResponse, status_code=201)
+async def add_person(
+    case_id: uuid.UUID, body: PersonCreateRequest, agent: AgentDep, db: DbDep
+) -> PersonResponse:
+    """Add a FAMILY member (the principal exists with the case)."""
+    return await CasesManager(db).add_person(agent, case_id, body)
 
 
-@router.patch("/{case_id}/family/{member_id}", response_model=FamilyMemberResponse)
-async def update_family_member(
+@router.patch("/{case_id}/persons/{person_id}", response_model=PersonResponse)
+async def update_person(
     case_id: uuid.UUID,
-    member_id: uuid.UUID,
-    body: FamilyMemberRequest,
+    person_id: uuid.UUID,
+    body: PersonUpdateRequest,
     agent: AgentDep,
     db: DbDep,
-) -> FamilyMemberResponse:
-    member = await CasesManager(db).update_family_member(agent, case_id, member_id, body)
-    return FamilyMemberResponse.model_validate(member)
+) -> PersonResponse:
+    """Edit any person's civil status. The PRINCIPAL's name stays on
+    expat_user (full_name/relationship ignored for it)."""
+    return await CasesManager(db).update_person(agent, case_id, person_id, body)
 
 
-@router.delete("/{case_id}/family/{member_id}", response_model=MessageResponse)
-async def delete_family_member(
-    case_id: uuid.UUID, member_id: uuid.UUID, agent: AgentDep, db: DbDep
+@router.delete("/{case_id}/persons/{person_id}", response_model=MessageResponse)
+async def delete_person(
+    case_id: uuid.UUID, person_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> MessageResponse:
-    await CasesManager(db).delete_family_member(agent, case_id, member_id)
-    return MessageResponse(detail="Family member removed.")
+    """Remove a FAMILY member. The principal is never deletable (422)."""
+    await CasesManager(db).delete_person(agent, case_id, person_id)
+    return MessageResponse(detail="Person removed.")
 
 
 # --- external contacts -----------------------------------------------------------------

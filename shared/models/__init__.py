@@ -4,12 +4,12 @@ from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.base import Base
 from shared.models.case_note import CaseNote
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
-from shared.models.family_member import FamilyMember
 from shared.models.impersonation import ImpersonationLog
 from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.job import JobConfig, JobRun
@@ -32,7 +32,7 @@ __all__ = [
     "Document",
     "ExpatUser",
     "ExternalContact",
-    "FamilyMember",
+    "CasePerson",
     "ImpersonationLog",
     "JobConfig",
     "JobRun",

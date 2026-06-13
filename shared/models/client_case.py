@@ -36,8 +36,18 @@ class ClientCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     journey_template_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("journey_template.id", ondelete="RESTRICT")
     )
+    # Origin / destination addresses, flat columns. `origin_country` and
+    # `dest_country` are the `country` of each address — KEPT as-is so
+    # the country filters / sorts / saved views never change; street /
+    # city / postal_code are the new fields added around them.
     origin_country: Mapped[str | None] = mapped_column(String(2))
+    origin_street: Mapped[str | None] = mapped_column(String(255))
+    origin_city: Mapped[str | None] = mapped_column(String(100))
+    origin_postal_code: Mapped[str | None] = mapped_column(String(20))
     dest_country: Mapped[str | None] = mapped_column(String(2))
+    dest_street: Mapped[str | None] = mapped_column(String(255))
+    dest_city: Mapped[str | None] = mapped_column(String(100))
+    dest_postal_code: Mapped[str | None] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(
         String(30), default=CaseStatus.PROSPECT, index=True, nullable=False
     )

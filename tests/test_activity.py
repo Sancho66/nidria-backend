@@ -29,16 +29,16 @@ async def busy_case(
     make_client_case: MakeClientCase,
     agent_headers: AuthHeaders,
 ) -> ClientCase:
-    """A case with a real activity trail: status change + family add."""
+    """A case with a real activity trail: status change + person add."""
     case = await make_client_case(agency_id=member.agency_id, status="prospect")
     headers = agent_headers(member)
     await activity_client.patch(
         f"/cases/{case.id}", headers=headers, json={"status": "in_progress"}
     )
     await activity_client.post(
-        f"/cases/{case.id}/family",
+        f"/cases/{case.id}/persons",
         headers=headers,
-        json={"name": "Lea", "relationship": "spouse"},
+        json={"full_name": "Lea", "relationship": "spouse"},
     )
     return case
 
@@ -56,7 +56,7 @@ async def test_timeline_paginated_desc(
     body = response.json()
     assert body["total"] == 2
     # Desc: the most recent action first.
-    assert body["items"][0]["action_type"] == "family_member.added"
+    assert body["items"][0]["action_type"] == "person.added"
     page2 = (
         await activity_client.get(
             f"/cases/{busy_case.id}/activity?page=2&page_size=1",

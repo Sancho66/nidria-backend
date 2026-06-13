@@ -36,10 +36,10 @@ from shared.models import (  # noqa: E402
     ActivityLog,
     Agency,
     Agent,
+    CasePerson,
     CaseStepProgress,
     ClientCase,
     ExpatUser,
-    FamilyMember,
     JourneyTemplate,
     JourneyTemplateStep,
     MessageTemplate,
@@ -291,8 +291,13 @@ async def seed_martin(
     )
     db.add(case)
     await db.flush()
-    db.add(FamilyMember(case_id=case.id, name="Claire Martin", relationship="spouse"))
-    db.add(FamilyMember(case_id=case.id, name="Lucas Martin", relationship="child"))
+    db.add(CasePerson(case_id=case.id, kind="principal", expat_user_id=expat.id))
+    db.add(
+        CasePerson(case_id=case.id, kind="family", full_name="Claire Martin", relationship="spouse")
+    )
+    db.add(
+        CasePerson(case_id=case.id, kind="family", full_name="Lucas Martin", relationship="child")
+    )
 
     # Steps 1-2 DONE (Eloïse at -30d, Sélim at -15d), 3 IN_PROGRESS
     # responsible EXPAT, 4-5 TODO (projection blocks them via 4←3, 5←4).
@@ -422,6 +427,7 @@ async def seed_volkov(
     )
     db.add(case)
     await db.flush()
+    db.add(CasePerson(case_id=case.id, kind="principal", expat_user_id=expat.id))
 
     done_1 = NOW - timedelta(days=7)
     _progress(
@@ -497,6 +503,7 @@ async def seed_dupont(
     )
     db.add(case)
     await db.flush()
+    db.add(CasePerson(case_id=case.id, kind="principal", expat_user_id=expat.id))
 
     step1 = _progress(
         db,
