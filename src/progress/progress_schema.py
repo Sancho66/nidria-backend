@@ -23,6 +23,10 @@ class RequirementStateResponse(BaseModel):
 
     id: uuid.UUID
     person_id: uuid.UUID
+    # Resolved display name of the concerned person — PRINCIPAL via the
+    # shared expat_user (its full_name column is NULL), FAMILY via its
+    # own full_name. Never empty for a person that exists.
+    person_label: str
     kind: str
     reference: str
     scope: str

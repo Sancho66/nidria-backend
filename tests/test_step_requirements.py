@@ -19,6 +19,7 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.rbac import Role
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeCasePerson, MakeClientCase
+from tests.plugins.expat_plugin import MakeExpatUser
 
 
 @pytest.fixture
@@ -340,6 +341,48 @@ async def test_agency_validation_never_self_closes(
     assert step["all_requirements_met"] is True
     assert step["status"] == "in_progress"  # NOT done — no active auto-complete
     assert step["completion_mode"] == "agency_validation"
+
+
+async def test_exposed_requirements_carry_resolved_person_name(
+    sr_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_case_person: MakeCasePerson,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Each exposed requirement carries its person's READABLE name —
+    PRINCIPAL resolved via expat_user (its case_person.full_name is
+    NULL), FAMILY via full_name. Never empty for a person that exists.
+    Regression: the agent-side exposure carried no resolved name."""
+    headers = agent_headers(admin)
+    tid, sid = await _template_with_step(sr_client, headers)
+    await _add_req(
+        sr_client,
+        headers,
+        tid,
+        sid,
+        kind="base_field",
+        reference="passport_number",
+        scope="each_person",
+    )
+    expat = await make_expat_user(first_name="Marie", last_name="Curie")
+    case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    await make_case_person(case=case, full_name="Petit Curie")
+
+    entry = await _activate_first_step(sr_client, headers, str(case.id), tid)
+    # 2 persons → 2 each_person reqs, each with its own resolved name.
+    labels = {r["person_label"] for r in entry["requirements"]}
+    assert labels == {
+        "Marie Curie",
+        "Petit Curie",
+    }  # principal via expat_user, family via full_name
+    assert "" not in labels  # never empty
+
+    # Same on GET /cases/{id} — the route the front reported empty.
+    detail = await sr_client.get(f"/cases/{case.id}", headers=headers)
+    step = next(s for s in detail.json()["progress"] if s["id"] == entry["id"])
+    assert {r["person_label"] for r in step["requirements"]} == {"Marie Curie", "Petit Curie"}
 
 
 # --- reorder (same convention as steps/order) ----------------------------------------

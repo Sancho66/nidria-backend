@@ -65,6 +65,17 @@ _ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
 }
 
 
+def _person_label(person: Any) -> str:
+    """Display name of a case person: PRINCIPAL → the shared expat_user's
+    name (its own full_name is NULL); FAMILY → its local full_name.
+    Empty only when the person itself is missing."""
+    if person is None:
+        return ""
+    if person.kind == CasePersonKind.PRINCIPAL.value and person.expat_user is not None:
+        return f"{person.expat_user.first_name} {person.expat_user.last_name}".strip()
+    return person.full_name or ""
+
+
 def _initial_responsible_type(step: JourneyTemplateStep) -> str | None:
     """Step-4 copy rule: EXPAT copies directly (the case principal is
     implicit); AGENT/EXTERNAL stay NULL until a person is explicitly
@@ -191,6 +202,7 @@ class ProgressManager:
                 RequirementStateResponse(
                     id=req.id,
                     person_id=req.person_id,
+                    person_label=_person_label(person),
                     kind=req.kind,
                     reference=req.reference,
                     scope=req.scope,

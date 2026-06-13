@@ -116,7 +116,6 @@ class ExpatPortalManager:
             if step.responsible_external_id is not None
         ]
         external_names = await self.repo.external_contact_names(external_ids)
-        person_labels = await self.repo.person_labels(case.id)
         timeline = [
             ExpatTimelineStepResponse(
                 name=step.name,
@@ -134,7 +133,7 @@ class ExpatPortalManager:
                         reference=req.reference,
                         scope=req.scope,
                         status=req.status,
-                        person_label=person_labels.get(req.person_id, ""),
+                        person_label=req.person_label,  # resolved upstream (single source)
                     )
                     # Archived custom-field requirements are not surfaced:
                     # never ask the client to fill a retired field.

@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
@@ -113,7 +114,14 @@ class ProgressRepository:
         return list((await self.db.execute(stmt)).scalars())
 
     async def list_persons_for_case(self, case_id: uuid.UUID) -> list[CasePerson]:
-        stmt = select(CasePerson).where(CasePerson.case_id == case_id)
+        # Eager-load expat_user: the PRINCIPAL's display name lives there
+        # (case_person.full_name is NULL for the principal), and resolving
+        # it lazily in async would fail.
+        stmt = (
+            select(CasePerson)
+            .where(CasePerson.case_id == case_id)
+            .options(selectinload(CasePerson.expat_user))
+        )
         return list((await self.db.execute(stmt)).scalars())
 
     async def count_case_requirements(self, case_step_progress_id: uuid.UUID) -> int:

@@ -10288,6 +10288,10 @@
             "format": "uuid",
             "title": "Person Id"
           },
+          "person_label": {
+            "type": "string",
+            "title": "Person Label"
+          },
           "kind": {
             "type": "string",
             "title": "Kind"
@@ -10325,6 +10329,7 @@
         "required": [
           "id",
           "person_id",
+          "person_label",
           "kind",
           "reference",
           "scope",
