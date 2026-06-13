@@ -442,3 +442,84 @@ async def test_flag_disables_comment_notifications(
     email.outbox.clear()
     await c_client.post(f"/cases/{case.id}/steps/{pid}/comments", headers=ah, json={"body": "x"})
     assert email.outbox == []  # same single switch as wave 2
+
+
+# --- timeline integration: progress_id + comment_count (vague 5 front) ---------------
+
+
+async def test_expat_timeline_exposes_progress_id(
+    c_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    ah, eh = agent_headers(admin), expat_headers(expat)
+    case, pid = await _thread(c_client, ah, admin, expat, make_client_case)
+    detail = (await c_client.get(f"/expat/cases/{case.id}", headers=eh)).json()
+    step = detail["timeline"][0]
+    assert step["progress_id"] == pid  # the id the comment route needs
+    # …and it is directly usable to address the client's own thread.
+    posted = await c_client.post(
+        f"/expat/cases/{case.id}/steps/{step['progress_id']}/comments",
+        headers=eh,
+        json={"body": "via progress_id"},
+    )
+    assert posted.status_code == 201
+
+
+async def test_comment_count_excludes_deleted_both_faces(
+    c_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    ah, eh = agent_headers(admin), expat_headers(expat)
+    case, pid = await _thread(c_client, ah, admin, expat, make_client_case)
+    ids = []
+    for n in ("1", "2", "3"):
+        r = await c_client.post(
+            f"/cases/{case.id}/steps/{pid}/comments", headers=ah, json={"body": n}
+        )
+        ids.append(r.json()["id"])
+    await c_client.delete(f"/cases/{case.id}/steps/{pid}/comments/{ids[0]}", headers=ah)
+
+    # Agent face.
+    agent_steps = (await c_client.get(f"/cases/{case.id}/steps", headers=ah)).json()
+    assert agent_steps[0]["comment_count"] == 2  # 3 posted − 1 deleted
+    # Expat face.
+    detail = (await c_client.get(f"/expat/cases/{case.id}", headers=eh)).json()
+    assert detail["timeline"][0]["comment_count"] == 2
+
+
+async def test_comment_count_is_per_step_not_cross_contaminated(
+    c_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Two steps, distinct counts — proves the grouped/batched COUNT keys
+    on the right case_step_progress (no bleed, no N+1 fallback)."""
+    ah = agent_headers(admin)
+    tid = (await c_client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    for name in ("S1", "S2"):
+        await c_client.post(f"/journeys/{tid}/steps", headers=ah, json={"name": name})
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    steps = (
+        await c_client.post(
+            f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid}
+        )
+    ).json()
+    p1, p2 = steps[0]["id"], steps[1]["id"]
+    await c_client.post(f"/cases/{case.id}/steps/{p1}/comments", headers=ah, json={"body": "a"})
+    await c_client.post(f"/cases/{case.id}/steps/{p1}/comments", headers=ah, json={"body": "b"})
+
+    by_id = {s["id"]: s for s in (await c_client.get(f"/cases/{case.id}/steps", headers=ah)).json()}
+    assert by_id[p1]["comment_count"] == 2
+    assert by_id[p2]["comment_count"] == 0  # untouched step → zero, not N+1-defaulted

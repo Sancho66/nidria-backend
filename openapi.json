@@ -9208,6 +9208,11 @@
       },
       "ExpatTimelineStepResponse": {
         "properties": {
+          "progress_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Progress Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -9263,10 +9268,15 @@
           "completion_mode": {
             "type": "string",
             "title": "Completion Mode"
+          },
+          "comment_count": {
+            "type": "integer",
+            "title": "Comment Count"
           }
         },
         "type": "object",
         "required": [
+          "progress_id",
           "name",
           "position",
           "status",
@@ -9275,7 +9285,8 @@
           "blocked_by",
           "responsible",
           "requirements",
-          "completion_mode"
+          "completion_mode",
+          "comment_count"
         ],
         "title": "ExpatTimelineStepResponse"
       },
@@ -11741,6 +11752,10 @@
           "all_requirements_met": {
             "type": "boolean",
             "title": "All Requirements Met"
+          },
+          "comment_count": {
+            "type": "integer",
+            "title": "Comment Count"
           }
         },
         "type": "object",
@@ -11759,7 +11774,8 @@
           "blocked_by",
           "completion_mode",
           "requirements",
-          "all_requirements_met"
+          "all_requirements_met",
+          "comment_count"
         ],
         "title": "StepProgressResponse"
       },

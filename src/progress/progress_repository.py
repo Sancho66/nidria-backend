@@ -14,6 +14,7 @@ from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
 
 
@@ -136,6 +137,22 @@ class ProgressRepository:
         row = CaseStepRequirement(**kwargs)
         self.db.add(row)
         return row
+
+    async def comment_counts(self, progress_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+        """{case_step_progress_id: non-deleted comment count} — one grouped
+        COUNT for the whole timeline (no per-step query / N+1). Soft-deleted
+        comments (deleted_at NOT NULL) don't inflate the badge."""
+        if not progress_ids:
+            return {}
+        stmt = (
+            select(StepComment.case_step_progress_id, func.count())
+            .where(
+                StepComment.case_step_progress_id.in_(progress_ids),
+                StepComment.deleted_at.is_(None),
+            )
+            .group_by(StepComment.case_step_progress_id)
+        )
+        return {pid: count for pid, count in (await self.db.execute(stmt)).all()}
 
     async def list_case_requirements_for_progress_ids(
         self, progress_ids: list[uuid.UUID]

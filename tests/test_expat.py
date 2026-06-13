@@ -32,6 +32,7 @@ SUMMARY_KEYS = {
 }
 DETAIL_KEYS = SUMMARY_KEYS | {"referent", "timeline", "custom_field_definitions"}
 STEP_KEYS = {
+    "progress_id",
     "name",
     "position",
     "status",
@@ -43,6 +44,8 @@ STEP_KEYS = {
     "requirements",
     # NEW WAVE: lets the client phrase the right close message.
     "completion_mode",
+    # VAGUE 5: comment thread badge.
+    "comment_count",
 }
 REQUIREMENT_KEYS = {
     "id",

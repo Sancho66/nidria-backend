@@ -118,6 +118,7 @@ class ExpatPortalManager:
         external_names = await self.repo.external_contact_names(external_ids)
         timeline = [
             ExpatTimelineStepResponse(
+                progress_id=step.id,
                 name=step.name,
                 position=step.position,
                 status=step.status,
@@ -126,6 +127,7 @@ class ExpatPortalManager:
                 blocked_by=[blocking.name for blocking in step.blocked_by],
                 responsible=_displayable_responsible(step, external_names),
                 completion_mode=step.completion_mode,
+                comment_count=step.comment_count,
                 requirements=[
                     ExpatRequirementResponse(
                         id=req.id,

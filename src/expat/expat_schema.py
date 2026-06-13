@@ -76,6 +76,11 @@ class ExpatRequirementResponse(BaseModel):
 
 
 class ExpatTimelineStepResponse(BaseModel):
+    # VAGUE 5: the case_step_progress id — needed to address the client
+    # comment thread (/expat/cases/{case_id}/steps/{progress_id}/comments).
+    # NOT an internal UUID leak: it's a step of the CLIENT'S OWN dossier,
+    # which the expat already passes in its own comment URLs.
+    progress_id: uuid.UUID
     name: str
     position: int
     status: str  # projected (blocked computed at read time)
@@ -90,6 +95,8 @@ class ExpatTimelineStepResponse(BaseModel):
     # `auto` (closes by itself once all provided) vs `agency_validation`
     # (awaits the agency's validation).
     completion_mode: str
+    # VAGUE 5: non-deleted comment count for a "X messages" badge.
+    comment_count: int
 
 
 class RequirementValueRequest(BaseModel):

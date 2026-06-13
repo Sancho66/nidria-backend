@@ -185,6 +185,7 @@ class ProgressManager:
         # case persons + active custom defs once, assemble in Python (no
         # N+1). Provided state is DERIVED live for base/custom fields.
         concrete = await self.repo.list_case_requirements_for_progress_ids([row.id for row in rows])
+        comment_counts = await self.repo.comment_counts([row.id for row in rows])
         persons_by_id = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
         active_keys = {
             d.key for d in await CustomFieldsManager(self.db).active_definitions(case.agency_id)
@@ -255,6 +256,7 @@ class ProgressManager:
                     completion_mode=step.completion_mode,
                     requirements=reqs_by_progress.get(row.id, []),
                     all_requirements_met=met_by_progress.get(row.id, True),
+                    comment_count=comment_counts.get(row.id, 0),
                 )
             )
         responses.sort(key=lambda r: r.position)

@@ -61,6 +61,9 @@ class StepProgressResponse(BaseModel):
     completion_mode: str
     requirements: list[RequirementStateResponse]
     all_requirements_met: bool
+    # VAGUE 5: non-deleted comment count for a "X messages" badge without
+    # listing the thread (batched COUNT, no N+1).
+    comment_count: int
 
 
 class StepProgressUpdateRequest(BaseModel):
