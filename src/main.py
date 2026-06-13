@@ -13,6 +13,8 @@ from src.activity.activity_router import router as activity_router
 from src.agencies.agencies_router import router as agencies_router
 from src.auth.auth_router import router as auth_router
 from src.cases.cases_router import router as cases_router
+from src.comments.comments_router import agent_router as comments_agent_router
+from src.comments.comments_router import expat_router as comments_expat_router
 from src.core.config import get_settings
 from src.core.database import async_session_maker, get_db
 from src.core.exceptions import register_exception_handlers
@@ -108,6 +110,8 @@ app.include_router(custom_fields_router)
 app.include_router(dashboard_router)
 app.include_router(documents_agent_router)
 app.include_router(documents_expat_router)
+app.include_router(comments_agent_router)
+app.include_router(comments_expat_router)
 app.include_router(expat_portal_router)
 app.include_router(impersonation_router)
 app.include_router(jobs_router)

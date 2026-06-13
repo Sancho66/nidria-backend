@@ -17,6 +17,11 @@ class Permission(StrEnum):
     CASE_VIEW = "case.view"
     CASE_EDIT = "case.edit"
     CASE_DELETE = "case.delete"
+    # Writing to the per-step comment thread (a CLIENT-VISIBLE channel) is
+    # a capability distinct from viewing (case.view) or editing the
+    # dossier (case.edit): an agency can let someone talk to the client
+    # without granting dossier edits, or withhold it from a pure viewer.
+    CASE_COMMENT = "case.comment"
     STEP_COMPLETE = "step.complete"
     REMINDER_CREATE = "reminder.create"
     REMINDER_APPROVE = "reminder.approve"

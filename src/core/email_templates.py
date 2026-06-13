@@ -232,3 +232,36 @@ def ready_to_validate_email(case_label: str, step_name: str, app_link: str) -> E
         button_label="Ouvrir le dossier",
         button_url=app_link,
     )
+
+
+def new_comment_to_client(
+    agency_name: str, author_first_name: str, step_name: str, space_link: str
+) -> EmailContent:
+    """Agent posted on a step thread → notify the client. Uses the
+    agent's FIRST NAME (a deliberate, scoped exception to the wave-1
+    anti-staffing rule: a conversation is not a status — a name humanizes
+    and reassures the client that a person is replying)."""
+    return _render(
+        subject="Nidria — Nouveau message de votre conseiller",
+        title="Vous avez un nouveau message",
+        intro=(
+            f"{author_first_name} de {agency_name} vous a écrit au sujet de "
+            f"l'étape « {step_name} ». Répondez depuis votre espace."
+        ),
+        button_label="Voir la conversation",
+        button_url=space_link,
+    )
+
+
+def new_comment_to_agent(client_name: str, step_name: str, app_link: str) -> EmailContent:
+    """Client posted on a step thread → notify the case owner agent."""
+    return _render(
+        subject="Nidria — Nouveau message de votre client",
+        title="Nouveau message d'un client",
+        intro=(
+            f"{client_name} a écrit au sujet de l'étape « {step_name} ». "
+            "Ouvrez le dossier pour répondre."
+        ),
+        button_label="Ouvrir le dossier",
+        button_url=app_link,
+    )

@@ -60,11 +60,13 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     "member": (
         Permission.CASE_VIEW,
         Permission.CASE_EDIT,
+        Permission.CASE_COMMENT,
         Permission.STEP_COMPLETE,
         Permission.REMINDER_CREATE,
         Permission.REMINDER_APPROVE,
         Permission.DOCUMENT_VALIDATE,
     ),
+    # viewer reads the dossier (and comment threads) but cannot post.
     "viewer": (Permission.CASE_VIEW,),
 }
 
@@ -80,6 +82,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.agencies.agencies_router import BINDINGS as agencies_bindings
     from src.auth.auth_router import BINDINGS as auth_bindings
     from src.cases.cases_router import BINDINGS as cases_bindings
+    from src.comments.comments_router import BINDINGS as comments_bindings
     from src.custom_fields.custom_fields_router import BINDINGS as custom_fields_bindings
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
     from src.documents.documents_router import BINDINGS as documents_bindings
@@ -102,6 +105,7 @@ def collect_bindings() -> list[RouteBinding]:
         *custom_fields_bindings,
         *views_bindings,
         *progress_bindings,
+        *comments_bindings,
         *documents_bindings,
         *reminders_bindings,
         *jobs_bindings,

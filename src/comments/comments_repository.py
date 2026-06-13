@@ -1,0 +1,148 @@
+import uuid
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from shared.models.agency import Agency
+from shared.models.agent import Agent
+from shared.models.case_step_progress import CaseStepProgress
+from shared.models.client_case import ClientCase
+from shared.models.expat_user import ExpatUser
+from shared.models.journey import JourneyTemplateStep
+from shared.models.step_comment import StepComment, StepCommentNotification
+
+
+class CommentsRepository:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    # --- case / step resolution (the ownership borders) ----------------------------
+
+    async def get_case_in_agency(
+        self, agency_id: uuid.UUID, case_id: uuid.UUID
+    ) -> ClientCase | None:
+        stmt = select(ClientCase).where(
+            ClientCase.id == case_id,
+            ClientCase.agency_id == agency_id,
+            ClientCase.deleted_at.is_(None),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_case_for_expat(
+        self, expat_id: uuid.UUID, case_id: uuid.UUID
+    ) -> ClientCase | None:
+        stmt = select(ClientCase).where(
+            ClientCase.id == case_id,
+            ClientCase.principal_expat_user_id == expat_id,
+            ClientCase.deleted_at.is_(None),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_progress_in_case(
+        self, case_id: uuid.UUID, progress_id: uuid.UUID
+    ) -> CaseStepProgress | None:
+        stmt = select(CaseStepProgress).where(
+            CaseStepProgress.id == progress_id, CaseStepProgress.case_id == case_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    # --- comments --------------------------------------------------------------------
+
+    def add_comment(self, **kwargs: Any) -> StepComment:
+        comment = StepComment(**kwargs)
+        self.db.add(comment)
+        return comment
+
+    async def list_comments(self, progress_id: uuid.UUID) -> list[StepComment]:
+        stmt = (
+            select(StepComment)
+            .where(StepComment.case_step_progress_id == progress_id)
+            .order_by(StepComment.created_at, StepComment.id)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_comment(
+        self, progress_id: uuid.UUID, comment_id: uuid.UUID
+    ) -> StepComment | None:
+        stmt = select(StepComment).where(
+            StepComment.id == comment_id,
+            StepComment.case_step_progress_id == progress_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    # --- author-name resolution (batch, single source) -----------------------------
+
+    async def agent_first_names(self, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not ids:
+            return {}
+        stmt = select(Agent.id, Agent.first_name).where(Agent.id.in_(ids))
+        return {aid: first for aid, first in (await self.db.execute(stmt)).all()}
+
+    async def expat_labels(self, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not ids:
+            return {}
+        stmt = select(ExpatUser.id, ExpatUser.first_name, ExpatUser.last_name).where(
+            ExpatUser.id.in_(ids)
+        )
+        return {
+            eid: f"{first} {last}".strip()
+            for eid, first, last in (await self.db.execute(stmt)).all()
+        }
+
+    # --- notification resolution -----------------------------------------------------
+
+    async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
+        return await self.db.get(Agency, agency_id)
+
+    async def get_step_name(self, template_step_id: uuid.UUID) -> str | None:
+        return (
+            await self.db.execute(
+                select(JourneyTemplateStep.name).where(JourneyTemplateStep.id == template_step_id)
+            )
+        ).scalar_one_or_none()
+
+    async def get_agent_email(self, agent_id: uuid.UUID) -> str | None:
+        return (
+            await self.db.execute(select(Agent.email).where(Agent.id == agent_id))
+        ).scalar_one_or_none()
+
+    async def get_principal_name_email(self, case: ClientCase) -> tuple[str | None, str | None]:
+        row = (
+            await self.db.execute(
+                select(ExpatUser.first_name, ExpatUser.last_name, ExpatUser.email).where(
+                    ExpatUser.id == case.principal_expat_user_id
+                )
+            )
+        ).first()
+        if row is None:
+            return None, None
+        first, last, email = row
+        return f"{first} {last}".strip(), email
+
+    # --- anti-burst tracker (effective-send timestamp) ------------------------------
+
+    async def get_notification(
+        self, progress_id: uuid.UUID, recipient_type: str
+    ) -> StepCommentNotification | None:
+        stmt = select(StepCommentNotification).where(
+            StepCommentNotification.case_step_progress_id == progress_id,
+            StepCommentNotification.recipient_type == recipient_type,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def upsert_notification(
+        self, progress_id: uuid.UUID, recipient_type: str, when: datetime
+    ) -> None:
+        row = await self.get_notification(progress_id, recipient_type)
+        if row is None:
+            self.db.add(
+                StepCommentNotification(
+                    case_step_progress_id=progress_id,
+                    recipient_type=recipient_type,
+                    last_notified_at=when,
+                )
+            )
+        else:
+            row.last_notified_at = when
