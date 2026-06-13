@@ -18,6 +18,8 @@ from src.journeys.journeys_schema import (
     JourneyTemplateUpdateRequest,
     StepOrderRequest,
     StepPrerequisitesRequest,
+    StepRequirementCreateRequest,
+    StepRequirementResponse,
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
@@ -59,6 +61,24 @@ BINDINGS = [
     RouteBinding(
         "PUT",
         "/journeys/{template_id}/steps/{step_id}/prerequisites",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/steps/{step_id}/requirements",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "POST",
+        "/journeys/{template_id}/steps/{step_id}/requirements",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -175,3 +195,48 @@ async def set_prerequisites(
     await manager.set_prerequisites(agent, template_id, step_id, body.prerequisite_step_ids)
     detail = await manager.get_template_detail(agent, template_id)
     return _step_response(step_id, detail)
+
+
+# --- step requirements (NEW WAVE) ----------------------------------------------------
+
+
+@router.get(
+    "/{template_id}/steps/{step_id}/requirements",
+    response_model=list[StepRequirementResponse],
+)
+async def list_requirements(
+    template_id: uuid.UUID, step_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[StepRequirementResponse]:
+    rows = await JourneysManager(db).list_requirements(agent, template_id, step_id)
+    return [StepRequirementResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/{template_id}/steps/{step_id}/requirements",
+    response_model=StepRequirementResponse,
+    status_code=201,
+)
+async def add_requirement(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: StepRequirementCreateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> StepRequirementResponse:
+    requirement = await JourneysManager(db).add_requirement(agent, template_id, step_id, body)
+    return StepRequirementResponse.model_validate(requirement)
+
+
+@router.delete(
+    "/{template_id}/steps/{step_id}/requirements/{requirement_id}",
+    response_model=MessageResponse,
+)
+async def delete_requirement(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    requirement_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> MessageResponse:
+    await JourneysManager(db).delete_requirement(agent, template_id, step_id, requirement_id)
+    return MessageResponse(detail="Requirement removed.")

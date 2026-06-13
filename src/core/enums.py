@@ -143,3 +143,29 @@ class CustomFieldType(StrEnum):
     BOOLEAN = "boolean"
     SELECT = "select"
     MULTI_SELECT = "multi_select"
+
+
+class CompletionMode(StrEnum):
+    """How a journey step closes. `agency_validation` (default) = the
+    current flow: the agency closes the step. `auto` = capability to
+    self-complete when all concrete requirements are met — the active
+    trigger lands in a later wave; wave 1 only exposes the state."""
+
+    AUTO = "auto"
+    AGENCY_VALIDATION = "agency_validation"
+
+
+class StepRequirementKind(StrEnum):
+    BASE_FIELD = "base_field"
+    CUSTOM_FIELD = "custom_field"
+    DOCUMENT = "document"
+
+
+class StepRequirementScope(StrEnum):
+    PRINCIPAL = "principal"
+    EACH_PERSON = "each_person"
+
+
+class RequirementStatus(StrEnum):
+    PENDING = "pending"
+    PROVIDED = "provided"

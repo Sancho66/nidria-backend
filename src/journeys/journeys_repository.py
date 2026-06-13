@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.step_requirement import StepRequirement
 
 
 class JourneysRepository:
@@ -76,6 +77,7 @@ class JourneysRepository:
         estimated_days: int | None,
         default_responsible_type: str | None,
         required_documents: list[str],
+        completion_mode: str,
     ) -> JourneyTemplateStep:
         step = JourneyTemplateStep(
             template_id=template_id,
@@ -84,6 +86,7 @@ class JourneysRepository:
             estimated_days=estimated_days,
             default_responsible_type=default_responsible_type,
             required_documents=required_documents,
+            completion_mode=completion_mode,
         )
         self.db.add(step)
         return step
@@ -123,3 +126,29 @@ class JourneysRepository:
 
     def add_prerequisite(self, step_id: uuid.UUID, prerequisite_step_id: uuid.UUID) -> None:
         self.db.add(StepPrerequisite(step_id=step_id, prerequisite_step_id=prerequisite_step_id))
+
+    # --- step requirements (NEW WAVE) ----------------------------------------------
+
+    async def list_requirements(self, step_id: uuid.UUID) -> list[StepRequirement]:
+        stmt = (
+            select(StepRequirement)
+            .where(StepRequirement.step_id == step_id)
+            .order_by(StepRequirement.position, StepRequirement.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_requirement_in_step(
+        self, step_id: uuid.UUID, requirement_id: uuid.UUID
+    ) -> StepRequirement | None:
+        stmt = select(StepRequirement).where(
+            StepRequirement.id == requirement_id, StepRequirement.step_id == step_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_requirement(self, **kwargs: object) -> StepRequirement:
+        requirement = StepRequirement(**kwargs)
+        self.db.add(requirement)
+        return requirement
+
+    async def delete_requirement(self, requirement: StepRequirement) -> None:
+        await self.db.delete(requirement)

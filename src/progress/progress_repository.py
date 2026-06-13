@@ -5,10 +5,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.step_requirement import StepRequirement
 
 
 class ProgressRepository:
@@ -96,3 +99,42 @@ class ProgressRepository:
             ExternalContact.id == contact_id, ExternalContact.case_id == case_id
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    # --- step requirements (NEW WAVE) ----------------------------------------------
+
+    async def list_step_requirements(self, template_step_id: uuid.UUID) -> list[StepRequirement]:
+        stmt = (
+            select(StepRequirement)
+            .where(StepRequirement.step_id == template_step_id)
+            .order_by(StepRequirement.position, StepRequirement.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def list_persons_for_case(self, case_id: uuid.UUID) -> list[CasePerson]:
+        stmt = select(CasePerson).where(CasePerson.case_id == case_id)
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def count_case_requirements(self, case_step_progress_id: uuid.UUID) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(CaseStepRequirement)
+            .where(CaseStepRequirement.case_step_progress_id == case_step_progress_id)
+        )
+        return (await self.db.execute(stmt)).scalar_one()
+
+    def add_case_requirement(self, **kwargs: Any) -> CaseStepRequirement:
+        row = CaseStepRequirement(**kwargs)
+        self.db.add(row)
+        return row
+
+    async def list_case_requirements_for_progress_ids(
+        self, progress_ids: list[uuid.UUID]
+    ) -> list[CaseStepRequirement]:
+        if not progress_ids:
+            return []
+        stmt = (
+            select(CaseStepRequirement)
+            .where(CaseStepRequirement.case_step_progress_id.in_(progress_ids))
+            .order_by(CaseStepRequirement.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())

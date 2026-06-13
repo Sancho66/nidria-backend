@@ -30,6 +30,16 @@ class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(nullable=False)
     estimated_days: Mapped[int | None] = mapped_column()
     default_responsible_type: Mapped[str | None] = mapped_column(String(20))
+    # How the step closes (NEW WAVE). Default reproduces the current
+    # flow (agency closes the step) — additive, breaks nothing. `auto`
+    # is a capability flag here; the active auto-complete trigger lands
+    # in a later wave.
+    completion_mode: Mapped[str] = mapped_column(
+        String(20),
+        default="agency_validation",
+        server_default=text("'agency_validation'"),
+        nullable=False,
+    )
     # Step 15 (Eric): free-label list of the pieces the agency expects
     # at this step. INFORMATIVE at MVP — the lock stays prerequisites
     # only; piece↔requirement matching is V1.5. server_default so the

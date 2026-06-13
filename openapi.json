@@ -4488,6 +4488,202 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/requirements": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Requirements",
+        "operationId": "list_requirements_journeys__template_id__steps__step_id__requirements_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StepRequirementResponse"
+                  },
+                  "title": "Response List Requirements Journeys  Template Id  Steps  Step Id  Requirements Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Requirement",
+        "operationId": "add_requirement_journeys__template_id__steps__step_id__requirements_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepRequirementCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepRequirementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}": {
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Requirement",
+        "operationId": "delete_requirement_journeys__template_id__steps__step_id__requirements__requirement_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requirement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/journey": {
       "post": {
         "tags": [
@@ -7397,6 +7593,15 @@
         "type": "object",
         "title": "CaseUpdateRequest"
       },
+      "CompletionMode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "agency_validation"
+        ],
+        "title": "CompletionMode",
+        "description": "How a journey step closes. `agency_validation` (default) = the\ncurrent flow: the agency closes the step. `auto` = capability to\nself-complete when all concrete requirements are met — the active\ntrigger lands in a later wave; wave 1 only exposes the state."
+      },
       "CustomFieldDefinitionCreate": {
         "properties": {
           "key": {
@@ -9801,6 +10006,65 @@
         "title": "ReminderUpdateRequest",
         "description": "Any edit of an APPROVED reminder sends it back to TO_APPROVE —\nthe approval covers exactly what goes out."
       },
+      "RequirementStateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "person_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Person Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "is_archived": {
+            "type": "boolean",
+            "title": "Is Archived"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "person_id",
+          "kind",
+          "reference",
+          "scope",
+          "status",
+          "is_archived",
+          "document_id"
+        ],
+        "title": "RequirementStateResponse",
+        "description": "A concrete requirement on an active step (NEW WAVE, read-only).\n`status` is derived from the live person value for base/custom\nfields, explicit for documents. `is_archived` flags a custom-field\nwhose definition the agency has archived."
+      },
       "ResetPasswordRequest": {
         "properties": {
           "token": {
@@ -10523,6 +10787,21 @@
             },
             "type": "array",
             "title": "Blocked By"
+          },
+          "completion_mode": {
+            "type": "string",
+            "title": "Completion Mode"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/RequirementStateResponse"
+            },
+            "type": "array",
+            "title": "Requirements"
+          },
+          "all_requirements_met": {
+            "type": "boolean",
+            "title": "All Requirements Met"
           }
         },
         "type": "object",
@@ -10539,7 +10818,10 @@
           "responsible_external_id",
           "completed_at",
           "completed_by_agent_id",
-          "blocked_by"
+          "blocked_by",
+          "completion_mode",
+          "requirements",
+          "all_requirements_met"
         ],
         "title": "StepProgressResponse"
       },
@@ -10594,6 +10876,91 @@
         "title": "StepProgressUpdateRequest",
         "description": "Status transitions and/or responsible assignment. Unset fields\nare untouched (model_fields_set semantics); `responsible_type=None`\nexplicitly CLEARS the responsible."
       },
+      "StepRequirementCreateRequest": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/StepRequirementKind"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/StepRequirementScope"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "reference",
+          "scope"
+        ],
+        "title": "StepRequirementCreateRequest"
+      },
+      "StepRequirementKind": {
+        "type": "string",
+        "enum": [
+          "base_field",
+          "custom_field",
+          "document"
+        ],
+        "title": "StepRequirementKind"
+      },
+      "StepRequirementResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "step_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Step Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "step_id",
+          "kind",
+          "reference",
+          "scope",
+          "position"
+        ],
+        "title": "StepRequirementResponse"
+      },
+      "StepRequirementScope": {
+        "type": "string",
+        "enum": [
+          "principal",
+          "each_person"
+        ],
+        "title": "StepRequirementScope"
+      },
       "StepStatus": {
         "type": "string",
         "enum": [
@@ -10640,6 +11007,10 @@
             },
             "type": "array",
             "title": "Required Documents"
+          },
+          "completion_mode": {
+            "$ref": "#/components/schemas/CompletionMode",
+            "default": "agency_validation"
           }
         },
         "type": "object",
@@ -10693,6 +11064,10 @@
             "type": "array",
             "title": "Required Documents"
           },
+          "completion_mode": {
+            "type": "string",
+            "title": "Completion Mode"
+          },
           "prerequisite_step_ids": {
             "items": {
               "type": "string",
@@ -10710,6 +11085,7 @@
           "estimated_days",
           "default_responsible_type",
           "required_documents",
+          "completion_mode",
           "prerequisite_step_ids"
         ],
         "title": "TemplateStepResponse"
@@ -10764,6 +11140,16 @@
               }
             ],
             "title": "Required Documents"
+          },
+          "completion_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompletionMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

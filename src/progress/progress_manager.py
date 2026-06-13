@@ -10,14 +10,25 @@ from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyTemplateStep
 from src.activity.activity_manager import ActivityManager
-from src.core.enums import ActorType, ResponsibleType, StepStatus
+from src.core.enums import (
+    ActorType,
+    CasePersonKind,
+    RequirementStatus,
+    ResponsibleType,
+    StepRequirementKind,
+    StepRequirementScope,
+    StepStatus,
+)
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
     BlockingStep,
+    RequirementStateResponse,
     StepProgressResponse,
     StepProgressUpdateRequest,
 )
+from src.progress.requirements_eval import is_provided
 
 # Stored-status state machine. BLOCKED never appears here: it is a
 # READ-TIME PROJECTION (single source of truth = current template
@@ -135,6 +146,43 @@ class ProgressManager:
             row.template_step_id for row in rows if row.status == StepStatus.DONE.value
         }
 
+        # Requirements (NEW WAVE): batch-load all concrete requirements +
+        # case persons + active custom defs once, assemble in Python (no
+        # N+1). Provided state is DERIVED live for base/custom fields.
+        concrete = await self.repo.list_case_requirements_for_progress_ids([row.id for row in rows])
+        persons_by_id = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
+        active_keys = {
+            d.key for d in await CustomFieldsManager(self.db).active_definitions(case.agency_id)
+        }
+        reqs_by_progress: dict[uuid.UUID, list[RequirementStateResponse]] = defaultdict(list)
+        met_by_progress: dict[uuid.UUID, bool] = {}
+        for req in concrete:
+            person = persons_by_id.get(req.person_id)
+            provided = is_provided(req, person) if person is not None else False
+            is_archived = (
+                req.kind == StepRequirementKind.CUSTOM_FIELD.value
+                and req.reference not in active_keys
+            )
+            reqs_by_progress[req.case_step_progress_id].append(
+                RequirementStateResponse(
+                    id=req.id,
+                    person_id=req.person_id,
+                    kind=req.kind,
+                    reference=req.reference,
+                    scope=req.scope,
+                    status=(
+                        RequirementStatus.PROVIDED.value
+                        if provided
+                        else RequirementStatus.PENDING.value
+                    ),
+                    is_archived=is_archived,
+                    document_id=req.document_id,
+                )
+            )
+            met_by_progress[req.case_step_progress_id] = (
+                met_by_progress.get(req.case_step_progress_id, True) and provided
+            )
+
         responses = []
         for row in rows:
             step = steps_by_id[row.template_step_id]
@@ -168,6 +216,9 @@ class ProgressManager:
                     completed_at=row.completed_at,
                     completed_by_agent_id=row.completed_by_agent_id,
                     blocked_by=blocked_by if row.status != StepStatus.DONE.value else [],
+                    completion_mode=step.completion_mode,
+                    requirements=reqs_by_progress.get(row.id, []),
+                    all_requirements_met=met_by_progress.get(row.id, True),
                 )
             )
         responses.sort(key=lambda r: r.position)
@@ -323,3 +374,36 @@ class ProgressManager:
         else:
             row.status = StepStatus.IN_PROGRESS.value
             self._log(case.id, agent, "step.started", {"step_progress_id": str(row.id)})
+            # MATERIALIZATION (NEW WAVE): the step becomes active → freeze
+            # its concrete requirements against the case composition NOW.
+            await self._materialize_requirements(row)
+
+    async def _materialize_requirements(self, row: CaseStepProgress) -> None:
+        """Read the step's requirement definitions and the case persons
+        AT THIS INSTANT; create one concrete row per (requirement,
+        targeted person). FROZEN + idempotent: if any concrete
+        requirement already exists for this progress (e.g. on reopen, or
+        a second activation), it's a no-op — a later-added person never
+        gets a requirement on an already-materialized step."""
+        if await self.repo.count_case_requirements(row.id) > 0:
+            return
+        definitions = await self.repo.list_step_requirements(row.template_step_id)
+        if not definitions:
+            return
+        persons = await self.repo.list_persons_for_case(row.case_id)
+        principal = next((p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value), None)
+        for definition in definitions:
+            if definition.scope == StepRequirementScope.PRINCIPAL.value:
+                targets = [principal] if principal is not None else []
+            else:  # each_person
+                targets = list(persons)
+            for person in targets:
+                self.repo.add_case_requirement(
+                    case_step_progress_id=row.id,
+                    step_requirement_id=definition.id,
+                    person_id=person.id,
+                    kind=definition.kind,
+                    reference=definition.reference,
+                    scope=definition.scope,
+                    status=RequirementStatus.PENDING.value,
+                )

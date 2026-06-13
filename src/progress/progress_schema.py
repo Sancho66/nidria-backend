@@ -15,6 +15,22 @@ class BlockingStep(BaseModel):
     name: str
 
 
+class RequirementStateResponse(BaseModel):
+    """A concrete requirement on an active step (NEW WAVE, read-only).
+    `status` is derived from the live person value for base/custom
+    fields, explicit for documents. `is_archived` flags a custom-field
+    whose definition the agency has archived."""
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    kind: str
+    reference: str
+    scope: str
+    status: str  # pending / provided (computed)
+    is_archived: bool
+    document_id: uuid.UUID | None
+
+
 class StepProgressResponse(BaseModel):
     id: uuid.UUID
     template_step_id: uuid.UUID
@@ -33,6 +49,13 @@ class StepProgressResponse(BaseModel):
     # Unfinished prerequisites (ids + names, front-displayable). Drives
     # the BLOCKED projection on TODO steps; informative on IN_PROGRESS.
     blocked_by: list[BlockingStep]
+    # Step requirements (NEW WAVE). `completion_mode` from the template;
+    # `requirements` are the concrete materialized requirements (empty
+    # until the step has been activated); `all_requirements_met` is the
+    # aggregate (vacuously true when there are none).
+    completion_mode: str
+    requirements: list[RequirementStateResponse]
+    all_requirements_met: bool
 
 
 class StepProgressUpdateRequest(BaseModel):

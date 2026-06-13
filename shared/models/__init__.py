@@ -6,6 +6,7 @@ from shared.models.base import Base
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.document import Document
@@ -19,6 +20,7 @@ from shared.models.message_template import MessageTemplate
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
+from shared.models.step_requirement import StepRequirement
 
 __all__ = [
     "ActivityLog",
@@ -29,6 +31,7 @@ __all__ = [
     "CaseInvitation",
     "CaseNote",
     "CaseStepProgress",
+    "CaseStepRequirement",
     "ClientCase",
     "CustomFieldDefinition",
     "Document",
@@ -50,4 +53,5 @@ __all__ = [
     "SavedView",
     "RolePermission",
     "StepPrerequisite",
+    "StepRequirement",
 ]

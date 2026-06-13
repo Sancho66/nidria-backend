@@ -5,15 +5,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep
+from shared.models.step_requirement import StepRequirement
+from src.core.enums import StepRequirementKind
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
     JourneyTemplateDetailResponse,
     JourneyTemplateUpdateRequest,
+    StepRequirementCreateRequest,
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
 )
+from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
 
 
 def _has_cycle(graph: dict[uuid.UUID, set[uuid.UUID]]) -> bool:
@@ -77,6 +82,7 @@ class JourneysManager:
                     estimated_days=step.estimated_days,
                     default_responsible_type=step.default_responsible_type,
                     required_documents=step.required_documents,
+                    completion_mode=step.completion_mode,
                     prerequisite_step_ids=by_step.get(step.id, []),
                 )
                 for step in steps
@@ -124,6 +130,7 @@ class JourneysManager:
             estimated_days=payload.estimated_days,
             default_responsible_type=payload.default_responsible_type,
             required_documents=payload.required_documents,
+            completion_mode=payload.completion_mode.value,
         )
         await self.db.flush()
         # Option-A backfill: on an ASSIGNED template, the new step is
@@ -238,4 +245,65 @@ class JourneysManager:
         await self.repo.delete_prerequisites_of_step(step_id)
         for prerequisite_id in proposed:
             self.repo.add_prerequisite(step_id, prerequisite_id)
+        await self.db.commit()
+
+    # --- step requirements (NEW WAVE) ----------------------------------------------
+
+    async def list_requirements(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID
+    ) -> list[StepRequirement]:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        return await self.repo.list_requirements(step_id)
+
+    async def add_requirement(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        payload: StepRequirementCreateRequest,
+    ) -> StepRequirement:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        await self._validate_reference(agent, payload.kind, payload.reference)
+        requirement = self.repo.add_requirement(
+            step_id=step_id,
+            kind=payload.kind.value,
+            reference=payload.reference,
+            scope=payload.scope.value,
+            position=payload.position,
+        )
+        await self.db.commit()
+        await self.db.refresh(requirement)
+        return requirement
+
+    async def _validate_reference(
+        self, agent: Agent, kind: StepRequirementKind, reference: str
+    ) -> None:
+        """base_field → whitelist; custom_field → an ACTIVE definition of
+        the agency must exist (a later archive is handled at read time
+        via is_archived); document → free label, nothing to check."""
+        if kind is StepRequirementKind.BASE_FIELD:
+            if reference not in COLLECTABLE_BASE_FIELDS:
+                raise ValidationError(
+                    f"Unknown base field {reference!r}. Allowed: {sorted(COLLECTABLE_BASE_FIELDS)}."
+                )
+        elif kind is StepRequirementKind.CUSTOM_FIELD:
+            definition = await CustomFieldsRepository(self.db).get_by_key(
+                agent.agency_id, reference
+            )
+            if definition is None or definition.archived_at is not None:
+                raise ValidationError(
+                    f"No active custom field with key {reference!r} for this agency."
+                )
+
+    async def delete_requirement(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, requirement_id: uuid.UUID
+    ) -> None:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
+        if requirement is None:
+            raise NotFoundError("Step requirement not found.")
+        await self.repo.delete_requirement(requirement)
         await self.db.commit()

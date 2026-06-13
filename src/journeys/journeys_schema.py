@@ -2,7 +2,12 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import ResponsibleType
+from src.core.enums import (
+    CompletionMode,
+    ResponsibleType,
+    StepRequirementKind,
+    StepRequirementScope,
+)
 
 
 class JourneyTemplateCreateRequest(BaseModel):
@@ -22,6 +27,7 @@ class TemplateStepCreateRequest(BaseModel):
     default_responsible_type: ResponsibleType | None = None
     # Free labels of the expected pieces — informative at MVP.
     required_documents: list[str] = Field(default_factory=list)
+    completion_mode: CompletionMode = CompletionMode.AGENCY_VALIDATION
 
 
 class TemplateStepUpdateRequest(BaseModel):
@@ -29,6 +35,25 @@ class TemplateStepUpdateRequest(BaseModel):
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
     required_documents: list[str] | None = None
+    completion_mode: CompletionMode | None = None
+
+
+class StepRequirementCreateRequest(BaseModel):
+    kind: StepRequirementKind
+    reference: str = Field(min_length=1, max_length=100)
+    scope: StepRequirementScope
+    position: int = 0
+
+
+class StepRequirementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    step_id: uuid.UUID
+    kind: str
+    reference: str
+    scope: str
+    position: int
 
 
 class StepOrderRequest(BaseModel):
@@ -58,6 +83,7 @@ class TemplateStepResponse(BaseModel):
     estimated_days: int | None
     default_responsible_type: str | None
     required_documents: list[str]
+    completion_mode: str
     prerequisite_step_ids: list[uuid.UUID]
 
 
