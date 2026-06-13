@@ -340,3 +340,132 @@ async def test_agency_validation_never_self_closes(
     assert step["all_requirements_met"] is True
     assert step["status"] == "in_progress"  # NOT done — no active auto-complete
     assert step["completion_mode"] == "agency_validation"
+
+
+# --- reorder (same convention as steps/order) ----------------------------------------
+
+
+async def _three_reqs(
+    client: AsyncClient, headers: dict[str, str], tid: str, sid: str
+) -> list[dict]:
+    return [
+        await _add_req(
+            client, headers, tid, sid, kind="base_field", reference=ref, scope="principal"
+        )
+        for ref in ("passport_number", "date_of_birth", "nationality")
+    ]
+
+
+async def test_reorder_requirements_changes_order_and_renumbers(
+    sr_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    tid, sid = await _template_with_step(sr_client, headers)
+    r1, r2, r3 = await _three_reqs(sr_client, headers, tid, sid)
+
+    resp = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order",
+        headers=headers,
+        json={"requirement_ids": [r3["id"], r1["id"], r2["id"]]},
+    )
+    assert resp.status_code == 200, resp.text
+    ordered = resp.json()
+    assert [x["id"] for x in ordered] == [r3["id"], r1["id"], r2["id"]]
+    assert [x["position"] for x in ordered] == [0, 1, 2]  # dense 0..n-1
+
+    # The GET listing (ordered by position) reflects it; count unchanged.
+    listed = (
+        await sr_client.get(f"/journeys/{tid}/steps/{sid}/requirements", headers=headers)
+    ).json()
+    assert [x["id"] for x in listed] == [r3["id"], r1["id"], r2["id"]]
+    assert len(listed) == 3
+
+
+async def test_reorder_requirements_is_idempotent(
+    sr_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    tid, sid = await _template_with_step(sr_client, headers)
+    r1, r2, r3 = await _three_reqs(sr_client, headers, tid, sid)
+    order = {"requirement_ids": [r2["id"], r3["id"], r1["id"]]}
+    first = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order", headers=headers, json=order
+    )
+    second = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order", headers=headers, json=order
+    )
+    assert first.json() == second.json()  # same order, same positions, no drift
+
+
+async def test_reorder_requirements_gate_journey_configure(
+    sr_client: AsyncClient, admin: Agent, member: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    tid, sid = await _template_with_step(sr_client, headers)
+    r1, r2, r3 = await _three_reqs(sr_client, headers, tid, sid)
+    denied = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order",
+        headers=agent_headers(member),  # case.edit but not journey.configure
+        json={"requirement_ids": [r3["id"], r2["id"], r1["id"]]},
+    )
+    assert denied.status_code == 403
+
+
+async def test_reorder_requirements_rejects_foreign_id(
+    sr_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """A requirement belonging to ANOTHER step makes the set mismatch →
+    422, never silently applied (no cross-step/agency leak)."""
+    headers = agent_headers(admin)
+    tid, sid = await _template_with_step(sr_client, headers)
+    r1, r2, _ = await _three_reqs(sr_client, headers, tid, sid)
+    # A second step in the same template with its own requirement.
+    other_step = (
+        await sr_client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "Other"})
+    ).json()
+    foreign = await _add_req(
+        sr_client,
+        headers,
+        tid,
+        other_step["id"],
+        kind="base_field",
+        reference="phone",
+        scope="principal",
+    )
+    # Swapping one of sid's ids for the foreign one → not exactly sid's set.
+    bad = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order",
+        headers=headers,
+        json={"requirement_ids": [r1["id"], r2["id"], foreign["id"]]},
+    )
+    assert bad.status_code == 422
+    # Partial list (missing one) also rejected.
+    short = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order",
+        headers=headers,
+        json={"requirement_ids": [r1["id"], r2["id"]]},
+    )
+    assert short.status_code == 422
+
+
+async def test_reorder_requirements_foreign_template_404(
+    sr_client: AsyncClient,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Another agency's template is invisible: reordering it as our admin
+    → 404 (template scoped to the agent's agency)."""
+    headers = agent_headers(admin)
+    tid, sid = await _template_with_step(sr_client, headers)
+    r1, r2, r3 = await _three_reqs(sr_client, headers, tid, sid)
+
+    other_admin = await make_agent(role=system_roles["admin"])  # different agency
+    other_headers = agent_headers(other_admin)
+    denied = await sr_client.put(
+        f"/journeys/{tid}/steps/{sid}/requirements/order",
+        headers=other_headers,
+        json={"requirement_ids": [r3["id"], r2["id"], r1["id"]]},
+    )
+    assert denied.status_code == 404

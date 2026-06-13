@@ -62,6 +62,13 @@ class StepOrderRequest(BaseModel):
     step_ids: list[uuid.UUID]
 
 
+class StepRequirementOrderRequest(BaseModel):
+    """Full list of the step's requirement ids in the desired order
+    (same convention as StepOrderRequest, one level down)."""
+
+    requirement_ids: list[uuid.UUID]
+
+
 class StepPrerequisitesRequest(BaseModel):
     """Declarative: replaces the step's full prerequisite set — the
     whole template graph is re-validated on every mutation."""

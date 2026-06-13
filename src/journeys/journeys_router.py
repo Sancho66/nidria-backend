@@ -19,6 +19,7 @@ from src.journeys.journeys_schema import (
     StepOrderRequest,
     StepPrerequisitesRequest,
     StepRequirementCreateRequest,
+    StepRequirementOrderRequest,
     StepRequirementResponse,
     TemplateStepCreateRequest,
     TemplateStepResponse,
@@ -73,6 +74,12 @@ BINDINGS = [
     RouteBinding(
         "POST",
         "/journeys/{template_id}/steps/{step_id}/requirements",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "PUT",
+        "/journeys/{template_id}/steps/{step_id}/requirements/order",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -225,6 +232,23 @@ async def add_requirement(
 ) -> StepRequirementResponse:
     requirement = await JourneysManager(db).add_requirement(agent, template_id, step_id, body)
     return StepRequirementResponse.model_validate(requirement)
+
+
+@router.put(
+    "/{template_id}/steps/{step_id}/requirements/order",
+    response_model=list[StepRequirementResponse],
+)
+async def reorder_requirements(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: StepRequirementOrderRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> list[StepRequirementResponse]:
+    rows = await JourneysManager(db).reorder_requirements(
+        agent, template_id, step_id, body.requirement_ids
+    )
+    return [StepRequirementResponse.model_validate(r) for r in rows]
 
 
 @router.delete(

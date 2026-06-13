@@ -152,3 +152,17 @@ class JourneysRepository:
 
     async def delete_requirement(self, requirement: StepRequirement) -> None:
         await self.db.delete(requirement)
+
+    async def shift_requirement_positions(self, step_id: uuid.UUID, offset: int) -> None:
+        await self.db.execute(
+            update(StepRequirement)
+            .where(StepRequirement.step_id == step_id)
+            .values(position=StepRequirement.position + offset)
+        )
+
+    async def set_requirement_position(self, requirement_id: uuid.UUID, position: int) -> None:
+        await self.db.execute(
+            update(StepRequirement)
+            .where(StepRequirement.id == requirement_id)
+            .values(position=position)
+        )

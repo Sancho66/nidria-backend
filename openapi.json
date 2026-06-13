@@ -4752,6 +4752,78 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/requirements/order": {
+      "put": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Reorder Requirements",
+        "operationId": "reorder_requirements_journeys__template_id__steps__step_id__requirements_order_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepRequirementOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StepRequirementResponse"
+                  },
+                  "title": "Response Reorder Requirements Journeys  Template Id  Steps  Step Id  Requirements Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}": {
       "delete": {
         "tags": [
@@ -11120,6 +11192,24 @@
           "document"
         ],
         "title": "StepRequirementKind"
+      },
+      "StepRequirementOrderRequest": {
+        "properties": {
+          "requirement_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Requirement Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requirement_ids"
+        ],
+        "title": "StepRequirementOrderRequest",
+        "description": "Full list of the step's requirement ids in the desired order\n(same convention as StepOrderRequest, one level down)."
       },
       "StepRequirementResponse": {
         "properties": {

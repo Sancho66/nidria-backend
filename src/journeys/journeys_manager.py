@@ -297,6 +297,33 @@ class JourneysManager:
                     f"No active custom field with key {reference!r} for this agency."
                 )
 
+    async def reorder_requirements(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        requirement_ids: list[uuid.UUID],
+    ) -> list[StepRequirement]:
+        """Same convention as reorder_steps, one level down: the payload
+        is the FULL set of the step's requirement ids in the desired
+        order. A foreign id (other step / other agency) makes the set
+        mismatch → 422, no leak. Two-phase renumber to 0..n-1."""
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        requirements = await self.repo.list_requirements(step_id)
+        if len(requirement_ids) != len(set(requirement_ids)) or set(requirement_ids) != {
+            r.id for r in requirements
+        }:
+            raise ValidationError(
+                "requirement_ids must contain exactly the step's requirements, once each."
+            )
+        offset = max((r.position for r in requirements), default=-1) + len(requirements) + 1
+        await self.repo.shift_requirement_positions(step_id, offset)
+        for index, requirement_id in enumerate(requirement_ids):
+            await self.repo.set_requirement_position(requirement_id, index)
+        await self.db.commit()
+        return await self.repo.list_requirements(step_id)
+
     async def delete_requirement(
         self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, requirement_id: uuid.UUID
     ) -> None:
