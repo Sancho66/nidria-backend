@@ -130,3 +130,16 @@ class MaritalStatus(StrEnum):
     DIVORCED = "divorced"
     WIDOWED = "widowed"
     PARTNERSHIP = "partnership"
+
+
+class CustomFieldType(StrEnum):
+    """Agency-defined field types — a CLOSED, minimal set. Each has a
+    distinct validation rule and frontend renderer. `options` applies
+    to SELECT / MULTI_SELECT only."""
+
+    TEXT = "text"
+    NUMBER = "number"
+    DATE = "date"
+    BOOLEAN = "boolean"
+    SELECT = "select"
+    MULTI_SELECT = "multi_select"

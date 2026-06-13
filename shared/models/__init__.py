@@ -7,6 +7,7 @@ from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.custom_field import CustomFieldDefinition
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
@@ -29,6 +30,7 @@ __all__ = [
     "CaseNote",
     "CaseStepProgress",
     "ClientCase",
+    "CustomFieldDefinition",
     "Document",
     "ExpatUser",
     "ExternalContact",

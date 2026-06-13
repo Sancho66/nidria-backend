@@ -39,6 +39,7 @@ from shared.models import (  # noqa: E402
     CasePerson,
     CaseStepProgress,
     ClientCase,
+    CustomFieldDefinition,
     ExpatUser,
     JourneyTemplate,
     JourneyTemplateStep,
@@ -192,6 +193,31 @@ async def get_or_create_template(
             )
     await db.flush()
     return steps
+
+
+async def get_or_create_custom_field(
+    db: AsyncSession,
+    agency: Agency,
+    key: str,
+    label: str,
+    field_type: str,
+    options: list[str] | None = None,
+) -> CustomFieldDefinition:
+    existing = (
+        await db.execute(
+            select(CustomFieldDefinition).where(
+                CustomFieldDefinition.agency_id == agency.id,
+                CustomFieldDefinition.key == key,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = CustomFieldDefinition(
+            agency_id=agency.id, key=key, label=label, field_type=field_type, options=options
+        )
+        db.add(existing)
+        await db.flush()
+    return existing
 
 
 async def case_exists(db: AsyncSession, agency: Agency, expat: ExpatUser) -> bool:
@@ -572,6 +598,19 @@ async def seed_dev(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
     expatriation = await get_or_create_agency(db, "expatriation-io", "Expatriation.io")
     sidney = await get_or_create_agent(
         db, expatriation, admin, "Sidney", "Moreau", "sidney@expatriation.io"
+    )
+
+    # Demo custom-field definitions on Reside Paraguay (DÉGEL 2).
+    await get_or_create_custom_field(
+        db, reside, "visa_number", "Numéro de visa", "text"
+    )
+    await get_or_create_custom_field(
+        db,
+        reside,
+        "permit_type",
+        "Type de permis",
+        "select",
+        options=["Résidence temporaire", "Résidence permanente"],
     )
 
     martin = await get_or_create_expat(db, "Jean", "Martin", "jean.martin@example.com")

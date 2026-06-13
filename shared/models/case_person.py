@@ -1,8 +1,9 @@
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Date, ForeignKey, Index, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship as orm_relationship
 
@@ -56,5 +57,12 @@ class CasePerson(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     marital_status: Mapped[str | None] = mapped_column(String(20))
     residence_permit_number: Mapped[str | None] = mapped_column(String(50))
     phone: Mapped[str | None] = mapped_column(String(50))
+
+    # Agency-defined custom fields (DÉGEL 2): {definition.key: value}.
+    # Independent of the definitions' lifecycle — archiving a definition
+    # never touches this sack; orphan keys are kept but not exposed.
+    custom_fields: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
     expat_user: Mapped["ExpatUser | None"] = orm_relationship("ExpatUser")

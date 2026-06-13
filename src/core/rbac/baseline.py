@@ -51,6 +51,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             Permission.AGENT_IMPERSONATE,
             Permission.ROLE_MANAGE,
             Permission.JOB_MANAGE,
+            # Configuring custom fields is admin config, not case work —
+            # case_manager fills values (case.edit), it doesn't define.
+            Permission.FIELD_MANAGE,
             Permission.NOTE_VIEW_CONFIDENTIAL,
         }
     ),
@@ -77,6 +80,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.agencies.agencies_router import BINDINGS as agencies_bindings
     from src.auth.auth_router import BINDINGS as auth_bindings
     from src.cases.cases_router import BINDINGS as cases_bindings
+    from src.custom_fields.custom_fields_router import BINDINGS as custom_fields_bindings
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
     from src.documents.documents_router import BINDINGS as documents_bindings
     from src.expat.expat_router import BINDINGS as expat_bindings
@@ -95,6 +99,7 @@ def collect_bindings() -> list[RouteBinding]:
         *impersonation_bindings,
         *journeys_bindings,
         *cases_bindings,
+        *custom_fields_bindings,
         *views_bindings,
         *progress_bindings,
         *documents_bindings,

@@ -28,6 +28,7 @@ class Permission(StrEnum):
     AGENT_IMPERSONATE = "agent.impersonate"
     ROLE_MANAGE = "role.manage"
     JOB_MANAGE = "job.manage"
+    FIELD_MANAGE = "field.manage"
 
 
 def _label(key: str) -> str:

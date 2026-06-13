@@ -2567,6 +2567,210 @@
         }
       }
     },
+    "/agencies/me/custom-fields": {
+      "get": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "List Custom Fields",
+        "operationId": "list_custom_fields_agencies_me_custom_fields_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                  },
+                  "title": "Response List Custom Fields Agencies Me Custom Fields Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Create Custom Field",
+        "operationId": "create_custom_field_agencies_me_custom_fields_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomFieldDefinitionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/me/custom-fields/{field_id}": {
+      "patch": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Update Custom Field",
+        "description": "key and field_type are immutable — archive + recreate to change\na type.",
+        "operationId": "update_custom_field_agencies_me_custom_fields__field_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomFieldDefinitionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/me/custom-fields/{field_id}/archive": {
+      "post": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Archive Custom Field",
+        "description": "Soft archive (the only removal). Saved values are kept.",
+        "operationId": "archive_custom_field_agencies_me_custom_fields__field_id__archive_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/dashboard": {
       "get": {
         "tags": [
@@ -6436,6 +6640,13 @@
             "format": "uuid",
             "title": "Principal Person Id"
           },
+          "custom_field_definitions": {
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldDefinitionInline"
+            },
+            "type": "array",
+            "title": "Custom Field Definitions"
+          },
           "external_contacts": {
             "items": {
               "$ref": "#/components/schemas/ExternalContactResponse"
@@ -6480,6 +6691,7 @@
           "updated_at",
           "persons",
           "principal_person_id",
+          "custom_field_definitions",
           "external_contacts",
           "notes",
           "progress"
@@ -7135,6 +7347,246 @@
         },
         "type": "object",
         "title": "CaseUpdateRequest"
+      },
+      "CustomFieldDefinitionCreate": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,49}$",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "field_type": {
+            "$ref": "#/components/schemas/CustomFieldType"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": false
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "field_type"
+        ],
+        "title": "CustomFieldDefinitionCreate"
+      },
+      "CustomFieldDefinitionInline": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "field_type": {
+            "type": "string",
+            "title": "Field Type"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label",
+          "field_type",
+          "options",
+          "required",
+          "position"
+        ],
+        "title": "CustomFieldDefinitionInline",
+        "description": "Active custom-field definitions, embedded in the case detail so\nthe frontend renders the person form in one fetch (no second call /\nno cross-case cache staleness)."
+      },
+      "CustomFieldDefinitionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "field_type": {
+            "type": "string",
+            "title": "Field Type"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label",
+          "field_type",
+          "options",
+          "required",
+          "position",
+          "archived_at"
+        ],
+        "title": "CustomFieldDefinitionResponse"
+      },
+      "CustomFieldDefinitionUpdate": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "title": "CustomFieldDefinitionUpdate",
+        "description": "`key` and `field_type` are IMMUTABLE — deliberately absent."
+      },
+      "CustomFieldType": {
+        "type": "string",
+        "enum": [
+          "text",
+          "number",
+          "date",
+          "boolean",
+          "select",
+          "multi_select"
+        ],
+        "title": "CustomFieldType",
+        "description": "Agency-defined field types — a CLOSED, minimal set. Each has a\ndistinct validation rule and frontend renderer. `options` applies\nto SELECT / MULTI_SELECT only."
       },
       "DashboardResponse": {
         "properties": {
@@ -8587,6 +9039,11 @@
             "maxLength": 50,
             "minLength": 1,
             "title": "Relationship"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
           }
         },
         "type": "object",
@@ -8788,6 +9245,11 @@
               }
             ],
             "title": "Activated"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
           }
         },
         "type": "object",
@@ -8801,7 +9263,8 @@
           "last_name",
           "email",
           "preferred_lang",
-          "activated"
+          "activated",
+          "custom_fields"
         ],
         "title": "PersonResponse",
         "description": "A person on the case — PRINCIPAL or FAMILY, one homogeneous shape.\nPRINCIPAL: identity (first/last/email/lang) resolved from the shared\nexpat_user (full_name NULL); FAMILY: carries full_name, identity\nfields NULL."
@@ -8925,11 +9388,23 @@
               }
             ],
             "title": "Relationship"
+          },
+          "custom_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Fields"
           }
         },
         "type": "object",
         "title": "PersonUpdateRequest",
-        "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user)."
+        "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key."
       },
       "PrincipalSummaryResponse": {
         "properties": {

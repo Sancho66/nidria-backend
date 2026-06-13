@@ -10,6 +10,7 @@ from shared.models.agent import Agent
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
+from shared.models.custom_field import CustomFieldDefinition
 from shared.models.external_contact import ExternalContact
 from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
@@ -26,6 +27,7 @@ from src.cases.cases_schema import (
     CaseNoteUpdateRequest,
     CaseResponse,
     CaseUpdateRequest,
+    CustomFieldDefinitionInline,
     ExternalContactCreateRequest,
     ExternalContactResponse,
     ExternalContactUpdateRequest,
@@ -40,6 +42,8 @@ from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
+from src.custom_fields.custom_fields_manager import CustomFieldsManager
+from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
 from src.progress.progress_manager import ProgressManager
 
 
@@ -174,10 +178,14 @@ class CasesManager:
         )
         persons = await self.repo.list_persons(case_id)
         principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
+        definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         return CaseDetailResponse(
             **CaseResponse.model_validate(case).model_dump(),
-            persons=[self._person_response(p) for p in persons],
+            persons=[self._person_response(p, definitions) for p in persons],
             principal_person_id=principal_person.id,
+            custom_field_definitions=[
+                CustomFieldDefinitionInline.model_validate(d) for d in definitions
+            ],
             external_contacts=[
                 ExternalContactResponse.model_validate(contact)
                 for contact in await self.repo.list_external_contacts(case_id)
@@ -363,9 +371,12 @@ class CasesManager:
     )
 
     @staticmethod
-    def _person_response(person: CasePerson) -> PersonResponse:
+    def _person_response(
+        person: CasePerson, active_definitions: list[CustomFieldDefinition]
+    ) -> PersonResponse:
         """Homogeneous shape: PRINCIPAL resolves identity from the shared
-        expat_user (full_name NULL), FAMILY carries full_name."""
+        expat_user (full_name NULL), FAMILY carries full_name. custom_fields
+        exposes only keys with an ACTIVE definition (orphans hidden)."""
         expat = person.expat_user
         return PersonResponse(
             id=person.id,
@@ -386,6 +397,7 @@ class CasesManager:
             marital_status=person.marital_status,
             residence_permit_number=person.residence_permit_number,
             phone=person.phone,
+            custom_fields=visible_values(active_definitions, person.custom_fields or {}),
         )
 
     def _apply_civil_fields(
@@ -402,11 +414,14 @@ class CasesManager:
         self, agent: Agent, case_id: uuid.UUID, payload: PersonCreateRequest
     ) -> PersonResponse:
         case = await self._get_case(agent, case_id)
+        definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
+        custom = validate_and_merge(definitions, {}, payload.custom_fields)
         person = self.repo.add_person(
             case_id=case.id,
             kind=CasePersonKind.FAMILY.value,
             full_name=payload.full_name,
             relationship=payload.relationship,
+            custom_fields=custom,
         )
         self._apply_civil_fields(person, payload)
         await self.db.flush()
@@ -414,7 +429,7 @@ class CasesManager:
         await self.db.commit()
         reloaded = await self.repo.get_person(case.id, person.id)
         assert reloaded is not None
-        return self._person_response(reloaded)
+        return self._person_response(reloaded, definitions)
 
     async def update_person(
         self,
@@ -427,6 +442,7 @@ class CasesManager:
         person = await self.repo.get_person(case.id, person_id)
         if person is None:
             raise NotFoundError("Person not found.")
+        definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         provided = payload.model_dump(exclude_unset=True)
         # full_name / relationship are FAMILY-only; the PRINCIPAL's name
         # lives on expat_user and is never set here.
@@ -436,11 +452,17 @@ class CasesManager:
             if "relationship" in provided and provided["relationship"] is not None:
                 person.relationship = provided["relationship"]
         self._apply_civil_fields(person, payload)
+        # custom_fields: partial MERGE on the keys PRESENT in the payload
+        # (point 1 — never a retroactive required block on absent keys).
+        if "custom_fields" in provided and payload.custom_fields is not None:
+            person.custom_fields = validate_and_merge(
+                definitions, person.custom_fields or {}, payload.custom_fields
+            )
         self._log(case.id, agent, "person.updated", {"person_id": str(person.id)})
         await self.db.commit()
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
-        return self._person_response(reloaded)
+        return self._person_response(reloaded, definitions)
 
     async def delete_person(self, agent: Agent, case_id: uuid.UUID, person_id: uuid.UUID) -> None:
         case = await self._get_case(agent, case_id)
@@ -591,12 +613,14 @@ class CasesManager:
         if case.owner_agent_id is not None:
             owner = await self.repo.get_agent_in_agency(agent.agency_id, case.owner_agent_id)
         persons = await self.repo.list_persons(case.id)
+        definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         activity_rows = await self.repo.list_activity_chronological(case.id)
         return build_case_pdf(
             case=case,
             principal=principal,
             owner=owner,
             persons=persons,
+            custom_field_definitions=definitions,
             activity_rows=activity_rows,
         )
 

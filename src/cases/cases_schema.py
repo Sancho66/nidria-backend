@@ -126,6 +126,8 @@ class PersonResponse(_CivilStatusFields):
     email: str | None
     preferred_lang: str | None
     activated: bool | None
+    # Agency custom-field values — only keys with an ACTIVE definition.
+    custom_fields: dict[str, Any]
 
 
 class PersonCreateRequest(_CivilStatusFields):
@@ -133,14 +135,17 @@ class PersonCreateRequest(_CivilStatusFields):
 
     full_name: str = Field(min_length=1, max_length=200)
     relationship: str = Field(min_length=1, max_length=50)
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class PersonUpdateRequest(_CivilStatusFields):
     """Edits any person. For FAMILY, full_name/relationship are editable;
-    for PRINCIPAL they are ignored (its name lives on expat_user)."""
+    for PRINCIPAL they are ignored (its name lives on expat_user).
+    `custom_fields` is a partial MERGE keyed by definition key."""
 
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
     relationship: str | None = Field(default=None, min_length=1, max_length=50)
+    custom_fields: dict[str, Any] | None = None
 
 
 class ExternalContactCreateRequest(BaseModel):
@@ -190,12 +195,30 @@ class CaseNoteResponse(BaseModel):
     updated_at: datetime
 
 
+class CustomFieldDefinitionInline(BaseModel):
+    """Active custom-field definitions, embedded in the case detail so
+    the frontend renders the person form in one fetch (no second call /
+    no cross-case cache staleness)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    key: str
+    label: str
+    field_type: str
+    options: list[str] | None
+    required: bool
+    position: int
+
+
 class CaseDetailResponse(CaseResponse):
     # Unified list: principal (kind=principal) + family, one shape. The
     # principal is findable in O(1) via principal_person_id (invariant:
     # exactly one kind=principal person per case).
     persons: list[PersonResponse]
     principal_person_id: uuid.UUID
+    # Agency's ACTIVE custom-field definitions (form schema).
+    custom_field_definitions: list[CustomFieldDefinitionInline]
     external_contacts: list[ExternalContactResponse]
     notes: list[CaseNoteResponse]
     # Projected timeline (BLOCKED computed at read time).
