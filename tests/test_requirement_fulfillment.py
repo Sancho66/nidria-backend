@@ -284,7 +284,7 @@ async def test_wrong_kind_is_rejected(
 # --- periphery authorization ----------------------------------------------------------
 
 
-async def test_foreign_case_is_404(
+async def test_cross_client_cannot_fulfill_another_clients_requirement_404(
     rf_client: AsyncClient,
     admin: Agent,
     expat: ExpatUser,
@@ -293,24 +293,111 @@ async def test_foreign_case_is_404(
     agent_headers: AuthHeaders,
     expat_headers: AuthHeaders,
 ) -> None:
+    """THE multi-tenant flaw #1, named and exercised: an authenticated
+    expat B (NOT the case principal) targets a REAL requirement of
+    client A's case. Must be 404 (not 403, never a write) — the foreign
+    case's very existence is not revealed."""
     headers = agent_headers(admin)
     tid, sid = await _step(rf_client, headers)
     await _add_req(
         rf_client, headers, tid, sid, kind="base_field", reference="phone", scope="principal"
     )
+    # Case A, owned by `expat` (its principal). The requirement is a real,
+    # materialized requirement of A — not an inexistent id.
     case = await make_client_case(
         agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
     )
     await _assign_start(rf_client, headers, str(case.id), tid)
     req = await _find_req(rf_client, expat_headers, expat, str(case.id), "phone")
 
-    stranger = await make_expat_user()
+    # B is a DIFFERENT authenticated expat identity, principal of nothing here.
+    stranger = await make_expat_user(email="stranger@example.com")
+    assert stranger.id != expat.id
     denied = await rf_client.put(
         f"/expat/cases/{case.id}/requirements/{req['id']}",
         headers=expat_headers(stranger),
-        json={"value": "x"},
+        json={"value": "INTRUSION"},
     )
-    assert denied.status_code == 404  # never reveals the case exists
+    assert denied.status_code == 404  # never reveals the case exists, never writes
+
+    # And nothing was written: A's requirement is still pending.
+    after = await _find_req(rf_client, expat_headers, expat, str(case.id), "phone")
+    assert after["status"] == "pending"
+
+
+async def test_client_invalid_custom_value_is_422_not_written(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """The DÉGEL-2 validation (type / select options / required) applies
+    in FULL on the client write path — a client cannot smuggle an invalid
+    value into the DB by going through the portal. Out-of-options select
+    and a non-number on a number field each → a readable 422, no write."""
+    headers = agent_headers(admin)
+    # A select (options A/B) and a number custom field.
+    await rf_client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={
+            "key": "visa_type",
+            "label": "Type de visa",
+            "field_type": "select",
+            "options": ["A", "B"],
+        },
+    )
+    await rf_client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={"key": "dossier_no", "label": "N° dossier", "field_type": "number"},
+    )
+    tid, sid = await _step(rf_client, headers)
+    await _add_req(
+        rf_client, headers, tid, sid, kind="custom_field", reference="visa_type", scope="principal"
+    )
+    await _add_req(
+        rf_client, headers, tid, sid, kind="custom_field", reference="dossier_no", scope="principal"
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    select_req = await _find_req(rf_client, expat_headers, expat, str(case.id), "visa_type")
+    number_req = await _find_req(rf_client, expat_headers, expat, str(case.id), "dossier_no")
+
+    # Value outside the select's options → 422.
+    bad_select = await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{select_req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "Z"},
+    )
+    assert bad_select.status_code == 422, bad_select.text
+    # Free text on a number field → 422.
+    bad_number = await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{number_req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "not-a-number"},
+    )
+    assert bad_number.status_code == 422, bad_number.text
+
+    # Nothing was written: both stay pending, no invalid value persisted.
+    detail = (await rf_client.get(f"/cases/{case.id}", headers=headers)).json()
+    principal = next(p for p in detail["persons"] if p["kind"] == "principal")
+    assert "visa_type" not in principal["custom_fields"]
+    assert "dossier_no" not in principal["custom_fields"]
+
+    # The happy path on the same select still works (proves it's validation,
+    # not a blanket block).
+    ok = await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{select_req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "A"},
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["timeline"][0]["requirements"]
 
 
 async def test_agent_token_rejected(
