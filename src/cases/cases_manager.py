@@ -366,7 +366,6 @@ class CasesManager:
         "place_of_birth",
         "sex",
         "marital_status",
-        "residence_permit_number",
         "phone",
     )
 
@@ -395,7 +394,6 @@ class CasesManager:
             place_of_birth=person.place_of_birth,
             sex=person.sex,
             marital_status=person.marital_status,
-            residence_permit_number=person.residence_permit_number,
             phone=person.phone,
             custom_fields=visible_values(active_definitions, person.custom_fields or {}),
         )

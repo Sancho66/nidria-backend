@@ -102,7 +102,6 @@ class _CivilStatusFields(BaseModel):
     place_of_birth: str | None = Field(default=None, max_length=200)
     sex: Sex | None = None
     marital_status: MaritalStatus | None = None
-    residence_permit_number: str | None = Field(default=None, max_length=50)
     phone: str | None = Field(default=None, max_length=50)
 
 

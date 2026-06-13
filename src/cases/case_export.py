@@ -47,7 +47,6 @@ def _civil_lines(
         ("Place of birth", person.place_of_birth),
         ("Sex", person.sex),
         ("Marital status", person.marital_status),
-        ("Residence permit", person.residence_permit_number),
         ("Phone", person.phone),
     ]
     filled = [f"{k}: {v}" for k, v in fields if v]

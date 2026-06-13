@@ -9004,18 +9004,6 @@
               }
             ]
           },
-          "residence_permit_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Residence Permit Number"
-          },
           "phone": {
             "anyOf": [
               {
@@ -9123,18 +9111,6 @@
                 "type": "null"
               }
             ]
-          },
-          "residence_permit_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Residence Permit Number"
           },
           "phone": {
             "anyOf": [
@@ -9338,18 +9314,6 @@
                 "type": "null"
               }
             ]
-          },
-          "residence_permit_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Residence Permit Number"
           },
           "phone": {
             "anyOf": [
