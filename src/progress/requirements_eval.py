@@ -40,9 +40,13 @@ def _field_value(person: CasePerson, reference: str) -> Any:
     return (person.custom_fields or {}).get(reference)
 
 
-def is_provided(requirement: CaseStepRequirement, person: CasePerson) -> bool:
+def is_provided(requirement: CaseStepRequirement, person: CasePerson | None) -> bool:
     """base_field / custom_field → derived from the live person value;
-    document → the explicit stored status."""
+    document → the explicit stored status. A missing person (should not
+    happen — materialized persons CASCADE with the case) reads as not
+    provided rather than raising."""
     if requirement.kind == StepRequirementKind.DOCUMENT.value:
         return requirement.status == RequirementStatus.PROVIDED.value
+    if person is None:
+        return False
     return not _is_empty(_field_value(person, requirement.reference))

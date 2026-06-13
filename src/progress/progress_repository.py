@@ -4,11 +4,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
+from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
 from shared.models.step_requirement import StepRequirement
@@ -138,3 +140,28 @@ class ProgressRepository:
             .order_by(CaseStepRequirement.created_at)
         )
         return list((await self.db.execute(stmt)).scalars())
+
+    async def get_step(self, step_id: uuid.UUID) -> JourneyTemplateStep | None:
+        return await self.db.get(JourneyTemplateStep, step_id)
+
+    async def get_progress_by_id(self, progress_id: uuid.UUID) -> CaseStepProgress | None:
+        return await self.db.get(CaseStepProgress, progress_id)
+
+    async def get_agency_settings_holder(self, agency_id: uuid.UUID) -> Agency | None:
+        return await self.db.get(Agency, agency_id)
+
+    async def get_owner_email(self, owner_agent_id: uuid.UUID) -> str | None:
+        return (
+            await self.db.execute(select(Agent.email).where(Agent.id == owner_agent_id))
+        ).scalar_one_or_none()
+
+    async def get_principal_email_and_agency_name(self, case: ClientCase) -> tuple[str | None, str]:
+        email = (
+            await self.db.execute(
+                select(ExpatUser.email).where(ExpatUser.id == case.principal_expat_user_id)
+            )
+        ).scalar_one_or_none()
+        name = (
+            await self.db.execute(select(Agency.name).where(Agency.id == case.agency_id))
+        ).scalar_one_or_none()
+        return email, (name or "Votre agence")

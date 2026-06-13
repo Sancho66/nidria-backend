@@ -1,12 +1,26 @@
 import uuid
+from datetime import UTC, datetime
 
+from fastapi import UploadFile
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
+from shared.models.case_person import CasePerson
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
-from src.core.enums import ResponsibleType
-from src.core.exceptions import NotFoundError
+from src.cases.cases_schema import PersonUpdateRequest
+from src.core.enums import (
+    RequirementStatus,
+    ResponsibleType,
+    StepRequirementKind,
+    StepStatus,
+)
+from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.custom_fields.custom_fields_manager import CustomFieldsManager
+from src.custom_fields.custom_fields_validation import validate_and_merge
+from src.documents.documents_manager import DocumentsManager
 from src.expat.expat_repository import ExpatRepository
 from src.expat.expat_schema import (
     ExpatAgencyResponse,
@@ -14,8 +28,10 @@ from src.expat.expat_schema import (
     ExpatCaseSummaryResponse,
     ExpatNotificationResponse,
     ExpatReferentResponse,
+    ExpatRequirementResponse,
     ExpatResponsibleResponse,
     ExpatTimelineStepResponse,
+    RequirementValueRequest,
 )
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_schema import StepProgressResponse
@@ -100,6 +116,7 @@ class ExpatPortalManager:
             if step.responsible_external_id is not None
         ]
         external_names = await self.repo.external_contact_names(external_ids)
+        person_labels = await self.repo.person_labels(case.id)
         timeline = [
             ExpatTimelineStepResponse(
                 name=step.name,
@@ -110,6 +127,20 @@ class ExpatPortalManager:
                 blocked_by=[blocking.name for blocking in step.blocked_by],
                 responsible=_displayable_responsible(step, external_names),
                 required_documents=step.required_documents,
+                requirements=[
+                    ExpatRequirementResponse(
+                        id=req.id,
+                        kind=req.kind,
+                        reference=req.reference,
+                        scope=req.scope,
+                        status=req.status,
+                        person_label=person_labels.get(req.person_id, ""),
+                    )
+                    # Archived custom-field requirements are not surfaced:
+                    # never ask the client to fill a retired field.
+                    for req in step.requirements
+                    if not req.is_archived
+                ],
             )
             for step in internal_timeline
         ]
@@ -118,6 +149,106 @@ class ExpatPortalManager:
             referent=referent,
             timeline=timeline,
         )
+
+    # --- requirement fulfillment (NEW WAVE 2) --------------------------------------
+    #
+    # The cardinal rule (expat = read-only) is pierced ONLY here, and
+    # only through four server-side borders, none trusting the payload:
+    #   1. the case is the client's own (get_case_for_expat → 404);
+    #   2. the requirement belongs to that case (join-scoped → 404);
+    #   3. the step is ACTIVE (in_progress) — otherwise read-only;
+    #   4. the target person is the requirement's own materialized
+    #      person (never a payload person_id), which belongs to the case.
+    # The client can only fill requirements; never mark a step done,
+    # never touch anything else.
+
+    async def _resolve_writable_requirement(
+        self, expat: ExpatUser, case_id: uuid.UUID, requirement_id: uuid.UUID
+    ) -> tuple[ClientCase, CaseStepRequirement]:
+        case, _ = await self._get_owned_case(expat, case_id)  # border 1
+        found = await self.repo.get_requirement_in_case(case.id, requirement_id)  # border 2
+        if found is None:
+            raise NotFoundError("Requirement not found.")
+        requirement, progress = found
+        if progress.status != StepStatus.IN_PROGRESS.value:  # border 3
+            raise ConflictError("This step is not active; its requirements are read-only.")
+        return case, requirement
+
+    async def fulfill_value(
+        self,
+        expat: ExpatUser,
+        case_id: uuid.UUID,
+        requirement_id: uuid.UUID,
+        payload: RequirementValueRequest,
+    ) -> ExpatCaseDetailResponse:
+        case, requirement = await self._resolve_writable_requirement(expat, case_id, requirement_id)
+        if requirement.kind == StepRequirementKind.DOCUMENT.value:
+            raise ValidationError("This requirement expects a document upload, not a value.")
+        person = await self.repo.get_case_person(case.id, requirement.person_id)  # border 4
+        if person is None:  # defensive — a materialized person can't vanish (CASCADE)
+            raise NotFoundError("Requirement not found.")
+
+        progress_mgr = ProgressManager(self.db)
+        before = await progress_mgr.snapshot_active_completion(case)
+        await self._write_field(case, person, requirement, payload.value)
+        # The fill may complete an auto step or arm an agency_validation
+        # step — recompute, commit, then send mails (best-effort).
+        pending = await progress_mgr.recompute_active(case, before)
+        await self.db.commit()
+        await progress_mgr.send_pending(pending)
+        return await self.get_my_case(expat, case_id)
+
+    async def _write_field(
+        self,
+        case: ClientCase,
+        person: CasePerson,
+        requirement: CaseStepRequirement,
+        value: object,
+    ) -> None:
+        """Write the value onto case_person (the single source of truth).
+        base_field → type-validated via PersonUpdateRequest; custom_field
+        → validated against the agency's active definitions. Null clears
+        the field (requirement returns to pending)."""
+        if requirement.kind == StepRequirementKind.BASE_FIELD.value:
+            try:
+                validated = PersonUpdateRequest.model_validate({requirement.reference: value})
+            except PydanticValidationError as exc:
+                raise ValidationError(f"Invalid value for {requirement.reference!r}.") from exc
+            coerced = validated.model_dump(exclude_unset=True).get(requirement.reference)
+            # Enums (sex, marital_status) → store their .value.
+            setattr(person, requirement.reference, getattr(coerced, "value", coerced))
+        else:  # custom_field
+            definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
+            person.custom_fields = validate_and_merge(
+                definitions, person.custom_fields or {}, {requirement.reference: value}
+            )
+
+    async def fulfill_document(
+        self,
+        expat: ExpatUser,
+        case_id: uuid.UUID,
+        requirement_id: uuid.UUID,
+        file: UploadFile,
+    ) -> ExpatCaseDetailResponse:
+        case, requirement = await self._resolve_writable_requirement(expat, case_id, requirement_id)
+        if requirement.kind != StepRequirementKind.DOCUMENT.value:
+            raise ValidationError("This requirement does not expect a document.")
+
+        progress_mgr = ProgressManager(self.db)
+        before = await progress_mgr.snapshot_active_completion(case)
+        # Reuse the documents path (storage + Document row + audit); it
+        # commits the upload. The document is attached to the step.
+        document = await DocumentsManager(self.db).upload_as_expat(
+            expat, case_id, file, requirement.case_step_progress_id
+        )
+        # Authoritative for document kind: mark provided + link.
+        requirement.status = RequirementStatus.PROVIDED.value
+        requirement.provided_at = datetime.now(UTC)
+        requirement.document_id = document.id
+        pending = await progress_mgr.recompute_active(case, before)
+        await self.db.commit()
+        await progress_mgr.send_pending(pending)
+        return await self.get_my_case(expat, case_id)
 
     async def list_notifications(
         self, expat: ExpatUser, case_id: uuid.UUID

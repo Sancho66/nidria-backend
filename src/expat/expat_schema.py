@@ -8,6 +8,7 @@ semantics."""
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -46,6 +47,21 @@ class ExpatResponsibleResponse(BaseModel):
     name: str | None
 
 
+class ExpatRequirementResponse(BaseModel):
+    """A concrete requirement the client can see (and, for the writable
+    kinds, fulfill). `person_label` is the RESOLVED name so the client
+    knows whose passport/field is asked ("vous" is a frontend label —
+    the API ships the real name). Archived custom-field requirements are
+    filtered out upstream, never exposed."""
+
+    id: uuid.UUID
+    kind: str  # base_field | custom_field | document
+    reference: str
+    scope: str
+    status: str  # pending | provided (derived live for fields)
+    person_label: str
+
+
 class ExpatTimelineStepResponse(BaseModel):
     name: str
     position: int
@@ -57,6 +73,17 @@ class ExpatTimelineStepResponse(BaseModel):
     # Step 15: the pieces the agency expects here ("documents attendus")
     # — free labels, informative.
     required_documents: list[str]
+    # NEW WAVE 2: the concrete requirements the client can fill on this
+    # step (writable while the step is active).
+    requirements: list[ExpatRequirementResponse]
+
+
+class RequirementValueRequest(BaseModel):
+    """Client fulfillment of a base_field / custom_field requirement.
+    `value` is type-validated downstream against the field kind; null
+    clears it (requirement goes back to pending)."""
+
+    value: Any = None
 
 
 class ExpatCaseDetailResponse(ExpatCaseSummaryResponse):

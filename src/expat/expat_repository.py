@@ -2,14 +2,17 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.external_contact import ExternalContact
 from shared.models.reminder import Reminder
-from src.core.enums import RecipientType, ReminderChannel, ReminderStatus
+from src.core.enums import CasePersonKind, RecipientType, ReminderChannel, ReminderStatus
 
 
 class ExpatRepository:
@@ -67,6 +70,50 @@ class ExpatRepository:
             ExternalContact.id.in_(contact_ids)
         )
         return {contact_id: name for contact_id, name in (await self.db.execute(stmt)).all()}
+
+    # --- requirement fulfillment (NEW WAVE 2) --------------------------------------
+
+    async def get_requirement_in_case(
+        self, case_id: uuid.UUID, requirement_id: uuid.UUID
+    ) -> tuple[CaseStepRequirement, CaseStepProgress] | None:
+        """Resolve the requirement AND its owning progress in one query,
+        constrained to the case — the periphery border: a requirement of
+        another case is invisible (returns None → 404)."""
+        stmt = (
+            select(CaseStepRequirement, CaseStepProgress)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+            )
+            .where(
+                CaseStepRequirement.id == requirement_id,
+                CaseStepProgress.case_id == case_id,
+            )
+        )
+        row = (await self.db.execute(stmt)).first()
+        return (row[0], row[1]) if row is not None else None
+
+    async def get_case_person(self, case_id: uuid.UUID, person_id: uuid.UUID) -> CasePerson | None:
+        stmt = select(CasePerson).where(CasePerson.id == person_id, CasePerson.case_id == case_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def person_labels(self, case_id: uuid.UUID) -> dict[uuid.UUID, str]:
+        """{person_id: display name}. PRINCIPAL resolves to the shared
+        expat_user's name; FAMILY to its local full_name."""
+        stmt = (
+            select(CasePerson)
+            .where(CasePerson.case_id == case_id)
+            .options(selectinload(CasePerson.expat_user))
+        )
+        labels: dict[uuid.UUID, str] = {}
+        for person in (await self.db.execute(stmt)).scalars():
+            if person.kind == CasePersonKind.PRINCIPAL.value and person.expat_user is not None:
+                labels[person.id] = (
+                    f"{person.expat_user.first_name} {person.expat_user.last_name}".strip()
+                )
+            else:
+                labels[person.id] = person.full_name or ""
+        return labels
 
     async def list_in_app_notifications(self, case_id: uuid.UUID) -> list[Reminder]:
         stmt = (

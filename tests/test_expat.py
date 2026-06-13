@@ -43,7 +43,10 @@ STEP_KEYS = {
     # EXPLICIT, assumed addition to the exclusion contract (free
     # labels, no internal ids).
     "required_documents",
+    # NEW WAVE 2: the concrete requirements the client can fill.
+    "requirements",
 }
+REQUIREMENT_KEYS = {"id", "kind", "reference", "scope", "status", "person_label"}
 
 
 @pytest.fixture

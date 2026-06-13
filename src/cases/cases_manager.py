@@ -441,6 +441,11 @@ class CasesManager:
         if person is None:
             raise NotFoundError("Person not found.")
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
+        # Snapshot active-step completion BEFORE the write so the
+        # recompute fires the ready-to-validate mail only on the
+        # pending→met transition (idempotent).
+        progress = ProgressManager(self.db)
+        before = await progress.snapshot_active_completion(case)
         provided = payload.model_dump(exclude_unset=True)
         # full_name / relationship are FAMILY-only; the PRINCIPAL's name
         # lives on expat_user and is never set here.
@@ -457,7 +462,11 @@ class CasesManager:
                 definitions, person.custom_fields or {}, payload.custom_fields
             )
         self._log(case.id, agent, "person.updated", {"person_id": str(person.id)})
+        # Filling a civil field can complete an auto step or make an
+        # agency_validation step ready to validate — recompute now.
+        pending = await progress.recompute_active(case, before)
         await self.db.commit()
+        await progress.send_pending(pending)
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
         return self._person_response(reloaded, definitions)

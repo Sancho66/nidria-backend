@@ -1,5 +1,8 @@
+import asyncio
+import logging
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,9 +13,18 @@ from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyTemplateStep
 from src.activity.activity_manager import ActivityManager
+from src.core.config import get_settings
+from src.core.email import send_email
+from src.core.email_templates import (
+    EmailContent,
+    ready_to_validate_email,
+    requirement_request_email,
+    step_reopened_email,
+)
 from src.core.enums import (
     ActorType,
     CasePersonKind,
+    CompletionMode,
     RequirementStatus,
     ResponsibleType,
     StepRequirementKind,
@@ -29,6 +41,18 @@ from src.progress.progress_schema import (
     StepProgressUpdateRequest,
 )
 from src.progress.requirements_eval import is_provided
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PendingMail:
+    """A best-effort notification collected during a write, sent AFTER
+    commit — a mail failure never rolls back or blocks the write."""
+
+    to: str
+    content: EmailContent
+
 
 # Stored-status state machine. BLOCKED never appears here: it is a
 # READ-TIME PROJECTION (single source of truth = current template
@@ -265,10 +289,12 @@ class ProgressManager:
         if responsible_fields & payload.model_fields_set:
             await self._apply_responsible_change(agent, case, row, payload)
 
+        pending: list[PendingMail] = []
         if "status" in payload.model_fields_set and payload.status is not None:
-            await self._apply_transition(agent, case, row, payload.status)
+            pending = await self._apply_transition(agent, case, row, payload.status)
 
         await self.db.commit()
+        await self.send_pending(pending)
         timeline = await self.timeline_for_case(case)
         return next(item for item in timeline if item.id == row.id)
 
@@ -335,7 +361,7 @@ class ProgressManager:
 
     async def _apply_transition(
         self, agent: Agent, case: ClientCase, row: CaseStepProgress, target: StepStatus
-    ) -> None:
+    ) -> list[PendingMail]:
         if target is StepStatus.BLOCKED:
             raise ValidationError("'blocked' is a projection, not a settable status.")
         if (row.status, target.value) not in _ALLOWED_TRANSITIONS:
@@ -352,6 +378,7 @@ class ProgressManager:
                 raise ConflictError(f"Step is blocked by unfinished prerequisite step(s): {names}.")
 
         now = datetime.now(UTC)
+        pending: list[PendingMail] = []
         if target is StepStatus.DONE:
             row.status = StepStatus.DONE.value
             row.completed_at = now
@@ -371,12 +398,23 @@ class ProgressManager:
             row.completed_at = None
             row.completed_by_agent_id = None
             self._log(case.id, agent, "step.reopened", details)
+            # Notif (c): a reopened step with concrete requirements means
+            # the agency wants the client to revisit — distinct tone.
+            mail = await self._client_step_mail_for_row(case, row, reopened=True)
+            if mail is not None:
+                pending.append(mail)
         else:
             row.status = StepStatus.IN_PROGRESS.value
             self._log(case.id, agent, "step.started", {"step_progress_id": str(row.id)})
             # MATERIALIZATION (NEW WAVE): the step becomes active → freeze
             # its concrete requirements against the case composition NOW.
             await self._materialize_requirements(row)
+            # Notif (a): the step is live with ≥1 pending requirement →
+            # invite the client to fill their space.
+            mail = await self._client_step_mail_for_row(case, row, reopened=False)
+            if mail is not None:
+                pending.append(mail)
+        return pending
 
     async def _materialize_requirements(self, row: CaseStepProgress) -> None:
         """Read the step's requirement definitions and the case persons
@@ -407,3 +445,147 @@ class ProgressManager:
                     scope=definition.scope,
                     status=RequirementStatus.PENDING.value,
                 )
+
+    # --- requirement completion + notifications (WAVE 2) -----------------------------
+
+    @staticmethod
+    def _all_provided(reqs: list[Any], persons_by_id: dict[uuid.UUID, Any]) -> bool:
+        """True iff there is at least one requirement and every one is
+        provided (derived live for fields, explicit for documents).
+        Empty set → False: an auto step with no requirements never
+        self-completes on activation."""
+        return bool(reqs) and all(
+            is_provided(req, persons_by_id.get(req.person_id)) for req in reqs
+        )
+
+    async def _notifications_enabled(self, case: ClientCase) -> bool:
+        agency = await self.repo.get_agency_settings_holder(case.agency_id)
+        settings = (agency.settings if agency else None) or {}
+        return bool(settings.get("step_notifications_enabled", True))
+
+    async def snapshot_active_completion(self, case: ClientCase) -> dict[uuid.UUID, bool]:
+        """all_met per IN_PROGRESS step BEFORE a write — lets recompute
+        fire the agency_validation mail only on the pending→met
+        transition (idempotent)."""
+        rows = [
+            r
+            for r in await self.repo.list_progress_for_case(case.id)
+            if r.status == StepStatus.IN_PROGRESS.value
+        ]
+        reqs = await self.repo.list_case_requirements_for_progress_ids([r.id for r in rows])
+        persons = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
+        by_progress: dict[uuid.UUID, list[Any]] = defaultdict(list)
+        for req in reqs:
+            by_progress[req.case_step_progress_id].append(req)
+        return {r.id: self._all_provided(by_progress.get(r.id, []), persons) for r in rows}
+
+    async def recompute_active(
+        self, case: ClientCase, before: dict[uuid.UUID, bool]
+    ) -> list[PendingMail]:
+        """After a write: for each IN_PROGRESS step, auto→DONE if its
+        requirements are all met (completion_mode=auto, prerequisites
+        DONE), or collect the ready-to-validate mail on the
+        pending→met transition (agency_validation). MUTATES the session;
+        caller commits then sends the returned mails."""
+        rows = [
+            r
+            for r in await self.repo.list_progress_for_case(case.id)
+            if r.status == StepStatus.IN_PROGRESS.value
+        ]
+        reqs = await self.repo.list_case_requirements_for_progress_ids([r.id for r in rows])
+        persons = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
+        by_progress: dict[uuid.UUID, list[Any]] = defaultdict(list)
+        for req in reqs:
+            by_progress[req.case_step_progress_id].append(req)
+        steps = await self.repo.get_template_steps_by_ids([r.template_step_id for r in rows])
+
+        notifications_on = await self._notifications_enabled(case)
+        pending: list[PendingMail] = []
+        for row in rows:
+            row_reqs = by_progress.get(row.id, [])
+            if not self._all_provided(row_reqs, persons):
+                continue
+            step = steps.get(row.template_step_id)
+            if step is None:
+                continue
+            if step.completion_mode == CompletionMode.AUTO.value:
+                # Auto-complete — idempotent: only if not already DONE,
+                # and the prerequisite lock is respected.
+                unfinished = await self._unfinished_prerequisites(row)
+                if not unfinished:
+                    row.status = StepStatus.DONE.value
+                    row.completed_at = datetime.now(UTC)
+                    row.completed_by_agent_id = None
+                    self.activity.log_action(
+                        case_id=case.id,
+                        actor_type=ActorType.SYSTEM,
+                        actor_id=None,
+                        action_type="step.completed",
+                        details={"step_progress_id": str(row.id), "auto": True},
+                    )
+            elif not before.get(row.id, False):
+                # agency_validation, transition pending→met: notify owner.
+                mail = await self._ready_to_validate_mail(case, step)
+                if notifications_on and mail is not None:
+                    pending.append(mail)
+        return pending
+
+    async def _ready_to_validate_mail(
+        self, case: ClientCase, step: JourneyTemplateStep
+    ) -> PendingMail | None:
+        if case.owner_agent_id is None:
+            return None
+        email = await self.repo.get_owner_email(case.owner_agent_id)
+        if not email:
+            return None
+        link = f"{get_settings().frontend_url}/app/cases/{case.id}"
+        content = ready_to_validate_email(str(case.id), step.name, link)
+        return PendingMail(to=email, content=content)
+
+    async def _client_step_mail_for_row(
+        self, case: ClientCase, row: CaseStepProgress, *, reopened: bool
+    ) -> PendingMail | None:
+        """Decide whether this single step warrants a client mail.
+        Activation (a): only if ≥1 requirement is still pending.
+        Reopen (c): as long as the step carries concrete requirements
+        (the agency reopened to get the client to revisit them)."""
+        step = await self.repo.get_step(row.template_step_id)
+        if step is None:
+            return None
+        concrete = await self.repo.list_case_requirements_for_progress_ids([row.id])
+        if not concrete:
+            return None
+        if not reopened:
+            persons = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
+            if not any(not is_provided(r, persons.get(r.person_id)) for r in concrete):
+                return None
+        return await self._client_step_mail(case, step, reopened=reopened)
+
+    async def _client_step_mail(
+        self, case: ClientCase, step: JourneyTemplateStep, *, reopened: bool
+    ) -> PendingMail | None:
+        """(a) activation / (c) reopen mail to the principal — distinct
+        templates. Only when the step has concrete requirements."""
+        if not await self._notifications_enabled(case):
+            return None
+        email, agency_name = await self.repo.get_principal_email_and_agency_name(case)
+        if not email:
+            return None
+        link = f"{get_settings().frontend_url}/space"
+        content = (
+            step_reopened_email(agency_name, step.name, link)
+            if reopened
+            else requirement_request_email(agency_name, step.name, link)
+        )
+        return PendingMail(to=email, content=content)
+
+    async def send_pending(self, mails: list[PendingMail]) -> None:
+        """Best-effort, AFTER commit. A send failure is logged and
+        swallowed — it never blocks the write or the auto-completion."""
+        for mail in mails:
+            try:
+                await asyncio.to_thread(
+                    send_email, mail.to, mail.content.subject, mail.content.text, mail.content.html
+                )
+            except Exception:  # noqa: BLE001 — best-effort boundary
+                logger.exception("step notification email failed (best-effort) to=%s", mail.to)

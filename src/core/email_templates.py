@@ -186,3 +186,49 @@ def reminder_email(message_body: str) -> EmailContent:
         intro="Un rappel concernant votre dossier d'expatriation :",
         body_text=message_body,
     )
+
+
+def requirement_request_email(agency_name: str, step_name: str, space_link: str) -> EmailContent:
+    """(a) A step became active and needs info/documents from the client."""
+    return _render(
+        subject="Nidria — De nouvelles informations sont attendues",
+        title="De nouvelles informations sont attendues",
+        intro=(
+            f"{agency_name} a besoin d'informations ou de documents pour "
+            f"l'étape « {step_name} » de votre dossier. Connectez-vous à votre "
+            "espace pour les fournir."
+        ),
+        button_label="Compléter mon dossier",
+        button_url=space_link,
+    )
+
+
+def step_reopened_email(agency_name: str, step_name: str, space_link: str) -> EmailContent:
+    """(c) The agency reopened a step — distinct tone from the first
+    request: this is a follow-up, not an initial ask."""
+    return _render(
+        subject="Nidria — Votre agence a besoin de précisions",
+        title="Votre agence a besoin de précisions",
+        intro=(
+            f"{agency_name} a rouvert l'étape « {step_name} » de votre dossier "
+            "et a besoin de précisions ou d'un complément. Connectez-vous à "
+            "votre espace pour la mettre à jour."
+        ),
+        button_label="Mettre à jour mon dossier",
+        button_url=space_link,
+    )
+
+
+def ready_to_validate_email(case_label: str, step_name: str, app_link: str) -> EmailContent:
+    """(b) agency_validation step has all requirements provided — the
+    owner agent can close it."""
+    return _render(
+        subject="Nidria — Un dossier est prêt à valider",
+        title="Un dossier est prêt à valider",
+        intro=(
+            f"Toutes les informations attendues pour l'étape « {step_name} » du "
+            f"dossier {case_label} ont été fournies. Vous pouvez la valider."
+        ),
+        button_label="Ouvrir le dossier",
+        button_url=app_link,
+    )
