@@ -16,6 +16,10 @@ from pydantic import BaseModel
 # — reused (not re-declared) so both faces describe a custom field identically.
 from src.cases.cases_schema import CustomFieldDefinitionInline
 
+# Same resolved days-remaining counter the agency timeline ships — one
+# computation in timeline_for_case, read by both faces (single source).
+from src.progress.progress_schema import DeadlineCounter
+
 
 class ExpatAgencyResponse(BaseModel):
     name: str
@@ -97,6 +101,8 @@ class ExpatTimelineStepResponse(BaseModel):
     completion_mode: str
     # VAGUE 5: non-deleted comment count for a "X messages" badge.
     comment_count: int
+    # Resolved days-remaining counter (firm deadline or estimated-derived).
+    counter: DeadlineCounter
 
 
 class RequirementValueRequest(BaseModel):

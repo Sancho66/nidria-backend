@@ -3,7 +3,7 @@ import logging
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,7 @@ from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
     BlockingStep,
+    DeadlineCounter,
     RequirementStateResponse,
     StepProgressResponse,
     StepProgressUpdateRequest,
@@ -74,6 +75,25 @@ def _person_label(person: Any) -> str:
     if person.kind == CasePersonKind.PRINCIPAL.value and person.expat_user is not None:
         return f"{person.expat_user.first_name} {person.expat_user.last_name}".strip()
     return person.full_name or ""
+
+
+def _deadline_counter(
+    due_at: datetime | None,
+    estimated_days: int | None,
+    started_at: datetime | None,
+    now: datetime,
+) -> DeadlineCounter:
+    """Resolve the days-remaining counter by priority: firm due_at wins;
+    else started_at + estimated_days; else no gauge. days_remaining is a
+    whole-day delta (negative = overdue)."""
+    if due_at is not None:
+        target, source = due_at, "deadline"
+    elif estimated_days is not None and started_at is not None:
+        target, source = started_at + timedelta(days=estimated_days), "estimated"
+    else:
+        return DeadlineCounter(target_date=None, days_remaining=None, source=None)
+    days_remaining = (target.date() - now.date()).days
+    return DeadlineCounter(target_date=target, days_remaining=days_remaining, source=source)
 
 
 def _initial_responsible_type(step: JourneyTemplateStep) -> str | None:
@@ -186,6 +206,9 @@ class ProgressManager:
         # N+1). Provided state is DERIVED live for base/custom fields.
         concrete = await self.repo.list_case_requirements_for_progress_ids([row.id for row in rows])
         comment_counts = await self.repo.comment_counts([row.id for row in rows])
+        # Batched MIN over activity_log — one query for the whole timeline.
+        started_ats = await self.repo.started_ats([row.id for row in rows])
+        now = datetime.now(UTC)
         persons_by_id = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
         active_keys = {
             d.key for d in await CustomFieldsManager(self.db).active_definitions(case.agency_id)
@@ -257,6 +280,10 @@ class ProgressManager:
                     requirements=reqs_by_progress.get(row.id, []),
                     all_requirements_met=met_by_progress.get(row.id, True),
                     comment_count=comment_counts.get(row.id, 0),
+                    due_at=row.due_at,
+                    counter=_deadline_counter(
+                        row.due_at, step.estimated_days, started_ats.get(row.id), now
+                    ),
                 )
             )
         responses.sort(key=lambda r: r.position)
@@ -302,6 +329,20 @@ class ProgressManager:
         }
         if responsible_fields & payload.model_fields_set:
             await self._apply_responsible_change(agent, case, row, payload)
+
+        if "due_at" in payload.model_fields_set:
+            old = row.due_at
+            row.due_at = payload.due_at  # None explicitly clears the firm deadline
+            self._log(
+                case.id,
+                agent,
+                "step.deadline_changed",
+                {
+                    "step_progress_id": str(row.id),
+                    "old": old.isoformat() if old else None,
+                    "new": payload.due_at.isoformat() if payload.due_at else None,
+                },
+            )
 
         pending: list[PendingMail] = []
         if "status" in payload.model_fields_set and payload.status is not None:

@@ -1,10 +1,12 @@
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
@@ -137,6 +139,25 @@ class ProgressRepository:
         row = CaseStepRequirement(**kwargs)
         self.db.add(row)
         return row
+
+    async def started_ats(self, progress_ids: list[uuid.UUID]) -> dict[uuid.UUID, datetime]:
+        """{progress_id: first step.started timestamp} — ONE grouped MIN
+        over activity_log for the whole timeline (no per-step query / N+1).
+        The key is the JSONB text `details->>'step_progress_id'`, remapped
+        to UUID in Python. Robust to reopen: MIN keeps the first activation
+        (reopen logs step.reopened, not step.started)."""
+        if not progress_ids:
+            return {}
+        pid_text = ActivityLog.details["step_progress_id"].astext
+        stmt = (
+            select(pid_text, func.min(ActivityLog.created_at))
+            .where(
+                ActivityLog.action_type == "step.started",
+                pid_text.in_([str(pid) for pid in progress_ids]),
+            )
+            .group_by(pid_text)
+        )
+        return {uuid.UUID(pid): started for pid, started in (await self.db.execute(stmt)).all()}
 
     async def comment_counts(self, progress_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
         """{case_step_progress_id: non-deleted comment count} — one grouped

@@ -39,6 +39,19 @@ class RequirementStateResponse(BaseModel):
     document_id: uuid.UUID | None
 
 
+class DeadlineCounter(BaseModel):
+    """Resolved days-remaining counter for a step, computed backend-side
+    so both faces read the same number. `target_date` is the firm
+    `due_at` if set (source="deadline"), else started_at + estimated_days
+    (source="estimated"), else null (source=null → no gauge). The
+    green/orange/red thresholds are a FRONT decision on `days_remaining`
+    (negative = overdue)."""
+
+    target_date: datetime | None
+    days_remaining: int | None
+    source: str | None  # "deadline" | "estimated" | None
+
+
 class StepProgressResponse(BaseModel):
     id: uuid.UUID
     template_step_id: uuid.UUID
@@ -64,14 +77,19 @@ class StepProgressResponse(BaseModel):
     # VAGUE 5: non-deleted comment count for a "X messages" badge without
     # listing the thread (batched COUNT, no N+1).
     comment_count: int
+    # Firm deadline (agency-set) + resolved days-remaining counter.
+    due_at: datetime | None
+    counter: DeadlineCounter
 
 
 class StepProgressUpdateRequest(BaseModel):
     """Status transitions and/or responsible assignment. Unset fields
     are untouched (model_fields_set semantics); `responsible_type=None`
-    explicitly CLEARS the responsible."""
+    explicitly CLEARS the responsible. `due_at=null` explicitly CLEARS
+    the firm deadline (only acted on when present in the payload)."""
 
     status: StepStatus | None = None
     responsible_type: ResponsibleType | None = None
     responsible_agent_id: uuid.UUID | None = None
     responsible_external_id: uuid.UUID | None = None
+    due_at: datetime | None = None

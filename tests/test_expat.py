@@ -46,6 +46,8 @@ STEP_KEYS = {
     "completion_mode",
     # VAGUE 5: comment thread badge.
     "comment_count",
+    # Days-remaining counter (firm deadline or estimated-derived).
+    "counter",
 }
 REQUIREMENT_KEYS = {
     "id",

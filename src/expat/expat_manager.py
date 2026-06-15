@@ -126,6 +126,7 @@ class ExpatPortalManager:
                 responsible=_displayable_responsible(step, external_names),
                 completion_mode=step.completion_mode,
                 comment_count=step.comment_count,
+                counter=step.counter,  # resolved upstream (single source)
                 requirements=[
                     ExpatRequirementResponse(
                         id=req.id,

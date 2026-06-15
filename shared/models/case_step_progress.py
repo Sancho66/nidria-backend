@@ -55,3 +55,6 @@ class CaseStepProgress(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agent.id", ondelete="SET NULL")
     )
+    # Optional FIRM deadline set by the agency. When present it takes
+    # priority over the estimated_days-derived target for the counter.
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

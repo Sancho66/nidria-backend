@@ -8814,6 +8814,52 @@
         "title": "DashboardResponse",
         "description": "Simple counts, agency-scoped. NOTHING more — rich analytics is\nV1.5 and stays there."
       },
+      "DeadlineCounter": {
+        "properties": {
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Remaining"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_date",
+          "days_remaining",
+          "source"
+        ],
+        "title": "DeadlineCounter",
+        "description": "Resolved days-remaining counter for a step, computed backend-side\nso both faces read the same number. `target_date` is the firm\n`due_at` if set (source=\"deadline\"), else started_at + estimated_days\n(source=\"estimated\"), else null (source=null → no gauge). The\ngreen/orange/red thresholds are a FRONT decision on `days_remaining`\n(negative = overdue)."
+      },
       "DocValidationStatus": {
         "type": "string",
         "enum": [
@@ -9477,6 +9523,9 @@
           "comment_count": {
             "type": "integer",
             "title": "Comment Count"
+          },
+          "counter": {
+            "$ref": "#/components/schemas/DeadlineCounter"
           }
         },
         "type": "object",
@@ -9491,7 +9540,8 @@
           "responsible",
           "requirements",
           "completion_mode",
-          "comment_count"
+          "comment_count",
+          "counter"
         ],
         "title": "ExpatTimelineStepResponse"
       },
@@ -11961,6 +12011,21 @@
           "comment_count": {
             "type": "integer",
             "title": "Comment Count"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "counter": {
+            "$ref": "#/components/schemas/DeadlineCounter"
           }
         },
         "type": "object",
@@ -11980,7 +12045,9 @@
           "completion_mode",
           "requirements",
           "all_requirements_met",
-          "comment_count"
+          "comment_count",
+          "due_at",
+          "counter"
         ],
         "title": "StepProgressResponse"
       },
@@ -12029,11 +12096,23 @@
               }
             ],
             "title": "Responsible External Id"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
           }
         },
         "type": "object",
         "title": "StepProgressUpdateRequest",
-        "description": "Status transitions and/or responsible assignment. Unset fields\nare untouched (model_fields_set semantics); `responsible_type=None`\nexplicitly CLEARS the responsible."
+        "description": "Status transitions and/or responsible assignment. Unset fields\nare untouched (model_fields_set semantics); `responsible_type=None`\nexplicitly CLEARS the responsible. `due_at=null` explicitly CLEARS\nthe firm deadline (only acted on when present in the payload)."
       },
       "StepRequirementCreateRequest": {
         "properties": {
