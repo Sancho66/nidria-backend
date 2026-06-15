@@ -139,6 +139,10 @@ class CasesManager:
             await self._enforce_required_at_creation(
                 payload.journey_template_id, principal, definitions
             )
+            # Case-level required fields (countries) — a SEPARATE plane
+            # from the person fields above (different storage, different
+            # method), checked in the same transaction.
+            await self._enforce_required_case_fields(payload.journey_template_id, case)
 
         # The case link IS principal_expat_user_id (just set). The
         # invitation is notification + audit trail, never the linking
@@ -454,6 +458,22 @@ class CasesManager:
                 missing.append(field.reference)
         if missing:
             raise ValidationError(f"These fields are required at creation: {sorted(missing)}.")
+
+    async def _enforce_required_case_fields(self, template_id: uuid.UUID, case: ClientCase) -> None:
+        """Case-level required-at-creation (countries). SEPARATE plane from
+        the person-field enforcement above: the value lives on client_case
+        (written via the existing top-level create keys), so it is read
+        straight off the `case`. Only enforced when a journey is assigned;
+        a nu case requires nothing (retrocompat)."""
+        missing = []
+        for cf in await JourneysRepository(self.db).list_case_fields(template_id):
+            if not cf.required_at_creation:
+                continue
+            value = getattr(case, cf.case_field, None)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing.append(cf.case_field)
+        if missing:
+            raise ValidationError(f"These case fields are required at creation: {sorted(missing)}.")
 
     async def add_person(
         self, agent: Agent, case_id: uuid.UUID, payload: PersonCreateRequest

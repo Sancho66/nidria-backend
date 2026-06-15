@@ -93,3 +93,32 @@ class JourneyTemplateField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     required_at_creation: Mapped[bool] = mapped_column(
         default=False, server_default=text("false"), nullable=False
     )
+
+
+class JourneyTemplateCaseField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A CASE-LEVEL field a template collects at case creation (option b)
+    — origin/destination country. SEPARATE from `journey_template_field`
+    on purpose: those reference person fields (case_person), these
+    reference columns on `client_case`. Keeping them in distinct tables
+    preserves the invariant that `journey_template_field.reference` is
+    always a person field — no `target` discriminator leaking into the
+    person-centric machinery (requirements_eval, materialization).
+
+    `case_field` ∈ COLLECTABLE_CASE_FIELDS (validated in the manager). The
+    value is NEVER stored here: it is written to `client_case` via the
+    existing top-level create keys; this row only DECLARES that the
+    creation form collects it (+ the required gate, + display order)."""
+
+    __tablename__ = "journey_template_case_field"
+    __table_args__ = (
+        UniqueConstraint("template_id", "case_field", name="uq_journey_template_case_field"),
+    )
+
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    case_field: Mapped[str] = mapped_column(String(30), nullable=False)
+    position: Mapped[int] = mapped_column(default=0, nullable=False)
+    required_at_creation: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )

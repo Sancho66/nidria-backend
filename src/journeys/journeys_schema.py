@@ -124,6 +124,46 @@ class TemplateFieldOrderRequest(BaseModel):
     field_ids: list[uuid.UUID]
 
 
+# --- per-template CASE-field collection (option b) -----------------------------------
+# Case-level fields (countries) on client_case — a SEPARATE mechanism from
+# the person fields above. Subset of the person-field schema: no kind, no
+# resolution, no is_archived (countries are fixed columns, never archived).
+
+
+class CaseFieldCreateRequest(BaseModel):
+    """Attach a case-level field (a client_case column, e.g. a country) to
+    a template's creation form. `case_field` is validated against
+    COLLECTABLE_CASE_FIELDS in the manager."""
+
+    case_field: str = Field(min_length=1, max_length=30)
+    required_at_creation: bool = False
+    position: int = 0
+
+
+class CaseFieldUpdateRequest(BaseModel):
+    """Toggle whether a collected case field is required at creation
+    (atomic — mirrors TemplateFieldUpdateRequest)."""
+
+    required_at_creation: bool
+
+
+class TemplateCaseFieldResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    template_id: uuid.UUID
+    case_field: str
+    position: int
+    required_at_creation: bool
+
+
+class CaseFieldOrderRequest(BaseModel):
+    """Full list of the template's case-field ids in the desired order
+    (same convention as TemplateFieldOrderRequest)."""
+
+    case_field_ids: list[uuid.UUID]
+
+
 class JourneyTemplateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,3 +188,6 @@ class JourneyTemplateDetailResponse(BaseModel):
     steps: list[TemplateStepResponse]
     # Fields collected at case creation (NEW WAVE) — embedded like steps.
     fields: list[TemplateFieldResponse]
+    # Case-level fields (countries) collected at creation (option b) —
+    # a SEPARATE list; the UI unifies them with `fields` for display.
+    case_fields: list[TemplateCaseFieldResponse]

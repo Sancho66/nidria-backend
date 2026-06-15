@@ -4,16 +4,24 @@ from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
-from shared.models.journey import JourneyTemplate, JourneyTemplateField, JourneyTemplateStep
+from shared.models.journey import (
+    JourneyTemplate,
+    JourneyTemplateField,
+    JourneyTemplateStep,
+)
 from shared.models.step_requirement import StepRequirement
+from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
 from src.core.enums import StepRequirementKind
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
+    CaseFieldCreateRequest,
+    CaseFieldUpdateRequest,
     JourneyTemplateDetailResponse,
     JourneyTemplateUpdateRequest,
     StepRequirementCreateRequest,
+    TemplateCaseFieldResponse,
     TemplateFieldCreateRequest,
     TemplateFieldResponse,
     TemplateFieldUpdateRequest,
@@ -75,6 +83,7 @@ class JourneysManager:
         for row in prerequisites:
             by_step[row.step_id].append(row.prerequisite_step_id)
         fields = await self.repo.list_fields(template_id)
+        case_fields = await self.repo.list_case_fields(template_id)
         return JourneyTemplateDetailResponse(
             id=template.id,
             name=template.name,
@@ -92,6 +101,7 @@ class JourneysManager:
                 for step in steps
             ],
             fields=await self._field_responses(agent, fields),
+            case_fields=[TemplateCaseFieldResponse.model_validate(c) for c in case_fields],
         )
 
     async def create_template(self, agent: Agent, name: str) -> JourneyTemplate:
@@ -478,4 +488,91 @@ class JourneysManager:
         if field is None:
             raise NotFoundError("Template field not found.")
         await self.repo.delete_field(field)
+        await self.db.commit()
+
+    # --- per-template CASE-field collection (option b) — countries -----------------
+    # Subset of the person-field CRUD: no kind, no custom-definition
+    # resolution, no is_archived. The value is NEVER stored here — it goes
+    # to client_case via the existing create keys; this only declares
+    # collection + the required gate + order.
+
+    async def list_case_fields(
+        self, agent: Agent, template_id: uuid.UUID
+    ) -> list[TemplateCaseFieldResponse]:
+        await self._get_template(agent, template_id)
+        rows = await self.repo.list_case_fields(template_id)
+        return [TemplateCaseFieldResponse.model_validate(c) for c in rows]
+
+    async def add_case_field(
+        self, agent: Agent, template_id: uuid.UUID, payload: CaseFieldCreateRequest
+    ) -> TemplateCaseFieldResponse:
+        await self._get_template(agent, template_id)
+        if payload.case_field not in COLLECTABLE_CASE_FIELDS:
+            raise ValidationError(
+                f"Unknown case field {payload.case_field!r}. "
+                f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}."
+            )
+        # Dedup pre-check → clean 409 (UNIQUE(template_id, case_field) is
+        # the floor; this gives a friendly error).
+        existing = await self.repo.get_case_field_by_ref(template_id, payload.case_field)
+        if existing is not None:
+            raise ConflictError(
+                f"Case field {payload.case_field!r} is already collected by this template."
+            )
+        case_field = self.repo.add_case_field(
+            template_id=template_id,
+            case_field=payload.case_field,
+            position=payload.position,
+            required_at_creation=payload.required_at_creation,
+        )
+        await self.db.commit()
+        await self.db.refresh(case_field)
+        return TemplateCaseFieldResponse.model_validate(case_field)
+
+    async def reorder_case_fields(
+        self, agent: Agent, template_id: uuid.UUID, case_field_ids: list[uuid.UUID]
+    ) -> list[TemplateCaseFieldResponse]:
+        """Full ordered set of the template's case-field ids (same
+        convention as reorder_fields). A foreign/incomplete set → 422.
+        Two-phase dense renumber to 0..n-1."""
+        await self._get_template(agent, template_id)
+        rows = await self.repo.list_case_fields(template_id)
+        if len(case_field_ids) != len(set(case_field_ids)) or set(case_field_ids) != {
+            c.id for c in rows
+        }:
+            raise ValidationError(
+                "case_field_ids must contain exactly the template's case fields, once each."
+            )
+        offset = max((c.position for c in rows), default=-1) + len(rows) + 1
+        await self.repo.shift_case_field_positions(template_id, offset)
+        for index, case_field_id in enumerate(case_field_ids):
+            await self.repo.set_case_field_position(case_field_id, index)
+        await self.db.commit()
+        reordered = await self.repo.list_case_fields(template_id)
+        return [TemplateCaseFieldResponse.model_validate(c) for c in reordered]
+
+    async def update_case_field(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        case_field_id: uuid.UUID,
+        payload: CaseFieldUpdateRequest,
+    ) -> TemplateCaseFieldResponse:
+        await self._get_template(agent, template_id)
+        case_field = await self.repo.get_case_field_in_template(template_id, case_field_id)
+        if case_field is None:
+            raise NotFoundError("Template case field not found.")
+        case_field.required_at_creation = payload.required_at_creation
+        await self.db.commit()
+        await self.db.refresh(case_field)
+        return TemplateCaseFieldResponse.model_validate(case_field)
+
+    async def delete_case_field(
+        self, agent: Agent, template_id: uuid.UUID, case_field_id: uuid.UUID
+    ) -> None:
+        await self._get_template(agent, template_id)
+        case_field = await self.repo.get_case_field_in_template(template_id, case_field_id)
+        if case_field is None:
+            raise NotFoundError("Template case field not found.")
+        await self.repo.delete_case_field(case_field)
         await self.db.commit()

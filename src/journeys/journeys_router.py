@@ -12,6 +12,9 @@ from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.journeys.journeys_manager import JourneysManager
 from src.journeys.journeys_schema import (
+    CaseFieldCreateRequest,
+    CaseFieldOrderRequest,
+    CaseFieldUpdateRequest,
     JourneyTemplateCreateRequest,
     JourneyTemplateDetailResponse,
     JourneyTemplateResponse,
@@ -21,6 +24,7 @@ from src.journeys.journeys_schema import (
     StepRequirementCreateRequest,
     StepRequirementOrderRequest,
     StepRequirementResponse,
+    TemplateCaseFieldResponse,
     TemplateFieldCreateRequest,
     TemplateFieldOrderRequest,
     TemplateFieldResponse,
@@ -112,6 +116,32 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/fields/{field_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # Per-template CASE-field collection (option b) — countries. Separate
+    # mechanism, same gate; the UI unifies them with /fields for display.
+    RouteBinding(
+        "GET", "/journeys/{template_id}/case-fields", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "POST", "/journeys/{template_id}/case-fields", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "PUT",
+        "/journeys/{template_id}/case-fields/order",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "PATCH",
+        "/journeys/{template_id}/case-fields/{case_field_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/case-fields/{case_field_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -333,3 +363,50 @@ async def delete_field(
 ) -> MessageResponse:
     await JourneysManager(db).delete_field(agent, template_id, field_id)
     return MessageResponse(detail="Field removed.")
+
+
+# --- per-template CASE-field collection (option b) — countries -----------------------
+
+
+@router.get("/{template_id}/case-fields", response_model=list[TemplateCaseFieldResponse])
+async def list_case_fields(
+    template_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[TemplateCaseFieldResponse]:
+    return await JourneysManager(db).list_case_fields(agent, template_id)
+
+
+@router.post(
+    "/{template_id}/case-fields", response_model=TemplateCaseFieldResponse, status_code=201
+)
+async def add_case_field(
+    template_id: uuid.UUID, body: CaseFieldCreateRequest, agent: AgentDep, db: DbDep
+) -> TemplateCaseFieldResponse:
+    return await JourneysManager(db).add_case_field(agent, template_id, body)
+
+
+@router.put("/{template_id}/case-fields/order", response_model=list[TemplateCaseFieldResponse])
+async def reorder_case_fields(
+    template_id: uuid.UUID, body: CaseFieldOrderRequest, agent: AgentDep, db: DbDep
+) -> list[TemplateCaseFieldResponse]:
+    return await JourneysManager(db).reorder_case_fields(agent, template_id, body.case_field_ids)
+
+
+@router.patch(
+    "/{template_id}/case-fields/{case_field_id}", response_model=TemplateCaseFieldResponse
+)
+async def update_case_field(
+    template_id: uuid.UUID,
+    case_field_id: uuid.UUID,
+    body: CaseFieldUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> TemplateCaseFieldResponse:
+    return await JourneysManager(db).update_case_field(agent, template_id, case_field_id, body)
+
+
+@router.delete("/{template_id}/case-fields/{case_field_id}", response_model=MessageResponse)
+async def delete_case_field(
+    template_id: uuid.UUID, case_field_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> MessageResponse:
+    await JourneysManager(db).delete_case_field(agent, template_id, case_field_id)
+    return MessageResponse(detail="Case field removed.")

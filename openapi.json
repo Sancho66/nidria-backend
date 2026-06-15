@@ -6596,6 +6596,300 @@
         }
       }
     },
+    "/journeys/{template_id}/case-fields": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Case Fields",
+        "operationId": "list_case_fields_journeys__template_id__case_fields_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+                  },
+                  "title": "Response List Case Fields Journeys  Template Id  Case Fields Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Case Field",
+        "operationId": "add_case_field_journeys__template_id__case_fields_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseFieldCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/case-fields/order": {
+      "put": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Reorder Case Fields",
+        "operationId": "reorder_case_fields_journeys__template_id__case_fields_order_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseFieldOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+                  },
+                  "title": "Response Reorder Case Fields Journeys  Template Id  Case Fields Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/case-fields/{case_field_id}": {
+      "patch": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Update Case Field",
+        "operationId": "update_case_field_journeys__template_id__case_fields__case_field_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "case_field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Field Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseFieldUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Case Field",
+        "operationId": "delete_case_field_journeys__template_id__case_fields__case_field_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "case_field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Field Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/journey": {
       "post": {
         "tags": [
@@ -9071,6 +9365,64 @@
           "progress"
         ],
         "title": "CaseDetailResponse"
+      },
+      "CaseFieldCreateRequest": {
+        "properties": {
+          "case_field": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Case Field"
+          },
+          "required_at_creation": {
+            "type": "boolean",
+            "title": "Required At Creation",
+            "default": false
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_field"
+        ],
+        "title": "CaseFieldCreateRequest",
+        "description": "Attach a case-level field (a client_case column, e.g. a country) to\na template's creation form. `case_field` is validated against\nCOLLECTABLE_CASE_FIELDS in the manager."
+      },
+      "CaseFieldOrderRequest": {
+        "properties": {
+          "case_field_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Case Field Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_field_ids"
+        ],
+        "title": "CaseFieldOrderRequest",
+        "description": "Full list of the template's case-field ids in the desired order\n(same convention as TemplateFieldOrderRequest)."
+      },
+      "CaseFieldUpdateRequest": {
+        "properties": {
+          "required_at_creation": {
+            "type": "boolean",
+            "title": "Required At Creation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "required_at_creation"
+        ],
+        "title": "CaseFieldUpdateRequest",
+        "description": "Toggle whether a collected case field is required at creation\n(atomic — mirrors TemplateFieldUpdateRequest)."
       },
       "CaseListItemResponse": {
         "properties": {
@@ -11972,6 +12324,13 @@
             },
             "type": "array",
             "title": "Fields"
+          },
+          "case_fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+            },
+            "type": "array",
+            "title": "Case Fields"
           }
         },
         "type": "object",
@@ -11979,7 +12338,8 @@
           "id",
           "name",
           "steps",
-          "fields"
+          "fields",
+          "case_fields"
         ],
         "title": "JourneyTemplateDetailResponse"
       },
@@ -14078,6 +14438,41 @@
           "done"
         ],
         "title": "StepStatus"
+      },
+      "TemplateCaseFieldResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "case_field": {
+            "type": "string",
+            "title": "Case Field"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "required_at_creation": {
+            "type": "boolean",
+            "title": "Required At Creation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_id",
+          "case_field",
+          "position",
+          "required_at_creation"
+        ],
+        "title": "TemplateCaseFieldResponse"
       },
       "TemplateFieldCreateRequest": {
         "properties": {

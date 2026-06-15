@@ -7,6 +7,7 @@ from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.journey import (
     JourneyTemplate,
+    JourneyTemplateCaseField,
     JourneyTemplateField,
     JourneyTemplateStep,
     StepPrerequisite,
@@ -229,5 +230,55 @@ class JourneysRepository:
         await self.db.execute(
             update(JourneyTemplateField)
             .where(JourneyTemplateField.id == field_id)
+            .values(position=position)
+        )
+
+    # --- template CASE fields (option b) — calque of the field methods -------------
+
+    async def list_case_fields(self, template_id: uuid.UUID) -> list[JourneyTemplateCaseField]:
+        stmt = (
+            select(JourneyTemplateCaseField)
+            .where(JourneyTemplateCaseField.template_id == template_id)
+            .order_by(JourneyTemplateCaseField.position, JourneyTemplateCaseField.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_case_field_in_template(
+        self, template_id: uuid.UUID, case_field_id: uuid.UUID
+    ) -> JourneyTemplateCaseField | None:
+        stmt = select(JourneyTemplateCaseField).where(
+            JourneyTemplateCaseField.id == case_field_id,
+            JourneyTemplateCaseField.template_id == template_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_case_field_by_ref(
+        self, template_id: uuid.UUID, case_field: str
+    ) -> JourneyTemplateCaseField | None:
+        stmt = select(JourneyTemplateCaseField).where(
+            JourneyTemplateCaseField.template_id == template_id,
+            JourneyTemplateCaseField.case_field == case_field,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_case_field(self, **kwargs: object) -> JourneyTemplateCaseField:
+        case_field = JourneyTemplateCaseField(**kwargs)
+        self.db.add(case_field)
+        return case_field
+
+    async def delete_case_field(self, case_field: JourneyTemplateCaseField) -> None:
+        await self.db.delete(case_field)
+
+    async def shift_case_field_positions(self, template_id: uuid.UUID, offset: int) -> None:
+        await self.db.execute(
+            update(JourneyTemplateCaseField)
+            .where(JourneyTemplateCaseField.template_id == template_id)
+            .values(position=JourneyTemplateCaseField.position + offset)
+        )
+
+    async def set_case_field_position(self, case_field_id: uuid.UUID, position: int) -> None:
+        await self.db.execute(
+            update(JourneyTemplateCaseField)
+            .where(JourneyTemplateCaseField.id == case_field_id)
             .values(position=position)
         )

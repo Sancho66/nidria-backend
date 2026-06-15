@@ -69,6 +69,19 @@ async def _custom_field(client: AsyncClient, headers: dict[str, str], **body: ob
     return r.json()
 
 
+async def _template_with_case_field(
+    client: AsyncClient, headers: dict[str, str], *, case_field: str, required: bool
+) -> str:
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    r = await client.post(
+        f"/journeys/{tid}/case-fields",
+        headers=headers,
+        json={"case_field": case_field, "required_at_creation": required},
+    )
+    assert r.status_code == 201, r.text
+    return tid
+
+
 # --- strict retrocompat --------------------------------------------------------------
 
 
@@ -269,3 +282,79 @@ async def test_create_case_unknown_template_404(
         json=_payload("ghost-tmpl@example.com", journey_template_id=str(uuid.uuid4())),
     )
     assert resp.status_code == 404
+
+
+# --- case-level required fields (countries, option b) --------------------------------
+
+
+async def test_required_case_field_blocks_without_country(
+    w2_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A journey requiring origin_country → POST without it → 422 and no
+    orphan (atomic, same rollback+count proof as the person path)."""
+    headers = agent_headers(admin)
+    agency_id = admin.agency_id
+    tid = await _template_with_case_field(
+        w2_client, headers, case_field="origin_country", required=True
+    )
+    before = (
+        await db_session.execute(
+            select(func.count()).select_from(ClientCase).where(ClientCase.agency_id == agency_id)
+        )
+    ).scalar_one()
+
+    # origin_country=None overrides the _payload default of "FR".
+    missing = await w2_client.post(
+        "/cases",
+        headers=headers,
+        json=_payload("noctry@example.com", journey_template_id=tid, origin_country=None),
+    )
+    assert missing.status_code == 422
+
+    await db_session.rollback()
+    after = (
+        await db_session.execute(
+            select(func.count()).select_from(ClientCase).where(ClientCase.agency_id == agency_id)
+        )
+    ).scalar_one()
+    assert after == before  # no orphan
+
+
+async def test_required_case_field_with_country_creates_and_persists(
+    w2_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    tid = await _template_with_case_field(
+        w2_client, headers, case_field="origin_country", required=True
+    )
+    resp = await w2_client.post(
+        "/cases",
+        headers=headers,
+        json=_payload("withctry@example.com", journey_template_id=tid, origin_country="FR"),
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    # The value lives on client_case (NOT moved anywhere) — read it back.
+    case = (
+        await db_session.execute(select(ClientCase).where(ClientCase.id == uuid.UUID(body["id"])))
+    ).scalar_one()
+    assert case.origin_country == "FR"
+
+
+async def test_required_case_field_not_enforced_without_journey(
+    w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """A template requires origin_country, but no journey is assigned on
+    this POST → no enforcement (retrocompat)."""
+    headers = agent_headers(admin)
+    await _template_with_case_field(w2_client, headers, case_field="origin_country", required=True)
+    resp = await w2_client.post(
+        "/cases", headers=headers, json=_payload("nojourney-ctry@example.com", origin_country=None)
+    )
+    assert resp.status_code == 201
