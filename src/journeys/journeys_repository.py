@@ -92,12 +92,12 @@ class JourneysRepository:
         self.db.add(step)
         return step
 
-    async def get_internal_agent(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
-        stmt = select(Agent).where(
-            Agent.id == agent_id,
-            Agent.agency_id == agency_id,
-            Agent.is_external.is_(False),
-        )
+    async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
+        # Any agent of the agency — INTERNAL or DURABLE EXTERNAL: an
+        # external is a durable partner of the agency, so it CAN be a
+        # template's default responsible (the auto-assignment at
+        # instantiation keeps the wave-C invariant).
+        stmt = select(Agent).where(Agent.id == agent_id, Agent.agency_id == agency_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def delete_step(self, step: JourneyTemplateStep) -> None:

@@ -121,14 +121,15 @@ class JourneysManager:
     async def _validate_default_responsible_agent(
         self, agent: Agent, agent_id: uuid.UUID | None
     ) -> None:
-        """A template's named default responsible must be a precise
-        INTERNAL agent of the agency — never an external (externals exist
-        only at the case level, not on the generic template)."""
+        """A template's named default responsible must belong to the
+        template's agency — INTERNAL agent OR durable EXTERNAL partner
+        (revised model). Another agency's agent is always rejected; the
+        external case-assignment is auto-created at instantiation."""
         if agent_id is None:
             return
-        target = await self.repo.get_internal_agent(agent.agency_id, agent_id)
+        target = await self.repo.get_agent_in_agency(agent.agency_id, agent_id)
         if target is None:
-            raise ValidationError("Default responsible must be an internal agent of this agency.")
+            raise ValidationError("Default responsible must belong to this agency.")
 
     async def add_step(
         self, agent: Agent, template_id: uuid.UUID, payload: TemplateStepCreateRequest

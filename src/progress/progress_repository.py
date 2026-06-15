@@ -121,6 +121,21 @@ class ProgressRepository:
         )
         return (await self.db.execute(stmt)).first() is not None
 
+    async def ensure_external_assignment(
+        self, case_id: uuid.UUID, agent_id: uuid.UUID, assigned_by_agent_id: uuid.UUID
+    ) -> None:
+        """Idempotent: create the case↔external link only if absent (one
+        row per (case, agent), whatever the number of steps the external
+        defaults on). Autoflush makes a just-added row visible to the next
+        existence check within the same transaction → no duplicate."""
+        if await self.assignment_exists(case_id, agent_id):
+            return
+        self.db.add(
+            CaseExternalAssignment(
+                case_id=case_id, agent_id=agent_id, assigned_by_agent_id=assigned_by_agent_id
+            )
+        )
+
     async def agents_by_ids(self, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, Agent]:
         if not agent_ids:
             return {}

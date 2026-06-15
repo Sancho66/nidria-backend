@@ -225,35 +225,9 @@ async def test_responsible_anti_staffing_internal_vs_external(
     assert client_step2["responsible"] == {"type": "external", "name": "Robert Lawyer"}
 
 
-# --- template default = internal only, copied at assignment --------------------------
-
-
-async def test_template_default_responsible_internal_only(
-    c_client: AsyncClient,
-    admin: Agent,
-    external: Agent,
-    make_agent: MakeAgent,
-    system_roles: dict[str, Role],
-    agent_headers: AuthHeaders,
-) -> None:
-    ah = agent_headers(admin)
-    tid = (await c_client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
-    # An EXTERNAL agent as template default → 422 (externals are case-level).
-    bad = await c_client.post(
-        f"/journeys/{tid}/steps",
-        headers=ah,
-        json={"name": "S", "default_responsible_agent_id": str(external.id)},
-    )
-    assert bad.status_code == 422
-    # An INTERNAL agent → accepted.
-    internal = await make_agent(agency_id=admin.agency_id, role=system_roles["member"])
-    good = await c_client.post(
-        f"/journeys/{tid}/steps",
-        headers=ah,
-        json={"name": "S", "default_responsible_agent_id": str(internal.id)},
-    )
-    assert good.status_code == 201
-    assert good.json()["default_responsible_agent_id"] == str(internal.id)
+# --- template default copied at assignment (internal case) ---------------------------
+# (Durable-external default + auto-assignment covered in the "REVISED MODEL"
+# section below; the old "internal only" rule was reversed by A1.)
 
 
 async def test_template_named_default_copies_to_case(
@@ -315,3 +289,152 @@ async def test_responsible_assignment_requires_case_edit(
         json={"responsible_type": "expat"},
     )
     assert denied.status_code == 403
+
+
+# --- REVISED MODEL: durable external as template default + auto-assignment -----------
+
+
+async def _template_with_default(
+    c_client: AsyncClient, ah: dict[str, str], default_agent_id: str, n_steps: int = 1
+) -> str:
+    tid = (await c_client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    for i in range(n_steps):
+        r = await c_client.post(
+            f"/journeys/{tid}/steps",
+            headers=ah,
+            json={"name": f"S{i}", "default_responsible_agent_id": default_agent_id},
+        )
+        assert r.status_code == 201, r.text
+    return tid
+
+
+async def test_a1_external_durable_accepted_as_template_default(
+    c_client: AsyncClient,
+    admin: Agent,
+    external: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    external_role: Role,
+    agent_headers: AuthHeaders,
+) -> None:
+    ah = agent_headers(admin)
+    tid = (await c_client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    # Durable external of THIS agency → accepted (revised model).
+    ok_ext = await c_client.post(
+        f"/journeys/{tid}/steps",
+        headers=ah,
+        json={"name": "ExtDefault", "default_responsible_agent_id": str(external.id)},
+    )
+    assert ok_ext.status_code == 201
+    assert ok_ext.json()["default_responsible_agent_id"] == str(external.id)
+    # Internal still accepted.
+    internal = await make_agent(agency_id=admin.agency_id, role=system_roles["member"])
+    ok_int = await c_client.post(
+        f"/journeys/{tid}/steps",
+        headers=ah,
+        json={"name": "IntDefault", "default_responsible_agent_id": str(internal.id)},
+    )
+    assert ok_int.status_code == 201
+    # Another agency's external → rejected (agency scope holds).
+    stranger = await make_agent(role=external_role, is_external=True)  # new agency
+    ko = await c_client.post(
+        f"/journeys/{tid}/steps",
+        headers=ah,
+        json={"name": "Stranger", "default_responsible_agent_id": str(stranger.id)},
+    )
+    assert ko.status_code == 422
+
+
+async def test_a2_external_default_auto_assigns_case(
+    c_client: AsyncClient,
+    admin: Agent,
+    external: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    ah, eh = agent_headers(admin), agent_headers(external)
+    tid = await _template_with_default(c_client, ah, str(external.id))
+    case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    steps = (
+        await c_client.post(
+            f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid}
+        )
+    ).json()
+    # The default copied to the instance…
+    assert steps[0]["responsible_agent_id"] == str(external.id)
+    # …AND the external was auto-assigned → it sees the case via the portal.
+    assert (await c_client.get(f"/external/cases/{case.id}", headers=eh)).status_code == 200
+    # …and the agency lists it among the case's assigned externals.
+    assigned = (await c_client.get(f"/cases/{case.id}/external-assignments", headers=ah)).json()
+    assert str(external.id) in {a["agent_id"] for a in assigned}
+
+
+async def test_a2_idempotent_one_assignment_for_multi_step_default(
+    c_client: AsyncClient,
+    admin: Agent,
+    external: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    ah = agent_headers(admin)
+    tid = await _template_with_default(
+        c_client, ah, str(external.id), n_steps=3
+    )  # 3 steps, same external
+    case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    await c_client.post(f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid})
+    assigned = (await c_client.get(f"/cases/{case.id}/external-assignments", headers=ah)).json()
+    # ONE row for the external despite defaulting on 3 steps.
+    assert [a["agent_id"] for a in assigned].count(str(external.id)) == 1
+
+
+async def test_a2_backfill_assigns_existing_cases(
+    c_client: AsyncClient,
+    admin: Agent,
+    external: Agent,
+    expat: ExpatUser,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    ah = agent_headers(admin)
+    # Template assigned to TWO live cases, no external step yet.
+    tid = (await c_client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    await c_client.post(f"/journeys/{tid}/steps", headers=ah, json={"name": "S1"})
+    case1 = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    expat2 = await make_expat_user(email="c2@example.com")
+    case2 = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat2.id)
+    for c in (case1, case2):
+        await c_client.post(f"/cases/{c.id}/journey", headers=ah, json={"journey_template_id": tid})
+
+    # Add a step defaulting to the external → backfilled onto both cases.
+    added = await c_client.post(
+        f"/journeys/{tid}/steps",
+        headers=ah,
+        json={"name": "ExtStep", "default_responsible_agent_id": str(external.id)},
+    )
+    assert added.status_code == 201
+    for c in (case1, case2):
+        assigned = (await c_client.get(f"/cases/{c.id}/external-assignments", headers=ah)).json()
+        assert str(external.id) in {a["agent_id"] for a in assigned}
+
+
+async def test_a2_coherence_auto_assigned_external_cannot_be_unassigned_while_responsible(
+    c_client: AsyncClient,
+    admin: Agent,
+    external: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The auto-assigned external is also the step's responsible — the
+    wave-C 409 guards the removal (no incoherent state via the new path)."""
+    ah = agent_headers(admin)
+    tid = await _template_with_default(c_client, ah, str(external.id))
+    case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    await c_client.post(f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid})
+    blocked = await c_client.delete(
+        f"/cases/{case.id}/external-assignments/{external.id}", headers=ah
+    )
+    assert blocked.status_code == 409

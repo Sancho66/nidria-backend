@@ -178,7 +178,15 @@ class ProgressManager:
             raise NotFoundError("Journey template not found.")
 
         case.journey_template_id = template.id
-        for step in await self.repo.list_template_steps(template.id):
+        steps = await self.repo.list_template_steps(template.id)
+        # Resolve which default responsibles are EXTERNAL (batched), to
+        # auto-create their case assignment (revised model: a durable
+        # external can be a template default; the invariant "responsible
+        # ⟹ assigned" must hold for the new case).
+        default_agents = await self.repo.agents_by_ids(
+            [s.default_responsible_agent_id for s in steps if s.default_responsible_agent_id]
+        )
+        for step in steps:
             r_type, r_agent_id = _initial_responsible(step)
             self.repo.add_progress(
                 case_id=case.id,
@@ -187,6 +195,8 @@ class ProgressManager:
                 responsible_type=r_type,
                 responsible_agent_id=r_agent_id,
             )
+            if r_agent_id is not None and (a := default_agents.get(r_agent_id)) and a.is_external:
+                await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
         self._log(
             case.id,
             agent,
@@ -204,6 +214,15 @@ class ProgressManager:
         who acted, not 'SYSTEM'."""
         cases = await self.repo.list_cases_using_template(step.template_id)
         r_type, r_agent_id = _initial_responsible(step)
+        # If the new step defaults to an EXTERNAL, every live case using
+        # this template must gain the assignment (invariant). is_external
+        # resolved once — same default agent for all cases.
+        default_is_external = False
+        if r_agent_id is not None:
+            resolved = await self.repo.agents_by_ids([r_agent_id])
+            default_is_external = bool(
+                (a := resolved.get(r_agent_id)) is not None and a.is_external
+            )
         for case in cases:
             self.repo.add_progress(
                 case_id=case.id,
@@ -212,6 +231,8 @@ class ProgressManager:
                 responsible_type=r_type,
                 responsible_agent_id=r_agent_id,
             )
+            if default_is_external and r_agent_id is not None:
+                await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
             self._log(case.id, agent, "step.added", {"template_step_id": str(step.id)})
         return len(cases)
 

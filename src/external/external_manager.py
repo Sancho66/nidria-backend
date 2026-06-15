@@ -62,9 +62,7 @@ class ExternalPortalManager:
         return ExternalCaseSummaryResponse(
             id=case.id,
             agency=ExternalAgencyResponse(name=agency_name),
-            principal=ExternalPrincipalResponse(
-                first_name=principal[0], last_name=principal[1]
-            ),
+            principal=ExternalPrincipalResponse(first_name=principal[0], last_name=principal[1]),
             origin_country=case.origin_country,
             dest_country=case.dest_country,
             status=case.status,
@@ -77,9 +75,7 @@ class ExternalPortalManager:
     async def list_my_cases(self, external: Agent) -> list[ExternalCaseSummaryResponse]:
         cases = await list_assigned_cases(self.db, external)
         counts = await self.repo.step_counts([c.id for c in cases])
-        principals = await self.repo.principal_names(
-            [c.principal_expat_user_id for c in cases]
-        )
+        principals = await self.repo.principal_names([c.principal_expat_user_id for c in cases])
         agency = await self.db.get(Agency, external.agency_id)
         agency_name = agency.name if agency else ""
         return [
