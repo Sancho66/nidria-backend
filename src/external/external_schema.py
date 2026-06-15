@@ -28,6 +28,15 @@ class ExternalReferentResponse(BaseModel):
     email: str
 
 
+class ExternalPrincipalResponse(BaseModel):
+    """The case holder's identity — the minimum a provider needs to know
+    WHO they are mandated for (a lawyer can't draft an act for "a client
+    in Paraguay"). Name only: still NO sensitive value (passport, notes…)."""
+
+    first_name: str
+    last_name: str
+
+
 class ExternalResponsibleResponse(BaseModel):
     type: str | None  # agency | you | external | None
     name: str | None
@@ -65,6 +74,7 @@ class ExternalTimelineStepResponse(BaseModel):
 class ExternalCaseSummaryResponse(BaseModel):
     id: uuid.UUID
     agency: ExternalAgencyResponse
+    principal: ExternalPrincipalResponse
     origin_country: str | None
     dest_country: str | None
     status: str

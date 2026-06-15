@@ -235,6 +235,7 @@ async def test_external_detail_leaks_no_internal_content(
     assert set(detail.keys()) == {
         "id",
         "agency",
+        "principal",
         "origin_country",
         "dest_country",
         "status",
@@ -246,6 +247,9 @@ async def test_external_detail_leaks_no_internal_content(
         "timeline",
     }
     assert detail["referent"]["email"] == admin.email  # the agency contact IS exposed
+    # The case holder's NAME is exposed (a provider must know who they work
+    # for) — name ONLY, no email, no sensitive value.
+    assert detail["principal"] == {"first_name": "Marie", "last_name": "Curie"}
     step = detail["timeline"][0]
     assert set(step.keys()) == {
         "progress_id",

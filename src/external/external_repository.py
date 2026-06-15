@@ -8,6 +8,7 @@ from shared.models.agent import Agent
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 
 
@@ -31,6 +32,17 @@ class ExternalRepository:
 
     async def get_agent(self, agent_id: uuid.UUID) -> Agent | None:
         return await self.db.get(Agent, agent_id)
+
+    async def principal_names(
+        self, principal_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, tuple[str, str]]:
+        """expat_user.id → (first_name, last_name) for the case holders."""
+        if not principal_ids:
+            return {}
+        stmt = select(ExpatUser.id, ExpatUser.first_name, ExpatUser.last_name).where(
+            ExpatUser.id.in_(principal_ids)
+        )
+        return {pid: (first, last) for pid, first, last in (await self.db.execute(stmt)).all()}
 
     async def external_contact_names(self, contact_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
         if not contact_ids:

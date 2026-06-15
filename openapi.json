@@ -7944,6 +7944,10 @@
             "type": "string",
             "title": "Role"
           },
+          "is_external": {
+            "type": "boolean",
+            "title": "Is External"
+          },
           "effective_permissions": {
             "items": {
               "type": "string"
@@ -7970,6 +7974,7 @@
           "email",
           "agency_id",
           "role",
+          "is_external",
           "effective_permissions"
         ],
         "title": "AgentMeResponse"
@@ -10502,6 +10507,9 @@
           "agency": {
             "$ref": "#/components/schemas/ExternalAgencyResponse"
           },
+          "principal": {
+            "$ref": "#/components/schemas/ExternalPrincipalResponse"
+          },
           "origin_country": {
             "anyOf": [
               {
@@ -10568,6 +10576,7 @@
         "required": [
           "id",
           "agency",
+          "principal",
           "origin_country",
           "dest_country",
           "status",
@@ -10589,6 +10598,9 @@
           },
           "agency": {
             "$ref": "#/components/schemas/ExternalAgencyResponse"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/ExternalPrincipalResponse"
           },
           "origin_country": {
             "anyOf": [
@@ -10639,6 +10651,7 @@
         "required": [
           "id",
           "agency",
+          "principal",
           "origin_country",
           "dest_country",
           "status",
@@ -10899,6 +10912,25 @@
         ],
         "title": "ExternalDocumentResponse",
         "description": "Provider-facing document — no internal UUID (no uploaded_by_id):\n`uploaded_by_type` + `is_mine` (the provider's own uploads)."
+      },
+      "ExternalPrincipalResponse": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_name",
+          "last_name"
+        ],
+        "title": "ExternalPrincipalResponse",
+        "description": "The case holder's identity — the minimum a provider needs to know\nWHO they are mandated for (a lawyer can't draft an act for \"a client\nin Paraguay\"). Name only: still NO sensitive value (passport, notes…)."
       },
       "ExternalReferentResponse": {
         "properties": {

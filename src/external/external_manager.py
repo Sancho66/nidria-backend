@@ -13,6 +13,7 @@ from src.external.external_schema import (
     ExternalAssignmentResponse,
     ExternalCaseDetailResponse,
     ExternalCaseSummaryResponse,
+    ExternalPrincipalResponse,
     ExternalReferentResponse,
     ExternalRequirementResponse,
     ExternalResponsibleResponse,
@@ -50,13 +51,20 @@ class ExternalPortalManager:
             raise NotFoundError("Case not found.")  # 404, never reveals existence
         return case
 
-    async def _summary(
-        self, case: ClientCase, agency_name: str, counts: dict[uuid.UUID, tuple[int, int]]
+    def _summary(
+        self,
+        case: ClientCase,
+        agency_name: str,
+        counts: dict[uuid.UUID, tuple[int, int]],
+        principal: tuple[str, str],
     ) -> ExternalCaseSummaryResponse:
         done, total = counts.get(case.id, (0, 0))
         return ExternalCaseSummaryResponse(
             id=case.id,
             agency=ExternalAgencyResponse(name=agency_name),
+            principal=ExternalPrincipalResponse(
+                first_name=principal[0], last_name=principal[1]
+            ),
             origin_country=case.origin_country,
             dest_country=case.dest_country,
             status=case.status,
@@ -69,13 +77,22 @@ class ExternalPortalManager:
     async def list_my_cases(self, external: Agent) -> list[ExternalCaseSummaryResponse]:
         cases = await list_assigned_cases(self.db, external)
         counts = await self.repo.step_counts([c.id for c in cases])
+        principals = await self.repo.principal_names(
+            [c.principal_expat_user_id for c in cases]
+        )
         agency = await self.db.get(Agency, external.agency_id)
         agency_name = agency.name if agency else ""
-        return [await self._summary(c, agency_name, counts) for c in cases]
+        return [
+            self._summary(
+                c, agency_name, counts, principals.get(c.principal_expat_user_id, ("", ""))
+            )
+            for c in cases
+        ]
 
     async def get_my_case(self, external: Agent, case_id: uuid.UUID) -> ExternalCaseDetailResponse:
         case = await self._assigned_case(external, case_id)
         counts = await self.repo.step_counts([case.id])
+        principals = await self.repo.principal_names([case.principal_expat_user_id])
         agency = await self.db.get(Agency, case.agency_id)
 
         referent: ExternalReferentResponse | None = None
@@ -118,7 +135,12 @@ class ExternalPortalManager:
             )
             for step in internal_timeline
         ]
-        summary = await self._summary(case, agency.name if agency else "", counts)
+        summary = self._summary(
+            case,
+            agency.name if agency else "",
+            counts,
+            principals.get(case.principal_expat_user_id, ("", "")),
+        )
         return ExternalCaseDetailResponse(
             **summary.model_dump(), referent=referent, timeline=timeline
         )

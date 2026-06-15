@@ -42,6 +42,10 @@ class AgentMeResponse(BaseModel):
     email: str
     agency_id: uuid.UUID
     role: str
+    # Authoritative internal↔external discriminant (denormalized on the
+    # agent at creation, never crosses on role reassignment). The front
+    # routes the audience on THIS fact, not on a permission proxy.
+    is_external: bool
     effective_permissions: list[str]
     impersonator: ImpersonatorInfo | None = None
 
