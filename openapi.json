@@ -782,6 +782,112 @@
         ]
       }
     },
+    "/agencies/me/external-roles": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "List External Roles",
+        "operationId": "list_external_roles_agencies_me_external_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoleResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List External Roles Agencies Me External Roles Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/agencies/me/external-members": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "List External Members",
+        "operationId": "list_external_members_agencies_me_external_members_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgencyMemberResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List External Members Agencies Me External Members Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/agencies/me/external-invitations": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Create External Invitation",
+        "operationId": "create_external_invitation_agencies_me_external_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInvitationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInvitationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me/invitations": {
       "get": {
         "tags": [
@@ -6895,6 +7001,10 @@
             "type": "string",
             "format": "uuid",
             "title": "Role Id"
+          },
+          "is_external": {
+            "type": "boolean",
+            "title": "Is External"
           }
         },
         "type": "object",
@@ -6904,7 +7014,8 @@
           "last_name",
           "email",
           "role",
-          "role_id"
+          "role_id",
+          "is_external"
         ],
         "title": "AgencyMemberResponse"
       },

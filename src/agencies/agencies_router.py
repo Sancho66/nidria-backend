@@ -42,6 +42,14 @@ BINDINGS = [
         Permission.AGENT_MANAGE,
     ),
     RouteBinding("POST", "/agencies/invitations/accept", Audience.PUBLIC),
+    # External providers (wave A): managed by an admin (agent.manage),
+    # invited with one of the 6 external system roles. Distinct from the
+    # internal flows above — the internal picker/listing never shows them.
+    RouteBinding("GET", "/agencies/me/external-roles", Audience.AGENT, Permission.AGENT_MANAGE),
+    RouteBinding("GET", "/agencies/me/external-members", Audience.AGENT, Permission.AGENT_MANAGE),
+    RouteBinding(
+        "POST", "/agencies/me/external-invitations", Audience.AGENT, Permission.AGENT_MANAGE
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -60,26 +68,53 @@ async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep
     return AgencyResponse.model_validate(agency)
 
 
+def _member_response(member: Agent) -> AgencyMemberResponse:
+    return AgencyMemberResponse(
+        id=member.id,
+        first_name=member.first_name,
+        last_name=member.last_name,
+        email=member.email,
+        role=member.role.name,
+        role_id=member.role_id,
+        is_external=member.is_external,
+    )
+
+
 @router.get("/me/members", response_model=list[AgencyMemberResponse])
 async def list_members(agent: AgentDep, db: DbDep) -> list[AgencyMemberResponse]:
     members = await AgenciesManager(db).list_members(agent)
-    return [
-        AgencyMemberResponse(
-            id=member.id,
-            first_name=member.first_name,
-            last_name=member.last_name,
-            email=member.email,
-            role=member.role.name,
-            role_id=member.role_id,
-        )
-        for member in members
-    ]
+    return [_member_response(member) for member in members]
 
 
 @router.get("/me/roles", response_model=list[RoleResponse])
 async def list_roles(agent: AgentDep, db: DbDep) -> list[RoleResponse]:
     roles = await AgenciesManager(db).list_roles(agent)
     return [RoleResponse.model_validate(role) for role in roles]
+
+
+# --- external providers (wave A) -----------------------------------------------------
+
+
+@router.get("/me/external-roles", response_model=list[RoleResponse])
+async def list_external_roles(agent: AgentDep, db: DbDep) -> list[RoleResponse]:
+    roles = await AgenciesManager(db).list_external_roles(agent)
+    return [RoleResponse.model_validate(role) for role in roles]
+
+
+@router.get("/me/external-members", response_model=list[AgencyMemberResponse])
+async def list_external_members(agent: AgentDep, db: DbDep) -> list[AgencyMemberResponse]:
+    members = await AgenciesManager(db).list_external_members(agent)
+    return [_member_response(member) for member in members]
+
+
+@router.post("/me/external-invitations", response_model=AgentInvitationResponse, status_code=201)
+async def create_external_invitation(
+    body: AgentInvitationCreateRequest, agent: AgentDep, db: DbDep
+) -> AgentInvitationResponse:
+    invitation = await AgenciesManager(db).create_external_invitation(
+        agent, body.email, body.role_id
+    )
+    return AgentInvitationResponse.model_validate(invitation)
 
 
 @router.get("/me/invitations", response_model=list[AgentInvitationResponse])

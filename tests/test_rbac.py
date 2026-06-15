@@ -17,7 +17,12 @@ from shared.models.rbac import ProtectedResource, Role, RolePermission
 from src.core.database import get_db
 from src.core.enums import Audience
 from src.core.exceptions import register_exception_handlers
-from src.core.rbac.baseline import RouteBinding, collect_bindings, seed_bindings
+from src.core.rbac.baseline import (
+    EXTERNAL_ROLE_NAMES,
+    RouteBinding,
+    collect_bindings,
+    seed_bindings,
+)
 from src.core.rbac.enforcement import enforce
 from src.core.rbac.integrity import StartupError, assert_all_routes_bound
 from src.core.rbac.permissions import Permission, sync_permissions
@@ -227,7 +232,8 @@ async def test_system_role_matrix_seeded_as_specified(
         )
         return set((await db_session.execute(stmt)).scalars())
 
-    assert set(system_roles) == {"admin", "case_manager", "member", "viewer"}
+    # The 4 internal system roles (external system roles also exist now).
+    assert {"admin", "case_manager", "member", "viewer"} <= set(system_roles)
     assert await keys_of(system_roles["admin"]) == {p.value for p in Permission}
     case_manager = await keys_of(system_roles["case_manager"])
     assert Permission.AGENT_MANAGE.value not in case_manager
@@ -237,6 +243,11 @@ async def test_system_role_matrix_seeded_as_specified(
     assert Permission.REMINDER_APPROVE.value in member
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in member
     assert await keys_of(system_roles["viewer"]) == {Permission.CASE_VIEW.value}
+    # The 6 external system roles are seeded with ZERO permissions
+    # (wave A fail-closed second barrier — no case.* before scoping).
+    for name in EXTERNAL_ROLE_NAMES:
+        assert name in system_roles
+        assert await keys_of(system_roles[name]) == set()
 
 
 # --- Catalogue sync --------------------------------------------------------------

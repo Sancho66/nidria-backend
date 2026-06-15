@@ -70,6 +70,21 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     "viewer": (Permission.CASE_VIEW,),
 }
 
+# The 6 fixed EXTERNAL system roles (providers). Seeded with is_external
+# AND ZERO permissions in wave A: an external sees NOTHING (the enforce()
+# guard already denies every non-identity route; empty permissions are
+# the second barrier). Their permissions + the per-assignment scoping
+# land TOGETHER in wave B — granting case.* now would leak the whole
+# agency (managers scope by agency_id, not by assignment).
+EXTERNAL_ROLE_NAMES: tuple[str, ...] = (
+    "external_lawyer",
+    "external_notary",
+    "external_bank",
+    "external_accountant",
+    "external_translator",
+    "external_other",
+)
+
 
 def collect_bindings() -> list[RouteBinding]:
     """Aggregate the BINDINGS lists of all domain routers.
@@ -156,6 +171,12 @@ async def seed_system_roles(db: AsyncSession) -> None:
             permission_id = perm_ids[perm.value]
             if permission_id not in granted:
                 db.add(RolePermission(role_id=role.id, permission_id=permission_id))
+
+    # External system roles — created if missing, NEVER granted any
+    # permission (wave A fail-closed). Idempotent like the internal ones.
+    for name in EXTERNAL_ROLE_NAMES:
+        if name not in existing_roles:
+            db.add(Role(name=name, is_system=True, is_external=True, agency_id=None))
     await db.commit()
 
 

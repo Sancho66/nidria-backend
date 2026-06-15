@@ -15,7 +15,13 @@ class ImpersonationRepository:
         self.db = db
 
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
-        stmt = select(Agent).where(Agent.id == agent_id, Agent.agency_id == agency_id)
+        # INTERNAL only: an external provider is never an impersonation
+        # target (impersonation operates on internal team members).
+        stmt = select(Agent).where(
+            Agent.id == agent_id,
+            Agent.agency_id == agency_id,
+            Agent.is_external.is_(False),
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_expat(self, expat_user_id: uuid.UUID) -> ExpatUser | None:

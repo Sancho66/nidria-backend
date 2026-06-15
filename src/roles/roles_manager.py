@@ -224,6 +224,8 @@ class RolesManager:
     async def set_member_role(self, actor: Agent, agent_id: uuid.UUID, role_id: uuid.UUID) -> Agent:
         if agent_id == actor.id:
             raise ForbiddenError("You cannot modify your own role.")
+        # get_agent_in_agency excludes externals → an external target is
+        # already a 404 here (they're managed via the external flow).
         target = await self.repo.get_agent_in_agency(actor.agency_id, agent_id)
         if target is None:
             raise NotFoundError("Agent not found.")
@@ -231,6 +233,10 @@ class RolesManager:
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None or (not role.is_system and role.agency_id != actor.agency_id):
             raise ValidationError("Role does not exist or does not belong to this agency.")
+        if role.is_external:
+            # An external (provider) role is never assignable via the
+            # internal member-role flow.
+            raise ValidationError("External roles cannot be assigned to internal members.")
         if role.is_system:
             # Masking holds for assignment too: an agent must never wear
             # a role that GET /roles no longer lists for their agency.

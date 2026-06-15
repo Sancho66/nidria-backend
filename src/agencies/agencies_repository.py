@@ -23,18 +23,34 @@ class AgenciesRepository:
         return await self.db.get(Role, role_id)
 
     async def list_agents_with_roles(self, agency_id: uuid.UUID) -> list[Agent]:
+        # INTERNAL agents only — externals must never appear as candidate
+        # owners / responsibles in the member selector.
         stmt = (
             select(Agent)
             .options(selectinload(Agent.role))
-            .where(Agent.agency_id == agency_id)
+            .where(Agent.agency_id == agency_id, Agent.is_external.is_(False))
             .order_by(Agent.last_name, Agent.first_name)
         )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def list_external_agents(self, agency_id: uuid.UUID) -> list[Agent]:
+        stmt = (
+            select(Agent)
+            .options(selectinload(Agent.role))
+            .where(Agent.agency_id == agency_id, Agent.is_external.is_(True))
+            .order_by(Agent.last_name, Agent.first_name)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def list_external_roles(self) -> list[Role]:
+        stmt = select(Role).where(Role.is_system, Role.is_external.is_(True)).order_by(Role.name)
         return list((await self.db.execute(stmt)).scalars())
 
     async def list_roles(self, agency_id: uuid.UUID) -> list[Role]:
         """System roles + the agency's customs — minus the system roles
         MASKED by one of the agency's copy-on-write clones (the clone is
-        in the list, its origin is not)."""
+        in the list, its origin is not). EXTERNAL roles are never listed
+        here (not assignable via the internal flow)."""
         masked = (
             select(Role.cloned_from_role_id)
             .where(Role.agency_id == agency_id, Role.cloned_from_role_id.is_not(None))
@@ -43,10 +59,11 @@ class AgenciesRepository:
         stmt = (
             select(Role)
             .where(
+                Role.is_external.is_(False),
                 or_(
                     Role.agency_id == agency_id,
                     and_(Role.is_system, Role.id.not_in(masked)),
-                )
+                ),
             )
             .order_by(Role.is_system.desc(), Role.name)
         )
@@ -118,6 +135,7 @@ class AgenciesRepository:
         first_name: str,
         last_name: str,
         password_hash: str,
+        is_external: bool = False,
     ) -> Agent:
         agent = Agent(
             agency_id=agency_id,
@@ -126,6 +144,7 @@ class AgenciesRepository:
             first_name=first_name,
             last_name=last_name,
             password_hash=password_hash,
+            is_external=is_external,
         )
         self.db.add(agent)
         return agent

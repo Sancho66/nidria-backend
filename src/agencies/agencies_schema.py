@@ -29,6 +29,9 @@ class AgencyMemberResponse(BaseModel):
     email: str
     role: str
     role_id: uuid.UUID
+    # Lets the front distinguish internal staff from external providers.
+    # Internal-members listing → always false; external-members → true.
+    is_external: bool
 
 
 class RoleResponse(BaseModel):

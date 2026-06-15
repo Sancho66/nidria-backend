@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.models.base import Base, PersonNameMixin, TimestampMixin, UUIDPrimaryKeyMixin
@@ -25,5 +25,13 @@ class Agent(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
         ForeignKey("role.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Denormalized from the role's kind at creation (an external agent =
+    # a provider, lawyer/notary/…): the CHEAP filter read by enforce() on
+    # every request and by every "agents of the agency" listing to keep
+    # externals out. Stable: role reassignment never crosses internal↔
+    # external (validated in the managers).
+    is_external: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )
 
     role: Mapped["Role"] = relationship("Role")

@@ -77,6 +77,7 @@ def _member(agent: Agent) -> AgencyMemberResponse:
         email=agent.email,
         role=agent.role.name,
         role_id=agent.role_id,
+        is_external=agent.is_external,
     )
 
 

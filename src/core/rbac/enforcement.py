@@ -49,6 +49,21 @@ IMPERSONATION_DENIED: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+# Routes an EXTERNAL agent (provider) may reach in wave A — strictly
+# their own identity. Everything else (case data AND the permissionless
+# "any agent" routes that would leak the staff list / journeys / roles)
+# is denied at enforce(), BEFORE the permission check and regardless of
+# bindings: fail-closed by construction. Wave B widens this (or replaces
+# it with per-assignment scoping + bordered permissions). External roles
+# also carry ZERO permissions — second barrier.
+EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/auth/agent/me"),
+        ("POST", "/auth/agent/logout"),
+    }
+)
+
+
 async def resolve_binding(db: AsyncSession, method: str, route: str) -> ProtectedResource | None:
     """One indexed SELECT per hit on the unique (method, route) — no
     in-memory cache, deliberately: the table is tiny, the lookup is
@@ -144,6 +159,12 @@ async def enforce(
 
     if binding.audience == Audience.AGENT:
         agent, payload = await _resolve_agent(request, db)
+        # FAIL-CLOSED for external providers (wave A): denied on every
+        # route outside their identity allowlist, BEFORE the permission
+        # check. Closes the permissionless "any agent" leaks (members,
+        # journeys, roles, …) that zero permissions alone would not.
+        if agent.is_external and (method, path) not in EXTERNAL_AGENT_ALLOWLIST:
+            raise ForbiddenError("External providers have no access to this resource yet.")
         _deny_if_impersonated(request, payload, method, path)
         # NULL permission on an AGENT binding = any authenticated agent
         # (identity endpoints: /me, /logout) — symmetric with EXPAT.

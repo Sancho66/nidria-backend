@@ -168,7 +168,13 @@ class CasesRepository:
         return await self.db.get(ExpatUser, expat_id)
 
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
-        stmt = select(Agent).where(Agent.id == agent_id, Agent.agency_id == agency_id)
+        # INTERNAL only: a case OWNER must be an internal agent, never an
+        # external provider.
+        stmt = select(Agent).where(
+            Agent.id == agent_id,
+            Agent.agency_id == agency_id,
+            Agent.is_external.is_(False),
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     def add_expat(self, **kwargs: Any) -> ExpatUser:

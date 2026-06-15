@@ -95,7 +95,13 @@ class ProgressRepository:
         return list((await self.db.execute(stmt)).scalars())
 
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
-        stmt = select(Agent).where(Agent.id == agent_id, Agent.agency_id == agency_id)
+        # INTERNAL only: responsible_type=agent must resolve to an internal
+        # agent (external providers are assigned via external_contact / B).
+        stmt = select(Agent).where(
+            Agent.id == agent_id,
+            Agent.agency_id == agency_id,
+            Agent.is_external.is_(False),
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_external_contact_in_case(

@@ -59,16 +59,40 @@ class AgenciesManager:
     async def list_roles(self, agent: Agent) -> list[Role]:
         return await self.repo.list_roles(agent.agency_id)
 
+    # --- external providers (wave A) ---------------------------------------------
+
+    async def list_external_roles(self, agent: Agent) -> list[Role]:
+        return await self.repo.list_external_roles()
+
+    async def list_external_members(self, agent: Agent) -> list[Agent]:
+        return await self.repo.list_external_agents(agent.agency_id)
+
+    async def create_external_invitation(
+        self, agent: Agent, email: str, role_id: uuid.UUID
+    ) -> AgentInvitation:
+        return await self._create_invitation(agent, email, role_id, external=True)
+
     # --- agent invitations -------------------------------------------------------
 
     async def create_invitation(
         self, agent: Agent, email: str, role_id: uuid.UUID
+    ) -> AgentInvitation:
+        return await self._create_invitation(agent, email, role_id, external=False)
+
+    async def _create_invitation(
+        self, agent: Agent, email: str, role_id: uuid.UUID, *, external: bool
     ) -> AgentInvitation:
         # Role validated AT CREATION (not only at accept): system role
         # OR a role of THIS agency — never another agency's role.
         role = await self.repo.get_role(role_id)
         if role is None or (not role.is_system and role.agency_id != agent.agency_id):
             raise ValidationError("Role does not exist or does not belong to this agency.")
+        # The two flows never cross: an external role only via the external
+        # endpoint, an internal role only via the internal one.
+        if external and not role.is_external:
+            raise ValidationError("This endpoint requires one of the external provider roles.")
+        if not external and role.is_external:
+            raise ValidationError("External roles are invited via the external-invitation flow.")
 
         # One human = one agent account = one agency at MVP
         # (agent.email is table-unique); refuse at creation, whichever
@@ -130,6 +154,8 @@ class AgenciesManager:
         # The agent is created in the INVITATION's agency — never in
         # any context derived from the caller. Single-role model: the
         # invitation's role_id becomes the agent's role directly.
+        # is_external is DERIVED from the role (the denormalized filter).
+        role = await self.repo.get_role(invitation.role_id)
         agent = self.repo.add_agent(
             agency_id=invitation.agency_id,
             role_id=invitation.role_id,
@@ -137,6 +163,7 @@ class AgenciesManager:
             first_name=first_name,
             last_name=last_name,
             password_hash=hash_password(password),
+            is_external=bool(role and role.is_external),
         )
         await self.db.flush()
         invitation.status = InvitationStatus.ACCEPTED

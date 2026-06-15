@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -35,6 +35,13 @@ class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_system: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # Authoritative classification: an EXTERNAL role (provider — lawyer,
+    # notary, …) is a system role excluded from the internal assignment
+    # flows (picker, internal invite, member listing). Agents wearing it
+    # are external. Custom agency roles are never external.
+    is_external: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )
     cloned_from_role_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("role.id", ondelete="SET NULL"), index=True
     )

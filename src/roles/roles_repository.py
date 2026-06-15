@@ -78,27 +78,40 @@ class RolesRepository:
         self, agency_id: uuid.UUID, from_role_id: uuid.UUID, to_role_id: uuid.UUID
     ) -> None:
         """Move every agent of THIS agency wearing `from_role_id` onto
-        `to_role_id` (copy-on-write rebind / clone deletion)."""
+        `to_role_id` (copy-on-write rebind / clone deletion). INTERNAL
+        only — externals never wear internal/cloned roles."""
         await self.db.execute(
             update(Agent)
-            .where(Agent.agency_id == agency_id, Agent.role_id == from_role_id)
+            .where(
+                Agent.agency_id == agency_id,
+                Agent.role_id == from_role_id,
+                Agent.is_external.is_(False),
+            )
             .values(role_id=to_role_id)
         )
 
     # --- members -------------------------------------------------------------------
 
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
+        # INTERNAL only: role management (set_member_role) never targets
+        # an external — they are managed through the external flow.
         stmt = (
             select(Agent)
-            .where(Agent.id == agent_id, Agent.agency_id == agency_id)
+            .where(
+                Agent.id == agent_id,
+                Agent.agency_id == agency_id,
+                Agent.is_external.is_(False),
+            )
             .options(selectinload(Agent.role).selectinload(Role.permissions))
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def list_agents_with_permissions(self, agency_id: uuid.UUID) -> list[Agent]:
+        # INTERNAL only: the anti-lockout guard counts manager-capable
+        # internal agents; an external (zero perms) must never count.
         stmt = (
             select(Agent)
-            .where(Agent.agency_id == agency_id)
+            .where(Agent.agency_id == agency_id, Agent.is_external.is_(False))
             .options(selectinload(Agent.role).selectinload(Role.permissions))
         )
         return list((await self.db.execute(stmt)).scalars())
