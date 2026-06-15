@@ -8585,6 +8585,86 @@
       },
       "CaseCreateRequest": {
         "properties": {
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "marital_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaritalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
           "first_name": {
             "type": "string",
             "maxLength": 100,
@@ -8667,6 +8747,23 @@
               }
             ],
             "title": "Owner Agent Id"
+          },
+          "journey_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Template Id"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
           }
         },
         "type": "object",
@@ -8676,7 +8773,7 @@
           "email"
         ],
         "title": "CaseCreateRequest",
-        "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints."
+        "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\nWave 2 (transactional creation): an OPTIONAL journey_template_id and\nthe principal's OPTIONAL values (the inherited civil-status fields +\ncustom_fields) arrive in the same POST. All defaulted → the nu-case\ncall (just identity + case meta) is byte-for-byte unchanged."
       },
       "CaseDetailResponse": {
         "properties": {

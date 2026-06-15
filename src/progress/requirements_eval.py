@@ -54,6 +54,13 @@ def current_value(requirement: CaseStepRequirement, person: CasePerson | None) -
     return None if _is_empty(value) else value
 
 
+def field_provided(person: CasePerson, reference: str) -> bool:
+    """Is a base/custom field non-empty on this person — the SAME notion
+    of 'provided' as is_provided, exposed for the required-at-creation
+    check (which works from a template field, not a CaseStepRequirement)."""
+    return not _is_empty(_field_value(person, reference))
+
+
 def is_provided(requirement: CaseStepRequirement, person: CasePerson | None) -> bool:
     """base_field / custom_field → derived from the live person value;
     document → the explicit stored status. A missing person (should not

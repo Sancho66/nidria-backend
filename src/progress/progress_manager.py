@@ -161,10 +161,12 @@ class ProgressManager:
 
     # --- assignment ----------------------------------------------------------------
 
-    async def assign_journey(
-        self, agent: Agent, case_id: uuid.UUID, template_id: uuid.UUID
-    ) -> list[StepProgressResponse]:
-        case = await self._get_case(agent, case_id)
+    async def apply_journey(self, agent: Agent, case: ClientCase, template_id: uuid.UUID) -> None:
+        """Commit-less core of assign_journey: validate + assign + instantiate
+        TODO progress rows + auto-assign external responsibles + log. The
+        CALLER commits (same pattern as backfill_step). Reused by the
+        /cases/{id}/journey endpoint AND by transactional case creation,
+        so the new case + its journey live in ONE transaction."""
         if (
             case.journey_template_id is not None
             or await self.repo.count_progress_for_case(case.id) > 0
@@ -203,6 +205,12 @@ class ProgressManager:
             "case.journey_assigned",
             {"journey_template_id": str(template.id)},
         )
+
+    async def assign_journey(
+        self, agent: Agent, case_id: uuid.UUID, template_id: uuid.UUID
+    ) -> list[StepProgressResponse]:
+        case = await self._get_case(agent, case_id)
+        await self.apply_journey(agent, case, template_id)
         await self.db.commit()
         return await self.timeline_for_case(case)
 

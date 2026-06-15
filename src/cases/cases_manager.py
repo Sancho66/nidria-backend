@@ -38,13 +38,15 @@ from src.cases.cases_schema import (
 from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.email_templates import expat_activation_email, new_case_email
-from src.core.enums import ActorType, CasePersonKind
+from src.core.enums import ActorType, CasePersonKind, StepRequirementKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
+from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
+from src.progress.requirements_eval import field_provided
 
 
 class CasesManager:
@@ -114,13 +116,29 @@ class CasesManager:
 
         # The PRINCIPAL person — civil-status carrier linked to the
         # shared login identity. Exactly one per case (DB invariant);
-        # created with the case, never deletable.
-        self.repo.add_person(
+        # created with the case, never deletable. Wave 2: the principal's
+        # OPTIONAL values (civil + custom) are applied here, same
+        # validation as PATCH person (an invalid custom value → 422 with
+        # NOTHING committed yet, so no orphan case).
+        definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
+        principal = self.repo.add_person(
             case_id=case.id,
             kind=CasePersonKind.PRINCIPAL.value,
             expat_user_id=expat.id,
+            custom_fields=validate_and_merge(definitions, {}, payload.custom_fields),
         )
+        self._apply_civil_fields(principal, payload)
         await self.db.flush()
+
+        # Wave 2 — transactional journey assignment + required-at-creation
+        # enforcement, INSIDE this single transaction (apply_journey is
+        # commit-less). If anything raises, the whole POST rolls back: no
+        # orphan case, no half-assigned journey.
+        if payload.journey_template_id is not None:
+            await ProgressManager(self.db).apply_journey(agent, case, payload.journey_template_id)
+            await self._enforce_required_at_creation(
+                payload.journey_template_id, principal, definitions
+            )
 
         # The case link IS principal_expat_user_id (just set). The
         # invitation is notification + audit trail, never the linking
@@ -399,7 +417,9 @@ class CasesManager:
         )
 
     def _apply_civil_fields(
-        self, person: CasePerson, payload: PersonCreateRequest | PersonUpdateRequest
+        self,
+        person: CasePerson,
+        payload: PersonCreateRequest | PersonUpdateRequest | CaseCreateRequest,
     ) -> None:
         provided = payload.model_dump(exclude_unset=True)
         for field in self._CIVIL_FIELDS:
@@ -407,6 +427,33 @@ class CasesManager:
                 value = provided[field]
                 # Enums (sex, marital_status) → store their .value.
                 setattr(person, field, value.value if hasattr(value, "value") else value)
+
+    async def _enforce_required_at_creation(
+        self,
+        template_id: uuid.UUID,
+        principal: CasePerson,
+        definitions: list[CustomFieldDefinition],
+    ) -> None:
+        """If the assigned template flags fields required_at_creation, the
+        principal must carry a non-empty value for each — else 422 (and,
+        no commit yet, the whole creation rolls back). An ARCHIVED custom
+        field is no longer demanded → skipped (it has dropped off the
+        picker; blocking on it would be incoherent). Only enforced when a
+        journey is assigned — a nu-case has nothing to require."""
+        active_keys = {d.key for d in definitions}
+        missing = []
+        for field in await JourneysRepository(self.db).list_fields(template_id):
+            if not field.required_at_creation:
+                continue
+            if (
+                field.kind == StepRequirementKind.CUSTOM_FIELD.value
+                and field.reference not in active_keys
+            ):
+                continue
+            if not field_provided(principal, field.reference):
+                missing.append(field.reference)
+        if missing:
+            raise ValidationError(f"These fields are required at creation: {sorted(missing)}.")
 
     async def add_person(
         self, agent: Agent, case_id: uuid.UUID, payload: PersonCreateRequest

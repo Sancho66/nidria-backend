@@ -11,9 +11,26 @@ from src.progress.progress_schema import StepProgressResponse
 _COUNTRY_PATTERN = r"^[A-Z]{2}$"
 
 
-class CaseCreateRequest(BaseModel):
+class _CivilStatusFields(BaseModel):
+    """Case-scoped civil status — all optional, never on expat_user."""
+
+    passport_number: str | None = Field(default=None, max_length=50)
+    date_of_birth: date | None = None
+    nationality: str | None = Field(default=None, max_length=100)
+    place_of_birth: str | None = Field(default=None, max_length=200)
+    sex: Sex | None = None
+    marital_status: MaritalStatus | None = None
+    phone: str | None = Field(default=None, max_length=50)
+
+
+class CaseCreateRequest(_CivilStatusFields):
     """Principal-only create: family members and external contacts go
-    through their own endpoints."""
+    through their own endpoints.
+
+    Wave 2 (transactional creation): an OPTIONAL journey_template_id and
+    the principal's OPTIONAL values (the inherited civil-status fields +
+    custom_fields) arrive in the same POST. All defaulted → the nu-case
+    call (just identity + case meta) is byte-for-byte unchanged."""
 
     # Principal expat (linked-or-created by email; an EXISTING user's
     # identity is never overwritten by this payload).
@@ -28,6 +45,9 @@ class CaseCreateRequest(BaseModel):
     source: str | None = Field(default=None, max_length=100)
     tags: list[str] = Field(default_factory=list)
     owner_agent_id: uuid.UUID | None = None  # default: the creator
+    # Wave 2 additions — all optional (strict retrocompat).
+    journey_template_id: uuid.UUID | None = None
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseUpdateRequest(BaseModel):
@@ -91,18 +111,6 @@ class CaseListResponse(BaseModel):
     total: int
     page: int
     page_size: int
-
-
-class _CivilStatusFields(BaseModel):
-    """Case-scoped civil status — all optional, never on expat_user."""
-
-    passport_number: str | None = Field(default=None, max_length=50)
-    date_of_birth: date | None = None
-    nationality: str | None = Field(default=None, max_length=100)
-    place_of_birth: str | None = Field(default=None, max_length=200)
-    sex: Sex | None = None
-    marital_status: MaritalStatus | None = None
-    phone: str | None = Field(default=None, max_length=50)
 
 
 class PersonResponse(_CivilStatusFields):
