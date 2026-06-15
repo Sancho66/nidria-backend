@@ -6473,6 +6473,72 @@
       }
     },
     "/journeys/{template_id}/fields/{field_id}": {
+      "patch": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Update Field",
+        "operationId": "update_field_journeys__template_id__fields__field_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateFieldResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "journeys"
@@ -14145,6 +14211,20 @@
         ],
         "title": "TemplateFieldResponse",
         "description": "A template's creation field with its RESOLVED render metadata\n(label/field_type/options for a custom field, batched at read; base\nfields carry none — the frontend knows the civil-status set). A\ncustom field whose definition was archived after attachment stays in\nthe list, flagged `is_archived` (mirrors requirements)."
+      },
+      "TemplateFieldUpdateRequest": {
+        "properties": {
+          "required_at_creation": {
+            "type": "boolean",
+            "title": "Required At Creation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "required_at_creation"
+        ],
+        "title": "TemplateFieldUpdateRequest",
+        "description": "Toggle whether a collected field is required at creation. Atomic —\nno id churn, no position shuffle (the toggle is a frequent action)."
       },
       "TemplateStepCreateRequest": {
         "properties": {

@@ -16,6 +16,7 @@ from src.journeys.journeys_schema import (
     StepRequirementCreateRequest,
     TemplateFieldCreateRequest,
     TemplateFieldResponse,
+    TemplateFieldUpdateRequest,
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
@@ -454,6 +455,22 @@ class JourneysManager:
             await self.repo.set_field_position(field_id, index)
         await self.db.commit()
         return await self._field_responses(agent, await self.repo.list_fields(template_id))
+
+    async def update_field(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        field_id: uuid.UUID,
+        payload: TemplateFieldUpdateRequest,
+    ) -> TemplateFieldResponse:
+        await self._get_template(agent, template_id)
+        field = await self.repo.get_field_in_template(template_id, field_id)
+        if field is None:
+            raise NotFoundError("Template field not found.")
+        field.required_at_creation = payload.required_at_creation
+        await self.db.commit()
+        await self.db.refresh(field)
+        return (await self._field_responses(agent, [field]))[0]
 
     async def delete_field(self, agent: Agent, template_id: uuid.UUID, field_id: uuid.UUID) -> None:
         await self._get_template(agent, template_id)

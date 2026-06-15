@@ -24,6 +24,7 @@ from src.journeys.journeys_schema import (
     TemplateFieldCreateRequest,
     TemplateFieldOrderRequest,
     TemplateFieldResponse,
+    TemplateFieldUpdateRequest,
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
@@ -101,6 +102,12 @@ BINDINGS = [
     ),
     RouteBinding(
         "PUT", "/journeys/{template_id}/fields/order", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "PATCH",
+        "/journeys/{template_id}/fields/{field_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
     ),
     RouteBinding(
         "DELETE",
@@ -307,6 +314,17 @@ async def reorder_fields(
     template_id: uuid.UUID, body: TemplateFieldOrderRequest, agent: AgentDep, db: DbDep
 ) -> list[TemplateFieldResponse]:
     return await JourneysManager(db).reorder_fields(agent, template_id, body.field_ids)
+
+
+@router.patch("/{template_id}/fields/{field_id}", response_model=TemplateFieldResponse)
+async def update_field(
+    template_id: uuid.UUID,
+    field_id: uuid.UUID,
+    body: TemplateFieldUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> TemplateFieldResponse:
+    return await JourneysManager(db).update_field(agent, template_id, field_id, body)
 
 
 @router.delete("/{template_id}/fields/{field_id}", response_model=MessageResponse)

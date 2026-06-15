@@ -91,6 +91,13 @@ class TemplateFieldCreateRequest(BaseModel):
     position: int = 0
 
 
+class TemplateFieldUpdateRequest(BaseModel):
+    """Toggle whether a collected field is required at creation. Atomic —
+    no id churn, no position shuffle (the toggle is a frequent action)."""
+
+    required_at_creation: bool
+
+
 class TemplateFieldResponse(BaseModel):
     """A template's creation field with its RESOLVED render metadata
     (label/field_type/options for a custom field, batched at read; base
