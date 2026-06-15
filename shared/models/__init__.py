@@ -16,7 +16,12 @@ from shared.models.external_contact import ExternalContact
 from shared.models.impersonation import ImpersonationLog
 from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.job import JobConfig, JobRun
-from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.journey import (
+    JourneyTemplate,
+    JourneyTemplateField,
+    JourneyTemplateStep,
+    StepPrerequisite,
+)
 from shared.models.message_template import MessageTemplate
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
@@ -45,6 +50,7 @@ __all__ = [
     "JobConfig",
     "JobRun",
     "JourneyTemplate",
+    "JourneyTemplateField",
     "JourneyTemplateStep",
     "MessageTemplate",
     "PasswordResetToken",

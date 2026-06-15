@@ -6302,6 +6302,234 @@
         }
       }
     },
+    "/journeys/{template_id}/fields": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Fields",
+        "operationId": "list_fields_journeys__template_id__fields_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateFieldResponse"
+                  },
+                  "title": "Response List Fields Journeys  Template Id  Fields Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Field",
+        "operationId": "add_field_journeys__template_id__fields_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateFieldResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/fields/order": {
+      "put": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Reorder Fields",
+        "operationId": "reorder_fields_journeys__template_id__fields_order_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateFieldOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateFieldResponse"
+                  },
+                  "title": "Response Reorder Fields Journeys  Template Id  Fields Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/fields/{field_id}": {
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Field",
+        "operationId": "delete_field_journeys__template_id__fields__field_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/journey": {
       "post": {
         "tags": [
@@ -11574,13 +11802,21 @@
             },
             "type": "array",
             "title": "Steps"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateFieldResponse"
+            },
+            "type": "array",
+            "title": "Fields"
           }
         },
         "type": "object",
         "required": [
           "id",
           "name",
-          "steps"
+          "steps",
+          "fields"
         ],
         "title": "JourneyTemplateDetailResponse"
       },
@@ -13679,6 +13915,139 @@
           "done"
         ],
         "title": "StepStatus"
+      },
+      "TemplateFieldCreateRequest": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/StepRequirementKind"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "required_at_creation": {
+            "type": "boolean",
+            "title": "Required At Creation",
+            "default": false
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "reference"
+        ],
+        "title": "TemplateFieldCreateRequest",
+        "description": "Attach a field to a template's creation form. `kind` is base_field\nor custom_field (document is a requirement, not a creation field —\nrejected in the manager)."
+      },
+      "TemplateFieldOrderRequest": {
+        "properties": {
+          "field_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Field Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_ids"
+        ],
+        "title": "TemplateFieldOrderRequest",
+        "description": "Full list of the template's field ids in the desired order (same\nconvention as StepOrderRequest / StepRequirementOrderRequest)."
+      },
+      "TemplateFieldResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "required_at_creation": {
+            "type": "boolean",
+            "title": "Required At Creation"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "field_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Type"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "is_archived": {
+            "type": "boolean",
+            "title": "Is Archived"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_id",
+          "kind",
+          "reference",
+          "position",
+          "required_at_creation",
+          "label",
+          "field_type",
+          "options",
+          "is_archived"
+        ],
+        "title": "TemplateFieldResponse",
+        "description": "A template's creation field with its RESOLVED render metadata\n(label/field_type/options for a custom field, batched at read; base\nfields carry none — the frontend knows the civil-status set). A\ncustom field whose definition was archived after attachment stays in\nthe list, flagged `is_archived` (mirrors requirements)."
       },
       "TemplateStepCreateRequest": {
         "properties": {

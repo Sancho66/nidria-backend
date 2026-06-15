@@ -77,6 +77,46 @@ class StepPrerequisitesRequest(BaseModel):
     prerequisite_step_ids: list[uuid.UUID]
 
 
+# --- per-template field collection (NEW WAVE) ----------------------------------------
+
+
+class TemplateFieldCreateRequest(BaseModel):
+    """Attach a field to a template's creation form. `kind` is base_field
+    or custom_field (document is a requirement, not a creation field —
+    rejected in the manager)."""
+
+    kind: StepRequirementKind
+    reference: str = Field(min_length=1, max_length=100)
+    required_at_creation: bool = False
+    position: int = 0
+
+
+class TemplateFieldResponse(BaseModel):
+    """A template's creation field with its RESOLVED render metadata
+    (label/field_type/options for a custom field, batched at read; base
+    fields carry none — the frontend knows the civil-status set). A
+    custom field whose definition was archived after attachment stays in
+    the list, flagged `is_archived` (mirrors requirements)."""
+
+    id: uuid.UUID
+    template_id: uuid.UUID
+    kind: str
+    reference: str
+    position: int
+    required_at_creation: bool
+    label: str | None
+    field_type: str | None
+    options: list[str] | None
+    is_archived: bool
+
+
+class TemplateFieldOrderRequest(BaseModel):
+    """Full list of the template's field ids in the desired order (same
+    convention as StepOrderRequest / StepRequirementOrderRequest)."""
+
+    field_ids: list[uuid.UUID]
+
+
 class JourneyTemplateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,3 +139,5 @@ class JourneyTemplateDetailResponse(BaseModel):
     id: uuid.UUID
     name: str
     steps: list[TemplateStepResponse]
+    # Fields collected at case creation (NEW WAVE) — embedded like steps.
+    fields: list[TemplateFieldResponse]

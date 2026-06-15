@@ -5,7 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
-from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.journey import (
+    JourneyTemplate,
+    JourneyTemplateField,
+    JourneyTemplateStep,
+    StepPrerequisite,
+)
 from shared.models.step_requirement import StepRequirement
 
 
@@ -173,5 +178,56 @@ class JourneysRepository:
         await self.db.execute(
             update(StepRequirement)
             .where(StepRequirement.id == requirement_id)
+            .values(position=position)
+        )
+
+    # --- template fields (NEW WAVE) — calque of the requirement methods ------------
+
+    async def list_fields(self, template_id: uuid.UUID) -> list[JourneyTemplateField]:
+        stmt = (
+            select(JourneyTemplateField)
+            .where(JourneyTemplateField.template_id == template_id)
+            .order_by(JourneyTemplateField.position, JourneyTemplateField.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_field_in_template(
+        self, template_id: uuid.UUID, field_id: uuid.UUID
+    ) -> JourneyTemplateField | None:
+        stmt = select(JourneyTemplateField).where(
+            JourneyTemplateField.id == field_id,
+            JourneyTemplateField.template_id == template_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_field_by_reference(
+        self, template_id: uuid.UUID, kind: str, reference: str
+    ) -> JourneyTemplateField | None:
+        stmt = select(JourneyTemplateField).where(
+            JourneyTemplateField.template_id == template_id,
+            JourneyTemplateField.kind == kind,
+            JourneyTemplateField.reference == reference,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_field(self, **kwargs: object) -> JourneyTemplateField:
+        field = JourneyTemplateField(**kwargs)
+        self.db.add(field)
+        return field
+
+    async def delete_field(self, field: JourneyTemplateField) -> None:
+        await self.db.delete(field)
+
+    async def shift_field_positions(self, template_id: uuid.UUID, offset: int) -> None:
+        await self.db.execute(
+            update(JourneyTemplateField)
+            .where(JourneyTemplateField.template_id == template_id)
+            .values(position=JourneyTemplateField.position + offset)
+        )
+
+    async def set_field_position(self, field_id: uuid.UUID, position: int) -> None:
+        await self.db.execute(
+            update(JourneyTemplateField)
+            .where(JourneyTemplateField.id == field_id)
             .values(position=position)
         )

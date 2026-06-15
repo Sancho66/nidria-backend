@@ -21,6 +21,9 @@ from src.journeys.journeys_schema import (
     StepRequirementCreateRequest,
     StepRequirementOrderRequest,
     StepRequirementResponse,
+    TemplateFieldCreateRequest,
+    TemplateFieldOrderRequest,
+    TemplateFieldResponse,
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
@@ -86,6 +89,22 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # Per-template field collection (NEW WAVE) — calque of requirements.
+    RouteBinding(
+        "GET", "/journeys/{template_id}/fields", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "POST", "/journeys/{template_id}/fields", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "PUT", "/journeys/{template_id}/fields/order", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/fields/{field_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -264,3 +283,35 @@ async def delete_requirement(
 ) -> MessageResponse:
     await JourneysManager(db).delete_requirement(agent, template_id, step_id, requirement_id)
     return MessageResponse(detail="Requirement removed.")
+
+
+# --- per-template field collection (NEW WAVE) ----------------------------------------
+
+
+@router.get("/{template_id}/fields", response_model=list[TemplateFieldResponse])
+async def list_fields(
+    template_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[TemplateFieldResponse]:
+    return await JourneysManager(db).list_fields(agent, template_id)
+
+
+@router.post("/{template_id}/fields", response_model=TemplateFieldResponse, status_code=201)
+async def add_field(
+    template_id: uuid.UUID, body: TemplateFieldCreateRequest, agent: AgentDep, db: DbDep
+) -> TemplateFieldResponse:
+    return await JourneysManager(db).add_field(agent, template_id, body)
+
+
+@router.put("/{template_id}/fields/order", response_model=list[TemplateFieldResponse])
+async def reorder_fields(
+    template_id: uuid.UUID, body: TemplateFieldOrderRequest, agent: AgentDep, db: DbDep
+) -> list[TemplateFieldResponse]:
+    return await JourneysManager(db).reorder_fields(agent, template_id, body.field_ids)
+
+
+@router.delete("/{template_id}/fields/{field_id}", response_model=MessageResponse)
+async def delete_field(
+    template_id: uuid.UUID, field_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> MessageResponse:
+    await JourneysManager(db).delete_field(agent, template_id, field_id)
+    return MessageResponse(detail="Field removed.")

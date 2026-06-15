@@ -64,3 +64,32 @@ class StepPrerequisite(Base):
     prerequisite_step_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("journey_template_step.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class JourneyTemplateField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A field a template COLLECTS at case creation (NEW WAVE) — the
+    explicit list driving the dynamic creation form. Twin of
+    `step_requirement` but attached to the TEMPLATE (not a step) and
+    SEPARATE in purpose: collected once at creation, vs requirements that
+    ask the client in-flight. The same field may appear in both, freely.
+
+    `kind` ∈ base_field | custom_field (no `document` — documents are
+    requirements, not creation fields). `reference`: base → a collectable
+    case_person field; custom → a custom_field_definition key (resolved /
+    flagged is_archived at read time, never copied). `required_at_creation`
+    drives form validation in the case-creation wave."""
+
+    __tablename__ = "journey_template_field"
+    __table_args__ = (
+        UniqueConstraint("template_id", "kind", "reference", name="uq_journey_template_field"),
+    )
+
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    reference: Mapped[str] = mapped_column(String(100), nullable=False)
+    position: Mapped[int] = mapped_column(default=0, nullable=False)
+    required_at_creation: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )

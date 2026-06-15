@@ -4,7 +4,7 @@ from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
-from shared.models.journey import JourneyTemplate, JourneyTemplateStep
+from shared.models.journey import JourneyTemplate, JourneyTemplateField, JourneyTemplateStep
 from shared.models.step_requirement import StepRequirement
 from src.core.enums import StepRequirementKind
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -14,6 +14,8 @@ from src.journeys.journeys_schema import (
     JourneyTemplateDetailResponse,
     JourneyTemplateUpdateRequest,
     StepRequirementCreateRequest,
+    TemplateFieldCreateRequest,
+    TemplateFieldResponse,
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
@@ -71,6 +73,7 @@ class JourneysManager:
         by_step: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
         for row in prerequisites:
             by_step[row.step_id].append(row.prerequisite_step_id)
+        fields = await self.repo.list_fields(template_id)
         return JourneyTemplateDetailResponse(
             id=template.id,
             name=template.name,
@@ -87,6 +90,7 @@ class JourneysManager:
                 )
                 for step in steps
             ],
+            fields=await self._field_responses(agent, fields),
         )
 
     async def create_template(self, agent: Agent, name: str) -> JourneyTemplate:
@@ -352,4 +356,109 @@ class JourneysManager:
         if requirement is None:
             raise NotFoundError("Step requirement not found.")
         await self.repo.delete_requirement(requirement)
+        await self.db.commit()
+
+    # --- per-template field collection (NEW WAVE) — calque of requirements ---------
+
+    async def _field_responses(
+        self, agent: Agent, fields: list[JourneyTemplateField]
+    ) -> list[TemplateFieldResponse]:
+        """Resolve each field's render metadata, BATCHED (one fetch of the
+        agency's definitions, active + archived): a custom field carries
+        label/field_type/options + is_archived; a base field carries none
+        (the frontend knows the civil-status set). No N+1."""
+        defs = {
+            d.key: d
+            for d in await CustomFieldsRepository(self.db).list_for_agency(
+                agent.agency_id, include_archived=True
+            )
+        }
+        out: list[TemplateFieldResponse] = []
+        for f in fields:
+            label = field_type = None
+            options = None
+            is_archived = False
+            if f.kind == StepRequirementKind.CUSTOM_FIELD.value:
+                d = defs.get(f.reference)
+                is_archived = d is None or d.archived_at is not None
+                if d is not None:
+                    label, field_type, options = d.label, d.field_type, d.options
+            out.append(
+                TemplateFieldResponse(
+                    id=f.id,
+                    template_id=f.template_id,
+                    kind=f.kind,
+                    reference=f.reference,
+                    position=f.position,
+                    required_at_creation=f.required_at_creation,
+                    label=label,
+                    field_type=field_type,
+                    options=options,
+                    is_archived=is_archived,
+                )
+            )
+        return out
+
+    async def list_fields(
+        self, agent: Agent, template_id: uuid.UUID
+    ) -> list[TemplateFieldResponse]:
+        await self._get_template(agent, template_id)
+        return await self._field_responses(agent, await self.repo.list_fields(template_id))
+
+    async def add_field(
+        self, agent: Agent, template_id: uuid.UUID, payload: TemplateFieldCreateRequest
+    ) -> TemplateFieldResponse:
+        await self._get_template(agent, template_id)
+        if payload.kind is StepRequirementKind.DOCUMENT:
+            raise ValidationError(
+                "A creation field is a base_field or custom_field (documents are requirements)."
+            )
+        # Same validation as requirements: base → whitelist, custom →
+        # active definition of the agency.
+        await self._validate_reference(agent, payload.kind, payload.reference)
+        # Dedup pre-check → clean 409 (the UNIQUE(template_id, kind,
+        # reference) constraint is the floor; this gives a friendly error).
+        existing = await self.repo.get_field_by_reference(
+            template_id, payload.kind.value, payload.reference
+        )
+        if existing is not None:
+            raise ConflictError(
+                f"Field {payload.reference!r} is already collected by this template."
+            )
+        field = self.repo.add_field(
+            template_id=template_id,
+            kind=payload.kind.value,
+            reference=payload.reference,
+            position=payload.position,
+            required_at_creation=payload.required_at_creation,
+        )
+        await self.db.commit()
+        await self.db.refresh(field)
+        return (await self._field_responses(agent, [field]))[0]
+
+    async def reorder_fields(
+        self, agent: Agent, template_id: uuid.UUID, field_ids: list[uuid.UUID]
+    ) -> list[TemplateFieldResponse]:
+        """Full ordered set of the template's field ids (same convention
+        as reorder_steps / reorder_requirements). A foreign/incomplete set
+        → 422. Two-phase dense renumber to 0..n-1."""
+        await self._get_template(agent, template_id)
+        fields = await self.repo.list_fields(template_id)
+        if len(field_ids) != len(set(field_ids)) or set(field_ids) != {f.id for f in fields}:
+            raise ValidationError(
+                "field_ids must contain exactly the template's fields, once each."
+            )
+        offset = max((f.position for f in fields), default=-1) + len(fields) + 1
+        await self.repo.shift_field_positions(template_id, offset)
+        for index, field_id in enumerate(field_ids):
+            await self.repo.set_field_position(field_id, index)
+        await self.db.commit()
+        return await self._field_responses(agent, await self.repo.list_fields(template_id))
+
+    async def delete_field(self, agent: Agent, template_id: uuid.UUID, field_id: uuid.UUID) -> None:
+        await self._get_template(agent, template_id)
+        field = await self.repo.get_field_in_template(template_id, field_id)
+        if field is None:
+            raise NotFoundError("Template field not found.")
+        await self.repo.delete_field(field)
         await self.db.commit()
