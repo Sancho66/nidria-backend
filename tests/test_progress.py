@@ -411,8 +411,8 @@ async def test_responsible_agent_validations(
     step_url = f"/cases/{case.id}/steps/{by_name['A']['id']}"
 
     colleague = await make_agent(agency_id=manager_agent.agency_id)
-    ok = await progress_client.patch(
-        step_url,
+    ok = await progress_client.put(
+        f"{step_url}/responsible",
         headers=headers,
         json={"responsible_type": "agent", "responsible_agent_id": str(colleague.id)},
     )
@@ -420,14 +420,14 @@ async def test_responsible_agent_validations(
     assert ok.json()["responsible_agent_id"] == str(colleague.id)
 
     stranger = await make_agent()  # another agency
-    ko = await progress_client.patch(
-        step_url,
+    ko = await progress_client.put(
+        f"{step_url}/responsible",
         headers=headers,
         json={"responsible_type": "agent", "responsible_agent_id": str(stranger.id)},
     )
     assert ko.status_code == 422
-    missing_fk = await progress_client.patch(
-        step_url, headers=headers, json={"responsible_type": "agent"}
+    missing_fk = await progress_client.put(
+        f"{step_url}/responsible", headers=headers, json={"responsible_type": "agent"}
     )
     assert missing_fk.status_code == 422
 
@@ -449,14 +449,14 @@ async def test_responsible_external_must_belong_to_same_case(
     own_contact = await make_external_contact(case=case)
     other_contact = await make_external_contact(case=other_case)
 
-    ok = await progress_client.patch(
-        step_url,
+    ok = await progress_client.put(
+        f"{step_url}/responsible",
         headers=headers,
         json={"responsible_type": "external", "responsible_external_id": str(own_contact.id)},
     )
     assert ok.status_code == 200
-    ko = await progress_client.patch(
-        step_url,
+    ko = await progress_client.put(
+        f"{step_url}/responsible",
         headers=headers,
         json={
             "responsible_type": "external",
@@ -479,14 +479,14 @@ async def test_responsible_expat_then_cleared_with_log(
     by_name = _by_name(await _assign(progress_client, headers, case, template_id))
     step_url = f"/cases/{case.id}/steps/{by_name['A']['id']}"
 
-    expat_resp = await progress_client.patch(
-        step_url, headers=headers, json={"responsible_type": "expat"}
+    expat_resp = await progress_client.put(
+        f"{step_url}/responsible", headers=headers, json={"responsible_type": "expat"}
     )
     assert expat_resp.status_code == 200
     assert expat_resp.json()["responsible_type"] == "expat"
 
-    cleared = await progress_client.patch(
-        step_url, headers=headers, json={"responsible_type": None}
+    cleared = await progress_client.put(
+        f"{step_url}/responsible", headers=headers, json={"responsible_type": None}
     )
     assert cleared.status_code == 200
     assert cleared.json()["responsible_type"] is None

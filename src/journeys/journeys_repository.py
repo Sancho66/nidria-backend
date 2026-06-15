@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
 from shared.models.step_requirement import StepRequirement
@@ -76,6 +77,7 @@ class JourneysRepository:
         position: int,
         estimated_days: int | None,
         default_responsible_type: str | None,
+        default_responsible_agent_id: uuid.UUID | None = None,
         completion_mode: str,
     ) -> JourneyTemplateStep:
         step = JourneyTemplateStep(
@@ -84,10 +86,19 @@ class JourneysRepository:
             position=position,
             estimated_days=estimated_days,
             default_responsible_type=default_responsible_type,
+            default_responsible_agent_id=default_responsible_agent_id,
             completion_mode=completion_mode,
         )
         self.db.add(step)
         return step
+
+    async def get_internal_agent(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
+        stmt = select(Agent).where(
+            Agent.id == agent_id,
+            Agent.agency_id == agency_id,
+            Agent.is_external.is_(False),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def delete_step(self, step: JourneyTemplateStep) -> None:
         await self.db.delete(step)

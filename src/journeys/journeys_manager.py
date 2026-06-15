@@ -81,6 +81,7 @@ class JourneysManager:
                     position=step.position,
                     estimated_days=step.estimated_days,
                     default_responsible_type=step.default_responsible_type,
+                    default_responsible_agent_id=step.default_responsible_agent_id,
                     completion_mode=step.completion_mode,
                     prerequisite_step_ids=by_step.get(step.id, []),
                 )
@@ -117,10 +118,23 @@ class JourneysManager:
 
     # --- steps -------------------------------------------------------------------
 
+    async def _validate_default_responsible_agent(
+        self, agent: Agent, agent_id: uuid.UUID | None
+    ) -> None:
+        """A template's named default responsible must be a precise
+        INTERNAL agent of the agency — never an external (externals exist
+        only at the case level, not on the generic template)."""
+        if agent_id is None:
+            return
+        target = await self.repo.get_internal_agent(agent.agency_id, agent_id)
+        if target is None:
+            raise ValidationError("Default responsible must be an internal agent of this agency.")
+
     async def add_step(
         self, agent: Agent, template_id: uuid.UUID, payload: TemplateStepCreateRequest
     ) -> JourneyTemplateStep:
         await self._get_template(agent, template_id)
+        await self._validate_default_responsible_agent(agent, payload.default_responsible_agent_id)
         max_position = await self.repo.max_position(template_id)
         step = self.repo.add_step(
             template_id=template_id,
@@ -128,6 +142,7 @@ class JourneysManager:
             position=(max_position if max_position is not None else -1) + 1,
             estimated_days=payload.estimated_days,
             default_responsible_type=payload.default_responsible_type,
+            default_responsible_agent_id=payload.default_responsible_agent_id,
             completion_mode=payload.completion_mode.value,
         )
         await self.db.flush()
@@ -156,7 +171,12 @@ class JourneysManager:
     ) -> JourneyTemplateStep:
         await self._get_template(agent, template_id)
         step = await self._get_step(template_id, step_id)
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        changes = payload.model_dump(exclude_unset=True)
+        if "default_responsible_agent_id" in changes:
+            await self._validate_default_responsible_agent(
+                agent, changes["default_responsible_agent_id"]
+            )
+        for field, value in changes.items():
             setattr(step, field, value)
         await self.db.commit()
         await self.db.refresh(step)

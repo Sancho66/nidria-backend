@@ -38,6 +38,7 @@ from src.progress.progress_schema import (
     BlockingStep,
     DeadlineCounter,
     RequirementStateResponse,
+    ResponsibleUpdateRequest,
     StepProgressResponse,
     StepProgressUpdateRequest,
 )
@@ -96,13 +97,37 @@ def _deadline_counter(
     return DeadlineCounter(target_date=target, days_remaining=days_remaining, source=source)
 
 
-def _initial_responsible_type(step: JourneyTemplateStep) -> str | None:
-    """Step-4 copy rule: EXPAT copies directly (the case principal is
-    implicit); AGENT/EXTERNAL stay NULL until a person is explicitly
-    assigned (the CHECK forbids a type with a NULL FK)."""
+def _resolve_responsible(
+    row: CaseStepProgress,
+    agents: dict[uuid.UUID, Any],
+    contacts: dict[uuid.UUID, str],
+) -> tuple[str | None, bool]:
+    """(display name, is_external) for a step's responsible. type=agent →
+    the agent's name + its is_external; type=external → the contact name
+    (not external-agent); else (None, False). The FACES decide whether to
+    SHOW the name (anti-staffing for internal agents)."""
+    if row.responsible_type == ResponsibleType.AGENT.value and row.responsible_agent_id:
+        a = agents.get(row.responsible_agent_id)
+        if a is not None:
+            return f"{a.first_name} {a.last_name}".strip(), a.is_external
+    if row.responsible_type == ResponsibleType.EXTERNAL.value and row.responsible_external_id:
+        return contacts.get(row.responsible_external_id), False
+    return None, False
+
+
+def _initial_responsible(step: JourneyTemplateStep) -> tuple[str | None, uuid.UUID | None]:
+    """Default→instance copy at journey assignment, returning
+    (responsible_type, responsible_agent_id):
+    - EXPAT default copies directly (the case principal is implicit);
+    - a NAMED internal-agent default (wave C) copies as type=agent + that
+      agent id;
+    - otherwise NULL (the CHECK forbids a type with a NULL FK; the agency
+      assigns per-case)."""
     if step.default_responsible_type == ResponsibleType.EXPAT.value:
-        return ResponsibleType.EXPAT.value
-    return None
+        return ResponsibleType.EXPAT.value, None
+    if step.default_responsible_agent_id is not None:
+        return ResponsibleType.AGENT.value, step.default_responsible_agent_id
+    return None, None
 
 
 class ProgressManager:
@@ -154,11 +179,13 @@ class ProgressManager:
 
         case.journey_template_id = template.id
         for step in await self.repo.list_template_steps(template.id):
+            r_type, r_agent_id = _initial_responsible(step)
             self.repo.add_progress(
                 case_id=case.id,
                 template_step_id=step.id,
                 status=StepStatus.TODO.value,
-                responsible_type=_initial_responsible_type(step),
+                responsible_type=r_type,
+                responsible_agent_id=r_agent_id,
             )
         self._log(
             case.id,
@@ -176,12 +203,14 @@ class ProgressManager:
         transaction. Actor is the configuring agent: the journal says
         who acted, not 'SYSTEM'."""
         cases = await self.repo.list_cases_using_template(step.template_id)
+        r_type, r_agent_id = _initial_responsible(step)
         for case in cases:
             self.repo.add_progress(
                 case_id=case.id,
                 template_step_id=step.id,
                 status=StepStatus.TODO.value,
-                responsible_type=_initial_responsible_type(step),
+                responsible_type=r_type,
+                responsible_agent_id=r_agent_id,
             )
             self._log(case.id, agent, "step.added", {"template_step_id": str(step.id)})
         return len(cases)
@@ -209,6 +238,14 @@ class ProgressManager:
         # Batched MIN over activity_log — one query for the whole timeline.
         started_ats = await self.repo.started_ats([row.id for row in rows])
         now = datetime.now(UTC)
+        # Responsible resolution (wave C), batched: the named person's
+        # display name + whether a type=agent responsible is EXTERNAL.
+        resp_agents = await self.repo.agents_by_ids(
+            [r.responsible_agent_id for r in rows if r.responsible_agent_id is not None]
+        )
+        resp_contacts = await self.repo.external_contact_names(
+            [r.responsible_external_id for r in rows if r.responsible_external_id is not None]
+        )
         persons_by_id = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
         active_keys = {
             d.key for d in await CustomFieldsManager(self.db).active_definitions(case.agency_id)
@@ -262,6 +299,7 @@ class ProgressManager:
                 if row.status == StepStatus.TODO.value and unfinished
                 else row.status
             )
+            resp_name, resp_is_external = _resolve_responsible(row, resp_agents, resp_contacts)
             responses.append(
                 StepProgressResponse(
                     id=row.id,
@@ -273,6 +311,8 @@ class ProgressManager:
                     responsible_type=row.responsible_type,
                     responsible_agent_id=row.responsible_agent_id,
                     responsible_external_id=row.responsible_external_id,
+                    responsible_name=resp_name,
+                    responsible_is_external=resp_is_external,
                     completed_at=row.completed_at,
                     completed_by_agent_id=row.completed_by_agent_id,
                     blocked_by=blocked_by if row.status != StepStatus.DONE.value else [],
@@ -322,14 +362,6 @@ class ProgressManager:
         if row is None:
             raise NotFoundError("Case step not found.")
 
-        responsible_fields = {
-            "responsible_type",
-            "responsible_agent_id",
-            "responsible_external_id",
-        }
-        if responsible_fields & payload.model_fields_set:
-            await self._apply_responsible_change(agent, case, row, payload)
-
         if "due_at" in payload.model_fields_set:
             old = row.due_at
             row.due_at = payload.due_at  # None explicitly clears the firm deadline
@@ -353,12 +385,30 @@ class ProgressManager:
         timeline = await self.timeline_for_case(case)
         return next(item for item in timeline if item.id == row.id)
 
+    async def set_responsible(
+        self,
+        agent: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        payload: ResponsibleUpdateRequest,
+    ) -> StepProgressResponse:
+        """Nominal responsible assignment (wave C) — its own endpoint
+        (gate case.edit), separate from the step.complete transitions."""
+        case = await self._get_case(agent, case_id)
+        row = await self.repo.get_progress_in_case(case.id, progress_id)
+        if row is None:
+            raise NotFoundError("Case step not found.")
+        await self._apply_responsible_change(agent, case, row, payload)
+        await self.db.commit()
+        timeline = await self.timeline_for_case(case)
+        return next(item for item in timeline if item.id == row.id)
+
     async def _apply_responsible_change(
         self,
         agent: Agent,
         case: ClientCase,
         row: CaseStepProgress,
-        payload: StepProgressUpdateRequest,
+        payload: ResponsibleUpdateRequest,
     ) -> None:
         new_type = payload.responsible_type
         if new_type is None:
@@ -370,11 +420,19 @@ class ProgressManager:
         elif new_type is ResponsibleType.AGENT:
             if payload.responsible_agent_id is None:
                 raise ValidationError("responsible_agent_id is required for type 'agent'.")
-            if (
-                await self.repo.get_agent_in_agency(agent.agency_id, payload.responsible_agent_id)
-                is None
-            ):
+            # Wave C: a named responsible may be INTERNAL or EXTERNAL. Fetch
+            # without the is_external filter; an external is then gated by
+            # case ASSIGNMENT (wave-B coherence), not agency membership —
+            # so an external responsible ALWAYS has dossier access.
+            target = await self.repo.get_any_agent_in_agency(
+                agent.agency_id, payload.responsible_agent_id
+            )
+            if target is None:
                 raise ValidationError("Responsible agent must belong to this agency.")
+            if target.is_external and not await self.repo.assignment_exists(case.id, target.id):
+                raise ValidationError(
+                    "Assign this provider to the case before naming them responsible."
+                )
             new_values = (new_type.value, payload.responsible_agent_id, None)
         elif new_type is ResponsibleType.EXTERNAL:
             if payload.responsible_external_id is None:

@@ -66,6 +66,16 @@ class ExternalRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def is_responsible_in_case(self, case_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
+        """True iff the agent is still responsible for at least one step of
+        the case — guards B-unassign so no externe stays responsible
+        without dossier access (wave-C coherence)."""
+        stmt = select(CaseStepProgress.id).where(
+            CaseStepProgress.case_id == case_id,
+            CaseStepProgress.responsible_agent_id == agent_id,
+        )
+        return (await self.db.execute(stmt)).first() is not None
+
     async def get_assignment(
         self, case_id: uuid.UUID, agent_id: uuid.UUID
     ) -> CaseExternalAssignment | None:

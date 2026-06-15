@@ -6,7 +6,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from src.core.enums import ResponsibleType
-from src.core.exceptions import NotFoundError, ValidationError
+from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.external.external_repository import ExternalRepository
 from src.external.external_schema import (
     ExternalAgencyResponse,
@@ -23,20 +23,17 @@ from src.progress.progress_manager import ProgressManager
 from src.progress.progress_schema import StepProgressResponse
 
 
-def _displayable_responsible(
-    step: StepProgressResponse, external_names: dict[uuid.UUID, str]
-) -> ExternalResponsibleResponse:
+def _displayable_responsible(step: StepProgressResponse) -> ExternalResponsibleResponse:
+    # Resolved upstream; anti-staffing for internal agents, name shown for
+    # external providers (same rule as the expat face).
     if step.responsible_type == ResponsibleType.AGENT.value:
+        if step.responsible_is_external:
+            return ExternalResponsibleResponse(type="external", name=step.responsible_name)
         return ExternalResponsibleResponse(type="agency", name=None)
     if step.responsible_type == ResponsibleType.EXPAT.value:
         return ExternalResponsibleResponse(type="you", name=None)
     if step.responsible_type == ResponsibleType.EXTERNAL.value:
-        name = (
-            external_names.get(step.responsible_external_id)
-            if step.responsible_external_id
-            else None
-        )
-        return ExternalResponsibleResponse(type="external", name=name)
+        return ExternalResponsibleResponse(type="external", name=step.responsible_name)
     return ExternalResponsibleResponse(type=None, name=None)
 
 
@@ -90,12 +87,6 @@ class ExternalPortalManager:
                 )
 
         internal_timeline = await ProgressManager(self.db).timeline_for_case(case)
-        external_ids = [
-            step.responsible_external_id
-            for step in internal_timeline
-            if step.responsible_external_id is not None
-        ]
-        external_names = await self.repo.external_contact_names(external_ids)
         timeline = [
             ExternalTimelineStepResponse(
                 progress_id=step.id,
@@ -105,7 +96,7 @@ class ExternalPortalManager:
                 estimated_days=step.estimated_days,
                 completed_at=step.completed_at,
                 blocked_by=[b.name for b in step.blocked_by],
-                responsible=_displayable_responsible(step, external_names),
+                responsible=_displayable_responsible(step),
                 completion_mode=step.completion_mode,
                 comment_count=step.comment_count,
                 counter=step.counter,
@@ -175,6 +166,14 @@ class ExternalAssignmentManager:
         assignment = await self.repo.get_assignment(case.id, agent_id)
         if assignment is None:
             raise NotFoundError("Assignment not found.")
+        # Wave-C coherence: refuse to cut access while the provider is still
+        # responsible for a step (no silent mutation, no responsible without
+        # access). The agency reassigns those steps first.
+        if await self.repo.is_responsible_in_case(case.id, agent_id):
+            raise ConflictError(
+                "This provider is still responsible for at least one step — "
+                "reassign those steps before removing their access."
+            )
         await self.repo.delete_assignment(assignment)
         await self.db.commit()
 

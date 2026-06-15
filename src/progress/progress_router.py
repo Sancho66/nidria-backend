@@ -12,6 +12,7 @@ from src.core.rbac.permissions import Permission
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_schema import (
     AssignJourneyRequest,
+    ResponsibleUpdateRequest,
     StepProgressResponse,
     StepProgressUpdateRequest,
 )
@@ -21,14 +22,22 @@ router = APIRouter(prefix="/cases", tags=["progress"])
 BINDINGS = [
     RouteBinding("POST", "/cases/{case_id}/journey", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding("GET", "/cases/{case_id}/steps", Audience.AGENT, Permission.CASE_VIEW),
-    # step.complete covers the whole PATCH (transitions + responsible):
-    # the work-the-steps permission. Finer granularity = one catalogue
-    # line + matrix data, the engine already allows it.
+    # PATCH = the work-the-steps surface (transitions + deadline): step.complete.
     RouteBinding(
         "PATCH",
         "/cases/{case_id}/steps/{step_progress_id}",
         Audience.AGENT,
         Permission.STEP_COMPLETE,
+    ),
+    # Nominal responsible assignment (wave C) is a case EDIT — its own
+    # endpoint, gate case.edit. The RGPD grant for an external is already
+    # held at wave-B assignment (agent.manage); naming an already-assigned
+    # provider responsible is a lower-stakes edit.
+    RouteBinding(
+        "PUT",
+        "/cases/{case_id}/steps/{step_progress_id}/responsible",
+        Audience.AGENT,
+        Permission.CASE_EDIT,
     ),
 ]
 
@@ -59,3 +68,14 @@ async def update_step(
     db: DbDep,
 ) -> StepProgressResponse:
     return await ProgressManager(db).update_step(agent, case_id, step_progress_id, body)
+
+
+@router.put("/{case_id}/steps/{step_progress_id}/responsible", response_model=StepProgressResponse)
+async def set_responsible(
+    case_id: uuid.UUID,
+    step_progress_id: uuid.UUID,
+    body: ResponsibleUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> StepProgressResponse:
+    return await ProgressManager(db).set_responsible(agent, case_id, step_progress_id, body)

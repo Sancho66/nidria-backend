@@ -6484,6 +6484,74 @@
         }
       }
     },
+    "/cases/{case_id}/steps/{step_progress_id}/responsible": {
+      "put": {
+        "tags": [
+          "progress"
+        ],
+        "summary": "Set Responsible",
+        "operationId": "set_responsible_cases__case_id__steps__step_progress_id__responsible_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "step_progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Progress Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsibleUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepProgressResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/message-templates": {
       "get": {
         "tags": [
@@ -12635,6 +12703,47 @@
         "title": "ResponsibleType",
         "description": "Polymorphic responsible of a step (also used for\n`journey_template_step.default_responsible_type`)."
       },
+      "ResponsibleUpdateRequest": {
+        "properties": {
+          "responsible_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponsibleType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "responsible_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible Agent Id"
+          },
+          "responsible_external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible External Id"
+          }
+        },
+        "type": "object",
+        "title": "ResponsibleUpdateRequest",
+        "description": "Nominal responsible assignment (wave C). `responsible_type=None`\nclears it. A named agent (internal OR external provider) goes in\n`responsible_agent_id`; a legacy no-login contact in\n`responsible_external_id`. Naming an EXTERNAL agent requires it to be\nassigned to the case (wave-B coherence, enforced in the Manager)."
+      },
       "RoleCreateRequest": {
         "properties": {
           "name": {
@@ -13291,6 +13400,21 @@
             ],
             "title": "Responsible External Id"
           },
+          "responsible_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible Name"
+          },
+          "responsible_is_external": {
+            "type": "boolean",
+            "title": "Responsible Is External"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -13368,6 +13492,8 @@
           "responsible_type",
           "responsible_agent_id",
           "responsible_external_id",
+          "responsible_name",
+          "responsible_is_external",
           "completed_at",
           "completed_by_agent_id",
           "blocked_by",
@@ -13392,40 +13518,6 @@
               }
             ]
           },
-          "responsible_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResponsibleType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "responsible_agent_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsible Agent Id"
-          },
-          "responsible_external_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsible External Id"
-          },
           "due_at": {
             "anyOf": [
               {
@@ -13441,7 +13533,7 @@
         },
         "type": "object",
         "title": "StepProgressUpdateRequest",
-        "description": "Status transitions and/or responsible assignment. Unset fields\nare untouched (model_fields_set semantics); `responsible_type=None`\nexplicitly CLEARS the responsible. `due_at=null` explicitly CLEARS\nthe firm deadline (only acted on when present in the payload)."
+        "description": "Step transitions + firm deadline. Responsible ASSIGNMENT moved to\nits own endpoint (PUT .../responsible, gate case.edit) in wave C — this\nPATCH stays the \"work the steps\" surface (gate step.complete). Unset\nfields untouched; `due_at=null` explicitly clears the deadline."
       },
       "StepRequirementCreateRequest": {
         "properties": {
@@ -13586,6 +13678,18 @@
               }
             ]
           },
+          "default_responsible_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsible Agent Id"
+          },
           "completion_mode": {
             "$ref": "#/components/schemas/CompletionMode",
             "default": "agency_validation"
@@ -13635,6 +13739,18 @@
             ],
             "title": "Default Responsible Type"
           },
+          "default_responsible_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsible Agent Id"
+          },
           "completion_mode": {
             "type": "string",
             "title": "Completion Mode"
@@ -13655,6 +13771,7 @@
           "position",
           "estimated_days",
           "default_responsible_type",
+          "default_responsible_agent_id",
           "completion_mode",
           "prerequisite_step_ids"
         ],
@@ -13696,6 +13813,18 @@
                 "type": "null"
               }
             ]
+          },
+          "default_responsible_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsible Agent Id"
           },
           "completion_mode": {
             "anyOf": [

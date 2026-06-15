@@ -35,20 +35,19 @@ from src.progress.progress_manager import ProgressManager
 from src.progress.progress_schema import StepProgressResponse
 
 
-def _displayable_responsible(
-    step: StepProgressResponse, external_names: dict[uuid.UUID, str]
-) -> ExpatResponsibleResponse:
+def _displayable_responsible(step: StepProgressResponse) -> ExpatResponsibleResponse:
+    # Wave C: the named responsible is resolved upstream (responsible_name
+    # + responsible_is_external). ANTI-STAFFING: an internal agent's name
+    # is never shown to the client ("agency"); an EXTERNAL provider's name
+    # IS shown ("Me Robert handles this") — legitimate and useful.
     if step.responsible_type == ResponsibleType.AGENT.value:
+        if step.responsible_is_external:
+            return ExpatResponsibleResponse(type="external", name=step.responsible_name)
         return ExpatResponsibleResponse(type="agency", name=None)
     if step.responsible_type == ResponsibleType.EXPAT.value:
         return ExpatResponsibleResponse(type="you", name=None)
     if step.responsible_type == ResponsibleType.EXTERNAL.value:
-        name = (
-            external_names.get(step.responsible_external_id)
-            if step.responsible_external_id
-            else None
-        )
-        return ExpatResponsibleResponse(type="external", name=name)
+        return ExpatResponsibleResponse(type="external", name=step.responsible_name)
     return ExpatResponsibleResponse(type=None, name=None)
 
 
@@ -108,12 +107,6 @@ class ExpatPortalManager:
         # The agency timeline (projected statuses) re-shaped for the
         # client: names instead of ids everywhere.
         internal_timeline = await ProgressManager(self.db).timeline_for_case(case)
-        external_ids = [
-            step.responsible_external_id
-            for step in internal_timeline
-            if step.responsible_external_id is not None
-        ]
-        external_names = await self.repo.external_contact_names(external_ids)
         timeline = [
             ExpatTimelineStepResponse(
                 progress_id=step.id,
@@ -123,7 +116,7 @@ class ExpatPortalManager:
                 estimated_days=step.estimated_days,
                 completed_at=step.completed_at,
                 blocked_by=[blocking.name for blocking in step.blocked_by],
-                responsible=_displayable_responsible(step, external_names),
+                responsible=_displayable_responsible(step),
                 completion_mode=step.completion_mode,
                 comment_count=step.comment_count,
                 counter=step.counter,  # resolved upstream (single source)

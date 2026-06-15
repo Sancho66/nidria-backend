@@ -25,6 +25,9 @@ class TemplateStepCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
+    # Wave C: a named default responsible — a precise INTERNAL agent only
+    # (validated in the manager; externals exist only at the case level).
+    default_responsible_agent_id: uuid.UUID | None = None
     completion_mode: CompletionMode = CompletionMode.AGENCY_VALIDATION
 
 
@@ -32,6 +35,7 @@ class TemplateStepUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
+    default_responsible_agent_id: uuid.UUID | None = None
     completion_mode: CompletionMode | None = None
 
 
@@ -86,6 +90,7 @@ class TemplateStepResponse(BaseModel):
     position: int
     estimated_days: int | None
     default_responsible_type: str | None
+    default_responsible_agent_id: uuid.UUID | None
     completion_mode: str
     prerequisite_step_ids: list[uuid.UUID]
 

@@ -62,6 +62,13 @@ class StepProgressResponse(BaseModel):
     responsible_type: str | None
     responsible_agent_id: uuid.UUID | None
     responsible_external_id: uuid.UUID | None
+    # Resolved named responsible (wave C, batched in timeline_for_case):
+    # the display name of the assigned person (internal/external agent, or
+    # external_contact), and whether a type=agent responsible is EXTERNAL.
+    # The faces decide visibility (anti-staffing: an internal agent's name
+    # is hidden from the expat/external timelines).
+    responsible_name: str | None
+    responsible_is_external: bool
     completed_at: datetime | None
     completed_by_agent_id: uuid.UUID | None
     # Unfinished prerequisites (ids + names, front-displayable). Drives
@@ -83,13 +90,22 @@ class StepProgressResponse(BaseModel):
 
 
 class StepProgressUpdateRequest(BaseModel):
-    """Status transitions and/or responsible assignment. Unset fields
-    are untouched (model_fields_set semantics); `responsible_type=None`
-    explicitly CLEARS the responsible. `due_at=null` explicitly CLEARS
-    the firm deadline (only acted on when present in the payload)."""
+    """Step transitions + firm deadline. Responsible ASSIGNMENT moved to
+    its own endpoint (PUT .../responsible, gate case.edit) in wave C — this
+    PATCH stays the "work the steps" surface (gate step.complete). Unset
+    fields untouched; `due_at=null` explicitly clears the deadline."""
 
     status: StepStatus | None = None
+    due_at: datetime | None = None
+
+
+class ResponsibleUpdateRequest(BaseModel):
+    """Nominal responsible assignment (wave C). `responsible_type=None`
+    clears it. A named agent (internal OR external provider) goes in
+    `responsible_agent_id`; a legacy no-login contact in
+    `responsible_external_id`. Naming an EXTERNAL agent requires it to be
+    assigned to the case (wave-B coherence, enforced in the Manager)."""
+
     responsible_type: ResponsibleType | None = None
     responsible_agent_id: uuid.UUID | None = None
     responsible_external_id: uuid.UUID | None = None
-    due_at: datetime | None = None

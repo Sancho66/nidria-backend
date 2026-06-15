@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
@@ -103,6 +104,36 @@ class ProgressRepository:
             Agent.is_external.is_(False),
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_any_agent_in_agency(
+        self, agency_id: uuid.UUID, agent_id: uuid.UUID
+    ) -> Agent | None:
+        # Wave C: a nominal step responsible may be INTERNAL or EXTERNAL —
+        # this fetch does NOT filter is_external (the external case is then
+        # gated by assignment_exists, not agency membership).
+        stmt = select(Agent).where(Agent.id == agent_id, Agent.agency_id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def assignment_exists(self, case_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
+        stmt = select(CaseExternalAssignment.id).where(
+            CaseExternalAssignment.case_id == case_id,
+            CaseExternalAssignment.agent_id == agent_id,
+        )
+        return (await self.db.execute(stmt)).first() is not None
+
+    async def agents_by_ids(self, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, Agent]:
+        if not agent_ids:
+            return {}
+        stmt = select(Agent).where(Agent.id.in_(agent_ids))
+        return {a.id: a for a in (await self.db.execute(stmt)).scalars()}
+
+    async def external_contact_names(self, contact_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not contact_ids:
+            return {}
+        stmt = select(ExternalContact.id, ExternalContact.name).where(
+            ExternalContact.id.in_(contact_ids)
+        )
+        return {cid: name for cid, name in (await self.db.execute(stmt)).all()}
 
     async def get_external_contact_in_case(
         self, case_id: uuid.UUID, contact_id: uuid.UUID

@@ -29,6 +29,13 @@ class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(nullable=False)
     estimated_days: Mapped[int | None] = mapped_column()
     default_responsible_type: Mapped[str | None] = mapped_column(String(20))
+    # Optional NAMED default responsible (wave C): a precise INTERNAL agent
+    # (durable — externals exist only at the case level, never on the
+    # generic template; the Manager enforces is_external=False). Copied to
+    # the progress row at journey assignment.
+    default_responsible_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent.id", ondelete="SET NULL")
+    )
     # How the step closes (NEW WAVE). Default reproduces the current
     # flow (agency closes the step) — additive, breaks nothing. `auto`
     # is a capability flag here; the active auto-complete trigger lands

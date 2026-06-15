@@ -239,13 +239,13 @@ async def test_responsible_displayable(
     )
     contact = await make_external_contact(case=case, name="Maitre Robert")
     step_a, step_b = timeline[0]["id"], timeline[1]["id"]
-    await portal_client.patch(
-        f"/cases/{case.id}/steps/{step_a}",
+    await portal_client.put(
+        f"/cases/{case.id}/steps/{step_a}/responsible",
         headers=headers,
         json={"responsible_type": "agent", "responsible_agent_id": str(manager_agent.id)},
     )
-    await portal_client.patch(
-        f"/cases/{case.id}/steps/{step_b}",
+    await portal_client.put(
+        f"/cases/{case.id}/steps/{step_b}/responsible",
         headers=headers,
         json={"responsible_type": "external", "responsible_external_id": str(contact.id)},
     )
@@ -261,8 +261,10 @@ async def test_responsible_displayable(
     }
 
     # Expat-responsible (the client themselves) → "you".
-    await portal_client.patch(
-        f"/cases/{case.id}/steps/{step_a}", headers=headers, json={"responsible_type": "expat"}
+    await portal_client.put(
+        f"/cases/{case.id}/steps/{step_a}/responsible",
+        headers=headers,
+        json={"responsible_type": "expat"},
     )
     refetched = (
         await portal_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))
