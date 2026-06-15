@@ -37,8 +37,21 @@ class RouteBinding:
 # reminders (an agency wanting it manager-only edits the matrix in DB).
 # NOTE_VIEW_CONFIDENTIAL is admin-only (Eloïse's spec); the structure
 # permissions (agency/agent/role.manage) are admin-only too.
+# external.* permissions belong ONLY to external roles — never to an
+# internal role (admin/case_manager included). An internal actor holding
+# one would otherwise reach the /external portal; excluding them here is
+# the matrix-level half of the structural barrier (the enforce() guard +
+# get_case_for_external being the others).
+EXTERNAL_PERMISSIONS: tuple[Permission, ...] = (
+    Permission.EXTERNAL_CASE_VIEW,
+    Permission.EXTERNAL_DOCUMENT_UPLOAD,
+    Permission.EXTERNAL_CASE_COMMENT,
+)
+_EXTERNAL_SET = set(EXTERNAL_PERMISSIONS)
+
 SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
-    "admin": tuple(Permission),
+    # admin = everything EXCEPT the external-provider permissions.
+    "admin": tuple(p for p in Permission if p not in _EXTERNAL_SET),
     "case_manager": tuple(
         p
         for p in Permission
@@ -55,6 +68,7 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # case_manager fills values (case.edit), it doesn't define.
             Permission.FIELD_MANAGE,
             Permission.NOTE_VIEW_CONFIDENTIAL,
+            *_EXTERNAL_SET,
         }
     ),
     "member": (
@@ -70,12 +84,10 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     "viewer": (Permission.CASE_VIEW,),
 }
 
-# The 6 fixed EXTERNAL system roles (providers). Seeded with is_external
-# AND ZERO permissions in wave A: an external sees NOTHING (the enforce()
-# guard already denies every non-identity route; empty permissions are
-# the second barrier). Their permissions + the per-assignment scoping
-# land TOGETHER in wave B — granting case.* now would leak the whole
-# agency (managers scope by agency_id, not by assignment).
+# The 6 fixed EXTERNAL system roles (providers). Wave B: they hold the
+# 3 external.* permissions — which only gate the /external portal, every
+# route there scoped by assignment (permission ∧ scoping, never a
+# permission alone reaching an unassigned case).
 EXTERNAL_ROLE_NAMES: tuple[str, ...] = (
     "external_lawyer",
     "external_notary",
@@ -102,6 +114,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
     from src.documents.documents_router import BINDINGS as documents_bindings
     from src.expat.expat_router import BINDINGS as expat_bindings
+    from src.external.external_router import BINDINGS as external_bindings
     from src.impersonation.impersonation_router import BINDINGS as impersonation_bindings
     from src.jobs.jobs_router import BINDINGS as jobs_bindings
     from src.journeys.journeys_router import BINDINGS as journeys_bindings
@@ -126,6 +139,7 @@ def collect_bindings() -> list[RouteBinding]:
         *jobs_bindings,
         *activity_bindings,
         *expat_bindings,
+        *external_bindings,
         *dashboard_bindings,
     ]
 
@@ -172,11 +186,30 @@ async def seed_system_roles(db: AsyncSession) -> None:
             if permission_id not in granted:
                 db.add(RolePermission(role_id=role.id, permission_id=permission_id))
 
-    # External system roles — created if missing, NEVER granted any
-    # permission (wave A fail-closed). Idempotent like the internal ones.
+    # External system roles — created if missing, granted the 3 external.*
+    # permissions (additive, idempotent like the internal ones). Each only
+    # opens /external/* routes, all scoped by assignment.
     for name in EXTERNAL_ROLE_NAMES:
-        if name not in existing_roles:
-            db.add(Role(name=name, is_system=True, is_external=True, agency_id=None))
+        role = existing_roles.get(name)
+        if role is None:
+            role = Role(name=name, is_system=True, is_external=True, agency_id=None)
+            db.add(role)
+            await db.flush()
+            granted = set()
+        else:
+            granted = set(
+                (
+                    await db.execute(
+                        select(RolePermission.permission_id).where(
+                            RolePermission.role_id == role.id
+                        )
+                    )
+                ).scalars()
+            )
+        for perm in EXTERNAL_PERMISSIONS:
+            permission_id = perm_ids[perm.value]
+            if permission_id not in granted:
+                db.add(RolePermission(role_id=role.id, permission_id=permission_id))
     await db.commit()
 
 

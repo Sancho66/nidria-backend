@@ -27,6 +27,8 @@ from src.documents.documents_schema import (
     DocumentValidationRequest,
     ExpatDocumentResponse,
 )
+from src.external.external_schema import ExternalDocumentResponse
+from src.external.scoping import get_case_for_external
 from src.progress.progress_manager import ProgressManager
 
 
@@ -263,6 +265,88 @@ class DocumentsManager:
     ) -> tuple[Document, bytes]:
         case = await self._case_for_expat(expat, case_id)
         return await self._download(case, document_id)
+
+    # --- external provider (wave B): every entry scoped by assignment ---------------
+
+    async def _case_for_external(self, external: Agent, case_id: uuid.UUID) -> ClientCase:
+        case = await get_case_for_external(self.db, external, case_id)
+        if case is None:
+            raise NotFoundError("Case not found.")  # 404, never reveals existence
+        return case
+
+    def _external_doc(
+        self, d: Document, external: Agent, step_name: str | None, ref: str | None
+    ) -> ExternalDocumentResponse:
+        return ExternalDocumentResponse(
+            id=d.id,
+            case_id=d.case_id,
+            filename=d.filename,
+            uploaded_by_type=d.uploaded_by_type,
+            is_mine=(
+                d.uploaded_by_type == ActorType.AGENT.value and d.uploaded_by_id == external.id
+            ),
+            validation_status=d.validation_status,
+            expires_at=d.expires_at,
+            created_at=d.created_at,
+            step_name=step_name,
+            requirement_reference=ref,
+            is_requirement=ref is not None,
+        )
+
+    async def list_for_external(
+        self, external: Agent, case_id: uuid.UUID
+    ) -> list[ExternalDocumentResponse]:
+        case = await self._case_for_external(external, case_id)
+        documents = await self.repo.list_documents(case.id)
+        step_names, req_refs = await self._enrich(documents)
+        return [
+            self._external_doc(
+                d,
+                external,
+                step_names.get(d.step_progress_id) if d.step_progress_id else None,
+                req_refs.get(d.id),
+            )
+            for d in documents
+        ]
+
+    async def download_for_external(
+        self, external: Agent, case_id: uuid.UUID, document_id: uuid.UUID
+    ) -> tuple[Document, bytes]:
+        case = await self._case_for_external(external, case_id)
+        return await self._download(case, document_id)
+
+    async def fulfill_requirement_as_external(
+        self, external: Agent, case_id: uuid.UUID, requirement_id: uuid.UUID, file: UploadFile
+    ) -> ExternalDocumentResponse:
+        """Provider deposits a document on a requirement of an ASSIGNED
+        case. Same upload core as agent/expat; only the perimeter (the
+        assignment scope) differs."""
+        case = await self._case_for_external(external, case_id)
+        found = await self.repo.get_requirement_in_case(case.id, requirement_id)
+        if found is None:
+            raise NotFoundError("Requirement not found.")
+        requirement, progress = found
+        if progress.status != StepStatus.IN_PROGRESS.value:
+            raise ConflictError("This step is not active; its requirements are read-only.")
+        if requirement.kind != StepRequirementKind.DOCUMENT.value:
+            raise ValidationError("This requirement does not expect a document.")
+
+        document = await self._upload(
+            case, file, requirement.case_step_progress_id, None, ActorType.AGENT, external.id
+        )
+        progress_mgr = ProgressManager(self.db)
+        pending = await progress_mgr.fulfill_document_requirement(case, requirement, document.id)
+        await self.db.commit()
+        await progress_mgr.send_pending(pending)
+        step_names = await self.repo.step_names(
+            [document.step_progress_id] if document.step_progress_id else []
+        )
+        return self._external_doc(
+            document,
+            external,
+            step_names.get(document.step_progress_id) if document.step_progress_id else None,
+            requirement.reference,
+        )
 
     # --- validation -----------------------------------------------------------------------
 

@@ -18,6 +18,7 @@ from src.core.database import get_db
 from src.core.enums import Audience
 from src.core.exceptions import register_exception_handlers
 from src.core.rbac.baseline import (
+    EXTERNAL_PERMISSIONS,
     EXTERNAL_ROLE_NAMES,
     RouteBinding,
     collect_bindings,
@@ -234,20 +235,24 @@ async def test_system_role_matrix_seeded_as_specified(
 
     # The 4 internal system roles (external system roles also exist now).
     assert {"admin", "case_manager", "member", "viewer"} <= set(system_roles)
-    assert await keys_of(system_roles["admin"]) == {p.value for p in Permission}
+    # admin = everything EXCEPT the external.* permissions (those belong
+    # only to external roles — structural barrier, wave B).
+    external_keys = {p.value for p in EXTERNAL_PERMISSIONS}
+    assert await keys_of(system_roles["admin"]) == {p.value for p in Permission} - external_keys
     case_manager = await keys_of(system_roles["case_manager"])
     assert Permission.AGENT_MANAGE.value not in case_manager
     assert Permission.ROLE_MANAGE.value not in case_manager
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in case_manager
+    assert external_keys.isdisjoint(case_manager)  # no external.* on an internal role
     member = await keys_of(system_roles["member"])
     assert Permission.REMINDER_APPROVE.value in member
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in member
     assert await keys_of(system_roles["viewer"]) == {Permission.CASE_VIEW.value}
-    # The 6 external system roles are seeded with ZERO permissions
-    # (wave A fail-closed second barrier — no case.* before scoping).
+    # The 6 external system roles hold EXACTLY the 3 external.* permissions
+    # (wave B: permission ∧ scoping — every external route is assignment-scoped).
     for name in EXTERNAL_ROLE_NAMES:
         assert name in system_roles
-        assert await keys_of(system_roles[name]) == set()
+        assert await keys_of(system_roles[name]) == external_keys
 
 
 # --- Catalogue sync --------------------------------------------------------------

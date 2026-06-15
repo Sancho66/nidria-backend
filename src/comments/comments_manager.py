@@ -16,6 +16,7 @@ from src.core.email import send_email
 from src.core.email_templates import new_comment_to_agent, new_comment_to_client
 from src.core.enums import ActorType
 from src.core.exceptions import ForbiddenError, NotFoundError
+from src.external.scoping import get_case_for_external
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,70 @@ class CommentsManager:
     ) -> None:
         await self._resolve_agent(agent, case_id, progress_id)
         comment = await self._own_comment(progress_id, comment_id, ActorType.AGENT, agent.id)
+        comment.deleted_at = datetime.now(UTC)
+        await self.db.commit()
+
+    # --- external provider face (wave B) -------------------------------------------
+    #
+    # An external is an AGENT (author_type=AGENT, viewer identity = its id)
+    # — so it shares the same thread as the agency, and is_mine works the
+    # same. The ONLY difference vs the agent face: the case is resolved by
+    # ASSIGNMENT (get_case_for_external → 404), never by agency. No
+    # auto-notification (the AGENT→client mail would mis-attribute a
+    # provider's message as "your conseiller").
+
+    async def _resolve_external(
+        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID
+    ) -> None:
+        case = await get_case_for_external(self.db, external, case_id)  # border: assignment
+        if case is None:
+            raise NotFoundError("Case not found.")
+        progress = await self.repo.get_progress_in_case(case.id, progress_id)  # thread scoped
+        if progress is None:
+            raise NotFoundError("Case step not found.")
+
+    async def list_as_external(
+        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID
+    ) -> list[CommentResponse]:
+        await self._resolve_external(external, case_id, progress_id)
+        comments = await self.repo.list_comments(progress_id)
+        return await self._build_responses(comments, ActorType.AGENT, external.id)
+
+    async def create_as_external(
+        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID, body: str
+    ) -> CommentResponse:
+        await self._resolve_external(external, case_id, progress_id)
+        comment = self.repo.add_comment(
+            case_step_progress_id=progress_id,
+            author_type=ActorType.AGENT.value,
+            author_id=external.id,
+            body=body,
+        )
+        await self.db.commit()
+        await self.db.refresh(comment)
+        return (await self._build_responses([comment], ActorType.AGENT, external.id))[0]
+
+    async def update_as_external(
+        self,
+        external: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        comment_id: uuid.UUID,
+        body: str,
+    ) -> CommentResponse:
+        await self._resolve_external(external, case_id, progress_id)
+        comment = await self._own_comment(progress_id, comment_id, ActorType.AGENT, external.id)
+        comment.body = body
+        comment.edited_at = datetime.now(UTC)
+        await self.db.commit()
+        await self.db.refresh(comment)
+        return (await self._build_responses([comment], ActorType.AGENT, external.id))[0]
+
+    async def delete_as_external(
+        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID, comment_id: uuid.UUID
+    ) -> None:
+        await self._resolve_external(external, case_id, progress_id)
+        comment = await self._own_comment(progress_id, comment_id, ActorType.AGENT, external.id)
         comment.deleted_at = datetime.now(UTC)
         await self.db.commit()
 

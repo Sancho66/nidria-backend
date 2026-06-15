@@ -34,6 +34,13 @@ class Permission(StrEnum):
     ROLE_MANAGE = "role.manage"
     JOB_MANAGE = "job.manage"
     FIELD_MANAGE = "field.manage"
+    # External-provider permissions (wave B). The `external.` prefix is a
+    # STRUCTURAL barrier: these only gate /external/* portal routes (each
+    # scoped by assignment), and internal roles never hold them — so an
+    # external permission cannot open an internal route, nor vice versa.
+    EXTERNAL_CASE_VIEW = "external.case.view"
+    EXTERNAL_DOCUMENT_UPLOAD = "external.document.upload"
+    EXTERNAL_CASE_COMMENT = "external.case.comment"
 
 
 def _label(key: str) -> str:

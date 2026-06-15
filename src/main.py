@@ -31,6 +31,8 @@ from src.dashboard.dashboard_router import router as dashboard_router
 from src.documents.documents_router import agent_router as documents_agent_router
 from src.documents.documents_router import expat_router as documents_expat_router
 from src.expat.expat_router import router as expat_portal_router
+from src.external.external_router import agency_router as external_agency_router
+from src.external.external_router import external_router
 from src.impersonation.impersonation_router import router as impersonation_router
 from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
@@ -112,6 +114,8 @@ app.include_router(documents_agent_router)
 app.include_router(documents_expat_router)
 app.include_router(comments_agent_router)
 app.include_router(comments_expat_router)
+app.include_router(external_router)
+app.include_router(external_agency_router)
 app.include_router(expat_portal_router)
 app.include_router(impersonation_router)
 app.include_router(jobs_router)

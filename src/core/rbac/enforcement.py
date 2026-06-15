@@ -49,17 +49,31 @@ IMPERSONATION_DENIED: frozenset[tuple[str, str]] = frozenset(
 )
 
 
-# Routes an EXTERNAL agent (provider) may reach in wave A — strictly
-# their own identity. Everything else (case data AND the permissionless
-# "any agent" routes that would leak the staff list / journeys / roles)
-# is denied at enforce(), BEFORE the permission check and regardless of
-# bindings: fail-closed by construction. Wave B widens this (or replaces
-# it with per-assignment scoping + bordered permissions). External roles
-# also carry ZERO permissions — second barrier.
+# Routes an EXTERNAL agent (provider) may reach. Everything else (the
+# internal /cases/* surface AND the permissionless "any agent" routes
+# that would leak staff/journeys/roles) is denied at enforce(), BEFORE
+# the permission check and regardless of bindings: fail-closed by
+# construction. Wave A: identity only. Wave B: + the dedicated /external
+# portal — and EACH of those routes is additionally scoped by assignment
+# inside its manager (get_case_for_external), so the allowlist gates
+# WHICH routes, the scoping gates WHICH case. A test asserts every
+# declared /external route is listed here (no portal route slips in
+# unscoped). The internal /cases/* routes are deliberately NOT here.
 EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
+        # identity
         ("GET", "/auth/agent/me"),
         ("POST", "/auth/agent/logout"),
+        # provider portal (wave B) — each scoped by get_case_for_external
+        ("GET", "/external/cases"),
+        ("GET", "/external/cases/{case_id}"),
+        ("GET", "/external/cases/{case_id}/documents"),
+        ("GET", "/external/cases/{case_id}/documents/{document_id}/download"),
+        ("POST", "/external/cases/{case_id}/requirements/{requirement_id}/document"),
+        ("GET", "/external/cases/{case_id}/steps/{progress_id}/comments"),
+        ("POST", "/external/cases/{case_id}/steps/{progress_id}/comments"),
+        ("PATCH", "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"),
+        ("DELETE", "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"),
     }
 )
 

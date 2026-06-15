@@ -3,6 +3,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.base import Base
+from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
@@ -29,6 +30,7 @@ __all__ = [
     "Agent",
     "AgentInvitation",
     "Base",
+    "CaseExternalAssignment",
     "CaseInvitation",
     "CaseNote",
     "CaseStepProgress",
