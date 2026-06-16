@@ -9,6 +9,7 @@ from shared.models.journey import (
     JourneyTemplateField,
     JourneyTemplateStep,
 )
+from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_requirement import StepRequirement
 from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
 from src.core.enums import StepRequirementKind
@@ -24,6 +25,7 @@ from src.journeys.journeys_schema import (
     JourneyTemplateUpdateRequest,
     SectionCreateRequest,
     SectionUpdateRequest,
+    StepCaseRequirementCreateRequest,
     StepRequirementCreateRequest,
     TemplateCaseFieldResponse,
     TemplateFieldCreateRequest,
@@ -401,6 +403,85 @@ class JourneysManager:
         if requirement is None:
             raise NotFoundError("Step requirement not found.")
         await self.repo.delete_requirement(requirement)
+        await self.db.commit()
+
+    # --- step CASE requirements (sections chantier, vague C) — calque ----------------
+    # A step may require a client_case column (country/address). The value
+    # is NEVER stored here — derived live from client_case. Declaration +
+    # CRUD only; the projection/completion fold lives in ProgressManager.
+
+    async def list_step_case_requirements(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID
+    ) -> list[StepCaseRequirement]:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        return await self.repo.list_step_case_requirements(step_id)
+
+    async def add_step_case_requirement(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        payload: StepCaseRequirementCreateRequest,
+    ) -> StepCaseRequirement:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        if payload.case_field not in COLLECTABLE_CASE_FIELDS:
+            raise ValidationError(
+                f"Unknown case field {payload.case_field!r}. "
+                f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}."
+            )
+        existing = await self.repo.get_step_case_requirement_by_ref(step_id, payload.case_field)
+        if existing is not None:
+            raise ConflictError(
+                f"Case field {payload.case_field!r} is already required by this step."
+            )
+        row = self.repo.add_step_case_requirement(
+            step_id=step_id, case_field=payload.case_field, position=payload.position
+        )
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row
+
+    async def reorder_step_case_requirements(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        case_requirement_ids: list[uuid.UUID],
+    ) -> list[StepCaseRequirement]:
+        """Full ordered set of the step's case-requirement ids (same
+        convention as reorder_requirements). Foreign/incomplete → 422.
+        Two-phase dense renumber to 0..n-1."""
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        rows = await self.repo.list_step_case_requirements(step_id)
+        if len(case_requirement_ids) != len(set(case_requirement_ids)) or set(
+            case_requirement_ids
+        ) != {r.id for r in rows}:
+            raise ValidationError(
+                "case_requirement_ids must contain exactly the step's case requirements, once each."
+            )
+        offset = max((r.position for r in rows), default=-1) + len(rows) + 1
+        await self.repo.shift_step_case_requirement_positions(step_id, offset)
+        for index, case_requirement_id in enumerate(case_requirement_ids):
+            await self.repo.set_step_case_requirement_position(case_requirement_id, index)
+        await self.db.commit()
+        return await self.repo.list_step_case_requirements(step_id)
+
+    async def delete_step_case_requirement(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        case_requirement_id: uuid.UUID,
+    ) -> None:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        row = await self.repo.get_step_case_requirement_in_step(step_id, case_requirement_id)
+        if row is None:
+            raise NotFoundError("Step case requirement not found.")
+        await self.repo.delete_step_case_requirement(row)
         await self.db.commit()
 
     # --- per-template field collection (NEW WAVE) — calque of requirements ---------

@@ -42,7 +42,12 @@ from src.progress.progress_schema import (
     StepProgressResponse,
     StepProgressUpdateRequest,
 )
-from src.progress.requirements_eval import current_value, is_provided
+from src.progress.requirements_eval import (
+    case_current_value,
+    case_is_provided,
+    current_value,
+    is_provided,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +314,40 @@ class ProgressManager:
             met_by_progress[req.case_step_progress_id] = (
                 met_by_progress.get(req.case_step_progress_id, True) and provided
             )
+
+        # Case-level requirements (sections chantier, vague C): declared on
+        # the template step, evaluated LIVE against client_case (no concrete
+        # row, no person). Appended AFTER the person requirements (segmented)
+        # and folded into all_requirements_met identically.
+        case_reqs = await self.repo.list_step_case_requirements_for_steps(
+            [row.template_step_id for row in rows]
+        )
+        case_reqs_by_step: dict[uuid.UUID, list[Any]] = defaultdict(list)
+        for creq in case_reqs:
+            case_reqs_by_step[creq.step_id].append(creq)
+        for row in rows:
+            for creq in case_reqs_by_step.get(row.template_step_id, []):
+                provided = case_is_provided(creq, case)
+                reqs_by_progress[row.id].append(
+                    RequirementStateResponse(
+                        id=creq.id,
+                        person_id=None,
+                        person_label="",
+                        kind="case_field",
+                        reference=creq.case_field,
+                        scope=None,
+                        status=(
+                            RequirementStatus.PROVIDED.value
+                            if provided
+                            else RequirementStatus.PENDING.value
+                        ),
+                        value=case_current_value(creq, case),
+                        is_archived=False,
+                        document_id=None,
+                        target="case",
+                    )
+                )
+                met_by_progress[row.id] = met_by_progress.get(row.id, True) and provided
 
         responses = []
         for row in rows:
@@ -591,14 +630,19 @@ class ProgressManager:
     # --- requirement completion + notifications (WAVE 2) -----------------------------
 
     @staticmethod
-    def _all_provided(reqs: list[Any], persons_by_id: dict[uuid.UUID, Any]) -> bool:
-        """True iff there is at least one requirement and every one is
-        provided (derived live for fields, explicit for documents).
-        Empty set → False: an auto step with no requirements never
-        self-completes on activation."""
-        return bool(reqs) and all(
-            is_provided(req, persons_by_id.get(req.person_id)) for req in reqs
-        )
+    def _step_met(
+        person_reqs: list[Any],
+        case_reqs: list[Any],
+        persons_by_id: dict[uuid.UUID, Any],
+        case: ClientCase,
+    ) -> bool:
+        """True iff the step has ≥1 requirement (person OR case) and every
+        one is provided — person fields/documents via is_provided, case
+        fields via the live client_case value (vague C). Empty set → False:
+        an auto step with no requirements never self-completes."""
+        person_ok = all(is_provided(req, persons_by_id.get(req.person_id)) for req in person_reqs)
+        case_ok = all(case_is_provided(creq, case) for creq in case_reqs)
+        return (bool(person_reqs) or bool(case_reqs)) and person_ok and case_ok
 
     async def _notifications_enabled(self, case: ClientCase) -> bool:
         agency = await self.repo.get_agency_settings_holder(case.agency_id)
@@ -633,7 +677,24 @@ class ProgressManager:
         by_progress: dict[uuid.UUID, list[Any]] = defaultdict(list)
         for req in reqs:
             by_progress[req.case_step_progress_id].append(req)
-        return {r.id: self._all_provided(by_progress.get(r.id, []), persons) for r in rows}
+        case_by_step = await self._case_reqs_by_step(rows)
+        return {
+            r.id: self._step_met(
+                by_progress.get(r.id, []), case_by_step.get(r.template_step_id, []), persons, case
+            )
+            for r in rows
+        }
+
+    async def _case_reqs_by_step(self, rows: list[CaseStepProgress]) -> dict[uuid.UUID, list[Any]]:
+        """Case-level requirement declarations grouped by template_step_id,
+        for the active rows (vague C). Shared by snapshot + recompute."""
+        case_reqs = await self.repo.list_step_case_requirements_for_steps(
+            [r.template_step_id for r in rows]
+        )
+        grouped: dict[uuid.UUID, list[Any]] = defaultdict(list)
+        for creq in case_reqs:
+            grouped[creq.step_id].append(creq)
+        return grouped
 
     async def recompute_active(
         self, case: ClientCase, before: dict[uuid.UUID, bool]
@@ -653,13 +714,15 @@ class ProgressManager:
         by_progress: dict[uuid.UUID, list[Any]] = defaultdict(list)
         for req in reqs:
             by_progress[req.case_step_progress_id].append(req)
+        case_by_step = await self._case_reqs_by_step(rows)
         steps = await self.repo.get_template_steps_by_ids([r.template_step_id for r in rows])
 
         notifications_on = await self._notifications_enabled(case)
         pending: list[PendingMail] = []
         for row in rows:
             row_reqs = by_progress.get(row.id, [])
-            if not self._all_provided(row_reqs, persons):
+            row_case_reqs = case_by_step.get(row.template_step_id, [])
+            if not self._step_met(row_reqs, row_case_reqs, persons, case):
                 continue
             step = steps.get(row.template_step_id)
             if step is None:

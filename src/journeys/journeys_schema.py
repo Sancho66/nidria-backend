@@ -70,6 +70,32 @@ class StepRequirementOrderRequest(BaseModel):
     requirement_ids: list[uuid.UUID]
 
 
+# --- step CASE requirements (sections chantier, vague C) -----------------------------
+# A step may require a client_case column (country/address). Twin of the
+# step_requirement schemas, minus kind/scope: a case field has a single
+# case-wide value, no person, no scope.
+
+
+class StepCaseRequirementCreateRequest(BaseModel):
+    case_field: str = Field(min_length=1, max_length=30)
+    position: int = 0
+
+
+class StepCaseRequirementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    step_id: uuid.UUID
+    case_field: str
+    position: int
+
+
+class StepCaseRequirementOrderRequest(BaseModel):
+    """Full list of the step's case-requirement ids in the desired order."""
+
+    case_requirement_ids: list[uuid.UUID]
+
+
 class StepPrerequisitesRequest(BaseModel):
     """Declarative: replaces the step's full prerequisite set — the
     whole template graph is re-validated on every mutation."""

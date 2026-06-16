@@ -28,6 +28,7 @@ from shared.models.message_template import MessageTemplate
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
+from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment, StepCommentNotification
 from shared.models.step_requirement import StepRequirement
 
@@ -68,5 +69,6 @@ __all__ = [
     "StepComment",
     "StepCommentNotification",
     "StepPrerequisite",
+    "StepCaseRequirement",
     "StepRequirement",
 ]

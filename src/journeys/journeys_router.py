@@ -23,6 +23,9 @@ from src.journeys.journeys_schema import (
     SectionCreateRequest,
     SectionOrderRequest,
     SectionUpdateRequest,
+    StepCaseRequirementCreateRequest,
+    StepCaseRequirementOrderRequest,
+    StepCaseRequirementResponse,
     StepOrderRequest,
     StepPrerequisitesRequest,
     StepRequirementCreateRequest,
@@ -98,6 +101,31 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # Step CASE requirements (sections chantier, vague C) — calque.
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/steps/{step_id}/case-requirements",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "POST",
+        "/journeys/{template_id}/steps/{step_id}/case-requirements",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "PUT",
+        "/journeys/{template_id}/steps/{step_id}/case-requirements/order",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/steps/{step_id}/case-requirements/{case_requirement_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -349,6 +377,70 @@ async def delete_requirement(
 ) -> MessageResponse:
     await JourneysManager(db).delete_requirement(agent, template_id, step_id, requirement_id)
     return MessageResponse(detail="Requirement removed.")
+
+
+# --- step CASE requirements (sections chantier, vague C) -----------------------------
+
+
+@router.get(
+    "/{template_id}/steps/{step_id}/case-requirements",
+    response_model=list[StepCaseRequirementResponse],
+)
+async def list_step_case_requirements(
+    template_id: uuid.UUID, step_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[StepCaseRequirementResponse]:
+    rows = await JourneysManager(db).list_step_case_requirements(agent, template_id, step_id)
+    return [StepCaseRequirementResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/{template_id}/steps/{step_id}/case-requirements",
+    response_model=StepCaseRequirementResponse,
+    status_code=201,
+)
+async def add_step_case_requirement(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: StepCaseRequirementCreateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> StepCaseRequirementResponse:
+    row = await JourneysManager(db).add_step_case_requirement(agent, template_id, step_id, body)
+    return StepCaseRequirementResponse.model_validate(row)
+
+
+@router.put(
+    "/{template_id}/steps/{step_id}/case-requirements/order",
+    response_model=list[StepCaseRequirementResponse],
+)
+async def reorder_step_case_requirements(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: StepCaseRequirementOrderRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> list[StepCaseRequirementResponse]:
+    rows = await JourneysManager(db).reorder_step_case_requirements(
+        agent, template_id, step_id, body.case_requirement_ids
+    )
+    return [StepCaseRequirementResponse.model_validate(r) for r in rows]
+
+
+@router.delete(
+    "/{template_id}/steps/{step_id}/case-requirements/{case_requirement_id}",
+    response_model=MessageResponse,
+)
+async def delete_step_case_requirement(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    case_requirement_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> MessageResponse:
+    await JourneysManager(db).delete_step_case_requirement(
+        agent, template_id, step_id, case_requirement_id
+    )
+    return MessageResponse(detail="Case requirement removed.")
 
 
 # --- per-template field collection (NEW WAVE) ----------------------------------------

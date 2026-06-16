@@ -6302,6 +6302,274 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/case-requirements": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Step Case Requirements",
+        "operationId": "list_step_case_requirements_journeys__template_id__steps__step_id__case_requirements_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StepCaseRequirementResponse"
+                  },
+                  "title": "Response List Step Case Requirements Journeys  Template Id  Steps  Step Id  Case Requirements Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Step Case Requirement",
+        "operationId": "add_step_case_requirement_journeys__template_id__steps__step_id__case_requirements_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepCaseRequirementCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepCaseRequirementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/steps/{step_id}/case-requirements/order": {
+      "put": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Reorder Step Case Requirements",
+        "operationId": "reorder_step_case_requirements_journeys__template_id__steps__step_id__case_requirements_order_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepCaseRequirementOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StepCaseRequirementResponse"
+                  },
+                  "title": "Response Reorder Step Case Requirements Journeys  Template Id  Steps  Step Id  Case Requirements Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/steps/{step_id}/case-requirements/{case_requirement_id}": {
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Step Case Requirement",
+        "operationId": "delete_step_case_requirement_journeys__template_id__steps__step_id__case_requirements__case_requirement_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "case_requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Requirement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/fields": {
       "get": {
         "tags": [
@@ -11400,7 +11668,14 @@
             "title": "Reference"
           },
           "scope": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Scope"
           },
           "status": {
@@ -11425,6 +11700,11 @@
               }
             ],
             "title": "Document Id"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "default": "person"
           }
         },
         "type": "object",
@@ -12097,7 +12377,14 @@
             "title": "Reference"
           },
           "scope": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Scope"
           },
           "status": {
@@ -13886,8 +14173,15 @@
             "title": "Id"
           },
           "person_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Person Id"
           },
           "person_label": {
@@ -13903,7 +14197,14 @@
             "title": "Reference"
           },
           "scope": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Scope"
           },
           "status": {
@@ -13928,6 +14229,11 @@
               }
             ],
             "title": "Document Id"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "default": "person"
           }
         },
         "type": "object",
@@ -14651,6 +14957,74 @@
           "X"
         ],
         "title": "Sex"
+      },
+      "StepCaseRequirementCreateRequest": {
+        "properties": {
+          "case_field": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Case Field"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_field"
+        ],
+        "title": "StepCaseRequirementCreateRequest"
+      },
+      "StepCaseRequirementOrderRequest": {
+        "properties": {
+          "case_requirement_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Case Requirement Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_requirement_ids"
+        ],
+        "title": "StepCaseRequirementOrderRequest",
+        "description": "Full list of the step's case-requirement ids in the desired order."
+      },
+      "StepCaseRequirementResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "step_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Step Id"
+          },
+          "case_field": {
+            "type": "string",
+            "title": "Case Field"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "step_id",
+          "case_field",
+          "position"
+        ],
+        "title": "StepCaseRequirementResponse"
       },
       "StepOrderRequest": {
         "properties": {

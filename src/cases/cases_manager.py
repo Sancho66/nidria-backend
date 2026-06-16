@@ -232,6 +232,12 @@ class CasesManager:
     ) -> ClientCase:
         case = await self._get_case(agent, case_id)
         data = payload.model_dump(exclude_unset=True)
+        # Sections chantier (vague C): an address/country edit can satisfy a
+        # case-level step requirement → recompute active steps (auto→DONE /
+        # ready-to-validate) after the write, like the person PATCH. Snapshot
+        # BEFORE the write so the agency_validation mail fires once.
+        progress_mgr = ProgressManager(self.db)
+        before = await progress_mgr.snapshot_active_completion(case)
 
         if "status" in data:
             new_status = data.pop("status").value
@@ -269,8 +275,10 @@ class CasesManager:
         if changes:
             self._log(case.id, agent, "case.updated", {"changes": changes})
 
+        pending = await progress_mgr.recompute_active(case, before)
         await self.db.commit()
         await self.db.refresh(case)
+        await progress_mgr.send_pending(pending)
         return case
 
     # --- bulk actions --------------------------------------------------------------------

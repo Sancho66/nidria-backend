@@ -23,20 +23,28 @@ class RequirementStateResponse(BaseModel):
     whose definition the agency has archived."""
 
     id: uuid.UUID
-    person_id: uuid.UUID
+    # PERSON requirements carry the concerned person; CASE-level
+    # requirements (vague C) have NO person → None.
+    person_id: uuid.UUID | None
     # Resolved display name of the concerned person — PRINCIPAL via the
     # shared expat_user (its full_name column is NULL), FAMILY via its
-    # own full_name. Never empty for a person that exists.
+    # own full_name. Empty string for a case-level requirement.
     person_label: str
     kind: str
     reference: str
-    scope: str
+    # principal | each_person for person requirements; None for
+    # case-level (a case field has a single case-wide value, no scope).
+    scope: str | None
     status: str  # pending / provided (computed)
-    # Live value at the source (case_person column / custom_fields JSONB)
-    # for base/custom fields; None for documents and when pending.
+    # Live value at the source (case_person / client_case) for fields;
+    # None for documents and when pending.
     value: Any = None
     is_archived: bool
     document_id: uuid.UUID | None
+    # Which backing plane (sections chantier, vague C). Defaults to
+    # "person" so every existing requirement is unchanged; "case" marks a
+    # client_case-backed requirement (the front routes fulfillment by it).
+    target: str = "person"
 
 
 class DeadlineCounter(BaseModel):

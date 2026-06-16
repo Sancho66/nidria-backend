@@ -50,7 +50,7 @@ class ExternalRequirementResponse(BaseModel):
     id: uuid.UUID
     kind: str
     reference: str
-    scope: str
+    scope: str | None  # None for case-level requirements (vague C)
     status: str
     person_label: str
     document_id: uuid.UUID | None

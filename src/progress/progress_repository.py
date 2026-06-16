@@ -17,6 +17,7 @@ from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
 
@@ -165,6 +166,21 @@ class ProgressRepository:
             select(StepRequirement)
             .where(StepRequirement.step_id == template_step_id)
             .order_by(StepRequirement.position, StepRequirement.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def list_step_case_requirements_for_steps(
+        self, template_step_ids: list[uuid.UUID]
+    ) -> list[StepCaseRequirement]:
+        """Case-level requirement DECLARATIONS for a set of template steps
+        (sections chantier, vague C). No concrete table — these are read
+        and evaluated live against client_case. Empty input → []."""
+        if not template_step_ids:
+            return []
+        stmt = (
+            select(StepCaseRequirement)
+            .where(StepCaseRequirement.step_id.in_(template_step_ids))
+            .order_by(StepCaseRequirement.position, StepCaseRequirement.created_at)
         )
         return list((await self.db.execute(stmt)).scalars())
 

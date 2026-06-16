@@ -58,6 +58,7 @@ REQUIREMENT_KEYS = {
     "person_label",
     "value",
     "document_id",
+    "target",  # vague C
 }
 
 

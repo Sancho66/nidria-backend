@@ -13,6 +13,7 @@ from shared.models.journey import (
     JourneyTemplateStep,
     StepPrerequisite,
 )
+from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_requirement import StepRequirement
 
 
@@ -180,6 +181,58 @@ class JourneysRepository:
         await self.db.execute(
             update(StepRequirement)
             .where(StepRequirement.id == requirement_id)
+            .values(position=position)
+        )
+
+    # --- step CASE requirements (vague C) — calque of step requirements ------------
+
+    async def list_step_case_requirements(self, step_id: uuid.UUID) -> list[StepCaseRequirement]:
+        stmt = (
+            select(StepCaseRequirement)
+            .where(StepCaseRequirement.step_id == step_id)
+            .order_by(StepCaseRequirement.position, StepCaseRequirement.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_step_case_requirement_in_step(
+        self, step_id: uuid.UUID, case_requirement_id: uuid.UUID
+    ) -> StepCaseRequirement | None:
+        stmt = select(StepCaseRequirement).where(
+            StepCaseRequirement.id == case_requirement_id,
+            StepCaseRequirement.step_id == step_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_step_case_requirement_by_ref(
+        self, step_id: uuid.UUID, case_field: str
+    ) -> StepCaseRequirement | None:
+        stmt = select(StepCaseRequirement).where(
+            StepCaseRequirement.step_id == step_id,
+            StepCaseRequirement.case_field == case_field,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_step_case_requirement(self, **kwargs: object) -> StepCaseRequirement:
+        row = StepCaseRequirement(**kwargs)
+        self.db.add(row)
+        return row
+
+    async def delete_step_case_requirement(self, row: StepCaseRequirement) -> None:
+        await self.db.delete(row)
+
+    async def shift_step_case_requirement_positions(self, step_id: uuid.UUID, offset: int) -> None:
+        await self.db.execute(
+            update(StepCaseRequirement)
+            .where(StepCaseRequirement.step_id == step_id)
+            .values(position=StepCaseRequirement.position + offset)
+        )
+
+    async def set_step_case_requirement_position(
+        self, case_requirement_id: uuid.UUID, position: int
+    ) -> None:
+        await self.db.execute(
+            update(StepCaseRequirement)
+            .where(StepCaseRequirement.id == case_requirement_id)
             .values(position=position)
         )
 

@@ -787,6 +787,7 @@ REQUIREMENT_KEYS = {
     "person_label",
     "value",
     "document_id",
+    "target",  # vague C: "person" | "case" (defaults to "person")
 }
 
 

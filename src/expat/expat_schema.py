@@ -63,9 +63,9 @@ class ExpatRequirementResponse(BaseModel):
     filtered out upstream, never exposed."""
 
     id: uuid.UUID
-    kind: str  # base_field | custom_field | document
+    kind: str  # base_field | custom_field | document | case_field
     reference: str
-    scope: str
+    scope: str | None  # None for case-level requirements (vague C)
     status: str  # pending | provided (derived live for fields)
     person_label: str
     # NEW WAVE: read parity with the agency face.
@@ -77,6 +77,9 @@ class ExpatRequirementResponse(BaseModel):
     # The document the client deposited for a document requirement — join
     # to GET /expat/cases/{id}/documents for filename + download link.
     document_id: uuid.UUID | None = None
+    # Backing plane (vague C): "person" (default) or "case". The front
+    # routes the fulfillment endpoint by it (case write lands in C2).
+    target: str = "person"
 
 
 class ExpatTimelineStepResponse(BaseModel):
