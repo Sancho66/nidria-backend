@@ -4,9 +4,9 @@ values, all in one atomic transaction.
 
 Covers: strict retrocompat (nu-case unchanged), enriched creation
 (journey assigned + principal values in one call), atomicity (an invalid
-value → 422 with NO orphan case), required_at_creation enforcement (only
-when a journey is assigned; an archived required field never blocks), and
-cross-agency template scoping (404)."""
+value → 422 with NO orphan case), required_at_creation NO LONGER blocking
+(vague F repurpose — it became a non-blocking completeness indicator on the
+case detail), and cross-agency template scoping (404)."""
 
 import uuid
 
@@ -189,22 +189,25 @@ async def test_create_case_invalid_value_is_atomic_no_orphan(
 # --- required_at_creation ------------------------------------------------------------
 
 
-async def test_required_at_creation_blocks_without_value(
+async def test_required_at_creation_no_longer_blocks(
     w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
+    """Vague F: required_at_creation became a non-blocking completeness
+    indicator (surfaced on the case detail). A missing required value NEVER
+    blocks creation now — the modal is socle-only."""
     headers = agent_headers(admin)
     tid = await _template_with_field(
         w2_client, headers, kind="base_field", reference="passport_number", required=True
     )
-    # Missing the required value → 422.
+    # Missing the required value → still 201 (no enforcement).
     missing = await w2_client.post(
         "/cases",
         headers=headers,
         json=_payload("req1@example.com", journey_template_id=tid),
     )
-    assert missing.status_code == 422
+    assert missing.status_code == 201, missing.text
 
-    # With the value → 201.
+    # With the value → 201 too.
     ok = await w2_client.post(
         "/cases",
         headers=headers,
@@ -287,40 +290,33 @@ async def test_create_case_unknown_template_404(
 # --- case-level required fields (countries, option b) --------------------------------
 
 
-async def test_required_case_field_blocks_without_country(
+async def test_required_case_field_no_longer_blocks(
     w2_client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    """A journey requiring origin_country → POST without it → 422 and no
-    orphan (atomic, same rollback+count proof as the person path)."""
+    """Vague F: a required case-field (country) no longer blocks creation —
+    the case is created even without the value (completeness indicator)."""
     headers = agent_headers(admin)
-    agency_id = admin.agency_id
     tid = await _template_with_case_field(
         w2_client, headers, case_field="origin_country", required=True
     )
-    before = (
-        await db_session.execute(
-            select(func.count()).select_from(ClientCase).where(ClientCase.agency_id == agency_id)
-        )
-    ).scalar_one()
-
     # origin_country=None overrides the _payload default of "FR".
     missing = await w2_client.post(
         "/cases",
         headers=headers,
         json=_payload("noctry@example.com", journey_template_id=tid, origin_country=None),
     )
-    assert missing.status_code == 422
+    assert missing.status_code == 201, missing.text
 
     await db_session.rollback()
-    after = (
+    case = (
         await db_session.execute(
-            select(func.count()).select_from(ClientCase).where(ClientCase.agency_id == agency_id)
+            select(ClientCase).where(ClientCase.id == uuid.UUID(missing.json()["id"]))
         )
     ).scalar_one()
-    assert after == before  # no orphan
+    assert case.origin_country is None  # created without the required value
 
 
 async def test_required_case_field_with_country_creates_and_persists(
@@ -387,11 +383,11 @@ async def test_create_case_writes_address_value_to_client_case(
     assert case.origin_street == "1 rue de Rivoli"
 
 
-async def test_required_address_field_reuses_wave2_enforcement(
+async def test_required_address_field_no_longer_blocks(
     w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """A required address case-field reuses the wave-2 enforcement with no
-    new code: missing → 422, present → 201 (getattr(case, case_field))."""
+    """Vague F: a required address case-field no longer blocks creation
+    either (same repurpose as the country/person required fields)."""
     headers = agent_headers(admin)
     tid = await _template_with_case_field(
         w2_client, headers, case_field="origin_city", required=True
@@ -399,7 +395,7 @@ async def test_required_address_field_reuses_wave2_enforcement(
     missing = await w2_client.post(
         "/cases", headers=headers, json=_payload("nocity@example.com", journey_template_id=tid)
     )
-    assert missing.status_code == 422
+    assert missing.status_code == 201, missing.text
     ok = await w2_client.post(
         "/cases",
         headers=headers,

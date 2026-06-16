@@ -38,15 +38,13 @@ from src.cases.cases_schema import (
 from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.email_templates import expat_activation_email, new_case_email
-from src.core.enums import ActorType, CasePersonKind, StepRequirementKind
+from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
-from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
-from src.progress.requirements_eval import field_provided
 
 
 class CasesManager:
@@ -136,19 +134,17 @@ class CasesManager:
         self._apply_civil_fields(principal, payload)
         await self.db.flush()
 
-        # Wave 2 — transactional journey assignment + required-at-creation
-        # enforcement, INSIDE this single transaction (apply_journey is
-        # commit-less). If anything raises, the whole POST rolls back: no
-        # orphan case, no half-assigned journey.
+        # Transactional journey assignment, INSIDE this single transaction
+        # (apply_journey is commit-less). If anything raises, the whole POST
+        # rolls back: no orphan case, no half-assigned journey.
+        #
+        # NB (vague F): `required_at_creation` is NO LONGER enforced here.
+        # The create modal is socle-only, so a required field can't be
+        # blocking at creation; it became a non-blocking completeness
+        # indicator surfaced on the case detail. The principal's optional
+        # values (above) are still written when the enriched POST sends them.
         if payload.journey_template_id is not None:
             await ProgressManager(self.db).apply_journey(agent, case, payload.journey_template_id)
-            await self._enforce_required_at_creation(
-                payload.journey_template_id, principal, definitions
-            )
-            # Case-level required fields (countries) — a SEPARATE plane
-            # from the person fields above (different storage, different
-            # method), checked in the same transaction.
-            await self._enforce_required_case_fields(payload.journey_template_id, case)
 
         # The case link IS principal_expat_user_id (just set). The
         # invitation is notification + audit trail, never the linking
@@ -445,49 +441,6 @@ class CasesManager:
                 value = provided[field]
                 # Enums (sex, marital_status) → store their .value.
                 setattr(person, field, value.value if hasattr(value, "value") else value)
-
-    async def _enforce_required_at_creation(
-        self,
-        template_id: uuid.UUID,
-        principal: CasePerson,
-        definitions: list[CustomFieldDefinition],
-    ) -> None:
-        """If the assigned template flags fields required_at_creation, the
-        principal must carry a non-empty value for each — else 422 (and,
-        no commit yet, the whole creation rolls back). An ARCHIVED custom
-        field is no longer demanded → skipped (it has dropped off the
-        picker; blocking on it would be incoherent). Only enforced when a
-        journey is assigned — a nu-case has nothing to require."""
-        active_keys = {d.key for d in definitions}
-        missing = []
-        for field in await JourneysRepository(self.db).list_fields(template_id):
-            if not field.required_at_creation:
-                continue
-            if (
-                field.kind == StepRequirementKind.CUSTOM_FIELD.value
-                and field.reference not in active_keys
-            ):
-                continue
-            if not field_provided(principal, field.reference):
-                missing.append(field.reference)
-        if missing:
-            raise ValidationError(f"These fields are required at creation: {sorted(missing)}.")
-
-    async def _enforce_required_case_fields(self, template_id: uuid.UUID, case: ClientCase) -> None:
-        """Case-level required-at-creation (countries). SEPARATE plane from
-        the person-field enforcement above: the value lives on client_case
-        (written via the existing top-level create keys), so it is read
-        straight off the `case`. Only enforced when a journey is assigned;
-        a nu case requires nothing (retrocompat)."""
-        missing = []
-        for cf in await JourneysRepository(self.db).list_case_fields(template_id):
-            if not cf.required_at_creation:
-                continue
-            value = getattr(case, cf.case_field, None)
-            if value is None or (isinstance(value, str) and not value.strip()):
-                missing.append(cf.case_field)
-        if missing:
-            raise ValidationError(f"These case fields are required at creation: {sorted(missing)}.")
 
     async def add_person(
         self, agent: Agent, case_id: uuid.UUID, payload: PersonCreateRequest
