@@ -38,9 +38,17 @@ class CaseCreateRequest(_CivilStatusFields):
     last_name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     preferred_lang: str = Field(default="fr", min_length=2, max_length=5)
-    # Case
+    # Case — origin/destination addresses (flat columns on client_case).
+    # country stays separate (its query ecosystem); street/city/postal are
+    # collectable address fields added in the sections chantier (vague B).
     origin_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
+    origin_street: str | None = Field(default=None, max_length=255)
+    origin_city: str | None = Field(default=None, max_length=100)
+    origin_postal_code: str | None = Field(default=None, max_length=20)
     dest_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
+    dest_street: str | None = Field(default=None, max_length=255)
+    dest_city: str | None = Field(default=None, max_length=100)
+    dest_postal_code: str | None = Field(default=None, max_length=20)
     status: CaseStatus = CaseStatus.PROSPECT
     source: str | None = Field(default=None, max_length=100)
     tags: list[str] = Field(default_factory=list)

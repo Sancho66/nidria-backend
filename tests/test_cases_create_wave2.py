@@ -358,3 +358,51 @@ async def test_required_case_field_not_enforced_without_journey(
         "/cases", headers=headers, json=_payload("nojourney-ctry@example.com", origin_country=None)
     )
     assert resp.status_code == 201
+
+
+# --- full address case-fields (vague B) ----------------------------------------------
+
+
+async def test_create_case_writes_address_value_to_client_case(
+    w2_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """An address value (origin_city) passed at creation lands on
+    client_case via the existing top-level key — no new write path."""
+    headers = agent_headers(admin)
+    resp = await w2_client.post(
+        "/cases",
+        headers=headers,
+        json=_payload("addr@example.com", origin_city="Paris", origin_street="1 rue de Rivoli"),
+    )
+    assert resp.status_code == 201, resp.text
+    case = (
+        await db_session.execute(
+            select(ClientCase).where(ClientCase.id == uuid.UUID(resp.json()["id"]))
+        )
+    ).scalar_one()
+    assert case.origin_city == "Paris"
+    assert case.origin_street == "1 rue de Rivoli"
+
+
+async def test_required_address_field_reuses_wave2_enforcement(
+    w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """A required address case-field reuses the wave-2 enforcement with no
+    new code: missing → 422, present → 201 (getattr(case, case_field))."""
+    headers = agent_headers(admin)
+    tid = await _template_with_case_field(
+        w2_client, headers, case_field="origin_city", required=True
+    )
+    missing = await w2_client.post(
+        "/cases", headers=headers, json=_payload("nocity@example.com", journey_template_id=tid)
+    )
+    assert missing.status_code == 422
+    ok = await w2_client.post(
+        "/cases",
+        headers=headers,
+        json=_payload("withcity@example.com", journey_template_id=tid, origin_city="Lyon"),
+    )
+    assert ok.status_code == 201

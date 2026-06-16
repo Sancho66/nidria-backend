@@ -9355,6 +9355,42 @@
             ],
             "title": "Origin Country"
           },
+          "origin_street": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Street"
+          },
+          "origin_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin City"
+          },
+          "origin_postal_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Postal Code"
+          },
           "dest_country": {
             "anyOf": [
               {
@@ -9366,6 +9402,42 @@
               }
             ],
             "title": "Dest Country"
+          },
+          "dest_street": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Street"
+          },
+          "dest_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest City"
+          },
+          "dest_postal_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Postal Code"
           },
           "status": {
             "$ref": "#/components/schemas/CaseStatus",

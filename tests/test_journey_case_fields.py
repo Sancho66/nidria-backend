@@ -191,6 +191,27 @@ async def test_case_field_validation(
     assert junk.status_code == 422
 
 
+async def test_full_address_fields_declarable(
+    cf_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Vague B: street/city/postal_code (origin + dest) join the countries
+    as collectable case-fields — all 8 declarable, no 422."""
+    headers = agent_headers(admin)
+    tid = await _template(cf_client, headers)
+    for ref in (
+        "origin_country",
+        "origin_street",
+        "origin_city",
+        "origin_postal_code",
+        "dest_country",
+        "dest_street",
+        "dest_city",
+        "dest_postal_code",
+    ):
+        created = await _add(cf_client, headers, tid, case_field=ref)
+        assert created["case_field"] == ref
+
+
 async def test_case_field_duplicate_409(
     cf_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
