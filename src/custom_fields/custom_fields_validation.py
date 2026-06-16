@@ -9,6 +9,7 @@ required is enforced only when its key is explicitly present-but-empty,
 never retroactively on a key the patch doesn't mention.
 """
 
+import re
 from collections.abc import Iterable
 from datetime import date, datetime
 from typing import Any
@@ -18,6 +19,16 @@ from src.core.enums import CustomFieldType
 from src.core.exceptions import ValidationError
 
 _DATETIME_FORMATS = ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S")
+# ISO 3166-1 alpha-2 — the SAME rule as CaseUpdateRequest.origin_country,
+# so a custom country field validates identically to the canonical columns.
+_COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
+
+
+def _coerce_country(value: Any) -> str:
+    s = str(value).strip()
+    if not _COUNTRY_RE.match(s):
+        raise ValueError("expects a 2-letter ISO country code (e.g. FR)")
+    return s
 
 
 def _is_empty(value: Any) -> bool:
@@ -72,6 +83,8 @@ def _coerce_one(definition: CustomFieldDefinition, value: Any) -> Any:
         return _coerce_date(value)
     if ftype == CustomFieldType.BOOLEAN.value:
         return _coerce_bool(value)
+    if ftype == CustomFieldType.COUNTRY.value:
+        return _coerce_country(value)
     options = set(definition.option_values)
     if ftype == CustomFieldType.SELECT.value:
         if value not in options:

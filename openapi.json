@@ -11230,7 +11230,8 @@
           "date",
           "boolean",
           "select",
-          "multi_select"
+          "multi_select",
+          "country"
         ],
         "title": "CustomFieldType",
         "description": "Agency-defined field types — a CLOSED, minimal set. Each has a\ndistinct validation rule and frontend renderer. `options` applies\nto SELECT / MULTI_SELECT only."

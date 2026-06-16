@@ -143,6 +143,13 @@ class CustomFieldType(StrEnum):
     BOOLEAN = "boolean"
     SELECT = "select"
     MULTI_SELECT = "multi_select"
+    # Refonte adresse/pays (coexistence). COUNTRY = normalized ISO-2
+    # country selector (the reusable "mould"); ADDRESS (V2) = a structured
+    # {street, city, postal_code, country} whose country sub-field reuses
+    # the COUNTRY rule. Values live in case_person.custom_fields JSONB —
+    # NEVER on client_case (the canonical origin/dest_country columns and
+    # their ecosystem stay intact).
+    COUNTRY = "country"
 
 
 class CompletionMode(StrEnum):

@@ -184,6 +184,47 @@ async def test_each_type_valid_and_invalid(
     assert "Âge" in detail and "Expiration" in detail  # both reported
 
 
+async def test_country_field_type(
+    cf_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Refonte (V1): a custom field of type `country` — a reusable ISO-2
+    selector. Value lives in case_person.custom_fields (plan personne),
+    NEVER on client_case → the country ecosystem is untouched."""
+    headers = agent_headers(admin)
+    await _define(
+        cf_client,
+        headers,
+        key="spouse_nationality",
+        label="Nationalité conjoint",
+        field_type="country",
+    )
+    case = await make_client_case(agency_id=admin.agency_id)
+    person_id = (await cf_client.get(f"/cases/{case.id}", headers=headers)).json()[
+        "principal_person_id"
+    ]
+
+    ok = await cf_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"custom_fields": {"spouse_nationality": "FR"}},
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["custom_fields"]["spouse_nationality"] == "FR"
+
+    # Not an ISO-2 code → 422 (same rule as CaseUpdateRequest.origin_country).
+    for bad_value in ("FRANCE", "fr", "F"):
+        bad = await cf_client.patch(
+            f"/cases/{case.id}/persons/{person_id}",
+            headers=headers,
+            json={"custom_fields": {"spouse_nationality": bad_value}},
+        )
+        assert bad.status_code == 422, f"{bad_value!r} should be rejected"
+        assert "Nationalité conjoint" in bad.json()["detail"]
+
+
 async def test_multi_select_out_of_options_422(
     cf_client: AsyncClient,
     admin: Agent,
