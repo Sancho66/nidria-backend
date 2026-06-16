@@ -12,6 +12,8 @@ from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.journeys.journeys_manager import JourneysManager
 from src.journeys.journeys_schema import (
+    CanvasLayoutRequest,
+    CanvasNodePosition,
     CaseFieldCreateRequest,
     CaseFieldOrderRequest,
     CaseFieldUpdateRequest,
@@ -53,6 +55,12 @@ BINDINGS = [
     RouteBinding("GET", "/journeys/{template_id}", Audience.AGENT),
     RouteBinding("PATCH", "/journeys/{template_id}", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
     RouteBinding("DELETE", "/journeys/{template_id}", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
+    RouteBinding(
+        "PUT",
+        "/journeys/{template_id}/canvas-layout",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
     RouteBinding(
         "POST", "/journeys/{template_id}/steps", Audience.AGENT, Permission.JOURNEY_CONFIGURE
     ),
@@ -253,6 +261,13 @@ async def update_template(
 async def delete_template(template_id: uuid.UUID, agent: AgentDep, db: DbDep) -> MessageResponse:
     await JourneysManager(db).delete_template(agent, template_id)
     return MessageResponse(detail="Template deleted.")
+
+
+@router.put("/{template_id}/canvas-layout", response_model=dict[str, CanvasNodePosition])
+async def set_canvas_layout(
+    template_id: uuid.UUID, body: CanvasLayoutRequest, agent: AgentDep, db: DbDep
+) -> dict[str, CanvasNodePosition]:
+    return await JourneysManager(db).set_canvas_layout(agent, template_id, body)
 
 
 @router.post("/{template_id}/steps", response_model=TemplateStepResponse, status_code=201)

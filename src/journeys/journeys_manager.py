@@ -17,6 +17,8 @@ from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
+    CanvasLayoutRequest,
+    CanvasNodePosition,
     CaseFieldCreateRequest,
     CaseFieldUpdateRequest,
     JourneySectionDetail,
@@ -138,7 +140,25 @@ class JourneysManager:
                 fields=fields_by_section.get(None, []),
                 case_fields=case_by_section.get(None, []),
             ),
+            canvas_layout=template.canvas_layout,
         )
+
+    async def set_canvas_layout(
+        self, agent: Agent, template_id: uuid.UUID, payload: CanvasLayoutRequest
+    ) -> dict[str, CanvasNodePosition]:
+        """Replace the canvas layout blob (MVP-1). Pure presentation — no
+        journey logic touched. Foreign/stale step ids are DROPPED so the
+        blob never rots (only ids of the template's current steps survive)."""
+        template = await self._get_template(agent, template_id)
+        step_ids = {s.id for s in await self.repo.list_steps(template_id)}
+        blob = {
+            str(sid): {"x": pos.x, "y": pos.y}
+            for sid, pos in payload.positions.items()
+            if sid in step_ids
+        }
+        template.canvas_layout = blob
+        await self.db.commit()
+        return {k: CanvasNodePosition(**v) for k, v in blob.items()}
 
     async def create_template(self, agent: Agent, name: str) -> JourneyTemplate:
         template = self.repo.add_template(agent.agency_id, name)

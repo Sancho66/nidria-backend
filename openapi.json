@@ -5790,6 +5790,68 @@
         }
       }
     },
+    "/journeys/{template_id}/canvas-layout": {
+      "put": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Set Canvas Layout",
+        "operationId": "set_canvas_layout_journeys__template_id__canvas_layout_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasLayoutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/CanvasNodePosition"
+                  },
+                  "title": "Response Set Canvas Layout Journeys  Template Id  Canvas Layout Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps": {
       "post": {
         "tags": [
@@ -9573,6 +9635,44 @@
         ],
         "title": "BulkSetStatusRequest"
       },
+      "CanvasLayoutRequest": {
+        "properties": {
+          "positions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CanvasNodePosition"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Positions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "positions"
+        ],
+        "title": "CanvasLayoutRequest",
+        "description": "Replace the whole canvas layout blob (MVP-1). Keys are step ids;\nforeign/stale ids are dropped server-side so the blob never rots."
+      },
+      "CanvasNodePosition": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "CanvasNodePosition"
+      },
       "CaseCreateRequest": {
         "properties": {
           "passport_number": {
@@ -13174,6 +13274,20 @@
           },
           "unsectioned": {
             "$ref": "#/components/schemas/UnsectionedFields"
+          },
+          "canvas_layout": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/CanvasNodePosition"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canvas Layout"
           }
         },
         "type": "object",
@@ -13184,7 +13298,8 @@
           "fields",
           "case_fields",
           "sections",
-          "unsectioned"
+          "unsectioned",
+          "canvas_layout"
         ],
         "title": "JourneyTemplateDetailResponse"
       },

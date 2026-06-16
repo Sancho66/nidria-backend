@@ -1,6 +1,8 @@
 import uuid
+from typing import Any
 
 from sqlalchemy import CheckConstraint, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -16,6 +18,11 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Visual canvas editor (MVP-1): pure-presentation node positions,
+    # { "<step_id>": {"x": float, "y": float} }. NULL = never opened in
+    # canvas (the front auto-lays-out with dagre). Never affects journey
+    # logic — droppable without consequence. A separate presentation layer.
+    canvas_layout: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class JourneySection(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -273,6 +273,18 @@ class TemplateStepResponse(BaseModel):
     prerequisite_step_ids: list[uuid.UUID]
 
 
+class CanvasNodePosition(BaseModel):
+    x: float
+    y: float
+
+
+class CanvasLayoutRequest(BaseModel):
+    """Replace the whole canvas layout blob (MVP-1). Keys are step ids;
+    foreign/stale ids are dropped server-side so the blob never rots."""
+
+    positions: dict[uuid.UUID, CanvasNodePosition]
+
+
 class JourneyTemplateDetailResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -287,3 +299,6 @@ class JourneyTemplateDetailResponse(BaseModel):
     # keeps working unchanged; `sections` + `unsectioned` are additive.
     sections: list[JourneySectionDetail]
     unsectioned: UnsectionedFields
+    # Visual canvas editor (MVP-1): pure-presentation node positions
+    # keyed by step id. None = never opened in canvas (front auto-lays-out).
+    canvas_layout: dict[str, CanvasNodePosition] | None
