@@ -6890,6 +6890,300 @@
         }
       }
     },
+    "/journeys/{template_id}/sections": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Sections",
+        "operationId": "list_sections_journeys__template_id__sections_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JourneySectionResponse"
+                  },
+                  "title": "Response List Sections Journeys  Template Id  Sections Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Section",
+        "operationId": "add_section_journeys__template_id__sections_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneySectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/sections/order": {
+      "put": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Reorder Sections",
+        "operationId": "reorder_sections_journeys__template_id__sections_order_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JourneySectionResponse"
+                  },
+                  "title": "Response Reorder Sections Journeys  Template Id  Sections Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/sections/{section_id}": {
+      "patch": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Update Section",
+        "operationId": "update_section_journeys__template_id__sections__section_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneySectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Section",
+        "operationId": "delete_section_journeys__template_id__sections__section_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/journey": {
       "post": {
         "tags": [
@@ -9413,16 +9707,32 @@
       "CaseFieldUpdateRequest": {
         "properties": {
           "required_at_creation": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Required At Creation"
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
           }
         },
         "type": "object",
-        "required": [
-          "required_at_creation"
-        ],
         "title": "CaseFieldUpdateRequest",
-        "description": "Toggle whether a collected case field is required at creation\n(atomic — mirrors TemplateFieldUpdateRequest)."
+        "description": "Partial PATCH: required_at_creation AND/OR section move (mirrors\nTemplateFieldUpdateRequest)."
       },
       "CaseListItemResponse": {
         "properties": {
@@ -12285,6 +12595,102 @@
         "type": "object",
         "title": "JobTriggerRequest"
       },
+      "JourneySectionDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateFieldResponse"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "case_fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+            },
+            "type": "array",
+            "title": "Case Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "position",
+          "fields",
+          "case_fields"
+        ],
+        "title": "JourneySectionDetail",
+        "description": "A section WITH its fields, for the template detail. OPTION 1\n(segmented): person fields then case fields, each in their own\nposition order — the response carries two lists, so the segmentation\nis structural."
+      },
+      "JourneySectionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_id",
+          "name",
+          "description",
+          "position"
+        ],
+        "title": "JourneySectionResponse",
+        "description": "Section METADATA (CRUD endpoints). The grouped view with fields\nlives in the template detail (JourneySectionDetail)."
+      },
       "JourneyTemplateCreateRequest": {
         "properties": {
           "name": {
@@ -12331,6 +12737,16 @@
             },
             "type": "array",
             "title": "Case Fields"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/JourneySectionDetail"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "unsectioned": {
+            "$ref": "#/components/schemas/UnsectionedFields"
           }
         },
         "type": "object",
@@ -12339,7 +12755,9 @@
           "name",
           "steps",
           "fields",
-          "case_fields"
+          "case_fields",
+          "sections",
+          "unsectioned"
         ],
         "title": "JourneyTemplateDetailResponse"
       },
@@ -14076,6 +14494,83 @@
         "type": "object",
         "title": "SavedViewUpdate"
       },
+      "SectionCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SectionCreateRequest"
+      },
+      "SectionOrderRequest": {
+        "properties": {
+          "section_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Section Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "section_ids"
+        ],
+        "title": "SectionOrderRequest",
+        "description": "Full list of the template's section ids in the desired order."
+      },
+      "SectionUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "SectionUpdateRequest",
+        "description": "Partial: rename and/or edit the description."
+      },
       "Sex": {
         "type": "string",
         "enum": [
@@ -14462,6 +14957,18 @@
           "required_at_creation": {
             "type": "boolean",
             "title": "Required At Creation"
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
           }
         },
         "type": "object",
@@ -14470,7 +14977,8 @@
           "template_id",
           "case_field",
           "position",
-          "required_at_creation"
+          "required_at_creation",
+          "section_id"
         ],
         "title": "TemplateCaseFieldResponse"
       },
@@ -14589,6 +15097,18 @@
           "is_archived": {
             "type": "boolean",
             "title": "Is Archived"
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
           }
         },
         "type": "object",
@@ -14602,7 +15122,8 @@
           "label",
           "field_type",
           "options",
-          "is_archived"
+          "is_archived",
+          "section_id"
         ],
         "title": "TemplateFieldResponse",
         "description": "A template's creation field with its RESOLVED render metadata\n(label/field_type/options for a custom field, batched at read; base\nfields carry none — the frontend knows the civil-status set). A\ncustom field whose definition was archived after attachment stays in\nthe list, flagged `is_archived` (mirrors requirements)."
@@ -14610,16 +15131,32 @@
       "TemplateFieldUpdateRequest": {
         "properties": {
           "required_at_creation": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Required At Creation"
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
           }
         },
         "type": "object",
-        "required": [
-          "required_at_creation"
-        ],
         "title": "TemplateFieldUpdateRequest",
-        "description": "Toggle whether a collected field is required at creation. Atomic —\nno id churn, no position shuffle (the toggle is a frequent action)."
+        "description": "Partial PATCH: toggle required_at_creation AND/OR move the field to\na section. Both optional (exclude_unset distinguishes \"not touched\"\nfrom \"set to null\" for section_id → clearing returns it to the\nunsectioned bucket). Existing callers sending only required_at_creation\nare unaffected."
       },
       "TemplateStepCreateRequest": {
         "properties": {
@@ -14835,6 +15372,31 @@
           "refresh_token"
         ],
         "title": "TokenPairResponse"
+      },
+      "UnsectionedFields": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateFieldResponse"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "case_fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateCaseFieldResponse"
+            },
+            "type": "array",
+            "title": "Case Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fields",
+          "case_fields"
+        ],
+        "title": "UnsectionedFields",
+        "description": "The NULL bucket — fields not assigned to any section. Same\nsegmented shape, no section identity."
       },
       "ValidationError": {
         "properties": {

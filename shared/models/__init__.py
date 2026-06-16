@@ -17,6 +17,7 @@ from shared.models.impersonation import ImpersonationLog
 from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.job import JobConfig, JobRun
 from shared.models.journey import (
+    JourneySection,
     JourneyTemplate,
     JourneyTemplateCaseField,
     JourneyTemplateField,
@@ -50,6 +51,7 @@ __all__ = [
     "ImpersonationLog",
     "JobConfig",
     "JobRun",
+    "JourneySection",
     "JourneyTemplate",
     "JourneyTemplateCaseField",
     "JourneyTemplateField",

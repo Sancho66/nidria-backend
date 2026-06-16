@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.journey import (
+    JourneySection,
     JourneyTemplate,
     JourneyTemplateCaseField,
     JourneyTemplateField,
@@ -281,4 +282,55 @@ class JourneysRepository:
             update(JourneyTemplateCaseField)
             .where(JourneyTemplateCaseField.id == case_field_id)
             .values(position=position)
+        )
+
+    # --- sections (sections chantier, vague A) -------------------------------------
+
+    async def list_sections(self, template_id: uuid.UUID) -> list[JourneySection]:
+        stmt = (
+            select(JourneySection)
+            .where(JourneySection.template_id == template_id)
+            .order_by(JourneySection.position, JourneySection.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_section_in_template(
+        self, template_id: uuid.UUID, section_id: uuid.UUID
+    ) -> JourneySection | None:
+        stmt = select(JourneySection).where(
+            JourneySection.id == section_id,
+            JourneySection.template_id == template_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def max_section_position(self, template_id: uuid.UUID) -> int | None:
+        stmt = select(func.max(JourneySection.position)).where(
+            JourneySection.template_id == template_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_section(
+        self, template_id: uuid.UUID, name: str, description: str | None, position: int
+    ) -> JourneySection:
+        section = JourneySection(
+            template_id=template_id, name=name, description=description, position=position
+        )
+        self.db.add(section)
+        return section
+
+    async def delete_section(self, section: JourneySection) -> None:
+        # The FK is ON DELETE SET NULL: referencing fields (both planes)
+        # fall back to the NULL bucket; their declarations survive.
+        await self.db.delete(section)
+
+    async def shift_section_positions(self, template_id: uuid.UUID, offset: int) -> None:
+        await self.db.execute(
+            update(JourneySection)
+            .where(JourneySection.template_id == template_id)
+            .values(position=JourneySection.position + offset)
+        )
+
+    async def set_section_position(self, section_id: uuid.UUID, position: int) -> None:
+        await self.db.execute(
+            update(JourneySection).where(JourneySection.id == section_id).values(position=position)
         )

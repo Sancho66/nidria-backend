@@ -18,8 +18,12 @@ from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
     CaseFieldCreateRequest,
     CaseFieldUpdateRequest,
+    JourneySectionDetail,
+    JourneySectionResponse,
     JourneyTemplateDetailResponse,
     JourneyTemplateUpdateRequest,
+    SectionCreateRequest,
+    SectionUpdateRequest,
     StepRequirementCreateRequest,
     TemplateCaseFieldResponse,
     TemplateFieldCreateRequest,
@@ -28,6 +32,7 @@ from src.journeys.journeys_schema import (
     TemplateStepCreateRequest,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
+    UnsectionedFields,
 )
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
 
@@ -84,6 +89,20 @@ class JourneysManager:
             by_step[row.step_id].append(row.prerequisite_step_id)
         fields = await self.repo.list_fields(template_id)
         case_fields = await self.repo.list_case_fields(template_id)
+        sections = await self.repo.list_sections(template_id)
+        # FLAT lists (every field, all sections) — kept so the existing
+        # front works unchanged.
+        field_resps = await self._field_responses(agent, fields)
+        case_resps = [TemplateCaseFieldResponse.model_validate(c) for c in case_fields]
+        # GROUPED view (sections chantier). Both lists already come in
+        # position order from the repo, so each bucket stays ordered;
+        # OPTION 1 segmentation is structural (two lists per section).
+        fields_by_section: dict[uuid.UUID | None, list[TemplateFieldResponse]] = defaultdict(list)
+        for fr in field_resps:
+            fields_by_section[fr.section_id].append(fr)
+        case_by_section: dict[uuid.UUID | None, list[TemplateCaseFieldResponse]] = defaultdict(list)
+        for cr in case_resps:
+            case_by_section[cr.section_id].append(cr)
         return JourneyTemplateDetailResponse(
             id=template.id,
             name=template.name,
@@ -100,8 +119,23 @@ class JourneysManager:
                 )
                 for step in steps
             ],
-            fields=await self._field_responses(agent, fields),
-            case_fields=[TemplateCaseFieldResponse.model_validate(c) for c in case_fields],
+            fields=field_resps,
+            case_fields=case_resps,
+            sections=[
+                JourneySectionDetail(
+                    id=s.id,
+                    name=s.name,
+                    description=s.description,
+                    position=s.position,
+                    fields=fields_by_section.get(s.id, []),
+                    case_fields=case_by_section.get(s.id, []),
+                )
+                for s in sections
+            ],
+            unsectioned=UnsectionedFields(
+                fields=fields_by_section.get(None, []),
+                case_fields=case_by_section.get(None, []),
+            ),
         )
 
     async def create_template(self, agent: Agent, name: str) -> JourneyTemplate:
@@ -406,6 +440,7 @@ class JourneysManager:
                     field_type=field_type,
                     options=options,
                     is_archived=is_archived,
+                    section_id=f.section_id,
                 )
             )
         return out
@@ -466,6 +501,14 @@ class JourneysManager:
         await self.db.commit()
         return await self._field_responses(agent, await self.repo.list_fields(template_id))
 
+    async def _validate_section(self, template_id: uuid.UUID, section_id: uuid.UUID | None) -> None:
+        """A field's section must belong to the SAME template (or None =
+        the unsectioned bucket)."""
+        if section_id is None:
+            return
+        if await self.repo.get_section_in_template(template_id, section_id) is None:
+            raise ValidationError("Section must belong to this template.")
+
     async def update_field(
         self,
         agent: Agent,
@@ -477,7 +520,14 @@ class JourneysManager:
         field = await self.repo.get_field_in_template(template_id, field_id)
         if field is None:
             raise NotFoundError("Template field not found.")
-        field.required_at_creation = payload.required_at_creation
+        # Partial PATCH: required toggle and/or section move (exclude_unset
+        # distinguishes "untouched" from "set to null").
+        changes = payload.model_dump(exclude_unset=True)
+        if changes.get("required_at_creation") is not None:
+            field.required_at_creation = changes["required_at_creation"]
+        if "section_id" in changes:
+            await self._validate_section(template_id, changes["section_id"])
+            field.section_id = changes["section_id"]
         await self.db.commit()
         await self.db.refresh(field)
         return (await self._field_responses(agent, [field]))[0]
@@ -562,7 +612,12 @@ class JourneysManager:
         case_field = await self.repo.get_case_field_in_template(template_id, case_field_id)
         if case_field is None:
             raise NotFoundError("Template case field not found.")
-        case_field.required_at_creation = payload.required_at_creation
+        changes = payload.model_dump(exclude_unset=True)
+        if changes.get("required_at_creation") is not None:
+            case_field.required_at_creation = changes["required_at_creation"]
+        if "section_id" in changes:
+            await self._validate_section(template_id, changes["section_id"])
+            case_field.section_id = changes["section_id"]
         await self.db.commit()
         await self.db.refresh(case_field)
         return TemplateCaseFieldResponse.model_validate(case_field)
@@ -575,4 +630,82 @@ class JourneysManager:
         if case_field is None:
             raise NotFoundError("Template case field not found.")
         await self.repo.delete_case_field(case_field)
+        await self.db.commit()
+
+    # --- sections (sections chantier, vague A) — additive socle --------------------
+
+    async def list_sections(
+        self, agent: Agent, template_id: uuid.UUID
+    ) -> list[JourneySectionResponse]:
+        await self._get_template(agent, template_id)
+        rows = await self.repo.list_sections(template_id)
+        return [JourneySectionResponse.model_validate(s) for s in rows]
+
+    async def add_section(
+        self, agent: Agent, template_id: uuid.UUID, payload: SectionCreateRequest
+    ) -> JourneySectionResponse:
+        await self._get_template(agent, template_id)
+        max_position = await self.repo.max_section_position(template_id)
+        section = self.repo.add_section(
+            template_id=template_id,
+            name=payload.name,
+            description=payload.description,
+            position=(max_position if max_position is not None else -1) + 1,
+        )
+        await self.db.commit()
+        await self.db.refresh(section)
+        return JourneySectionResponse.model_validate(section)
+
+    async def update_section(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        section_id: uuid.UUID,
+        payload: SectionUpdateRequest,
+    ) -> JourneySectionResponse:
+        await self._get_template(agent, template_id)
+        section = await self.repo.get_section_in_template(template_id, section_id)
+        if section is None:
+            raise NotFoundError("Section not found.")
+        changes = payload.model_dump(exclude_unset=True)
+        if changes.get("name") is not None:
+            section.name = changes["name"]
+        if "description" in changes:
+            section.description = changes["description"]
+        await self.db.commit()
+        await self.db.refresh(section)
+        return JourneySectionResponse.model_validate(section)
+
+    async def reorder_sections(
+        self, agent: Agent, template_id: uuid.UUID, section_ids: list[uuid.UUID]
+    ) -> list[JourneySectionResponse]:
+        """Full ordered set of the template's section ids (same convention
+        as reorder_fields). A foreign/incomplete set → 422. Two-phase dense
+        renumber to 0..n-1."""
+        await self._get_template(agent, template_id)
+        sections = await self.repo.list_sections(template_id)
+        if len(section_ids) != len(set(section_ids)) or set(section_ids) != {
+            s.id for s in sections
+        }:
+            raise ValidationError(
+                "section_ids must contain exactly the template's sections, once each."
+            )
+        offset = max((s.position for s in sections), default=-1) + len(sections) + 1
+        await self.repo.shift_section_positions(template_id, offset)
+        for index, section_id in enumerate(section_ids):
+            await self.repo.set_section_position(section_id, index)
+        await self.db.commit()
+        reordered = await self.repo.list_sections(template_id)
+        return [JourneySectionResponse.model_validate(s) for s in reordered]
+
+    async def delete_section(
+        self, agent: Agent, template_id: uuid.UUID, section_id: uuid.UUID
+    ) -> None:
+        """Delete a section. Its fields (both planes) fall back to the NULL
+        bucket via ON DELETE SET NULL — declarations are never lost."""
+        await self._get_template(agent, template_id)
+        section = await self.repo.get_section_in_template(template_id, section_id)
+        if section is None:
+            raise NotFoundError("Section not found.")
+        await self.repo.delete_section(section)
         await self.db.commit()

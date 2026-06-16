@@ -18,6 +18,27 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
+class JourneySection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A freely-named, ordered GROUP of creation fields on a template
+    (sections chantier). PLANE-AGNOSTIC: a section may hold person fields
+    (journey_template_field) AND case fields (journey_template_case_field)
+    — the unification is presentational, the storage stays two planes.
+
+    Fields reference a section via a NULLABLE section_id (SET NULL on
+    delete: removing a section never destroys a field declaration; its
+    fields fall back to the NULL bucket). `name` is free; no uniqueness
+    (a label, not an identifier)."""
+
+    __tablename__ = "journey_section"
+
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500))
+    position: Mapped[int] = mapped_column(default=0, nullable=False)
+
+
 class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "journey_template_step"
     __table_args__ = (UniqueConstraint("template_id", "position"),)
@@ -93,6 +114,11 @@ class JourneyTemplateField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     required_at_creation: Mapped[bool] = mapped_column(
         default=False, server_default=text("false"), nullable=False
     )
+    # Sections chantier (vague A): NULL = the default "unsectioned"
+    # bucket. SET NULL on section delete (the field declaration survives).
+    section_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journey_section.id", ondelete="SET NULL"), index=True
+    )
 
 
 class JourneyTemplateCaseField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -121,4 +147,9 @@ class JourneyTemplateCaseField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(default=0, nullable=False)
     required_at_creation: Mapped[bool] = mapped_column(
         default=False, server_default=text("false"), nullable=False
+    )
+    # Sections chantier (vague A): NULL = the default "unsectioned"
+    # bucket. SET NULL on section delete (the field declaration survives).
+    section_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journey_section.id", ondelete="SET NULL"), index=True
     )

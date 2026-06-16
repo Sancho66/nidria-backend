@@ -92,10 +92,14 @@ class TemplateFieldCreateRequest(BaseModel):
 
 
 class TemplateFieldUpdateRequest(BaseModel):
-    """Toggle whether a collected field is required at creation. Atomic —
-    no id churn, no position shuffle (the toggle is a frequent action)."""
+    """Partial PATCH: toggle required_at_creation AND/OR move the field to
+    a section. Both optional (exclude_unset distinguishes "not touched"
+    from "set to null" for section_id → clearing returns it to the
+    unsectioned bucket). Existing callers sending only required_at_creation
+    are unaffected."""
 
-    required_at_creation: bool
+    required_at_creation: bool | None = None
+    section_id: uuid.UUID | None = None
 
 
 class TemplateFieldResponse(BaseModel):
@@ -115,6 +119,8 @@ class TemplateFieldResponse(BaseModel):
     field_type: str | None
     options: list[str] | None
     is_archived: bool
+    # Sections chantier (vague A): NULL = unsectioned bucket.
+    section_id: uuid.UUID | None
 
 
 class TemplateFieldOrderRequest(BaseModel):
@@ -141,10 +147,11 @@ class CaseFieldCreateRequest(BaseModel):
 
 
 class CaseFieldUpdateRequest(BaseModel):
-    """Toggle whether a collected case field is required at creation
-    (atomic — mirrors TemplateFieldUpdateRequest)."""
+    """Partial PATCH: required_at_creation AND/OR section move (mirrors
+    TemplateFieldUpdateRequest)."""
 
-    required_at_creation: bool
+    required_at_creation: bool | None = None
+    section_id: uuid.UUID | None = None
 
 
 class TemplateCaseFieldResponse(BaseModel):
@@ -155,6 +162,8 @@ class TemplateCaseFieldResponse(BaseModel):
     case_field: str
     position: int
     required_at_creation: bool
+    # Sections chantier (vague A): NULL = unsectioned bucket.
+    section_id: uuid.UUID | None
 
 
 class CaseFieldOrderRequest(BaseModel):
@@ -162,6 +171,62 @@ class CaseFieldOrderRequest(BaseModel):
     (same convention as TemplateFieldOrderRequest)."""
 
     case_field_ids: list[uuid.UUID]
+
+
+# --- sections (sections chantier, vague A) -------------------------------------------
+
+
+class SectionCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class SectionUpdateRequest(BaseModel):
+    """Partial: rename and/or edit the description."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class SectionOrderRequest(BaseModel):
+    """Full list of the template's section ids in the desired order."""
+
+    section_ids: list[uuid.UUID]
+
+
+class JourneySectionResponse(BaseModel):
+    """Section METADATA (CRUD endpoints). The grouped view with fields
+    lives in the template detail (JourneySectionDetail)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    template_id: uuid.UUID
+    name: str
+    description: str | None
+    position: int
+
+
+class JourneySectionDetail(BaseModel):
+    """A section WITH its fields, for the template detail. OPTION 1
+    (segmented): person fields then case fields, each in their own
+    position order — the response carries two lists, so the segmentation
+    is structural."""
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    position: int
+    fields: list["TemplateFieldResponse"]
+    case_fields: list["TemplateCaseFieldResponse"]
+
+
+class UnsectionedFields(BaseModel):
+    """The NULL bucket — fields not assigned to any section. Same
+    segmented shape, no section identity."""
+
+    fields: list["TemplateFieldResponse"]
+    case_fields: list["TemplateCaseFieldResponse"]
 
 
 class JourneyTemplateResponse(BaseModel):
@@ -191,3 +256,8 @@ class JourneyTemplateDetailResponse(BaseModel):
     # Case-level fields (countries) collected at creation (option b) —
     # a SEPARATE list; the UI unifies them with `fields` for display.
     case_fields: list[TemplateCaseFieldResponse]
+    # Sections chantier (vague A): the GROUPED view. `fields`/`case_fields`
+    # above stay FLAT (all fields, every section) so the existing front
+    # keeps working unchanged; `sections` + `unsectioned` are additive.
+    sections: list[JourneySectionDetail]
+    unsectioned: UnsectionedFields

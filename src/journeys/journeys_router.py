@@ -15,10 +15,14 @@ from src.journeys.journeys_schema import (
     CaseFieldCreateRequest,
     CaseFieldOrderRequest,
     CaseFieldUpdateRequest,
+    JourneySectionResponse,
     JourneyTemplateCreateRequest,
     JourneyTemplateDetailResponse,
     JourneyTemplateResponse,
     JourneyTemplateUpdateRequest,
+    SectionCreateRequest,
+    SectionOrderRequest,
+    SectionUpdateRequest,
     StepOrderRequest,
     StepPrerequisitesRequest,
     StepRequirementCreateRequest,
@@ -142,6 +146,31 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/case-fields/{case_field_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # Sections (sections chantier, vague A) — additive socle, same gate.
+    RouteBinding(
+        "GET", "/journeys/{template_id}/sections", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "POST", "/journeys/{template_id}/sections", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "PUT",
+        "/journeys/{template_id}/sections/order",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "PATCH",
+        "/journeys/{template_id}/sections/{section_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/sections/{section_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -410,3 +439,46 @@ async def delete_case_field(
 ) -> MessageResponse:
     await JourneysManager(db).delete_case_field(agent, template_id, case_field_id)
     return MessageResponse(detail="Case field removed.")
+
+
+# --- sections (sections chantier, vague A) -------------------------------------------
+
+
+@router.get("/{template_id}/sections", response_model=list[JourneySectionResponse])
+async def list_sections(
+    template_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[JourneySectionResponse]:
+    return await JourneysManager(db).list_sections(agent, template_id)
+
+
+@router.post("/{template_id}/sections", response_model=JourneySectionResponse, status_code=201)
+async def add_section(
+    template_id: uuid.UUID, body: SectionCreateRequest, agent: AgentDep, db: DbDep
+) -> JourneySectionResponse:
+    return await JourneysManager(db).add_section(agent, template_id, body)
+
+
+@router.put("/{template_id}/sections/order", response_model=list[JourneySectionResponse])
+async def reorder_sections(
+    template_id: uuid.UUID, body: SectionOrderRequest, agent: AgentDep, db: DbDep
+) -> list[JourneySectionResponse]:
+    return await JourneysManager(db).reorder_sections(agent, template_id, body.section_ids)
+
+
+@router.patch("/{template_id}/sections/{section_id}", response_model=JourneySectionResponse)
+async def update_section(
+    template_id: uuid.UUID,
+    section_id: uuid.UUID,
+    body: SectionUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> JourneySectionResponse:
+    return await JourneysManager(db).update_section(agent, template_id, section_id, body)
+
+
+@router.delete("/{template_id}/sections/{section_id}", response_model=MessageResponse)
+async def delete_section(
+    template_id: uuid.UUID, section_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> MessageResponse:
+    await JourneysManager(db).delete_section(agent, template_id, section_id)
+    return MessageResponse(detail="Section removed.")
