@@ -9,7 +9,13 @@ from shared.models.case_person import CasePerson
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
-from src.cases.cases_schema import CustomFieldDefinitionInline, PersonUpdateRequest
+from shared.models.step_case_requirement import StepCaseRequirement
+from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
+from src.cases.cases_schema import (
+    CaseUpdateRequest,
+    CustomFieldDefinitionInline,
+    PersonUpdateRequest,
+)
 from src.core.enums import (
     ResponsibleType,
     StepRequirementKind,
@@ -130,6 +136,7 @@ class ExpatPortalManager:
                         person_label=req.person_label,  # resolved upstream (single source)
                         value=req.value,  # resolved upstream (single source)
                         document_id=req.document_id,
+                        target=req.target,  # "case" → front routes to the case-req endpoint (C2)
                     )
                     # Archived custom-field requirements are not surfaced:
                     # never ask the client to fill a retired field.
@@ -223,6 +230,58 @@ class ExpatPortalManager:
             person.custom_fields = validate_and_merge(
                 definitions, person.custom_fields or {}, {requirement.reference: value}
             )
+
+    # --- CASE-level requirement fulfillment (sections chantier, vague C2) -----------
+    #
+    # The client writes a client_case COLUMN (country/address). Same four
+    # borders as the person fulfillment above, none trusting the payload —
+    # and the DECISIVE one: the column written is the DECLARATION's
+    # case_field, NEVER a name from the payload (which carries only `value`).
+
+    async def _resolve_writable_case_requirement(
+        self, expat: ExpatUser, case_id: uuid.UUID, case_requirement_id: uuid.UUID
+    ) -> tuple[ClientCase, StepCaseRequirement]:
+        case, _ = await self._get_owned_case(expat, case_id)  # border a (ownership → 404)
+        found = await self.repo.get_case_requirement_in_case(case.id, case_requirement_id)
+        if found is None:  # border b (declaration on a step of THIS case → 404)
+            raise NotFoundError("Case requirement not found.")
+        creq, progress = found
+        if progress.status != StepStatus.IN_PROGRESS.value:  # border c (active → 409)
+            raise ConflictError("This step is not active; its requirements are read-only.")
+        return case, creq
+
+    async def fulfill_case_value(
+        self,
+        expat: ExpatUser,
+        case_id: uuid.UUID,
+        case_requirement_id: uuid.UUID,
+        payload: RequirementValueRequest,
+    ) -> ExpatCaseDetailResponse:
+        case, creq = await self._resolve_writable_case_requirement(
+            expat, case_id, case_requirement_id
+        )
+        # BORDER d (critical): the column is the DECLARATION's case_field,
+        # read from the server-side row — NEVER from the payload (which has
+        # only `value`). The client can touch ONLY this one column; status /
+        # owner_agent_id / agency_id / any undeclared column are unreachable.
+        column = creq.case_field
+        if column not in COLLECTABLE_CASE_FIELDS:  # belt + braces (declaration was validated)
+            raise ValidationError(f"Unknown case field {column!r}.")
+        # Same value validation as the agency PATCH (pattern / length); null
+        # clears the field (requirement back to pending).
+        try:
+            validated = CaseUpdateRequest.model_validate({column: payload.value})
+        except PydanticValidationError as exc:
+            raise ValidationError(f"Invalid value for {column!r}.") from exc
+        coerced = validated.model_dump(exclude_unset=True).get(column)
+
+        progress_mgr = ProgressManager(self.db)
+        before = await progress_mgr.snapshot_active_completion(case)  # BEFORE the write
+        setattr(case, column, coerced)  # ONE column, the declared one
+        pending = await progress_mgr.recompute_active(case, before)
+        await self.db.commit()
+        await progress_mgr.send_pending(pending)  # best-effort: a mail failure never rolls back
+        return await self.get_my_case(expat, case_id)
 
     async def fulfill_document(
         self,

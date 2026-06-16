@@ -11,6 +11,7 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.external_contact import ExternalContact
 from shared.models.reminder import Reminder
+from shared.models.step_case_requirement import StepCaseRequirement
 from src.core.enums import RecipientType, ReminderChannel, ReminderStatus
 
 
@@ -86,6 +87,28 @@ class ExpatRepository:
             )
             .where(
                 CaseStepRequirement.id == requirement_id,
+                CaseStepProgress.case_id == case_id,
+            )
+        )
+        row = (await self.db.execute(stmt)).first()
+        return (row[0], row[1]) if row is not None else None
+
+    async def get_case_requirement_in_case(
+        self, case_id: uuid.UUID, case_requirement_id: uuid.UUID
+    ) -> tuple[StepCaseRequirement, CaseStepProgress] | None:
+        """Resolve a case-level requirement DECLARATION and the case's
+        progress on its step, in one query (vague C2). The declaration
+        lives on the template step, so the join is via template_step_id —
+        constrained to the case: a declaration of another case/journey, or
+        a step not instantiated on this case, returns None → 404. Border b."""
+        stmt = (
+            select(StepCaseRequirement, CaseStepProgress)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.template_step_id == StepCaseRequirement.step_id,
+            )
+            .where(
+                StepCaseRequirement.id == case_requirement_id,
                 CaseStepProgress.case_id == case_id,
             )
         )

@@ -28,6 +28,13 @@ BINDINGS = [
         "/expat/cases/{case_id}/requirements/{requirement_id}/document",
         Audience.EXPAT,
     ),
+    # Case-level requirement fulfillment (sections chantier, vague C2) —
+    # bounded write to a client_case column (the declared case_field).
+    RouteBinding(
+        "PUT",
+        "/expat/cases/{case_id}/case-requirements/{case_requirement_id}",
+        Audience.EXPAT,
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -55,6 +62,22 @@ async def fulfill_requirement_value(
     db: DbDep,
 ) -> ExpatCaseDetailResponse:
     return await ExpatPortalManager(db).fulfill_value(expat, case_id, requirement_id, body)
+
+
+@router.put(
+    "/cases/{case_id}/case-requirements/{case_requirement_id}",
+    response_model=ExpatCaseDetailResponse,
+)
+async def fulfill_case_requirement_value(
+    case_id: uuid.UUID,
+    case_requirement_id: uuid.UUID,
+    body: RequirementValueRequest,
+    expat: ExpatDep,
+    db: DbDep,
+) -> ExpatCaseDetailResponse:
+    return await ExpatPortalManager(db).fulfill_case_value(
+        expat, case_id, case_requirement_id, body
+    )
 
 
 @router.post(
