@@ -399,6 +399,9 @@ class CasesManager:
         "sex",
         "marital_status",
         "phone",
+        "birth_name",
+        "profession",
+        "employer",
     )
 
     @staticmethod
@@ -427,6 +430,9 @@ class CasesManager:
             sex=person.sex,
             marital_status=person.marital_status,
             phone=person.phone,
+            birth_name=person.birth_name,
+            profession=person.profession,
+            employer=person.employer,
             custom_fields=visible_values(active_definitions, person.custom_fields or {}),
         )
 

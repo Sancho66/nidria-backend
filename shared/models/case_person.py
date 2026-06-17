@@ -56,6 +56,9 @@ class CasePerson(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sex: Mapped[str | None] = mapped_column(String(1))
     marital_status: Mapped[str | None] = mapped_column(String(20))
     phone: Mapped[str | None] = mapped_column(String(50))
+    birth_name: Mapped[str | None] = mapped_column(String(200))
+    profession: Mapped[str | None] = mapped_column(String(200))
+    employer: Mapped[str | None] = mapped_column(String(200))
 
     # Agency-defined custom fields (DÉGEL 2): {definition.key: value}.
     # Independent of the definitions' lifecycle — archiving a definition

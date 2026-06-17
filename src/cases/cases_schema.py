@@ -12,7 +12,8 @@ _COUNTRY_PATTERN = r"^[A-Z]{2}$"
 
 
 class _CivilStatusFields(BaseModel):
-    """Case-scoped civil status — all optional, never on expat_user."""
+    """Case-scoped civil/professional status — all optional, never on
+    expat_user."""
 
     passport_number: str | None = Field(default=None, max_length=50)
     date_of_birth: date | None = None
@@ -21,6 +22,9 @@ class _CivilStatusFields(BaseModel):
     sex: Sex | None = None
     marital_status: MaritalStatus | None = None
     phone: str | None = Field(default=None, max_length=50)
+    birth_name: str | None = Field(default=None, max_length=200)
+    profession: str | None = Field(default=None, max_length=200)
+    employer: str | None = Field(default=None, max_length=200)
 
 
 class CaseCreateRequest(_CivilStatusFields):

@@ -507,6 +507,54 @@ async def test_principal_civil_status_editable_not_deletable(
     assert denied.status_code == 422
 
 
+async def test_extended_base_fields_round_trip(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """V4 collectable base fields (birth_name / profession / employer):
+    create + read + partial update round-trip on case_person."""
+    headers = agent_headers(member)
+    case = await make_client_case(agency_id=member.agency_id)
+
+    created = await cases_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={
+            "full_name": "Lea Martin",
+            "relationship": "spouse",
+            "birth_name": "Dubois",
+            "profession": "Architecte",
+            "employer": "Studio Nord",
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    person_id = body["id"]
+    assert body["birth_name"] == "Dubois"
+    assert body["profession"] == "Architecte"
+    assert body["employer"] == "Studio Nord"
+
+    # Partial update one field — the other two survive (no retroactive wipe).
+    updated = await cases_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"employer": "Atelier Sud"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["employer"] == "Atelier Sud"
+    assert updated.json()["profession"] == "Architecte"  # untouched survives
+    assert updated.json()["birth_name"] == "Dubois"
+
+    # An existing case has these columns as NULL silently (additive migration).
+    detail = (await cases_client.get(f"/cases/{case.id}", headers=headers)).json()
+    principal = next(p for p in detail["persons"] if p["id"] == detail["principal_person_id"])
+    assert principal["birth_name"] is None
+    assert principal["profession"] is None
+    assert principal["employer"] is None
+
+
 async def test_addresses_on_patch_case(
     cases_client: AsyncClient,
     member: Agent,

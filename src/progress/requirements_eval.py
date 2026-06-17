@@ -26,8 +26,10 @@ from shared.models.client_case import ClientCase
 from src.core.enums import RequirementStatus, StepRequirementKind
 
 # Collectable base fields on case_person — the closed whitelist. NEVER
-# email/name (those live on the shared expat_user). Mirrors the civil
-# status columns (residence_permit_number was removed).
+# email/name (those live on the shared expat_user). Mirrors the civil/
+# professional status columns (residence_permit_number was removed). A new
+# entry here needs a matching nullable column on CasePerson; the resolver
+# reads it generically via getattr — no resolver change (vague B).
 COLLECTABLE_BASE_FIELDS: frozenset[str] = frozenset(
     {
         "passport_number",
@@ -37,6 +39,9 @@ COLLECTABLE_BASE_FIELDS: frozenset[str] = frozenset(
         "sex",
         "marital_status",
         "phone",
+        "birth_name",
+        "profession",
+        "employer",
     }
 )
 
