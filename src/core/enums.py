@@ -150,6 +150,10 @@ class CustomFieldType(StrEnum):
     # NEVER on client_case (the canonical origin/dest_country columns and
     # their ecosystem stay intact).
     COUNTRY = "country"
+    # ADDRESS (V2) = a structured {street, city, postal_code, country}
+    # sub-object; its `country` sub-field reuses the COUNTRY validation
+    # (no pattern duplication). Stored in case_person.custom_fields JSONB.
+    ADDRESS = "address"
 
 
 class CompletionMode(StrEnum):

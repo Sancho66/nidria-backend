@@ -225,6 +225,63 @@ async def test_country_field_type(
         assert "Nationalité conjoint" in bad.json()["detail"]
 
 
+async def test_address_field_type(
+    cf_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Refonte (V2): a custom field of type `address` — a structured
+    {street, city, postal_code, country} sub-object. The country sub-field
+    reuses the V1 country rule (^[A-Z]{2}$). Value in case_person JSONB."""
+    headers = agent_headers(admin)
+    await _define(cf_client, headers, key="hq", label="Siège social", field_type="address")
+    case = await make_client_case(agency_id=admin.agency_id)
+    person_id = (await cf_client.get(f"/cases/{case.id}", headers=headers)).json()[
+        "principal_person_id"
+    ]
+
+    async def patch(value: object) -> object:
+        return await cf_client.patch(
+            f"/cases/{case.id}/persons/{person_id}",
+            headers=headers,
+            json={"custom_fields": {"hq": value}},
+        )
+
+    # Full address → stored as the cleaned sub-object.
+    ok = await patch(
+        {"street": "1 rue de Rivoli", "city": "Paris", "postal_code": "75001", "country": "FR"}
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["custom_fields"]["hq"] == {
+        "street": "1 rue de Rivoli",
+        "city": "Paris",
+        "postal_code": "75001",
+        "country": "FR",
+    }
+
+    # Invalid country IN the address → 422 (the country rule applies to the
+    # sub-field — proof the V1 validation is reused, not bypassed).
+    bad_country = await patch({"city": "Paris", "country": "FRANCE"})
+    assert bad_country.status_code == 422
+    assert "Siège social" in bad_country.json()["detail"]
+
+    # Partial sub-object → provided but incomplete (refinement deferred).
+    partial = await patch({"city": "Lyon"})
+    assert partial.status_code == 200
+    assert partial.json()["custom_fields"]["hq"] == {"city": "Lyon"}
+
+    # Empty sub-object / all-null → non-provided (the key is cleared).
+    for empty in ({}, {"street": None, "city": "", "postal_code": None, "country": None}):
+        cleared = await patch(empty)
+        assert cleared.status_code == 200, cleared.text
+        assert "hq" not in cleared.json()["custom_fields"]
+
+    # Not a dict → 422.
+    not_dict = await patch("just a string")
+    assert not_dict.status_code == 422
+
+
 async def test_multi_select_out_of_options_422(
     cf_client: AsyncClient,
     admin: Agent,

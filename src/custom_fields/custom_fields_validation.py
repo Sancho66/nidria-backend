@@ -32,7 +32,41 @@ def _coerce_country(value: Any) -> str:
 
 
 def _is_empty(value: Any) -> bool:
-    return value is None or value == "" or value == []
+    if value is None or value == "" or value == []:
+        return True
+    # An ADDRESS sub-object with no non-empty sub-field reads as empty
+    # ({} or {street:null, city:null, ...}) → cleared / pending. Other
+    # types never store dicts, so this is safe and generic.
+    if isinstance(value, dict):
+        return all(_is_empty(v) for v in value.values())
+    return False
+
+
+# Address sub-fields and their max lengths (the country sub-field is
+# validated by _coerce_country — V1's rule, NO pattern duplication).
+_ADDRESS_SUBFIELDS: dict[str, int] = {"street": 255, "city": 100, "postal_code": 20}
+
+
+def _coerce_address(value: Any) -> dict[str, str]:
+    """Validate a structured address sub-object. String sub-fields are
+    optional (trimmed, length-capped); `country` REUSES _coerce_country
+    (the same ISO-2 rule as the country type and the canonical columns).
+    Empty sub-fields are dropped. Unknown keys are ignored."""
+    if not isinstance(value, dict):
+        raise ValueError("expects an address object {street, city, postal_code, country}")
+    out: dict[str, str] = {}
+    for sub, maxlen in _ADDRESS_SUBFIELDS.items():
+        raw = value.get(sub)
+        if raw is None or str(raw).strip() == "":
+            continue
+        s = str(raw).strip()
+        if len(s) > maxlen:
+            raise ValueError(f"{sub} too long (max {maxlen} characters)")
+        out[sub] = s
+    country = value.get("country")
+    if country is not None and str(country).strip() != "":
+        out["country"] = _coerce_country(country)  # ← V1 rule, single source
+    return out
 
 
 def _coerce_number(value: Any) -> float | int:
@@ -85,6 +119,8 @@ def _coerce_one(definition: CustomFieldDefinition, value: Any) -> Any:
         return _coerce_bool(value)
     if ftype == CustomFieldType.COUNTRY.value:
         return _coerce_country(value)
+    if ftype == CustomFieldType.ADDRESS.value:
+        return _coerce_address(value)
     options = set(definition.option_values)
     if ftype == CustomFieldType.SELECT.value:
         if value not in options:
