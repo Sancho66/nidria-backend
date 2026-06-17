@@ -2,6 +2,7 @@ import mimetypes
 import uuid
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,10 +69,19 @@ ExpatDep = Annotated[ExpatUser, Depends(get_current_expat)]
 
 def _download_response(document: Document, content: bytes) -> Response:
     media_type = mimetypes.guess_type(document.filename)[0] or "application/octet-stream"
+    # HTTP headers are latin-1: a filename with non-latin-1 chars (curly
+    # apostrophe ’, accents…) would crash the Response. RFC 6266: an ASCII
+    # fallback `filename="…"` for old clients + a UTF-8 `filename*=` that
+    # modern browsers prefer, so the real name (accents) is preserved.
+    filename = document.filename
+    ascii_fallback = (
+        filename.encode("ascii", "ignore").decode("ascii").replace('"', "") or "document"
+    )
+    disposition = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
     return Response(
         content=content,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 

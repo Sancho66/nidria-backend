@@ -259,6 +259,33 @@ async def test_download_both_audiences(
     assert expat_dl.content == PDF_BYTES
 
 
+async def test_download_non_ascii_filename(
+    docs_client: AsyncClient,
+    member: Agent,
+    case: ClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Regression: a filename with a curly apostrophe / accents (HTTP headers
+    are latin-1) must NOT 500. Content-Disposition carries an ASCII fallback +
+    a UTF-8 filename* (RFC 6266)."""
+    name = "Capture d’écran à 16h.png"
+    uploaded = (
+        await docs_client.post(
+            f"/cases/{case.id}/documents",
+            headers=agent_headers(member),
+            files=_file(name=name),
+        )
+    ).json()
+    dl = await docs_client.get(
+        f"/cases/{case.id}/documents/{uploaded['id']}/download",
+        headers=agent_headers(member),
+    )
+    assert dl.status_code == 200  # not 500
+    cd = dl.headers["content-disposition"]
+    cd.encode("latin-1")  # the header is wire-encodable
+    assert "filename*=UTF-8''" in cd  # the real (accented) name is preserved
+
+
 # --- validation -----------------------------------------------------------------------------------
 
 
