@@ -18,7 +18,7 @@ from src.cases.cases_schema import CustomFieldDefinitionInline
 
 # Same resolved days-remaining counter the agency timeline ships — one
 # computation in timeline_for_case, read by both faces (single source).
-from src.progress.progress_schema import DeadlineCounter
+from src.progress.progress_schema import DeadlineCounter, StepContentAttachment
 
 
 class ExpatAgencyResponse(BaseModel):
@@ -106,6 +106,11 @@ class ExpatTimelineStepResponse(BaseModel):
     comment_count: int
     # Resolved days-remaining counter (firm deadline or estimated-derived).
     counter: DeadlineCounter
+    # Feature 2 — descending agency content. The client ALWAYS sees the
+    # step's note + attachments on their own dossier (downloaded via the
+    # dedicated gated endpoint, bytes never inlined).
+    content_note: str | None
+    attachments: list[StepContentAttachment]
 
 
 class RequirementValueRequest(BaseModel):

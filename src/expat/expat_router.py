@@ -1,12 +1,13 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.expat_user import ExpatUser
 from src.core.dependencies import get_current_expat, get_db
 from src.core.enums import Audience
+from src.core.http import file_download_response
 from src.core.rbac.baseline import RouteBinding
 from src.expat.expat_manager import ExpatPortalManager
 from src.expat.expat_schema import (
@@ -33,6 +34,12 @@ BINDINGS = [
     RouteBinding(
         "PUT",
         "/expat/cases/{case_id}/case-requirements/{case_requirement_id}",
+        Audience.EXPAT,
+    ),
+    # Feature 2: download an agency step attachment (always, on own dossier).
+    RouteBinding(
+        "GET",
+        "/expat/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download",
         Audience.EXPAT,
     ),
 ]
@@ -92,6 +99,20 @@ async def fulfill_requirement_document(
     file: Annotated[UploadFile, File()],
 ) -> ExpatCaseDetailResponse:
     return await ExpatPortalManager(db).fulfill_document(expat, case_id, requirement_id, file)
+
+
+@router.get("/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download")
+async def download_step_attachment(
+    case_id: uuid.UUID,
+    progress_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    expat: ExpatDep,
+    db: DbDep,
+) -> Response:
+    filename, content = await ExpatPortalManager(db).download_step_attachment(
+        expat, case_id, progress_id, attachment_id
+    )
+    return file_download_response(filename, content)
 
 
 @router.get("/cases/{case_id}/notifications", response_model=list[ExpatNotificationResponse])

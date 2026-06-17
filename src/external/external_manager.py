@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
+from src.core import storage
 from src.core.enums import ResponsibleType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.external.external_repository import ExternalRepository
@@ -21,7 +23,30 @@ from src.external.external_schema import (
 )
 from src.external.scoping import get_case_for_external, list_assigned_cases
 from src.progress.progress_manager import ProgressManager
+from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepProgressResponse
+
+
+def _external_sees_content(step: StepProgressResponse, external: Agent) -> bool:
+    """THE content verrou (Feature 2, RGPD). A provider sees a step's
+    descending agency content (content_note + attachments) ONLY when it is
+    responsible for THIS step on THIS dossier.
+
+    The visibility key is `responsible_agent_id` — a CASE-INSTANCE column
+    (case_step_progress), never the template. So the right lives on the
+    dossier while the content lives on the template: the same provider,
+    same template step, is allowed on dossier X and refused on dossier Z
+    purely by this column. See test_step_content_read (the X/Z crossing).
+
+    ⚠️ FUTURE BLIND SPOT — the ONLY login-bearing assignment path today is
+    responsible_type=AGENT → responsible_agent_id (an is_external Agent). A
+    legacy `responsible_external_id` (external_contact) has NO login and so
+    cannot reach this code. IF the V2 backlog ever gives external_contact a
+    login (the planned `external_user` identity), THIS verrou must be
+    widened to cover that path too — otherwise wiring the login without
+    revisiting here opens a silent RGPD hole (a logged-in contact seeing
+    content it should not). Do not add a login path without updating this."""
+    return step.responsible_agent_id == external.id
 
 
 def _displayable_responsible(step: StepProgressResponse) -> ExternalResponsibleResponse:
@@ -128,6 +153,12 @@ class ExternalPortalManager:
                     for req in step.requirements
                     if not req.is_archived
                 ],
+                # Feature 2 (RGPD): content only on steps this provider is
+                # responsible for — server-side filter, None/[] otherwise.
+                content_note=(
+                    step.content_note if _external_sees_content(step, external) else None
+                ),
+                attachments=(step.attachments if _external_sees_content(step, external) else []),
             )
             for step in internal_timeline
         ]
@@ -140,6 +171,37 @@ class ExternalPortalManager:
         return ExternalCaseDetailResponse(
             **summary.model_dump(), referent=referent, timeline=timeline
         )
+
+    async def download_step_attachment(
+        self,
+        external: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        attachment_id: uuid.UUID,
+    ) -> tuple[str, bytes]:
+        """Feature 2 (RGPD): a provider downloads a step attachment ONLY on
+        a step it is responsible for. Borders, all server-side:
+        (1) the case is assigned to this provider (get_case_for_external →
+        404); (2) the step is a step of THAT case (404); (3) THE verrou —
+        the provider is responsible for that step on this dossier
+        (responsible_agent_id == external.id) else 404, never a byte served;
+        (4) the attachment belongs to THAT step's template step (404), so a
+        progress_id from another step can't serve a foreign file.
+        The 404s never reveal existence (same as the masked timeline)."""
+        case = await self._assigned_case(external, case_id)  # border 1
+        progress_repo = ProgressRepository(self.db)
+        progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
+        if progress is None:
+            raise NotFoundError("Case step not found.")
+        if progress.responsible_agent_id != external.id:  # border 3 — THE verrou
+            raise NotFoundError("Attachment not found.")
+        attachment = await progress_repo.get_step_attachment_in_step(  # border 4
+            progress.template_step_id, attachment_id
+        )
+        if attachment is None:
+            raise NotFoundError("Attachment not found.")
+        content = await asyncio.to_thread(storage.download, attachment.storage_path)
+        return attachment.filename, content
 
 
 class ExternalAssignmentManager:

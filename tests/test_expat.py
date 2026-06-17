@@ -48,6 +48,9 @@ STEP_KEYS = {
     "comment_count",
     # Days-remaining counter (firm deadline or estimated-derived).
     "counter",
+    # Feature 2: descending agency content (always visible to the client).
+    "content_note",
+    "attachments",
 }
 REQUIREMENT_KEYS = {
     "id",

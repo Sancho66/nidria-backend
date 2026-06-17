@@ -13,7 +13,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 # Reused resolved counter (one computation in timeline_for_case).
-from src.progress.progress_schema import DeadlineCounter
+from src.progress.progress_schema import DeadlineCounter, StepContentAttachment
 
 
 class ExternalAgencyResponse(BaseModel):
@@ -69,6 +69,12 @@ class ExternalTimelineStepResponse(BaseModel):
     comment_count: int
     counter: DeadlineCounter
     requirements: list[ExternalRequirementResponse]
+    # Feature 2 (RGPD): descending agency content, exposed to the provider
+    # ONLY on steps it is responsible for. On every other step these are
+    # None/[] — filtered SERVER-SIDE in the manager (never sent on the
+    # wire), not masked by the front. See the evasion tests.
+    content_note: str | None
+    attachments: list[StepContentAttachment]
 
 
 class ExternalCaseSummaryResponse(BaseModel):

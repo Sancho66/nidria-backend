@@ -81,6 +81,7 @@ PORTAL_CASE_ROUTES: list[tuple[str, str]] = [
     ("GET", "/external/cases/{case_id}/documents"),
     ("GET", "/external/cases/{case_id}/documents/{document_id}/download"),
     ("POST", "/external/cases/{case_id}/requirements/{requirement_id}/document"),
+    ("GET", "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download"),
     ("GET", "/external/cases/{case_id}/steps/{progress_id}/comments"),
     ("POST", "/external/cases/{case_id}/steps/{progress_id}/comments"),
     ("PATCH", "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"),
@@ -90,7 +91,13 @@ PORTAL_CASE_ROUTES: list[tuple[str, str]] = [
 
 def _fill(template: str, case_id: uuid.UUID) -> str:
     path = template.replace("{case_id}", str(case_id))
-    for param in ("{document_id}", "{requirement_id}", "{progress_id}", "{comment_id}"):
+    for param in (
+        "{document_id}",
+        "{requirement_id}",
+        "{progress_id}",
+        "{comment_id}",
+        "{attachment_id}",
+    ):
         path = path.replace(param, str(uuid.uuid4()))
     return path
 
@@ -264,7 +271,15 @@ async def test_external_detail_leaks_no_internal_content(
         "comment_count",
         "counter",
         "requirements",
+        # Feature 2 (RGPD): present in the shape, but None/[] unless this
+        # provider is responsible for the step — see test_step_content_read.
+        "content_note",
+        "attachments",
     }
+    # On a step this provider is NOT responsible for, content is filtered
+    # out server-side (the rich case's step has an EXPAT/unset responsible).
+    assert step["content_note"] is None
+    assert step["attachments"] == []
     req = step["requirements"][0]
     # EXACT requirement keys — NO "value" (the client's passport number).
     assert set(req.keys()) == {

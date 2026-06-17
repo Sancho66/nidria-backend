@@ -4262,6 +4262,72 @@
         }
       }
     },
+    "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download": {
+      "get": {
+        "tags": [
+          "external-portal"
+        ],
+        "summary": "Download Step Attachment",
+        "operationId": "download_step_attachment_external_cases__case_id__steps__progress_id__attachments__attachment_id__download_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/external/cases/{case_id}/requirements/{requirement_id}/document": {
       "post": {
         "tags": [
@@ -5034,6 +5100,72 @@
                 "schema": {
                   "$ref": "#/components/schemas/ExpatCaseDetailResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download": {
+      "get": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "Download Step Attachment",
+        "operationId": "download_step_attachment_expat_cases__case_id__steps__progress_id__attachments__attachment_id__download_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -12303,6 +12435,24 @@
           },
           "counter": {
             "$ref": "#/components/schemas/DeadlineCounter"
+          },
+          "content_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/StepContentAttachment"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -12318,7 +12468,9 @@
           "requirements",
           "completion_mode",
           "comment_count",
-          "counter"
+          "counter",
+          "content_note",
+          "attachments"
         ],
         "title": "ExpatTimelineStepResponse"
       },
@@ -13004,6 +13156,24 @@
             },
             "type": "array",
             "title": "Requirements"
+          },
+          "content_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/StepContentAttachment"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -13019,7 +13189,9 @@
           "completion_mode",
           "comment_count",
           "counter",
-          "requirements"
+          "requirements",
+          "content_note",
+          "attachments"
         ],
         "title": "ExternalTimelineStepResponse"
       },
@@ -15662,6 +15834,31 @@
         ],
         "title": "StepCaseRequirementResponse"
       },
+      "StepContentAttachment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "position"
+        ],
+        "title": "StepContentAttachment",
+        "description": "A file the agency attached to a step (Feature 2), as projected onto\nthe CASE timeline for all three faces. Deliberately NO `step_id`: the\nfaces address the download via (case_id, progress_id, attachment_id) —\nthe template id never leaks to the expat/external timelines (same\n\"names/instance-ids, never template ids\" rule as blocked_by)."
+      },
       "StepOrderRequest": {
         "properties": {
           "step_ids": {
@@ -15847,6 +16044,24 @@
           },
           "counter": {
             "$ref": "#/components/schemas/DeadlineCounter"
+          },
+          "content_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/StepContentAttachment"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -15870,7 +16085,9 @@
           "all_requirements_met",
           "comment_count",
           "due_at",
-          "counter"
+          "counter",
+          "content_note",
+          "attachments"
         ],
         "title": "StepProgressResponse"
       },

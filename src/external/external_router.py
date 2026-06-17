@@ -15,6 +15,7 @@ from src.comments.comments_schema import (
 )
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.http import file_download_response
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.documents.documents_manager import DocumentsManager
@@ -43,6 +44,7 @@ _COMMENT = Permission.EXTERNAL_CASE_COMMENT
 _MANAGE = Permission.AGENT_MANAGE
 
 _C = "/external/cases/{case_id}"
+_ATT = "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download"
 _CMT = "/external/cases/{case_id}/steps/{progress_id}/comments"
 _CMT_ID = "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"
 _ASG = "/cases/{case_id}/external-assignments"
@@ -54,6 +56,9 @@ BINDINGS = [
     RouteBinding("GET", f"{_C}/documents", Audience.AGENT, _VIEW),
     RouteBinding("GET", f"{_C}/documents/{{document_id}}/download", Audience.AGENT, _VIEW),
     RouteBinding("POST", f"{_C}/requirements/{{requirement_id}}/document", Audience.AGENT, _UPLOAD),
+    # Feature 2 (RGPD): step attachment download — gated in the manager to
+    # steps this provider is responsible for (responsible_agent_id).
+    RouteBinding("GET", _ATT, Audience.AGENT, _VIEW),
     RouteBinding("GET", _CMT, Audience.AGENT, _VIEW),
     RouteBinding("POST", _CMT, Audience.AGENT, _COMMENT),
     RouteBinding("PATCH", _CMT_ID, Audience.AGENT, _COMMENT),
@@ -101,6 +106,20 @@ async def download_document(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
     )
+
+
+@external_router.get("/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download")
+async def download_step_attachment(
+    case_id: uuid.UUID,
+    progress_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> Response:
+    filename, content = await ExternalPortalManager(db).download_step_attachment(
+        agent, case_id, progress_id, attachment_id
+    )
+    return file_download_response(filename, content)
 
 
 @external_router.post(

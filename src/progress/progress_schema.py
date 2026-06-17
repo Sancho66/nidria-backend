@@ -60,6 +60,18 @@ class DeadlineCounter(BaseModel):
     source: str | None  # "deadline" | "estimated" | None
 
 
+class StepContentAttachment(BaseModel):
+    """A file the agency attached to a step (Feature 2), as projected onto
+    the CASE timeline for all three faces. Deliberately NO `step_id`: the
+    faces address the download via (case_id, progress_id, attachment_id) —
+    the template id never leaks to the expat/external timelines (same
+    "names/instance-ids, never template ids" rule as blocked_by)."""
+
+    id: uuid.UUID
+    filename: str
+    position: int
+
+
 class StepProgressResponse(BaseModel):
     id: uuid.UUID
     template_step_id: uuid.UUID
@@ -95,6 +107,12 @@ class StepProgressResponse(BaseModel):
     # Firm deadline (agency-set) + resolved days-remaining counter.
     due_at: datetime | None
     counter: DeadlineCounter
+    # Feature 2 — descending agency content on the TEMPLATE step, carried
+    # on the case instance so every face reads it uniformly. The FACES
+    # decide visibility: agency + expat always; external only on steps it
+    # is responsible for (filtered server-side in the external manager).
+    content_note: str | None
+    attachments: list[StepContentAttachment]
 
 
 class StepProgressUpdateRequest(BaseModel):

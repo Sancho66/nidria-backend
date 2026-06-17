@@ -16,7 +16,12 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
-from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.journey import (
+    JourneyStepAttachment,
+    JourneyTemplate,
+    JourneyTemplateStep,
+    StepPrerequisite,
+)
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
@@ -81,6 +86,36 @@ class ProgressRepository:
     ) -> CaseStepProgress | None:
         stmt = select(CaseStepProgress).where(
             CaseStepProgress.id == progress_id, CaseStepProgress.case_id == case_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def step_attachments_by_step_ids(
+        self, step_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[JourneyStepAttachment]]:
+        """Feature 2: agency attachments grouped by template_step_id, for
+        the case timeline projection. Batched (no N+1), same order as the
+        template detail (position, then created_at)."""
+        grouped: dict[uuid.UUID, list[JourneyStepAttachment]] = {}
+        if not step_ids:
+            return grouped
+        stmt = (
+            select(JourneyStepAttachment)
+            .where(JourneyStepAttachment.step_id.in_(step_ids))
+            .order_by(JourneyStepAttachment.position, JourneyStepAttachment.created_at)
+        )
+        for row in (await self.db.execute(stmt)).scalars():
+            grouped.setdefault(row.step_id, []).append(row)
+        return grouped
+
+    async def get_step_attachment_in_step(
+        self, step_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> JourneyStepAttachment | None:
+        """Single attachment scoped to its template step — the download
+        gate (Feature 2 V2): a wrong (step, attachment) pairing → None →
+        404, so a progress_id from another step can't reach this file."""
+        stmt = select(JourneyStepAttachment).where(
+            JourneyStepAttachment.id == attachment_id,
+            JourneyStepAttachment.step_id == step_id,
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

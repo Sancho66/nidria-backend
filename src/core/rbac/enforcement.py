@@ -70,6 +70,10 @@ EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/external/cases/{case_id}/documents"),
         ("GET", "/external/cases/{case_id}/documents/{document_id}/download"),
         ("POST", "/external/cases/{case_id}/requirements/{requirement_id}/document"),
+        (
+            "GET",
+            "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download",
+        ),
         ("GET", "/external/cases/{case_id}/steps/{progress_id}/comments"),
         ("POST", "/external/cases/{case_id}/steps/{progress_id}/comments"),
         ("PATCH", "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"),

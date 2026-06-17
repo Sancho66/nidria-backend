@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from fastapi import UploadFile
@@ -16,6 +17,7 @@ from src.cases.cases_schema import (
     CustomFieldDefinitionInline,
     PersonUpdateRequest,
 )
+from src.core import storage
 from src.core.enums import (
     ResponsibleType,
     StepRequirementKind,
@@ -38,6 +40,7 @@ from src.expat.expat_schema import (
     RequirementValueRequest,
 )
 from src.progress.progress_manager import ProgressManager
+from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepProgressResponse
 
 
@@ -126,6 +129,10 @@ class ExpatPortalManager:
                 completion_mode=step.completion_mode,
                 comment_count=step.comment_count,
                 counter=step.counter,  # resolved upstream (single source)
+                # Feature 2: the client always sees the step's content on
+                # their own dossier.
+                content_note=step.content_note,
+                attachments=step.attachments,
                 requirements=[
                     ExpatRequirementResponse(
                         id=req.id,
@@ -305,6 +312,32 @@ class ExpatPortalManager:
         await self.db.commit()
         await progress_mgr.send_pending(pending)
         return await self.get_my_case(expat, case_id)
+
+    async def download_step_attachment(
+        self,
+        expat: ExpatUser,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        attachment_id: uuid.UUID,
+    ) -> tuple[str, bytes]:
+        """Feature 2: the client downloads an agency attachment on its own
+        dossier — ALWAYS allowed (the expat sees all step content on their
+        case). Borders, all server-side: (1) the case is the client's own
+        (404); (2) the step is a step of THAT case (404); (3) the attachment
+        belongs to THAT step's template step (404) — so a progress_id from
+        another step can't serve a foreign file."""
+        case, _ = await self._get_owned_case(expat, case_id)  # border 1
+        progress_repo = ProgressRepository(self.db)
+        progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
+        if progress is None:
+            raise NotFoundError("Case step not found.")
+        attachment = await progress_repo.get_step_attachment_in_step(  # border 3
+            progress.template_step_id, attachment_id
+        )
+        if attachment is None:
+            raise NotFoundError("Attachment not found.")
+        content = await asyncio.to_thread(storage.download, attachment.storage_path)
+        return attachment.filename, content
 
     async def list_notifications(
         self, expat: ExpatUser, case_id: uuid.UUID

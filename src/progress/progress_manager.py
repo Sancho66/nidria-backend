@@ -39,6 +39,7 @@ from src.progress.progress_schema import (
     DeadlineCounter,
     RequirementStateResponse,
     ResponsibleUpdateRequest,
+    StepContentAttachment,
     StepProgressResponse,
     StepProgressUpdateRequest,
 )
@@ -269,6 +270,9 @@ class ProgressManager:
         # N+1). Provided state is DERIVED live for base/custom fields.
         concrete = await self.repo.list_case_requirements_for_progress_ids([row.id for row in rows])
         comment_counts = await self.repo.comment_counts([row.id for row in rows])
+        # Feature 2: agency attachments grouped by template_step_id, batched.
+        # content_note lives on the template step (already in steps_by_id).
+        attachments_by_step = await self.repo.step_attachments_by_step_ids(step_ids)
         # Batched MIN over activity_log — one query for the whole timeline.
         started_ats = await self.repo.started_ats([row.id for row in rows])
         now = datetime.now(UTC)
@@ -392,6 +396,11 @@ class ProgressManager:
                     counter=_deadline_counter(
                         row.due_at, step.estimated_days, started_ats.get(row.id), now
                     ),
+                    content_note=step.content_note,
+                    attachments=[
+                        StepContentAttachment(id=a.id, filename=a.filename, position=a.position)
+                        for a in attachments_by_step.get(row.template_step_id, [])
+                    ],
                 )
             )
         responses.sort(key=lambda r: r.position)
