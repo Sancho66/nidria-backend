@@ -74,6 +74,24 @@ class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=text("'agency_validation'"),
         nullable=False,
     )
+    # "Action validée par" (refonte) — the validator TYPE lives on the
+    # template (config), the precise person on the instance (case_step_
+    # progress), exactly like the responsible. Default 'agent' = the agency
+    # validates (= the former completion_mode default 'agency_validation').
+    # `completion_mode` is kept in sync during the transition (rollback-safe).
+    default_validated_by_type: Mapped[str] = mapped_column(
+        String(20),
+        default="agent",
+        server_default=text("'agent'"),
+        nullable=False,
+    )
+    # Optional NAMED default validator: an internal member OR a durable
+    # external provider (resolved is_external → type 'external' on the
+    # instance), copied to the progress row at assignment. NULL = "the
+    # agency in general" (any member validates) for type 'agent'.
+    default_validated_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent.id", ondelete="SET NULL")
+    )
     # Feature 2 — DESCENDING content the agency provides on the step
     # (a note/instruction), distinct from step requirements (which ASK the
     # client). Lives on the TEMPLATE → the same for every case of this

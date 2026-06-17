@@ -82,6 +82,7 @@ PORTAL_CASE_ROUTES: list[tuple[str, str]] = [
     ("GET", "/external/cases/{case_id}/documents/{document_id}/download"),
     ("POST", "/external/cases/{case_id}/requirements/{requirement_id}/document"),
     ("GET", "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download"),
+    ("POST", "/external/cases/{case_id}/steps/{progress_id}/validate"),
     ("GET", "/external/cases/{case_id}/steps/{progress_id}/comments"),
     ("POST", "/external/cases/{case_id}/steps/{progress_id}/comments"),
     ("PATCH", "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"),
@@ -275,6 +276,9 @@ async def test_external_detail_leaks_no_internal_content(
         # provider is responsible for the step — see test_step_content_read.
         "content_note",
         "attachments",
+        # "Action validée par": true only if this provider is the step's
+        # designated validator (false here — see test_step_validator).
+        "can_validate",
     }
     # On a step this provider is NOT responsible for, content is filtered
     # out server-side (the rich case's step has an EXPAT/unset responsible).

@@ -42,6 +42,12 @@ BINDINGS = [
         "/expat/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download",
         Audience.EXPAT,
     ),
+    # "Action validée par" = client: the principal validates a step.
+    RouteBinding(
+        "POST",
+        "/expat/cases/{case_id}/steps/{progress_id}/validate",
+        Audience.EXPAT,
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -99,6 +105,15 @@ async def fulfill_requirement_document(
     file: Annotated[UploadFile, File()],
 ) -> ExpatCaseDetailResponse:
     return await ExpatPortalManager(db).fulfill_document(expat, case_id, requirement_id, file)
+
+
+@router.post(
+    "/cases/{case_id}/steps/{progress_id}/validate", response_model=ExpatCaseDetailResponse
+)
+async def validate_step(
+    case_id: uuid.UUID, progress_id: uuid.UUID, expat: ExpatDep, db: DbDep
+) -> ExpatCaseDetailResponse:
+    return await ExpatPortalManager(db).validate_step(expat, case_id, progress_id)
 
 
 @router.get("/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download")

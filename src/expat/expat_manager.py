@@ -19,9 +19,11 @@ from src.cases.cases_schema import (
 )
 from src.core import storage
 from src.core.enums import (
+    ActorType,
     ResponsibleType,
     StepRequirementKind,
     StepStatus,
+    StepValidatorType,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
@@ -133,6 +135,12 @@ class ExpatPortalManager:
                 # their own dossier.
                 content_note=step.content_note,
                 attachments=step.attachments,
+                # "Action validée par": the client can validate when it IS
+                # the step's validator and the step is active.
+                can_validate=(
+                    step.validated_by_type == StepValidatorType.EXPAT.value
+                    and step.status == StepStatus.IN_PROGRESS.value
+                ),
                 requirements=[
                     ExpatRequirementResponse(
                         id=req.id,
@@ -338,6 +346,33 @@ class ExpatPortalManager:
             raise NotFoundError("Attachment not found.")
         content = await asyncio.to_thread(storage.download, attachment.storage_path)
         return attachment.filename, content
+
+    async def validate_step(
+        self, expat: ExpatUser, case_id: uuid.UUID, progress_id: uuid.UUID
+    ) -> ExpatCaseDetailResponse:
+        """ "Action validée par" = client: the principal validates a step of
+        ITS OWN dossier. Server-side borders, none trusting the client:
+        (1) the case is the client's own (404); (2) the step is a step of
+        THAT case (404); (3) the step IS validated by the client
+        (validated_by_type='expat'), else 409 — the client cannot close a
+        step the agency/provider validates. The close itself (lock, DONE,
+        audit as actor EXPAT) is the shared progress core."""
+        case, _ = await self._get_owned_case(expat, case_id)  # border 1
+        progress_repo = ProgressRepository(self.db)
+        progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
+        if progress is None:
+            raise NotFoundError("Case step not found.")
+        if progress.validated_by_type != StepValidatorType.EXPAT.value:  # border 3
+            raise ConflictError("This step is not validated by the client.")
+        await ProgressManager(self.db).close_step_by_validation(
+            case,
+            progress,
+            actor_type=ActorType.EXPAT,
+            actor_id=expat.id,
+            completed_by_agent_id=None,  # the client is not an agent
+        )
+        await self.db.commit()
+        return await self.get_my_case(expat, case_id)
 
     async def list_notifications(
         self, expat: ExpatUser, case_id: uuid.UUID

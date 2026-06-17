@@ -7,6 +7,7 @@ from src.core.enums import (
     ResponsibleType,
     StepRequirementKind,
     StepRequirementScope,
+    StepValidatorType,
 )
 
 
@@ -28,7 +29,14 @@ class TemplateStepCreateRequest(BaseModel):
     # Wave C: a named default responsible — a precise INTERNAL agent only
     # (validated in the manager; externals exist only at the case level).
     default_responsible_agent_id: uuid.UUID | None = None
-    completion_mode: CompletionMode = CompletionMode.AGENCY_VALIDATION
+    # "Action validée par" (refonte). `validated_by_type` supersedes
+    # `completion_mode`; both are accepted during the transition and the
+    # manager keeps them coherent (none⇄auto, else⇄agency_validation).
+    # `default_validated_by_agent_id` = the named validator (internal member
+    # or durable provider), like default_responsible_agent_id.
+    completion_mode: CompletionMode | None = None
+    validated_by_type: StepValidatorType | None = None
+    default_validated_by_agent_id: uuid.UUID | None = None
 
 
 class TemplateStepUpdateRequest(BaseModel):
@@ -37,6 +45,8 @@ class TemplateStepUpdateRequest(BaseModel):
     default_responsible_type: ResponsibleType | None = None
     default_responsible_agent_id: uuid.UUID | None = None
     completion_mode: CompletionMode | None = None
+    validated_by_type: StepValidatorType | None = None
+    default_validated_by_agent_id: uuid.UUID | None = None
     # Feature 2 — descending agency note (null clears). Partial PATCH:
     # only applied when the key is present.
     content_note: str | None = Field(default=None, max_length=5000)
@@ -284,7 +294,9 @@ class TemplateStepResponse(BaseModel):
     estimated_days: int | None
     default_responsible_type: str | None
     default_responsible_agent_id: uuid.UUID | None
-    completion_mode: str
+    completion_mode: str  # kept during the transition (rollback fallback)
+    default_validated_by_type: str
+    default_validated_by_agent_id: uuid.UUID | None
     prerequisite_step_ids: list[uuid.UUID]
     # Feature 2 — descending agency content on the step (template-level).
     content_note: str | None

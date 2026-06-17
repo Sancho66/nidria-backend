@@ -4262,6 +4262,64 @@
         }
       }
     },
+    "/external/cases/{case_id}/steps/{progress_id}/validate": {
+      "post": {
+        "tags": [
+          "external-portal"
+        ],
+        "summary": "Validate Step",
+        "operationId": "validate_step_external_cases__case_id__steps__progress_id__validate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalCaseDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download": {
       "get": {
         "tags": [
@@ -5092,6 +5150,64 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpatCaseDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/steps/{progress_id}/validate": {
+      "post": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "Validate Step",
+        "operationId": "validate_step_expat_cases__case_id__steps__progress_id__validate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8198,6 +8314,74 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ResponsibleUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepProgressResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/steps/{step_progress_id}/validator": {
+      "put": {
+        "tags": [
+          "progress"
+        ],
+        "summary": "Set Validator",
+        "operationId": "set_validator_cases__case_id__steps__step_progress_id__validator_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "step_progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Progress Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidatorUpdateRequest"
               }
             }
           }
@@ -11437,7 +11621,7 @@
           "agency_validation"
         ],
         "title": "CompletionMode",
-        "description": "How a journey step closes. `agency_validation` (default) = the\ncurrent flow: the agency closes the step. `auto` = capability to\nself-complete when all concrete requirements are met — the active\ntrigger lands in a later wave; wave 1 only exposes the state."
+        "description": "How a journey step closes. `agency_validation` (default) = the\ncurrent flow: the agency closes the step. `auto` = capability to\nself-complete when all concrete requirements are met — the active\ntrigger lands in a later wave; wave 1 only exposes the state.\n\nSUPERSEDED by `StepValidatorType` (the \"Action validée par\" refonte):\n`auto` ⇄ `none`, `agency_validation` ⇄ `agent`. KEPT during the\ntransition as a rollback-safe fallback (the migration backfills the\nvalidator FROM it, never the reverse-loses); a later wave drops it."
       },
       "CustomFieldDefinitionCreate": {
         "properties": {
@@ -12453,6 +12637,10 @@
             },
             "type": "array",
             "title": "Attachments"
+          },
+          "can_validate": {
+            "type": "boolean",
+            "title": "Can Validate"
           }
         },
         "type": "object",
@@ -12470,7 +12658,8 @@
           "comment_count",
           "counter",
           "content_note",
-          "attachments"
+          "attachments",
+          "can_validate"
         ],
         "title": "ExpatTimelineStepResponse"
       },
@@ -13174,6 +13363,10 @@
             },
             "type": "array",
             "title": "Attachments"
+          },
+          "can_validate": {
+            "type": "boolean",
+            "title": "Can Validate"
           }
         },
         "type": "object",
@@ -13191,7 +13384,8 @@
           "counter",
           "requirements",
           "content_note",
-          "attachments"
+          "attachments",
+          "can_validate"
         ],
         "title": "ExternalTimelineStepResponse"
       },
@@ -16015,6 +16209,22 @@
             "type": "string",
             "title": "Completion Mode"
           },
+          "validated_by_type": {
+            "type": "string",
+            "title": "Validated By Type"
+          },
+          "validated_by_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validated By Agent Id"
+          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/RequirementStateResponse"
@@ -16081,6 +16291,8 @@
           "completed_by_agent_id",
           "blocked_by",
           "completion_mode",
+          "validated_by_type",
+          "validated_by_agent_id",
           "requirements",
           "all_requirements_met",
           "comment_count",
@@ -16232,6 +16444,17 @@
           "done"
         ],
         "title": "StepStatus"
+      },
+      "StepValidatorType": {
+        "type": "string",
+        "enum": [
+          "none",
+          "expat",
+          "agent",
+          "external"
+        ],
+        "title": "StepValidatorType",
+        "description": "\"Action validée par\" — who closes a journey step (symmetric to the\nresponsible: a TYPE at the template, the precise person at the dossier).\nReuses the responsible actor strings so both mechanisms read alike, plus\n`none` = \"validated by no one\" = the former `auto` self-completion.\n\n- `none`     → self-completes when all requirements are met (ex-`auto`).\n- `expat`    → the case principal (client) clicks validate.\n- `agent`    → the agency closes (a NAMED internal member, or — agent_id\n               NULL — any member; ex-`agency_validation`, the default).\n- `external` → a DESIGNATED provider (an is_external Agent, stored in\n               `validated_by_agent_id` like the content-wave responsible —\n               a validator must be able to log in and click, so it is an\n               Agent, never a no-login external_contact)."
       },
       "TemplateCaseFieldResponse": {
         "properties": {
@@ -16500,8 +16723,36 @@
             "title": "Default Responsible Agent Id"
           },
           "completion_mode": {
-            "$ref": "#/components/schemas/CompletionMode",
-            "default": "agency_validation"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompletionMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validated_by_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepValidatorType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_validated_by_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Validated By Agent Id"
           }
         },
         "type": "object",
@@ -16564,6 +16815,22 @@
             "type": "string",
             "title": "Completion Mode"
           },
+          "default_validated_by_type": {
+            "type": "string",
+            "title": "Default Validated By Type"
+          },
+          "default_validated_by_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Validated By Agent Id"
+          },
           "prerequisite_step_ids": {
             "items": {
               "type": "string",
@@ -16600,6 +16867,8 @@
           "default_responsible_type",
           "default_responsible_agent_id",
           "completion_mode",
+          "default_validated_by_type",
+          "default_validated_by_agent_id",
           "prerequisite_step_ids",
           "content_note",
           "attachments"
@@ -16664,6 +16933,28 @@
                 "type": "null"
               }
             ]
+          },
+          "validated_by_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepValidatorType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_validated_by_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Validated By Agent Id"
           },
           "content_note": {
             "anyOf": [
@@ -16768,6 +17059,31 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValidatorUpdateRequest": {
+        "properties": {
+          "validated_by_type": {
+            "$ref": "#/components/schemas/StepValidatorType"
+          },
+          "validated_by_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validated By Agent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "validated_by_type"
+        ],
+        "title": "ValidatorUpdateRequest",
+        "description": "\"Action validée par\" — designate the validator on the DOSSIER\n(gate case.edit), symmetric to the responsible assignment. `none`/`expat`\ncarry no agent; `agent` takes an optional INTERNAL member (NULL = any\nmember); `external` REQUIRES a provider (is_external Agent) assigned to\nthe case — enforced in the Manager."
       }
     },
     "securitySchemes": {

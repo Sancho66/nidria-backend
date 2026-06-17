@@ -111,6 +111,10 @@ class ExpatTimelineStepResponse(BaseModel):
     # dedicated gated endpoint, bytes never inlined).
     content_note: str | None
     attachments: list[StepContentAttachment]
+    # "Action validée par" — true when the client is the step's validator
+    # and the step is active → the front shows the "validate" button. The
+    # server still re-checks on the validate call (never trusts this flag).
+    can_validate: bool
 
 
 class RequirementValueRequest(BaseModel):

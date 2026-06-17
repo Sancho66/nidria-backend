@@ -75,6 +75,10 @@ class ExternalTimelineStepResponse(BaseModel):
     # wire), not masked by the front. See the evasion tests.
     content_note: str | None
     attachments: list[StepContentAttachment]
+    # "Action validée par" — true only when THIS provider is the step's
+    # designated validator and the step is active (RGPD: never reveals
+    # another step's validator). Re-checked server-side on the validate call.
+    can_validate: bool
 
 
 class ExternalCaseSummaryResponse(BaseModel):

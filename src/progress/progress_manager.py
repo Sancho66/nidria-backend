@@ -24,12 +24,12 @@ from src.core.email_templates import (
 from src.core.enums import (
     ActorType,
     CasePersonKind,
-    CompletionMode,
     RequirementStatus,
     ResponsibleType,
     StepRequirementKind,
     StepRequirementScope,
     StepStatus,
+    StepValidatorType,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
@@ -42,6 +42,7 @@ from src.progress.progress_schema import (
     StepContentAttachment,
     StepProgressResponse,
     StepProgressUpdateRequest,
+    ValidatorUpdateRequest,
 )
 from src.progress.requirements_eval import (
     case_current_value,
@@ -121,6 +122,26 @@ def _resolve_responsible(
     return None, False
 
 
+def _initial_validator(step: JourneyTemplateStep) -> tuple[str, uuid.UUID | None]:
+    """Default→instance copy of the validator at journey assignment, FROZEN
+    on the dossier (D1). Returns (validated_by_type, validated_by_agent_id):
+    - none / expat → the type, no agent;
+    - external → keep ONLY if a provider is designated (the CHECK requires
+      agent_id NOT NULL); otherwise fall back to 'agent'/NULL (= the agency
+      validates), never an invalid type=external-without-agent row;
+    - agent → the named member if any, else NULL (= any member).
+    The agency assigns a precise validator per case afterwards if needed."""
+    vt = step.default_validated_by_type
+    if vt in (StepValidatorType.NONE.value, StepValidatorType.EXPAT.value):
+        return vt, None
+    if vt == StepValidatorType.EXTERNAL.value:
+        if step.default_validated_by_agent_id is not None:
+            return StepValidatorType.EXTERNAL.value, step.default_validated_by_agent_id
+        return StepValidatorType.AGENT.value, None
+    # 'agent' (and any unexpected value) → agency, optional named member.
+    return StepValidatorType.AGENT.value, step.default_validated_by_agent_id
+
+
 def _initial_responsible(step: JourneyTemplateStep) -> tuple[str | None, uuid.UUID | None]:
     """Default→instance copy at journey assignment, returning
     (responsible_type, responsible_agent_id):
@@ -196,15 +217,22 @@ class ProgressManager:
         )
         for step in steps:
             r_type, r_agent_id = _initial_responsible(step)
+            v_type, v_agent_id = _initial_validator(step)
             self.repo.add_progress(
                 case_id=case.id,
                 template_step_id=step.id,
                 status=StepStatus.TODO.value,
                 responsible_type=r_type,
                 responsible_agent_id=r_agent_id,
+                validated_by_type=v_type,
+                validated_by_agent_id=v_agent_id,
             )
             if r_agent_id is not None and (a := default_agents.get(r_agent_id)) and a.is_external:
                 await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
+            # A designated external validator (type=external) must hold the
+            # dossier-access invariant too.
+            if v_type == StepValidatorType.EXTERNAL.value and v_agent_id is not None:
+                await self.repo.ensure_external_assignment(case.id, v_agent_id, agent.id)
         self._log(
             case.id,
             agent,
@@ -237,6 +265,10 @@ class ProgressManager:
             default_is_external = bool(
                 (a := resolved.get(r_agent_id)) is not None and a.is_external
             )
+        v_type, v_agent_id = _initial_validator(step)
+        validator_is_external = (
+            v_type == StepValidatorType.EXTERNAL.value and v_agent_id is not None
+        )
         for case in cases:
             self.repo.add_progress(
                 case_id=case.id,
@@ -244,9 +276,13 @@ class ProgressManager:
                 status=StepStatus.TODO.value,
                 responsible_type=r_type,
                 responsible_agent_id=r_agent_id,
+                validated_by_type=v_type,
+                validated_by_agent_id=v_agent_id,
             )
             if default_is_external and r_agent_id is not None:
                 await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
+            if validator_is_external and v_agent_id is not None:
+                await self.repo.ensure_external_assignment(case.id, v_agent_id, agent.id)
             self._log(case.id, agent, "step.added", {"template_step_id": str(step.id)})
         return len(cases)
 
@@ -389,6 +425,8 @@ class ProgressManager:
                     completed_by_agent_id=row.completed_by_agent_id,
                     blocked_by=blocked_by if row.status != StepStatus.DONE.value else [],
                     completion_mode=step.completion_mode,
+                    validated_by_type=row.validated_by_type,
+                    validated_by_agent_id=row.validated_by_agent_id,
                     requirements=reqs_by_progress.get(row.id, []),
                     all_requirements_met=met_by_progress.get(row.id, True),
                     comment_count=comment_counts.get(row.id, 0),
@@ -479,6 +517,111 @@ class ProgressManager:
         await self.db.commit()
         timeline = await self.timeline_for_case(case)
         return next(item for item in timeline if item.id == row.id)
+
+    async def set_validator(
+        self,
+        agent: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        payload: ValidatorUpdateRequest,
+    ) -> StepProgressResponse:
+        """ "Action validée par" — designate the validator on the DOSSIER
+        (gate case.edit), symmetric to set_responsible. This is the "precise
+        person at the dossier" half of the model."""
+        case = await self._get_case(agent, case_id)
+        row = await self.repo.get_progress_in_case(case.id, progress_id)
+        if row is None:
+            raise NotFoundError("Case step not found.")
+        await self._apply_validator_change(agent, case, row, payload)
+        await self.db.commit()
+        timeline = await self.timeline_for_case(case)
+        return next(item for item in timeline if item.id == row.id)
+
+    async def _apply_validator_change(
+        self,
+        agent: Agent,
+        case: ClientCase,
+        row: CaseStepProgress,
+        payload: ValidatorUpdateRequest,
+    ) -> None:
+        new_type = payload.validated_by_type
+        if new_type in (StepValidatorType.NONE, StepValidatorType.EXPAT):
+            new_values: tuple[str, uuid.UUID | None] = (new_type.value, None)
+        elif new_type is StepValidatorType.AGENT:
+            # Designated member is OPTIONAL (NULL = the agency in general)
+            # and must be INTERNAL — an external is named via type 'external'.
+            agent_id = payload.validated_by_agent_id
+            if agent_id is not None:
+                target = await self.repo.get_any_agent_in_agency(agent.agency_id, agent_id)
+                if target is None or target.is_external:
+                    raise ValidationError("Agency validator must be an internal member.")
+            new_values = (new_type.value, agent_id)
+        else:  # EXTERNAL — a designated provider, assigned to the case
+            agent_id = payload.validated_by_agent_id
+            if agent_id is None:
+                raise ValidationError("validated_by_agent_id is required for type 'external'.")
+            target = await self.repo.get_any_agent_in_agency(agent.agency_id, agent_id)
+            if target is None or not target.is_external:
+                raise ValidationError("External validator must be a provider of this agency.")
+            if not await self.repo.assignment_exists(case.id, agent_id):
+                raise ValidationError(
+                    "Assign this provider to the case before naming them validator."
+                )
+            new_values = (new_type.value, agent_id)
+
+        old_values = (row.validated_by_type, row.validated_by_agent_id)
+        if new_values == old_values:
+            return
+        row.validated_by_type, row.validated_by_agent_id = new_values
+        self._log(
+            case.id,
+            agent,
+            "step.validator_changed",
+            {
+                "step_progress_id": str(row.id),
+                "old": {
+                    "validated_by_type": old_values[0],
+                    "validated_by_agent_id": str(old_values[1]) if old_values[1] else None,
+                },
+                "new": {
+                    "validated_by_type": new_values[0],
+                    "validated_by_agent_id": str(new_values[1]) if new_values[1] else None,
+                },
+            },
+        )
+
+    async def close_step_by_validation(
+        self,
+        case: ClientCase,
+        row: CaseStepProgress,
+        *,
+        actor_type: ActorType,
+        actor_id: uuid.UUID | None,
+        completed_by_agent_id: uuid.UUID | None,
+    ) -> None:
+        """Close an ACTIVE step because its designated validator (client or
+        provider) clicked validate. Shared core for the expat/external
+        validate endpoints. Mirrors the agent close: prerequisite lock
+        re-checked, status→DONE, logged with the real actor. The CALLER has
+        already verified the actor IS the legitimate validator (RGPD) and
+        commits. No requirement-met precondition — the validator decides
+        (same prerogative as the agency's manual close)."""
+        if row.status != StepStatus.IN_PROGRESS.value:
+            raise ConflictError("Only an active step can be validated.")
+        unfinished = await self._unfinished_prerequisites(row)
+        if unfinished:
+            names = ", ".join(step.name for step in unfinished)
+            raise ConflictError(f"Step is blocked by unfinished prerequisite step(s): {names}.")
+        row.status = StepStatus.DONE.value
+        row.completed_at = datetime.now(UTC)
+        row.completed_by_agent_id = completed_by_agent_id
+        self.activity.log_action(
+            case_id=case.id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action_type="step.completed",
+            details={"step_progress_id": str(row.id), "via": "validation"},
+        )
 
     async def _apply_responsible_change(
         self,
@@ -736,9 +879,12 @@ class ProgressManager:
             step = steps.get(row.template_step_id)
             if step is None:
                 continue
-            if step.completion_mode == CompletionMode.AUTO.value:
-                # Auto-complete — idempotent: only if not already DONE,
-                # and the prerequisite lock is respected.
+            # "Action validée par" drives the close (reads the FROZEN
+            # instance validator, D1 — not the template, so a later template
+            # edit never retro-changes a live dossier).
+            if row.validated_by_type == StepValidatorType.NONE.value:
+                # 'none' (= ex completion_mode 'auto'): self-completes —
+                # idempotent, prerequisite lock respected. UNCHANGED behaviour.
                 unfinished = await self._unfinished_prerequisites(row)
                 if not unfinished:
                     row.status = StepStatus.DONE.value
@@ -751,8 +897,15 @@ class ProgressManager:
                         action_type="step.completed",
                         details={"step_progress_id": str(row.id), "auto": True},
                     )
-            elif not before.get(row.id, False):
-                # agency_validation, transition pending→met: notify owner.
+            elif row.validated_by_type == StepValidatorType.AGENT.value and not before.get(
+                row.id, False
+            ):
+                # 'agent' (= ex 'agency_validation'): on pending→met, notify
+                # the owner; the agency closes via the existing PATCH done.
+                # UNCHANGED behaviour. expat/external NEVER auto-complete and
+                # get no owner mail here — their actor closes via the
+                # dedicated validate endpoint (the mail to them is a later
+                # front wave).
                 mail = await self._ready_to_validate_mail(case, step)
                 if notifications_on and mail is not None:
                     pending.append(mail)

@@ -51,6 +51,8 @@ STEP_KEYS = {
     # Feature 2: descending agency content (always visible to the client).
     "content_note",
     "attachments",
+    # "Action validée par": true when the client may validate this step.
+    "can_validate",
 }
 REQUIREMENT_KEYS = {
     "id",

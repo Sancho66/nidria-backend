@@ -41,10 +41,12 @@ agency_router = APIRouter(prefix="/cases", tags=["external-assignments"])
 _VIEW = Permission.EXTERNAL_CASE_VIEW
 _UPLOAD = Permission.EXTERNAL_DOCUMENT_UPLOAD
 _COMMENT = Permission.EXTERNAL_CASE_COMMENT
+_VALIDATE = Permission.EXTERNAL_STEP_VALIDATE
 _MANAGE = Permission.AGENT_MANAGE
 
 _C = "/external/cases/{case_id}"
 _ATT = "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download"
+_VALIDATE_ROUTE = "/external/cases/{case_id}/steps/{progress_id}/validate"
 _CMT = "/external/cases/{case_id}/steps/{progress_id}/comments"
 _CMT_ID = "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"
 _ASG = "/cases/{case_id}/external-assignments"
@@ -59,6 +61,9 @@ BINDINGS = [
     # Feature 2 (RGPD): step attachment download — gated in the manager to
     # steps this provider is responsible for (responsible_agent_id).
     RouteBinding("GET", _ATT, Audience.AGENT, _VIEW),
+    # "Action validée par" = provider: gated in the manager to the step's
+    # designated validator (validated_by_agent_id == external.id).
+    RouteBinding("POST", _VALIDATE_ROUTE, Audience.AGENT, _VALIDATE),
     RouteBinding("GET", _CMT, Audience.AGENT, _VIEW),
     RouteBinding("POST", _CMT, Audience.AGENT, _COMMENT),
     RouteBinding("PATCH", _CMT_ID, Audience.AGENT, _COMMENT),
@@ -106,6 +111,15 @@ async def download_document(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
     )
+
+
+@external_router.post(
+    "/{case_id}/steps/{progress_id}/validate", response_model=ExternalCaseDetailResponse
+)
+async def validate_step(
+    case_id: uuid.UUID, progress_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> ExternalCaseDetailResponse:
+    return await ExternalPortalManager(db).validate_step(agent, case_id, progress_id)
 
 
 @external_router.get("/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download")

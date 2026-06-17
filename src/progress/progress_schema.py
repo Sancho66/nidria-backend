@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from src.core.enums import ResponsibleType, StepStatus
+from src.core.enums import ResponsibleType, StepStatus, StepValidatorType
 
 
 class AssignJourneyRequest(BaseModel):
@@ -98,7 +98,13 @@ class StepProgressResponse(BaseModel):
     # `requirements` are the concrete materialized requirements (empty
     # until the step has been activated); `all_requirements_met` is the
     # aggregate (vacuously true when there are none).
-    completion_mode: str
+    completion_mode: str  # kept during the transition (rollback fallback)
+    # "Action validée par" — the frozen instance validator (D1). Drives the
+    # completion engine (none ⇒ self-completes; else awaits the actor's
+    # validate action). agent_id = the designated member (type agent) or the
+    # provider (type external); NULL for type agent = any member.
+    validated_by_type: str
+    validated_by_agent_id: uuid.UUID | None
     requirements: list[RequirementStateResponse]
     all_requirements_met: bool
     # VAGUE 5: non-deleted comment count for a "X messages" badge without
@@ -135,3 +141,14 @@ class ResponsibleUpdateRequest(BaseModel):
     responsible_type: ResponsibleType | None = None
     responsible_agent_id: uuid.UUID | None = None
     responsible_external_id: uuid.UUID | None = None
+
+
+class ValidatorUpdateRequest(BaseModel):
+    """ "Action validée par" — designate the validator on the DOSSIER
+    (gate case.edit), symmetric to the responsible assignment. `none`/`expat`
+    carry no agent; `agent` takes an optional INTERNAL member (NULL = any
+    member); `external` REQUIRES a provider (is_external Agent) assigned to
+    the case — enforced in the Manager."""
+
+    validated_by_type: StepValidatorType
+    validated_by_agent_id: uuid.UUID | None = None

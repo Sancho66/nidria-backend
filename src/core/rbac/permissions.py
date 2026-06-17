@@ -41,6 +41,7 @@ class Permission(StrEnum):
     EXTERNAL_CASE_VIEW = "external.case.view"
     EXTERNAL_DOCUMENT_UPLOAD = "external.document.upload"
     EXTERNAL_CASE_COMMENT = "external.case.comment"
+    EXTERNAL_STEP_VALIDATE = "external.step.validate"
 
 
 def _label(key: str) -> str:

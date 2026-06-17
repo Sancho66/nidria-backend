@@ -15,6 +15,7 @@ from src.progress.progress_schema import (
     ResponsibleUpdateRequest,
     StepProgressResponse,
     StepProgressUpdateRequest,
+    ValidatorUpdateRequest,
 )
 
 router = APIRouter(prefix="/cases", tags=["progress"])
@@ -36,6 +37,14 @@ BINDINGS = [
     RouteBinding(
         "PUT",
         "/cases/{case_id}/steps/{step_progress_id}/responsible",
+        Audience.AGENT,
+        Permission.CASE_EDIT,
+    ),
+    # "Action validée par" — designate the validator on the dossier, same
+    # stakes as the responsible assignment (case.edit).
+    RouteBinding(
+        "PUT",
+        "/cases/{case_id}/steps/{step_progress_id}/validator",
         Audience.AGENT,
         Permission.CASE_EDIT,
     ),
@@ -79,3 +88,14 @@ async def set_responsible(
     db: DbDep,
 ) -> StepProgressResponse:
     return await ProgressManager(db).set_responsible(agent, case_id, step_progress_id, body)
+
+
+@router.put("/{case_id}/steps/{step_progress_id}/validator", response_model=StepProgressResponse)
+async def set_validator(
+    case_id: uuid.UUID,
+    step_progress_id: uuid.UUID,
+    body: ValidatorUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> StepProgressResponse:
+    return await ProgressManager(db).set_validator(agent, case_id, step_progress_id, body)

@@ -160,10 +160,36 @@ class CompletionMode(StrEnum):
     """How a journey step closes. `agency_validation` (default) = the
     current flow: the agency closes the step. `auto` = capability to
     self-complete when all concrete requirements are met — the active
-    trigger lands in a later wave; wave 1 only exposes the state."""
+    trigger lands in a later wave; wave 1 only exposes the state.
+
+    SUPERSEDED by `StepValidatorType` (the "Action validée par" refonte):
+    `auto` ⇄ `none`, `agency_validation` ⇄ `agent`. KEPT during the
+    transition as a rollback-safe fallback (the migration backfills the
+    validator FROM it, never the reverse-loses); a later wave drops it."""
 
     AUTO = "auto"
     AGENCY_VALIDATION = "agency_validation"
+
+
+class StepValidatorType(StrEnum):
+    """ "Action validée par" — who closes a journey step (symmetric to the
+    responsible: a TYPE at the template, the precise person at the dossier).
+    Reuses the responsible actor strings so both mechanisms read alike, plus
+    `none` = "validated by no one" = the former `auto` self-completion.
+
+    - `none`     → self-completes when all requirements are met (ex-`auto`).
+    - `expat`    → the case principal (client) clicks validate.
+    - `agent`    → the agency closes (a NAMED internal member, or — agent_id
+                   NULL — any member; ex-`agency_validation`, the default).
+    - `external` → a DESIGNATED provider (an is_external Agent, stored in
+                   `validated_by_agent_id` like the content-wave responsible —
+                   a validator must be able to log in and click, so it is an
+                   Agent, never a no-login external_contact)."""
+
+    NONE = "none"
+    EXPAT = "expat"
+    AGENT = "agent"
+    EXTERNAL = "external"
 
 
 class StepRequirementKind(StrEnum):

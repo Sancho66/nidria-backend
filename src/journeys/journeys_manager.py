@@ -17,7 +17,7 @@ from shared.models.step_requirement import StepRequirement
 from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
 from src.core import storage
 from src.core.config import get_settings
-from src.core.enums import StepRequirementKind
+from src.core.enums import CompletionMode, StepRequirementKind, StepValidatorType
 from src.core.exceptions import (
     ConflictError,
     NotFoundError,
@@ -79,6 +79,35 @@ def _has_cycle(graph: dict[uuid.UUID, set[uuid.UUID]]) -> bool:
     return False
 
 
+def _reconcile_validator(
+    validated_by_type: StepValidatorType | None,
+    completion_mode: CompletionMode | None,
+) -> tuple[str, str]:
+    """Keep "Action validée par" (new) and completion_mode (legacy, kept as
+    a rollback fallback) coherent on every write. validated_by_type wins
+    when present (only IT can express expat/external); else derive it from
+    completion_mode; else default to agency validation. Mapping: none⇄auto,
+    {expat,agent,external}⇄agency_validation. Returns (validated_by_type,
+    completion_mode) as stored strings."""
+    if validated_by_type is not None:
+        vt = validated_by_type.value
+        cm = (
+            CompletionMode.AUTO.value
+            if vt == StepValidatorType.NONE.value
+            else CompletionMode.AGENCY_VALIDATION.value
+        )
+        return vt, cm
+    if completion_mode is not None:
+        cm = completion_mode.value
+        vt = (
+            StepValidatorType.NONE.value
+            if cm == CompletionMode.AUTO.value
+            else StepValidatorType.AGENT.value
+        )
+        return vt, cm
+    return StepValidatorType.AGENT.value, CompletionMode.AGENCY_VALIDATION.value
+
+
 class JourneysManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -137,6 +166,8 @@ class JourneysManager:
                     default_responsible_type=step.default_responsible_type,
                     default_responsible_agent_id=step.default_responsible_agent_id,
                     completion_mode=step.completion_mode,
+                    default_validated_by_type=step.default_validated_by_type,
+                    default_validated_by_agent_id=step.default_validated_by_agent_id,
                     prerequisite_step_ids=by_step.get(step.id, []),
                     content_note=step.content_note,
                     attachments=attach_by_step.get(step.id, []),
@@ -227,6 +258,12 @@ class JourneysManager:
     ) -> JourneyTemplateStep:
         await self._get_template(agent, template_id)
         await self._validate_default_responsible_agent(agent, payload.default_responsible_agent_id)
+        # The validator default agent is validated like the responsible one
+        # (internal member or durable external partner of the agency).
+        await self._validate_default_responsible_agent(agent, payload.default_validated_by_agent_id)
+        validated_by_type, completion_mode = _reconcile_validator(
+            payload.validated_by_type, payload.completion_mode
+        )
         max_position = await self.repo.max_position(template_id)
         step = self.repo.add_step(
             template_id=template_id,
@@ -235,7 +272,9 @@ class JourneysManager:
             estimated_days=payload.estimated_days,
             default_responsible_type=payload.default_responsible_type,
             default_responsible_agent_id=payload.default_responsible_agent_id,
-            completion_mode=payload.completion_mode.value,
+            completion_mode=completion_mode,
+            default_validated_by_type=validated_by_type,
+            default_validated_by_agent_id=payload.default_validated_by_agent_id,
         )
         await self.db.flush()
         # Option-A backfill: on an ASSIGNED template, the new step is
@@ -268,6 +307,21 @@ class JourneysManager:
             await self._validate_default_responsible_agent(
                 agent, changes["default_responsible_agent_id"]
             )
+        if "default_validated_by_agent_id" in changes:
+            await self._validate_default_responsible_agent(
+                agent, changes["default_validated_by_agent_id"]
+            )
+        # Validator coherence: the payload exposes `validated_by_type` /
+        # `completion_mode`, but they map to ONE template column pair kept in
+        # sync. Resolve them out of the generic setattr loop (and note the
+        # payload field name `validated_by_type` ≠ the column
+        # `default_validated_by_type`).
+        if "validated_by_type" in changes or "completion_mode" in changes:
+            vt, cm = _reconcile_validator(payload.validated_by_type, payload.completion_mode)
+            step.default_validated_by_type = vt
+            step.completion_mode = cm
+        for key in ("validated_by_type", "completion_mode"):
+            changes.pop(key, None)
         for field, value in changes.items():
             setattr(step, field, value)
         await self.db.commit()

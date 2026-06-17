@@ -7,7 +7,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from src.core import storage
-from src.core.enums import ResponsibleType
+from src.core.enums import ActorType, ResponsibleType, StepStatus, StepValidatorType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.external.external_repository import ExternalRepository
 from src.external.external_schema import (
@@ -47,6 +47,21 @@ def _external_sees_content(step: StepProgressResponse, external: Agent) -> bool:
     revisiting here opens a silent RGPD hole (a logged-in contact seeing
     content it should not). Do not add a login path without updating this."""
     return step.responsible_agent_id == external.id
+
+
+def _external_can_validate(step: StepProgressResponse, external: Agent) -> bool:
+    """THE provider-validation gate (mirror of the content verrou): a
+    provider may validate a step ONLY when it is the step's DESIGNATED
+    validator on THIS dossier (validated_by_type='external' AND
+    validated_by_agent_id == external.id) and the step is active. The id is
+    a case-INSTANCE column → the right lives on the dossier, never the
+    template. Same value drives the timeline flag and the validate endpoint
+    (re-checked server-side there)."""
+    return (
+        step.validated_by_type == StepValidatorType.EXTERNAL.value
+        and step.validated_by_agent_id == external.id
+        and step.status == StepStatus.IN_PROGRESS.value
+    )
 
 
 def _displayable_responsible(step: StepProgressResponse) -> ExternalResponsibleResponse:
@@ -159,6 +174,7 @@ class ExternalPortalManager:
                     step.content_note if _external_sees_content(step, external) else None
                 ),
                 attachments=(step.attachments if _external_sees_content(step, external) else []),
+                can_validate=_external_can_validate(step, external),
             )
             for step in internal_timeline
         ]
@@ -202,6 +218,39 @@ class ExternalPortalManager:
             raise NotFoundError("Attachment not found.")
         content = await asyncio.to_thread(storage.download, attachment.storage_path)
         return attachment.filename, content
+
+    async def validate_step(
+        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID
+    ) -> ExternalCaseDetailResponse:
+        """ "Action validée par" = provider: the DESIGNATED external validator
+        closes a step. Borders, all server-side:
+        (1) the case is assigned to this provider (404);
+        (2) the step is a step of THAT case (404);
+        (3) THE gate — this provider is the step's designated validator
+            (validated_by_type='external' AND validated_by_agent_id ==
+            external.id), else 404 (never a non-designated external closing,
+            never revealing the step's validator — the evasion test).
+        The close (lock, DONE, audit as the external Agent) is the shared
+        progress core."""
+        case = await self._assigned_case(external, case_id)  # border 1
+        progress_repo = ProgressRepository(self.db)
+        progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
+        if progress is None:
+            raise NotFoundError("Case step not found.")
+        if not (  # border 3 — the validator verrou
+            progress.validated_by_type == StepValidatorType.EXTERNAL.value
+            and progress.validated_by_agent_id == external.id
+        ):
+            raise NotFoundError("Case step not found.")
+        await ProgressManager(self.db).close_step_by_validation(
+            case,
+            progress,
+            actor_type=ActorType.AGENT,  # an external IS an agent
+            actor_id=external.id,
+            completed_by_agent_id=external.id,
+        )
+        await self.db.commit()
+        return await self.get_my_case(external, case_id)
 
 
 class ExternalAssignmentManager:

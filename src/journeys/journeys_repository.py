@@ -88,6 +88,8 @@ class JourneysRepository:
         default_responsible_type: str | None,
         default_responsible_agent_id: uuid.UUID | None = None,
         completion_mode: str,
+        default_validated_by_type: str,
+        default_validated_by_agent_id: uuid.UUID | None = None,
     ) -> JourneyTemplateStep:
         step = JourneyTemplateStep(
             template_id=template_id,
@@ -97,6 +99,8 @@ class JourneysRepository:
             default_responsible_type=default_responsible_type,
             default_responsible_agent_id=default_responsible_agent_id,
             completion_mode=completion_mode,
+            default_validated_by_type=default_validated_by_type,
+            default_validated_by_agent_id=default_validated_by_agent_id,
         )
         self.db.add(step)
         return step
