@@ -1,18 +1,16 @@
-import mimetypes
 import uuid
 from datetime import datetime
 from typing import Annotated
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
-from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from src.auth.auth_schema import MessageResponse
 from src.core.dependencies import get_current_agent, get_current_expat, get_db
 from src.core.enums import Audience
+from src.core.http import file_download_response
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.documents.documents_manager import DocumentsManager
@@ -67,24 +65,6 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 ExpatDep = Annotated[ExpatUser, Depends(get_current_expat)]
 
 
-def _download_response(document: Document, content: bytes) -> Response:
-    media_type = mimetypes.guess_type(document.filename)[0] or "application/octet-stream"
-    # HTTP headers are latin-1: a filename with non-latin-1 chars (curly
-    # apostrophe ’, accents…) would crash the Response. RFC 6266: an ASCII
-    # fallback `filename="…"` for old clients + a UTF-8 `filename*=` that
-    # modern browsers prefer, so the real name (accents) is preserved.
-    filename = document.filename
-    ascii_fallback = (
-        filename.encode("ascii", "ignore").decode("ascii").replace('"', "") or "document"
-    )
-    disposition = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
-    return Response(
-        content=content,
-        media_type=media_type,
-        headers={"Content-Disposition": disposition},
-    )
-
-
 # --- agent side -------------------------------------------------------------------
 
 
@@ -133,7 +113,7 @@ async def download_document_as_agent(
     case_id: uuid.UUID, document_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> Response:
     document, content = await DocumentsManager(db).download_for_agent(agent, case_id, document_id)
-    return _download_response(document, content)
+    return file_download_response(document.filename, content)
 
 
 @agent_router.patch(
@@ -185,7 +165,7 @@ async def download_document_as_expat(
     case_id: uuid.UUID, document_id: uuid.UUID, expat: ExpatDep, db: DbDep
 ) -> Response:
     document, content = await DocumentsManager(db).download_for_expat(expat, case_id, document_id)
-    return _download_response(document, content)
+    return file_download_response(document.filename, content)
 
 
 @expat_router.delete("/{case_id}/documents/{document_id}", response_model=MessageResponse)

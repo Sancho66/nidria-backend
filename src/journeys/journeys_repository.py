@@ -7,6 +7,7 @@ from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.journey import (
     JourneySection,
+    JourneyStepAttachment,
     JourneyTemplate,
     JourneyTemplateCaseField,
     JourneyTemplateField,
@@ -110,6 +111,52 @@ class JourneysRepository:
 
     async def delete_step(self, step: JourneyTemplateStep) -> None:
         await self.db.delete(step)
+
+    # --- step attachments (Feature 2 — descending agency content) ------------------
+
+    async def list_step_attachments(self, step_id: uuid.UUID) -> list[JourneyStepAttachment]:
+        stmt = (
+            select(JourneyStepAttachment)
+            .where(JourneyStepAttachment.step_id == step_id)
+            .order_by(JourneyStepAttachment.position, JourneyStepAttachment.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def list_step_attachments_for_steps(
+        self, step_ids: list[uuid.UUID]
+    ) -> list[JourneyStepAttachment]:
+        """Batched load for the template detail (no N+1)."""
+        if not step_ids:
+            return []
+        stmt = (
+            select(JourneyStepAttachment)
+            .where(JourneyStepAttachment.step_id.in_(step_ids))
+            .order_by(JourneyStepAttachment.position, JourneyStepAttachment.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_step_attachment_in_step(
+        self, step_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> JourneyStepAttachment | None:
+        stmt = select(JourneyStepAttachment).where(
+            JourneyStepAttachment.id == attachment_id,
+            JourneyStepAttachment.step_id == step_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def max_attachment_position(self, step_id: uuid.UUID) -> int | None:
+        stmt = select(func.max(JourneyStepAttachment.position)).where(
+            JourneyStepAttachment.step_id == step_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_step_attachment(self, **kwargs: object) -> JourneyStepAttachment:
+        row = JourneyStepAttachment(**kwargs)
+        self.db.add(row)
+        return row
+
+    async def delete_step_attachment(self, row: JourneyStepAttachment) -> None:
+        await self.db.delete(row)
 
     async def shift_positions(self, template_id: uuid.UUID, offset: int) -> None:
         await self.db.execute(

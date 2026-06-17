@@ -6164,6 +6164,268 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/attachments": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Step Attachments",
+        "operationId": "list_step_attachments_journeys__template_id__steps__step_id__attachments_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StepAttachmentResponse"
+                  },
+                  "title": "Response List Step Attachments Journeys  Template Id  Steps  Step Id  Attachments Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Step Attachment",
+        "operationId": "add_step_attachment_journeys__template_id__steps__step_id__attachments_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_step_attachment_journeys__template_id__steps__step_id__attachments_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepAttachmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/steps/{step_id}/attachments/{attachment_id}/download": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Download Step Attachment",
+        "operationId": "download_step_attachment_journeys__template_id__steps__step_id__attachments__attachment_id__download_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/steps/{step_id}/attachments/{attachment_id}": {
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Step Attachment",
+        "operationId": "delete_step_attachment_journeys__template_id__steps__step_id__attachments__attachment_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/requirements": {
       "get": {
         "tags": [
@@ -9341,6 +9603,20 @@
           "name"
         ],
         "title": "BlockingStep"
+      },
+      "Body_add_step_attachment_journeys__template_id__steps__step_id__attachments_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_add_step_attachment_journeys__template_id__steps__step_id__attachments_post"
       },
       "Body_fulfill_requirement_as_agent_cases__case_id__requirements__requirement_id__document_post": {
         "properties": {
@@ -15287,6 +15563,37 @@
         ],
         "title": "Sex"
       },
+      "StepAttachmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "step_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Step Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "step_id",
+          "filename",
+          "position"
+        ],
+        "title": "StepAttachmentResponse",
+        "description": "A file the agency attached to a template step (Feature 2). The\nbytes are fetched via the dedicated download endpoint, not inlined."
+      },
       "StepCaseRequirementCreateRequest": {
         "properties": {
           "case_field": {
@@ -16047,6 +16354,24 @@
             },
             "type": "array",
             "title": "Prerequisite Step Ids"
+          },
+          "content_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/StepAttachmentResponse"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -16058,7 +16383,9 @@
           "default_responsible_type",
           "default_responsible_agent_id",
           "completion_mode",
-          "prerequisite_step_ids"
+          "prerequisite_step_ids",
+          "content_note",
+          "attachments"
         ],
         "title": "TemplateStepResponse"
       },
@@ -16120,6 +16447,18 @@
                 "type": "null"
               }
             ]
+          },
+          "content_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note"
           }
         },
         "type": "object",

@@ -1,6 +1,9 @@
+import asyncio
+import logging
 import uuid
 from collections import defaultdict
 
+from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -12,8 +15,15 @@ from shared.models.journey import (
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_requirement import StepRequirement
 from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
+from src.core import storage
+from src.core.config import get_settings
 from src.core.enums import StepRequirementKind
-from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+    ValidationError,
+)
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
@@ -27,6 +37,7 @@ from src.journeys.journeys_schema import (
     JourneyTemplateUpdateRequest,
     SectionCreateRequest,
     SectionUpdateRequest,
+    StepAttachmentResponse,
     StepCaseRequirementCreateRequest,
     StepRequirementCreateRequest,
     TemplateCaseFieldResponse,
@@ -39,6 +50,8 @@ from src.journeys.journeys_schema import (
     UnsectionedFields,
 )
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
+
+logger = logging.getLogger(__name__)
 
 
 def _has_cycle(graph: dict[uuid.UUID, set[uuid.UUID]]) -> bool:
@@ -107,6 +120,11 @@ class JourneysManager:
         case_by_section: dict[uuid.UUID | None, list[TemplateCaseFieldResponse]] = defaultdict(list)
         for cr in case_resps:
             case_by_section[cr.section_id].append(cr)
+        # Feature 2 — step attachments, batched (no N+1), grouped per step.
+        attachments = await self.repo.list_step_attachments_for_steps([s.id for s in steps])
+        attach_by_step: dict[uuid.UUID, list[StepAttachmentResponse]] = defaultdict(list)
+        for a in attachments:
+            attach_by_step[a.step_id].append(StepAttachmentResponse.model_validate(a))
         return JourneyTemplateDetailResponse(
             id=template.id,
             name=template.name,
@@ -120,6 +138,8 @@ class JourneysManager:
                     default_responsible_agent_id=step.default_responsible_agent_id,
                     completion_mode=step.completion_mode,
                     prerequisite_step_ids=by_step.get(step.id, []),
+                    content_note=step.content_note,
+                    attachments=attach_by_step.get(step.id, []),
                 )
                 for step in steps
             ],
@@ -270,6 +290,95 @@ class JourneysManager:
         await self.db.flush()
         await self._renumber_dense(template_id)
         await self.db.commit()
+
+    # --- step content: attachments (Feature 2, V1 — agency CRUD) -------------------
+    # content_note is handled by update_step (a column on the step). The
+    # files reuse the generic storage primitive (NOT the case-scoped
+    # `document` table): they live on the template, shared by every case.
+
+    async def list_step_attachments(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID
+    ) -> list[StepAttachmentResponse]:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        rows = await self.repo.list_step_attachments(step_id)
+        return [StepAttachmentResponse.model_validate(r) for r in rows]
+
+    async def add_step_attachment(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, file: UploadFile
+    ) -> StepAttachmentResponse:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        settings = get_settings()
+        original = file.filename
+        if not original:
+            raise ValidationError("A filename is required.")
+        ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+        if ext not in settings.allowed_document_extensions:
+            allowed = ", ".join(settings.allowed_document_extensions)
+            raise ValidationError(f"File type not allowed (accepted: {allowed}).")
+        content = await file.read()
+        if len(content) > settings.max_document_size_mb * 1024 * 1024:
+            raise PayloadTooLargeError(
+                f"File exceeds the {settings.max_document_size_mb} MB limit."
+            )
+
+        attachment_id = uuid.uuid4()
+        path = (
+            f"templates/{template_id}/steps/{step_id}/{attachment_id}/"
+            f"{storage.sanitize_filename(original)}"
+        )
+        max_pos = await self.repo.max_attachment_position(step_id)
+        # Storage FIRST, then the DB row. If the insert fails, delete the
+        # uploaded file so there is no orphan in storage (coherence).
+        await asyncio.to_thread(
+            storage.upload, path, content, file.content_type or "application/octet-stream"
+        )
+        try:
+            row = self.repo.add_step_attachment(
+                id=attachment_id,
+                step_id=step_id,
+                filename=original,
+                storage_path=path,
+                uploaded_by_agent_id=agent.id,
+                position=(max_pos if max_pos is not None else -1) + 1,
+            )
+            await self.db.commit()
+            await self.db.refresh(row)
+        except Exception:
+            await asyncio.to_thread(storage.delete, path)  # no orphan file
+            raise
+        return StepAttachmentResponse.model_validate(row)
+
+    async def download_step_attachment(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> tuple[str, bytes]:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        row = await self.repo.get_step_attachment_in_step(step_id, attachment_id)
+        if row is None:
+            raise NotFoundError("Attachment not found.")
+        content = await asyncio.to_thread(storage.download, row.storage_path)
+        return row.filename, content
+
+    async def delete_step_attachment(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> None:
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        row = await self.repo.get_step_attachment_in_step(step_id, attachment_id)
+        if row is None:
+            raise NotFoundError("Attachment not found.")
+        path = row.storage_path
+        await self.repo.delete_step_attachment(row)
+        await self.db.commit()
+        # Remove the file too (no orphan). Best-effort AFTER the row is gone:
+        # a storage hiccup leaves an orphan file (logged), never a row that
+        # points to a missing file.
+        try:
+            await asyncio.to_thread(storage.delete, path)
+        except Exception:
+            logger.warning("step attachment file not deleted (orphan) path=%s", path)
 
     async def _renumber_dense(self, template_id: uuid.UUID) -> None:
         """Two-phase renumbering: shift every position out of range with

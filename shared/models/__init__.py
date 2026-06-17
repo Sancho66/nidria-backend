@@ -18,6 +18,7 @@ from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.job import JobConfig, JobRun
 from shared.models.journey import (
     JourneySection,
+    JourneyStepAttachment,
     JourneyTemplate,
     JourneyTemplateCaseField,
     JourneyTemplateField,
@@ -53,6 +54,7 @@ __all__ = [
     "JobConfig",
     "JobRun",
     "JourneySection",
+    "JourneyStepAttachment",
     "JourneyTemplate",
     "JourneyTemplateCaseField",
     "JourneyTemplateField",

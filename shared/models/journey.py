@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -74,6 +74,32 @@ class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=text("'agency_validation'"),
         nullable=False,
     )
+    # Feature 2 — DESCENDING content the agency provides on the step
+    # (a note/instruction), distinct from step requirements (which ASK the
+    # client). Lives on the TEMPLATE → the same for every case of this
+    # journey. Attachments are in journey_step_attachment.
+    content_note: Mapped[str | None] = mapped_column(Text)
+
+
+class JourneyStepAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A file the agency attaches to a TEMPLATE step (Feature 2 — descending
+    content). Stored in Supabase Storage (the generic storage primitive,
+    NOT the case-scoped `document` table): the file lives on the template,
+    shared by every case of this journey. Read access is audience-filtered
+    at the projection layer (agency: always; expat: read-only on its case
+    timeline; external: only on steps where it is the responsible — V2)."""
+
+    __tablename__ = "journey_step_attachment"
+
+    step_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journey_template_step.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    uploaded_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent.id", ondelete="SET NULL")
+    )
+    position: Mapped[int] = mapped_column(default=0, nullable=False)
 
 
 class StepPrerequisite(Base):

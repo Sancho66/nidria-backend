@@ -37,6 +37,21 @@ class TemplateStepUpdateRequest(BaseModel):
     default_responsible_type: ResponsibleType | None = None
     default_responsible_agent_id: uuid.UUID | None = None
     completion_mode: CompletionMode | None = None
+    # Feature 2 — descending agency note (null clears). Partial PATCH:
+    # only applied when the key is present.
+    content_note: str | None = Field(default=None, max_length=5000)
+
+
+class StepAttachmentResponse(BaseModel):
+    """A file the agency attached to a template step (Feature 2). The
+    bytes are fetched via the dedicated download endpoint, not inlined."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    step_id: uuid.UUID
+    filename: str
+    position: int
 
 
 class StepRequirementCreateRequest(BaseModel):
@@ -271,6 +286,9 @@ class TemplateStepResponse(BaseModel):
     default_responsible_agent_id: uuid.UUID | None
     completion_mode: str
     prerequisite_step_ids: list[uuid.UUID]
+    # Feature 2 — descending agency content on the step (template-level).
+    content_note: str | None
+    attachments: list[StepAttachmentResponse]
 
 
 class CanvasNodePosition(BaseModel):

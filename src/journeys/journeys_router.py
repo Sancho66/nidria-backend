@@ -1,13 +1,14 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from src.auth.auth_schema import MessageResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.http import file_download_response
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.journeys.journeys_manager import JourneysManager
@@ -25,6 +26,7 @@ from src.journeys.journeys_schema import (
     SectionCreateRequest,
     SectionOrderRequest,
     SectionUpdateRequest,
+    StepAttachmentResponse,
     StepCaseRequirementCreateRequest,
     StepCaseRequirementOrderRequest,
     StepCaseRequirementResponse,
@@ -134,6 +136,31 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/steps/{step_id}/case-requirements/{case_requirement_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # Step content attachments (Feature 2 — descending agency content).
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/steps/{step_id}/attachments",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "POST",
+        "/journeys/{template_id}/steps/{step_id}/attachments",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/steps/{step_id}/attachments/{attachment_id}/download",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/steps/{step_id}/attachments/{attachment_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -330,6 +357,63 @@ async def set_prerequisites(
     await manager.set_prerequisites(agent, template_id, step_id, body.prerequisite_step_ids)
     detail = await manager.get_template_detail(agent, template_id)
     return _step_response(step_id, detail)
+
+
+# --- step content attachments (Feature 2 — descending agency content) ----------------
+
+
+@router.get(
+    "/{template_id}/steps/{step_id}/attachments",
+    response_model=list[StepAttachmentResponse],
+)
+async def list_step_attachments(
+    template_id: uuid.UUID, step_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[StepAttachmentResponse]:
+    return await JourneysManager(db).list_step_attachments(agent, template_id, step_id)
+
+
+@router.post(
+    "/{template_id}/steps/{step_id}/attachments",
+    response_model=StepAttachmentResponse,
+    status_code=201,
+)
+async def add_step_attachment(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    file: UploadFile,
+    agent: AgentDep,
+    db: DbDep,
+) -> StepAttachmentResponse:
+    return await JourneysManager(db).add_step_attachment(agent, template_id, step_id, file)
+
+
+@router.get("/{template_id}/steps/{step_id}/attachments/{attachment_id}/download")
+async def download_step_attachment(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> Response:
+    filename, content = await JourneysManager(db).download_step_attachment(
+        agent, template_id, step_id, attachment_id
+    )
+    return file_download_response(filename, content)
+
+
+@router.delete(
+    "/{template_id}/steps/{step_id}/attachments/{attachment_id}",
+    response_model=MessageResponse,
+)
+async def delete_step_attachment(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> MessageResponse:
+    await JourneysManager(db).delete_step_attachment(agent, template_id, step_id, attachment_id)
+    return MessageResponse(detail="Attachment removed.")
 
 
 # --- step requirements (NEW WAVE) ----------------------------------------------------
