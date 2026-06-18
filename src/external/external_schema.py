@@ -42,6 +42,16 @@ class ExternalResponsibleResponse(BaseModel):
     name: str | None
 
 
+class ExternalParticipantResponse(BaseModel):
+    """A step participant as the provider sees it (responsible refonte, N).
+    Same anti-staffing as the responsible: 'agency' (no internal name),
+    'you', or 'external' with the provider's name; plus the role."""
+
+    role: str
+    type: str | None  # agency | you | external
+    name: str | None
+
+
 class ExternalRequirementResponse(BaseModel):
     """A requirement as the provider sees it — status, whose, what kind.
     DELIBERATELY no `value`: the actual personal data (passport number,
@@ -65,6 +75,8 @@ class ExternalTimelineStepResponse(BaseModel):
     completed_at: datetime | None
     blocked_by: list[str]
     responsible: ExternalResponsibleResponse
+    # "Action à réaliser par" — N participants with roles (anti-staffing).
+    participants: list[ExternalParticipantResponse]
     completion_mode: str
     comment_count: int
     counter: DeadlineCounter

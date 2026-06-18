@@ -120,6 +120,33 @@ class JourneyStepAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(default=0, nullable=False)
 
 
+class JourneyStepParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """ "Action à réaliser par" at the TEMPLATE level (responsible refonte:
+    1 → N participants with a role). Snapshot-copied to each case at
+    assignment (like the responsible), so editing it never retro-changes a
+    live dossier. Polymorphic person calqué sur le responsable, but TEMPLATE
+    only supports {expat, agent} — an `external_contact` is case-scoped and
+    cannot exist before a case (same limit as default_responsible_*). The
+    `validator` role is NOT here: validation stays on validated_by_*."""
+
+    __tablename__ = "journey_step_participant"
+    __table_args__ = (
+        # Polymorphic person, mirror of responsible_type_matches_fk:
+        # expat ⟹ no agent; agent (internal OR is_external) ⟹ agent_id set.
+        CheckConstraint(
+            "(type = 'expat' AND agent_id IS NULL) OR (type = 'agent' AND agent_id IS NOT NULL)",
+            name="participant_template_type_matches_fk",
+        ),
+    )
+
+    step_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journey_template_step.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # expat | agent
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent.id", ondelete="SET NULL"))
+    role: Mapped[str] = mapped_column(String(30), nullable=False)  # StepParticipantRole
+
+
 class StepPrerequisite(Base):
     """Self-referencing M2M between steps of the SAME template
     (locked-steps feature). Same-template + no-cycle validation is

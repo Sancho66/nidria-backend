@@ -11,6 +11,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_person import CasePerson
+from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
@@ -18,6 +19,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import (
     JourneyStepAttachment,
+    JourneyStepParticipant,
     JourneyTemplate,
     JourneyTemplateStep,
     StepPrerequisite,
@@ -123,6 +125,32 @@ class ProgressRepository:
         row = CaseStepProgress(**kwargs)
         self.db.add(row)
         return row
+
+    async def list_template_participants_for_steps(
+        self, step_ids: list[uuid.UUID]
+    ) -> list[JourneyStepParticipant]:
+        """Template participants ("Action à réaliser par", N) for the given
+        steps — batched, snapshot-copied to the instance at assignment."""
+        if not step_ids:
+            return []
+        stmt = select(JourneyStepParticipant).where(JourneyStepParticipant.step_id.in_(step_ids))
+        return list((await self.db.execute(stmt)).scalars())
+
+    def add_case_participant(self, **kwargs: Any) -> CaseStepParticipant:
+        row = CaseStepParticipant(**kwargs)
+        self.db.add(row)
+        return row
+
+    async def list_case_participants_for_progress_ids(
+        self, progress_ids: list[uuid.UUID]
+    ) -> list[CaseStepParticipant]:
+        """Instance participants for a whole timeline — batched (no N+1)."""
+        if not progress_ids:
+            return []
+        stmt = select(CaseStepParticipant).where(
+            CaseStepParticipant.case_step_progress_id.in_(progress_ids)
+        )
+        return list((await self.db.execute(stmt)).scalars())
 
     async def list_cases_using_template(self, template_id: uuid.UUID) -> list[ClientCase]:
         stmt = select(ClientCase).where(

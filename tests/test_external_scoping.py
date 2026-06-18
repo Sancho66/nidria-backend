@@ -268,6 +268,8 @@ async def test_external_detail_leaks_no_internal_content(
         "completed_at",
         "blocked_by",
         "responsible",
+        # Responsible refonte: N participants with roles (anti-staffing).
+        "participants",
         "completion_mode",
         "comment_count",
         "counter",

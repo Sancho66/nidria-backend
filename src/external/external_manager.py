@@ -15,6 +15,7 @@ from src.external.external_schema import (
     ExternalAssignmentResponse,
     ExternalCaseDetailResponse,
     ExternalCaseSummaryResponse,
+    ExternalParticipantResponse,
     ExternalPrincipalResponse,
     ExternalReferentResponse,
     ExternalRequirementResponse,
@@ -24,7 +25,7 @@ from src.external.external_schema import (
 from src.external.scoping import get_case_for_external, list_assigned_cases
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
-from src.progress.progress_schema import StepProgressResponse
+from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
 
 
 def _external_sees_content(step: StepProgressResponse, external: Agent) -> bool:
@@ -62,6 +63,20 @@ def _external_can_validate(step: StepProgressResponse, external: Agent) -> bool:
         and step.validated_by_agent_id == external.id
         and step.status == StepStatus.IN_PROGRESS.value
     )
+
+
+def _displayable_participant(p: StepParticipantResponse) -> ExternalParticipantResponse:
+    # Same anti-staffing as the responsible: internal agent → "agency" (no
+    # name); external provider → name; the client → "you".
+    if p.type == ResponsibleType.AGENT.value:
+        if p.is_external:
+            return ExternalParticipantResponse(role=p.role, type="external", name=p.name)
+        return ExternalParticipantResponse(role=p.role, type="agency", name=None)
+    if p.type == ResponsibleType.EXPAT.value:
+        return ExternalParticipantResponse(role=p.role, type="you", name=None)
+    if p.type == ResponsibleType.EXTERNAL.value:
+        return ExternalParticipantResponse(role=p.role, type="external", name=p.name)
+    return ExternalParticipantResponse(role=p.role, type=None, name=None)
 
 
 def _displayable_responsible(step: StepProgressResponse) -> ExternalResponsibleResponse:
@@ -150,6 +165,7 @@ class ExternalPortalManager:
                 completed_at=step.completed_at,
                 blocked_by=[b.name for b in step.blocked_by],
                 responsible=_displayable_responsible(step),
+                participants=[_displayable_participant(p) for p in step.participants],
                 completion_mode=step.completion_mode,
                 comment_count=step.comment_count,
                 counter=step.counter,

@@ -31,6 +31,7 @@ from src.journeys.journeys_schema import (
     StepCaseRequirementOrderRequest,
     StepCaseRequirementResponse,
     StepOrderRequest,
+    StepParticipantCreateRequest,
     StepPrerequisitesRequest,
     StepRequirementCreateRequest,
     StepRequirementOrderRequest,
@@ -41,6 +42,7 @@ from src.journeys.journeys_schema import (
     TemplateFieldResponse,
     TemplateFieldUpdateRequest,
     TemplateStepCreateRequest,
+    TemplateStepParticipantResponse,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
 )
@@ -161,6 +163,25 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/steps/{step_id}/attachments/{attachment_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # "Action à réaliser par" — template participants (responsible refonte).
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/steps/{step_id}/participants",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "POST",
+        "/journeys/{template_id}/steps/{step_id}/participants",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/steps/{step_id}/participants/{participant_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -414,6 +435,49 @@ async def delete_step_attachment(
 ) -> MessageResponse:
     await JourneysManager(db).delete_step_attachment(agent, template_id, step_id, attachment_id)
     return MessageResponse(detail="Attachment removed.")
+
+
+# --- step participants ("Action à réaliser par", N) ----------------------------------
+
+
+@router.get(
+    "/{template_id}/steps/{step_id}/participants",
+    response_model=list[TemplateStepParticipantResponse],
+)
+async def list_step_participants(
+    template_id: uuid.UUID, step_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[TemplateStepParticipantResponse]:
+    return await JourneysManager(db).list_step_participants(agent, template_id, step_id)
+
+
+@router.post(
+    "/{template_id}/steps/{step_id}/participants",
+    response_model=TemplateStepParticipantResponse,
+    status_code=201,
+)
+async def add_step_participant(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: StepParticipantCreateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> TemplateStepParticipantResponse:
+    return await JourneysManager(db).add_step_participant(agent, template_id, step_id, body)
+
+
+@router.delete(
+    "/{template_id}/steps/{step_id}/participants/{participant_id}",
+    response_model=MessageResponse,
+)
+async def delete_step_participant(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    participant_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> MessageResponse:
+    await JourneysManager(db).delete_step_participant(agent, template_id, step_id, participant_id)
+    return MessageResponse(detail="Participant removed.")
 
 
 # --- step requirements (NEW WAVE) ----------------------------------------------------

@@ -8,6 +8,7 @@ from shared.models.client_case import ClientCase
 from shared.models.journey import (
     JourneySection,
     JourneyStepAttachment,
+    JourneyStepParticipant,
     JourneyTemplate,
     JourneyTemplateCaseField,
     JourneyTemplateField,
@@ -158,6 +159,34 @@ class JourneysRepository:
         row = JourneyStepAttachment(**kwargs)
         self.db.add(row)
         return row
+
+    # --- step participants ("Action à réaliser par", N) ----------------------------
+
+    async def list_step_participants_for_steps(
+        self, step_ids: list[uuid.UUID]
+    ) -> list[JourneyStepParticipant]:
+        """Batched load for the template detail (no N+1)."""
+        if not step_ids:
+            return []
+        stmt = select(JourneyStepParticipant).where(JourneyStepParticipant.step_id.in_(step_ids))
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_step_participant_in_step(
+        self, step_id: uuid.UUID, participant_id: uuid.UUID
+    ) -> JourneyStepParticipant | None:
+        stmt = select(JourneyStepParticipant).where(
+            JourneyStepParticipant.id == participant_id,
+            JourneyStepParticipant.step_id == step_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_step_participant(self, **kwargs: object) -> JourneyStepParticipant:
+        row = JourneyStepParticipant(**kwargs)
+        self.db.add(row)
+        return row
+
+    async def delete_step_participant(self, row: JourneyStepParticipant) -> None:
+        await self.db.delete(row)
 
     async def delete_step_attachment(self, row: JourneyStepAttachment) -> None:
         await self.db.delete(row)

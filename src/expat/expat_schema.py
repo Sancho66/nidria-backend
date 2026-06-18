@@ -55,6 +55,16 @@ class ExpatResponsibleResponse(BaseModel):
     name: str | None
 
 
+class ExpatParticipantResponse(BaseModel):
+    """A step participant as the client sees it (responsible refonte, N).
+    Same anti-staffing as the responsible: 'agency' (no internal name),
+    'you', or 'external' with the provider's name; plus the role."""
+
+    role: str
+    type: str | None  # agency | you | external
+    name: str | None
+
+
 class ExpatRequirementResponse(BaseModel):
     """A concrete requirement the client can see (and, for the writable
     kinds, fulfill). `person_label` is the RESOLVED name so the client
@@ -95,6 +105,8 @@ class ExpatTimelineStepResponse(BaseModel):
     completed_at: datetime | None
     blocked_by: list[str]  # step NAMES, never ids
     responsible: ExpatResponsibleResponse
+    # "Action à réaliser par" — N participants with roles (anti-staffing).
+    participants: list[ExpatParticipantResponse]
     # NEW WAVE 2: the concrete requirements the client can fill on this
     # step (writable while the step is active).
     requirements: list[ExpatRequirementResponse]

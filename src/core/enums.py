@@ -192,6 +192,18 @@ class StepValidatorType(StrEnum):
     EXTERNAL = "external"
 
 
+class StepParticipantRole(StrEnum):
+    """ "Action à réaliser par" — the role a participant plays on a step
+    (the responsible refonte: 1 responsible → N participants with roles).
+    CLOSED set; the `validator` role is DELIBERATELY absent — validation
+    stays on the untouched `validated_by_*` mechanism."""
+
+    EXECUTANT = "executant"  # does the work (the former single responsible)
+    PROVIDES_DOCUMENTS = "provides_documents"
+    CONTRIBUTOR = "contributor"
+    INFORMED = "informed"
+
+
 class StepRequirementKind(StrEnum):
     BASE_FIELD = "base_field"
     CUSTOM_FIELD = "custom_field"

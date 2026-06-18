@@ -6700,6 +6700,202 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/participants": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Step Participants",
+        "operationId": "list_step_participants_journeys__template_id__steps__step_id__participants_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateStepParticipantResponse"
+                  },
+                  "title": "Response List Step Participants Journeys  Template Id  Steps  Step Id  Participants Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Step Participant",
+        "operationId": "add_step_participant_journeys__template_id__steps__step_id__participants_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepParticipantCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateStepParticipantResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/steps/{step_id}/participants/{participant_id}": {
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Step Participant",
+        "operationId": "delete_step_participant_journeys__template_id__steps__step_id__participants__participant_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "participant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Participant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/requirements": {
       "get": {
         "tags": [
@@ -12613,6 +12809,44 @@
         "title": "ExpatNotificationResponse",
         "description": "A SENT in_app reminder IS the notification (Q8 — no extra table).\nIts own id stays: the V1.5 mark-as-read will need it."
       },
+      "ExpatParticipantResponse": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "type",
+          "name"
+        ],
+        "title": "ExpatParticipantResponse",
+        "description": "A step participant as the client sees it (responsible refonte, N).\nSame anti-staffing as the responsible: 'agency' (no internal name),\n'you', or 'external' with the provider's name; plus the role."
+      },
       "ExpatReferentResponse": {
         "properties": {
           "first_name": {
@@ -12789,6 +13023,13 @@
           "responsible": {
             "$ref": "#/components/schemas/ExpatResponsibleResponse"
           },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ExpatParticipantResponse"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/ExpatRequirementResponse"
@@ -12840,6 +13081,7 @@
           "completed_at",
           "blocked_by",
           "responsible",
+          "participants",
           "requirements",
           "completion_mode",
           "comment_count",
@@ -13328,6 +13570,44 @@
         "title": "ExternalDocumentResponse",
         "description": "Provider-facing document — no internal UUID (no uploaded_by_id):\n`uploaded_by_type` + `is_mine` (the provider's own uploads)."
       },
+      "ExternalParticipantResponse": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "type",
+          "name"
+        ],
+        "title": "ExternalParticipantResponse",
+        "description": "A step participant as the provider sees it (responsible refonte, N).\nSame anti-staffing as the responsible: 'agency' (no internal name),\n'you', or 'external' with the provider's name; plus the role."
+      },
       "ExternalPrincipalResponse": {
         "properties": {
           "first_name": {
@@ -13515,6 +13795,13 @@
           "responsible": {
             "$ref": "#/components/schemas/ExternalResponsibleResponse"
           },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalParticipantResponse"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
           "completion_mode": {
             "type": "string",
             "title": "Completion Mode"
@@ -13566,6 +13853,7 @@
           "completed_at",
           "blocked_by",
           "responsible",
+          "participants",
           "completion_mode",
           "comment_count",
           "counter",
@@ -16258,6 +16546,88 @@
         "title": "StepOrderRequest",
         "description": "Full list of the template's step ids in the desired order."
       },
+      "StepParticipantCreateRequest": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ResponsibleType"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/StepParticipantRole"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "role"
+        ],
+        "title": "StepParticipantCreateRequest",
+        "description": "Add a participant on a template step. `expat` ⟹ no agent; `agent`\n(internal OR durable external) ⟹ agent_id required. `role` cannot be\n`validator` (closed enum — validation stays on the validator field)."
+      },
+      "StepParticipantResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_external": {
+            "type": "boolean",
+            "title": "Is External"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "role",
+          "name",
+          "is_external"
+        ],
+        "title": "StepParticipantResponse",
+        "description": "\"Action à réaliser par\" (N participants) projected on a case step.\nResolved upstream (name + is_external), like the responsible — the FACES\ndecide visibility (anti-staffing: an internal agent's name is hidden from\nthe expat/external timelines). `role` is a StepParticipantRole, never\n`validator`."
+      },
+      "StepParticipantRole": {
+        "type": "string",
+        "enum": [
+          "executant",
+          "provides_documents",
+          "contributor",
+          "informed"
+        ],
+        "title": "StepParticipantRole",
+        "description": "\"Action à réaliser par\" — the role a participant plays on a step\n(the responsible refonte: 1 responsible → N participants with roles).\nCLOSED set; the `validator` role is DELIBERATELY absent — validation\nstays on the untouched `validated_by_*` mechanism."
+      },
       "StepPrerequisitesRequest": {
         "properties": {
           "prerequisite_step_ids": {
@@ -16412,6 +16782,13 @@
             ],
             "title": "Validated By Agent Id"
           },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/StepParticipantResponse"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/RequirementStateResponse"
@@ -16480,6 +16857,7 @@
           "completion_mode",
           "validated_by_type",
           "validated_by_agent_id",
+          "participants",
           "requirements",
           "all_requirements_met",
           "comment_count",
@@ -16949,6 +17327,44 @@
         "title": "TemplateStepCreateRequest",
         "description": "No `position`: new steps are APPENDED; ordering is managed only\nthrough the declarative reorder endpoint."
       },
+      "TemplateStepParticipantResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "agent_id",
+          "role"
+        ],
+        "title": "TemplateStepParticipantResponse",
+        "description": "A template participant (\"Action à réaliser par\", N). The editor\nresolves the name client-side from its member lists (like the\nresponsible). type ∈ {expat, agent}; role is a StepParticipantRole."
+      },
       "TemplateStepResponse": {
         "properties": {
           "id": {
@@ -17018,6 +17434,13 @@
             ],
             "title": "Default Validated By Agent Id"
           },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateStepParticipantResponse"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
           "prerequisite_step_ids": {
             "items": {
               "type": "string",
@@ -17056,6 +17479,7 @@
           "completion_mode",
           "default_validated_by_type",
           "default_validated_by_agent_id",
+          "participants",
           "prerequisite_step_ids",
           "content_note",
           "attachments"

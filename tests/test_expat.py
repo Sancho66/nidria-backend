@@ -40,6 +40,8 @@ STEP_KEYS = {
     "completed_at",
     "blocked_by",
     "responsible",
+    # Responsible refonte: N participants with roles (anti-staffing).
+    "participants",
     # NEW WAVE 2: the concrete requirements the client can fill.
     "requirements",
     # NEW WAVE: lets the client phrase the right close message.

@@ -60,6 +60,20 @@ class DeadlineCounter(BaseModel):
     source: str | None  # "deadline" | "estimated" | None
 
 
+class StepParticipantResponse(BaseModel):
+    """ "Action à réaliser par" (N participants) projected on a case step.
+    Resolved upstream (name + is_external), like the responsible — the FACES
+    decide visibility (anti-staffing: an internal agent's name is hidden from
+    the expat/external timelines). `role` is a StepParticipantRole, never
+    `validator`."""
+
+    id: uuid.UUID
+    type: str  # agent | expat | external
+    role: str
+    name: str | None  # resolved display name (None for an internal agent on a face)
+    is_external: bool
+
+
 class StepContentAttachment(BaseModel):
     """A file the agency attached to a step (Feature 2), as projected onto
     the CASE timeline for all three faces. Deliberately NO `step_id`: the
@@ -105,6 +119,9 @@ class StepProgressResponse(BaseModel):
     # provider (type external); NULL for type agent = any member.
     validated_by_type: str
     validated_by_agent_id: uuid.UUID | None
+    # "Action à réaliser par" — N participants with roles (responsible
+    # refonte). Resolved + role-tagged; the validator is NOT in here.
+    participants: list[StepParticipantResponse]
     requirements: list[RequirementStateResponse]
     all_requirements_met: bool
     # VAGUE 5: non-deleted comment count for a "X messages" badge without

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.core.enums import (
     CompletionMode,
     ResponsibleType,
+    StepParticipantRole,
     StepRequirementKind,
     StepRequirementScope,
     StepValidatorType,
@@ -62,6 +63,29 @@ class StepAttachmentResponse(BaseModel):
     step_id: uuid.UUID
     filename: str
     position: int
+
+
+class TemplateStepParticipantResponse(BaseModel):
+    """A template participant ("Action à réaliser par", N). The editor
+    resolves the name client-side from its member lists (like the
+    responsible). type ∈ {expat, agent}; role is a StepParticipantRole."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    type: str
+    agent_id: uuid.UUID | None
+    role: str
+
+
+class StepParticipantCreateRequest(BaseModel):
+    """Add a participant on a template step. `expat` ⟹ no agent; `agent`
+    (internal OR durable external) ⟹ agent_id required. `role` cannot be
+    `validator` (closed enum — validation stays on the validator field)."""
+
+    type: ResponsibleType  # validated in the manager: external is not a template type
+    agent_id: uuid.UUID | None = None
+    role: StepParticipantRole
 
 
 class StepRequirementCreateRequest(BaseModel):
@@ -297,6 +321,9 @@ class TemplateStepResponse(BaseModel):
     completion_mode: str  # kept during the transition (rollback fallback)
     default_validated_by_type: str
     default_validated_by_agent_id: uuid.UUID | None
+    # "Action à réaliser par" — N participants (responsible refonte). The
+    # legacy default_responsible_* stays for now (transition).
+    participants: list[TemplateStepParticipantResponse]
     prerequisite_step_ids: list[uuid.UUID]
     # Feature 2 — descending agency content on the step (template-level).
     content_note: str | None

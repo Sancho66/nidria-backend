@@ -6,6 +6,7 @@ from shared.models.base import Base
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
+from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
@@ -19,6 +20,7 @@ from shared.models.job import JobConfig, JobRun
 from shared.models.journey import (
     JourneySection,
     JourneyStepAttachment,
+    JourneyStepParticipant,
     JourneyTemplate,
     JourneyTemplateCaseField,
     JourneyTemplateField,
@@ -42,6 +44,7 @@ __all__ = [
     "CaseExternalAssignment",
     "CaseInvitation",
     "CaseNote",
+    "CaseStepParticipant",
     "CaseStepProgress",
     "CaseStepRequirement",
     "ClientCase",
@@ -55,6 +58,7 @@ __all__ = [
     "JobRun",
     "JourneySection",
     "JourneyStepAttachment",
+    "JourneyStepParticipant",
     "JourneyTemplate",
     "JourneyTemplateCaseField",
     "JourneyTemplateField",

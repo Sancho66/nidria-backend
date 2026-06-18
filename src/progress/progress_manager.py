@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
-from shared.models.journey import JourneyTemplateStep
+from shared.models.journey import JourneyStepParticipant, JourneyTemplateStep
 from src.activity.activity_manager import ActivityManager
 from src.core.config import get_settings
 from src.core.email import send_email
@@ -40,6 +40,7 @@ from src.progress.progress_schema import (
     RequirementStateResponse,
     ResponsibleUpdateRequest,
     StepContentAttachment,
+    StepParticipantResponse,
     StepProgressResponse,
     StepProgressUpdateRequest,
     ValidatorUpdateRequest,
@@ -120,6 +121,31 @@ def _resolve_responsible(
     if row.responsible_type == ResponsibleType.EXTERNAL.value and row.responsible_external_id:
         return contacts.get(row.responsible_external_id), False
     return None, False
+
+
+def _resolve_participant(
+    p: Any,
+    agents: dict[uuid.UUID, Any],
+    contacts: dict[uuid.UUID, str],
+    principal_label: str,
+) -> StepParticipantResponse:
+    """Resolve a case_step_participant to its display shape. type=agent →
+    agent name + is_external; type=external → contact name; type=expat → the
+    case principal. The FACES decide whether to SHOW the name (anti-staffing
+    for internal agents) — here we resolve everything."""
+    name: str | None = None
+    is_external = False
+    if p.type == ResponsibleType.AGENT.value and p.agent_id is not None:
+        a = agents.get(p.agent_id)
+        if a is not None:
+            name, is_external = f"{a.first_name} {a.last_name}".strip(), a.is_external
+    elif p.type == ResponsibleType.EXTERNAL.value and p.external_id is not None:
+        name = contacts.get(p.external_id)
+    elif p.type == ResponsibleType.EXPAT.value:
+        name = principal_label
+    return StepParticipantResponse(
+        id=p.id, type=p.type, role=p.role, name=name, is_external=is_external
+    )
 
 
 def _initial_validator(step: JourneyTemplateStep) -> tuple[str, uuid.UUID | None]:
@@ -208,17 +234,25 @@ class ProgressManager:
 
         case.journey_template_id = template.id
         steps = await self.repo.list_template_steps(template.id)
-        # Resolve which default responsibles are EXTERNAL (batched), to
-        # auto-create their case assignment (revised model: a durable
-        # external can be a template default; the invariant "responsible
-        # ⟹ assigned" must hold for the new case).
-        default_agents = await self.repo.agents_by_ids(
-            [s.default_responsible_agent_id for s in steps if s.default_responsible_agent_id]
-        )
+        # Template participants ("Action à réaliser par", N) per step —
+        # batched, snapshot-copied to each instance step below.
+        participants_by_step: dict[uuid.UUID, list[JourneyStepParticipant]] = defaultdict(list)
+        for tp in await self.repo.list_template_participants_for_steps([s.id for s in steps]):
+            participants_by_step[tp.step_id].append(tp)
+        # Resolve EVERY referenced agent (responsible defaults + participants)
+        # in ONE batch → is_external, for the "external ⟹ assigned" invariant.
+        agent_ids = [
+            s.default_responsible_agent_id for s in steps if s.default_responsible_agent_id
+        ]
+        agent_ids += [
+            tp.agent_id for tps in participants_by_step.values() for tp in tps if tp.agent_id
+        ]
+        resolved_agents = await self.repo.agents_by_ids(agent_ids)
         for step in steps:
             r_type, r_agent_id = _initial_responsible(step)
             v_type, v_agent_id = _initial_validator(step)
-            self.repo.add_progress(
+            progress = self.repo.add_progress(
+                id=uuid.uuid4(),  # explicit: participants FK it before the flush
                 case_id=case.id,
                 template_step_id=step.id,
                 status=StepStatus.TODO.value,
@@ -227,12 +261,16 @@ class ProgressManager:
                 validated_by_type=v_type,
                 validated_by_agent_id=v_agent_id,
             )
-            if r_agent_id is not None and (a := default_agents.get(r_agent_id)) and a.is_external:
+            if r_agent_id is not None and (a := resolved_agents.get(r_agent_id)) and a.is_external:
                 await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
             # A designated external validator (type=external) must hold the
             # dossier-access invariant too.
             if v_type == StepValidatorType.EXTERNAL.value and v_agent_id is not None:
                 await self.repo.ensure_external_assignment(case.id, v_agent_id, agent.id)
+            # Participants ("Action à réaliser par") — snapshot + scope.
+            await self._seed_participants(
+                case, progress, participants_by_step.get(step.id, []), resolved_agents, agent
+            )
         self._log(
             case.id,
             agent,
@@ -269,8 +307,15 @@ class ProgressManager:
         validator_is_external = (
             v_type == StepValidatorType.EXTERNAL.value and v_agent_id is not None
         )
+        # The new step's participants (snapshot to every live case) + their
+        # is_external resolution (same agents for all cases).
+        participants = await self.repo.list_template_participants_for_steps([step.id])
+        resolved_agents = await self.repo.agents_by_ids(
+            [p.agent_id for p in participants if p.agent_id]
+        )
         for case in cases:
-            self.repo.add_progress(
+            progress = self.repo.add_progress(
+                id=uuid.uuid4(),  # explicit: participants FK it before the flush
                 case_id=case.id,
                 template_step_id=step.id,
                 status=StepStatus.TODO.value,
@@ -283,8 +328,46 @@ class ProgressManager:
                 await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
             if validator_is_external and v_agent_id is not None:
                 await self.repo.ensure_external_assignment(case.id, v_agent_id, agent.id)
+            await self._seed_participants(case, progress, participants, resolved_agents, agent)
             self._log(case.id, agent, "step.added", {"template_step_id": str(step.id)})
         return len(cases)
+
+    async def _seed_participants(
+        self,
+        case: ClientCase,
+        progress: CaseStepProgress,
+        template_participants: list[JourneyStepParticipant],
+        resolved_agents: dict[uuid.UUID, Any],
+        actor: Agent,
+    ) -> None:
+        """Snapshot the template participants onto a freshly-added progress
+        row (the responsible refonte's "Action à réaliser par", N). Template
+        participants are {expat, agent}; an is_external agent participant
+        gains the case assignment (portal-access invariant), exactly like the
+        responsible. NEVER touches the validator. No row when there are no
+        template participants (we never invent a participant)."""
+        if not template_participants:
+            return
+        # The progress row is still pending (its INSERT not yet executed);
+        # flush so it exists before its participants reference it — the FK is
+        # checked at statement time and there is no ORM relationship to
+        # topologically order the two inserts.
+        await self.db.flush()
+        for tp in template_participants:
+            self.repo.add_case_participant(
+                case_step_progress_id=progress.id,
+                type=tp.type,
+                agent_id=tp.agent_id,
+                external_id=None,  # template carries no external_contact (instance-only)
+                role=tp.role,
+            )
+            if (
+                tp.type == ResponsibleType.AGENT.value
+                and tp.agent_id is not None
+                and (a := resolved_agents.get(tp.agent_id)) is not None
+                and a.is_external
+            ):
+                await self.repo.ensure_external_assignment(case.id, tp.agent_id, actor.id)
 
     # --- projection -------------------------------------------------------------------
 
@@ -312,15 +395,30 @@ class ProgressManager:
         # Batched MIN over activity_log — one query for the whole timeline.
         started_ats = await self.repo.started_ats([row.id for row in rows])
         now = datetime.now(UTC)
-        # Responsible resolution (wave C), batched: the named person's
-        # display name + whether a type=agent responsible is EXTERNAL.
+        # Participants ("Action à réaliser par", N), batched per progress.
+        participants = await self.repo.list_case_participants_for_progress_ids(
+            [row.id for row in rows]
+        )
+        participants_by_progress: dict[uuid.UUID, list[Any]] = defaultdict(list)
+        for p in participants:
+            participants_by_progress[p.case_step_progress_id].append(p)
+        # Responsible AND participant name resolution (wave C), batched: the
+        # named person's display name + whether a type=agent actor is EXTERNAL.
         resp_agents = await self.repo.agents_by_ids(
             [r.responsible_agent_id for r in rows if r.responsible_agent_id is not None]
+            + [p.agent_id for p in participants if p.agent_id is not None]
         )
         resp_contacts = await self.repo.external_contact_names(
             [r.responsible_external_id for r in rows if r.responsible_external_id is not None]
+            + [p.external_id for p in participants if p.external_id is not None]
         )
         persons_by_id = {p.id: p for p in await self.repo.list_persons_for_case(case.id)}
+        principal_label = _person_label(
+            next(
+                (p for p in persons_by_id.values() if p.kind == CasePersonKind.PRINCIPAL.value),
+                None,
+            )
+        )
         active_keys = {
             d.key for d in await CustomFieldsManager(self.db).active_definitions(case.agency_id)
         }
@@ -427,6 +525,10 @@ class ProgressManager:
                     completion_mode=step.completion_mode,
                     validated_by_type=row.validated_by_type,
                     validated_by_agent_id=row.validated_by_agent_id,
+                    participants=[
+                        _resolve_participant(p, resp_agents, resp_contacts, principal_label)
+                        for p in participants_by_progress.get(row.id, [])
+                    ],
                     requirements=reqs_by_progress.get(row.id, []),
                     all_requirements_met=met_by_progress.get(row.id, True),
                     comment_count=comment_counts.get(row.id, 0),

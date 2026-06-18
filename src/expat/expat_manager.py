@@ -35,6 +35,7 @@ from src.expat.expat_schema import (
     ExpatCaseDetailResponse,
     ExpatCaseSummaryResponse,
     ExpatNotificationResponse,
+    ExpatParticipantResponse,
     ExpatReferentResponse,
     ExpatRequirementResponse,
     ExpatResponsibleResponse,
@@ -43,7 +44,7 @@ from src.expat.expat_schema import (
 )
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
-from src.progress.progress_schema import StepProgressResponse
+from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
 
 
 def _displayable_responsible(step: StepProgressResponse) -> ExpatResponsibleResponse:
@@ -60,6 +61,20 @@ def _displayable_responsible(step: StepProgressResponse) -> ExpatResponsibleResp
     if step.responsible_type == ResponsibleType.EXTERNAL.value:
         return ExpatResponsibleResponse(type="external", name=step.responsible_name)
     return ExpatResponsibleResponse(type=None, name=None)
+
+
+def _displayable_participant(p: StepParticipantResponse) -> ExpatParticipantResponse:
+    # Same anti-staffing as the responsible: an internal agent → "agency"
+    # (no name); an external provider → its name; the client → "you".
+    if p.type == ResponsibleType.AGENT.value:
+        if p.is_external:
+            return ExpatParticipantResponse(role=p.role, type="external", name=p.name)
+        return ExpatParticipantResponse(role=p.role, type="agency", name=None)
+    if p.type == ResponsibleType.EXPAT.value:
+        return ExpatParticipantResponse(role=p.role, type="you", name=None)
+    if p.type == ResponsibleType.EXTERNAL.value:
+        return ExpatParticipantResponse(role=p.role, type="external", name=p.name)
+    return ExpatParticipantResponse(role=p.role, type=None, name=None)
 
 
 class ExpatPortalManager:
@@ -128,6 +143,7 @@ class ExpatPortalManager:
                 completed_at=step.completed_at,
                 blocked_by=[blocking.name for blocking in step.blocked_by],
                 responsible=_displayable_responsible(step),
+                participants=[_displayable_participant(p) for p in step.participants],
                 completion_mode=step.completion_mode,
                 comment_count=step.comment_count,
                 counter=step.counter,  # resolved upstream (single source)
