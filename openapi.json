@@ -2952,6 +2952,32 @@
         ]
       }
     },
+    "/dashboard/me": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get My Dashboard",
+        "operationId": "get_my_dashboard_dashboard_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardMeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/{case_id}/documents": {
       "post": {
         "tags": [
@@ -11865,6 +11891,77 @@
         "title": "CustomFieldType",
         "description": "Agency-defined field types — a CLOSED, minimal set. Each has a\ndistinct validation rule and frontend renderer. `options` applies\nto SELECT / MULTI_SELECT only."
       },
+      "DashboardMeCounts": {
+        "properties": {
+          "to_realize": {
+            "type": "integer",
+            "title": "To Realize"
+          },
+          "to_validate": {
+            "type": "integer",
+            "title": "To Validate"
+          },
+          "my_cases": {
+            "type": "integer",
+            "title": "My Cases"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "to_realize",
+          "to_validate",
+          "my_cases",
+          "overdue"
+        ],
+        "title": "DashboardMeCounts",
+        "description": "The four personal figures for the connected agent."
+      },
+      "DashboardMeResponse": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/DashboardMeCounts"
+          },
+          "todo": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTodoItem"
+            },
+            "type": "array",
+            "title": "Todo"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "weekly_load": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardWeeklyLoadDay"
+            },
+            "type": "array",
+            "title": "Weekly Load"
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_name",
+          "counts",
+          "todo",
+          "by_status",
+          "weekly_load"
+        ],
+        "title": "DashboardMeResponse",
+        "description": "Agent-centric \"dashboard of action\". Everything is filtered\nserver-side on the connected agent (responsible OR validator == me) and\nthe tenant — an agent sees ONLY its own actions."
+      },
       "DashboardResponse": {
         "properties": {
           "total_cases": {
@@ -11893,7 +11990,97 @@
           "by_dest_country"
         ],
         "title": "DashboardResponse",
-        "description": "Simple counts, agency-scoped. NOTHING more — rich analytics is\nV1.5 and stays there."
+        "description": "Simple counts, agency-scoped. NOTHING more — rich analytics is\nV1.5 and stays there. Kept untouched (the agent-centric dashboard is\nthe separate /dashboard/me); a future \"agency overview\" may reuse it."
+      },
+      "DashboardTodoItem": {
+        "properties": {
+          "progress_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Progress Id"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "step_name": {
+            "type": "string",
+            "title": "Step Name"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "badge": {
+            "type": "string",
+            "title": "Badge"
+          },
+          "is_blocked": {
+            "type": "boolean",
+            "title": "Is Blocked"
+          },
+          "is_overdue": {
+            "type": "boolean",
+            "title": "Is Overdue"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "progress_id",
+          "case_id",
+          "step_name",
+          "client_name",
+          "dest_country",
+          "badge",
+          "is_blocked",
+          "is_overdue",
+          "target_date"
+        ],
+        "title": "DashboardTodoItem",
+        "description": "One actionable line in the unified to-do (realize + validate mixed).\n`badge` is the ROLE; `is_blocked`/`is_overdue` are state modifiers the\nfront composes into the visual priority (overdue > validate > realize).\nLabels stay front (i18n) — the API ships keys/values, never FR text."
+      },
+      "DashboardWeeklyLoadDay": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "count"
+        ],
+        "title": "DashboardWeeklyLoadDay"
       },
       "DeadlineCounter": {
         "properties": {
