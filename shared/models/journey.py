@@ -29,6 +29,12 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=False, server_default=text("false"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # i18n — parallel {lang: text} blob for the name. The scalar `name` stays
+    # the read fallback AND the seed's idempotence anchor (never keyed on the
+    # blob). Absent language = absent key.
+    name_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
     # ISO 3166-1 alpha-2 country code (e.g. "PY") — for grouping / flag /
     # search of samples. NULLABLE: an ordinary agency template may have none;
     # a sample carries one. No country table/referential — the flag + the
@@ -59,6 +65,15 @@ class JourneySection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
+    # BLOC 1 i18n — parallel {lang: text} blobs. The scalar columns above stay
+    # the read source until BLOC 2 switches resolution. Absent language = absent
+    # key (never an empty string). NOT NULL with a '{}' default.
+    name_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+    description_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
     position: Mapped[int] = mapped_column(default=0, nullable=False)
 
 
@@ -113,6 +128,15 @@ class JourneyTemplateStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # client). Lives on the TEMPLATE → the same for every case of this
     # journey. Attachments are in journey_step_attachment.
     content_note: Mapped[str | None] = mapped_column(Text)
+    # BLOC 1 i18n — parallel {lang: text} blobs for name + content_note. The
+    # scalar columns stay the read source until BLOC 2 switches resolution.
+    # Absent language = absent key (never an empty string).
+    name_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+    content_note_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
 
 
 class JourneyStepAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):

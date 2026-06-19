@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,12 @@ class CustomFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     key: Mapped[str] = mapped_column(String(50), nullable=False)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
+    # BLOC 1 i18n — parallel {lang: text} blob for the label (the `key` stays a
+    # hard, untranslated identifier). Scalar `label` remains the read source
+    # until BLOC 2. Absent language = absent key.
+    label_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
     field_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # SELECT / MULTI_SELECT only: list of allowed string values.
     options: Mapped[list[str] | None] = mapped_column(JSONB)
