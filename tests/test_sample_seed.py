@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.rbac import Role
-from src.journeys.sample_seed import PY1_COUNTRY, PY1_NAME, seed_sample_journeys
+from src.journeys.sample_seed import (
+    _SAMPLES,
+    PY1_COUNTRY,
+    PY1_NAME,
+    seed_sample_journeys,
+)
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
 
@@ -101,3 +106,38 @@ async def test_py1_country_in_library_and_copied_by_clone(
     # The deep clone keeps the country of origin.
     clone = await sd.post(f"/journeys/{py1['id']}/clone", headers=ah, json={})
     assert clone.json()["country"] == PY1_COUNTRY
+
+
+async def test_all_samples_seeded_groupable_by_country_and_clonable(
+    sd: AsyncClient, admin: Agent, db_session: AsyncSession, agent_headers: AuthHeaders
+) -> None:
+    """Data-driven over the seed's own _SAMPLES spec → auto-covers every
+    sample (present and future)."""
+    ah = agent_headers(admin)
+    await seed_sample_journeys(db_session)
+    await seed_sample_journeys(db_session)  # idempotent: no duplicate
+
+    library = (await sd.get("/journeys/library", headers=ah)).json()
+    by_name = {t["name"]: t for t in library}
+    expected = {name: (country, len(steps)) for name, country, steps in _SAMPLES}
+
+    # Every spec'd sample is present, exactly once, with its country.
+    for name, (country, _n) in expected.items():
+        assert [t["name"] for t in library].count(name) == 1, name
+        assert by_name[name]["country"] == country, name
+
+    # Groupable by country: counts match the spec (e.g. PY ×3, CY ×5).
+    for country in {c for c, _ in expected.values()}:
+        live = sum(1 for t in library if t["country"] == country)
+        spec = sum(1 for c, _ in expected.values() if c == country)
+        assert live == spec, country
+
+    # Each sample is clonable: 201, country copied, step count + AND chain kept.
+    for name, (country, n_steps) in expected.items():
+        clone = await sd.post(f"/journeys/{by_name[name]['id']}/clone", headers=ah, json={})
+        assert clone.status_code == 201, clone.text
+        assert clone.json()["country"] == country
+        detail = (await sd.get(f"/journeys/{clone.json()['id']}", headers=ah)).json()
+        ordered = sorted(detail["steps"], key=lambda s: s["position"])
+        assert len(ordered) == n_steps, name
+        assert ordered[1]["prerequisite_step_ids"] == [ordered[0]["id"]], name
