@@ -558,10 +558,9 @@ class JourneysManager:
             if payload.agent_id is not None:
                 raise ValidationError("An 'expat' participant carries no agent.")
             agent_id = None
-        else:  # AGENT — internal member OR durable external partner of the agency
-            if payload.agent_id is None:
-                raise ValidationError("agent_id is required for an 'agent' participant.")
-            await self._validate_default_responsible_agent(agent, payload.agent_id)
+        else:  # AGENT — a named member, OR agent_id NULL = "the agency in general"
+            if payload.agent_id is not None:
+                await self._validate_default_responsible_agent(agent, payload.agent_id)
             agent_id = payload.agent_id
         row = self.repo.add_step_participant(
             step_id=step_id, type=payload.type.value, agent_id=agent_id, role=payload.role.value

@@ -5951,7 +5951,7 @@
           "journeys"
         ],
         "summary": "Clone Template",
-        "description": "Deep-clone a sample or own template into the calling agency. Attachments\nare not cloned (the file stays on the source).",
+        "description": "Deep-clone a sample or own template into the calling agency. Attachments\nare not cloned (the file stays on the source). The body is OPTIONAL: no\nbody / {} → default name \"{source} (copie)\"; {name} → that name.",
         "operationId": "clone_template_journeys__template_id__clone_post",
         "security": [
           {
@@ -5971,11 +5971,18 @@
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JourneyCloneRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/JourneyCloneRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
               }
             }
           }

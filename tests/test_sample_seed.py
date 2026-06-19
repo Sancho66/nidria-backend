@@ -6,9 +6,11 @@ test client does not run the lifespan)."""
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.journey import JourneyStepParticipant, JourneyTemplate, JourneyTemplateStep
 from shared.models.rbac import Role
 from src.journeys.sample_seed import (
     _SAMPLES,
@@ -17,6 +19,9 @@ from src.journeys.sample_seed import (
     seed_sample_journeys,
 )
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
+
+# An agency-doer step of PY-1 (role None in the spec → "the agency in general").
+_PY1_AGENCY_STEP = "Dépôt du dossier à l'immigration (DNM)"
 
 
 @pytest.fixture
@@ -89,6 +94,89 @@ async def test_py1_step2_translator_is_client_participant_plus_note(
     # The translator is documented in the content_note (to assign on the dossier).
     assert step2["content_note"] is not None
     assert "assigner au dossier" in step2["content_note"]
+
+
+async def test_agency_step_is_agency_in_general_participant_and_cloned(
+    sd: AsyncClient, admin: Agent, db_session: AsyncSession, agent_headers: AuthHeaders
+) -> None:
+    """An "À réaliser par : Agence" step (role None in the spec) becomes a
+    participant type=agent with agent_id NULL = "the agency in general". The
+    clone preserves it (agent_id stays NULL on the owned template)."""
+    ah = agent_headers(admin)
+    await seed_sample_journeys(db_session)
+    py1_id = next(
+        t["id"]
+        for t in (await sd.get("/journeys/library", headers=ah)).json()
+        if t["name"] == PY1_NAME
+    )
+    clone_id = (await sd.post(f"/journeys/{py1_id}/clone", headers=ah, json={})).json()["id"]
+    detail = (await sd.get(f"/journeys/{clone_id}", headers=ah)).json()
+    agency_step = next(s for s in detail["steps"] if s["name"] == _PY1_AGENCY_STEP)
+
+    # The agency is the doer — a type=agent participant with NO named member.
+    assert [(p["type"], p["agent_id"], p["role"]) for p in agency_step["participants"]] == [
+        ("agent", None, "executant")
+    ]
+
+
+async def test_reconcile_backfills_agency_participant_on_existing_sample(
+    sd: AsyncClient, admin: Agent, db_session: AsyncSession, agent_headers: AuthHeaders
+) -> None:
+    """Prod-migration path: a sample seeded BEFORE the agency participant
+    existed (agency steps participant-less). Re-running the seed BACKFILLS the
+    "agency in general" participant on those steps, idempotently."""
+    await seed_sample_journeys(db_session)
+    tpl_id = (
+        await db_session.execute(
+            select(JourneyTemplate.id).where(
+                JourneyTemplate.is_sample.is_(True), JourneyTemplate.name == PY1_NAME
+            )
+        )
+    ).scalar_one()
+    step_ids = (
+        (
+            await db_session.execute(
+                select(JourneyTemplateStep.id).where(JourneyTemplateStep.template_id == tpl_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # Simulate the OLD shape: drop every agent (agency) participant.
+    await db_session.execute(
+        delete(JourneyStepParticipant).where(
+            JourneyStepParticipant.step_id.in_(step_ids),
+            JourneyStepParticipant.type == "agent",
+        )
+    )
+    await db_session.commit()
+
+    # Re-seed → reconcile backfills the missing agency doers. A further re-seed
+    # adds no duplicate (idempotent). A sample is not reachable via GET
+    # /journeys/{id} (agency-scoped), so assert directly on the DB.
+    await seed_sample_journeys(db_session)
+    await seed_sample_journeys(db_session)
+    agency_step_id = (
+        await db_session.execute(
+            select(JourneyTemplateStep.id).where(
+                JourneyTemplateStep.template_id == tpl_id,
+                JourneyTemplateStep.name == _PY1_AGENCY_STEP,
+            )
+        )
+    ).scalar_one()
+    parts = (
+        (
+            await db_session.execute(
+                select(JourneyStepParticipant).where(
+                    JourneyStepParticipant.step_id == agency_step_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # Exactly ONE agency-in-general participant on the step — backfilled, not duplicated.
+    assert [(p.type, p.agent_id) for p in parts] == [("agent", None)]
 
 
 async def test_py1_country_in_library_and_copied_by_clone(

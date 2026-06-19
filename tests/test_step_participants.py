@@ -107,6 +107,13 @@ async def test_participant_crud_and_validation(
     )
     assert denied.status_code == 403
 
+    # An 'agent' participant WITHOUT agent_id = "the agency in general" (no named
+    # member) — accepted, symmetric to the validator. agent_id stays NULL.
+    agency = await pc.post(base, headers=ah, json={"type": "agent", "role": "executant"})
+    assert agency.status_code == 201, agency.text
+    assert agency.json()["type"] == "agent" and agency.json()["agent_id"] is None
+    await pc.delete(f"{base}/{agency.json()['id']}", headers=ah)
+
     # Validation: external type rejected at template; expat+agent_id rejected;
     # an unknown role (e.g. 'validator') rejected by the closed enum.
     assert (

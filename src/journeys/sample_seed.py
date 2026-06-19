@@ -2,13 +2,16 @@
 roles: agency_id NULL + is_sample=true → shared, read-only for agencies, an
 agency consumes one by CLONING it.
 
-CONSTRAINT: on an agency-less sample, the only NAMEABLE participant is the
-client (type=expat) — a type=agent participant needs an agent_id and a sample
-has no agency, hence no agents. So agency / provider doers (escribano, Muhtar,
-sworn translator…) are carried as a content_note "à assigner au dossier"; the
-agency names them on the CLONE. The validator is "the agency"
-(validated_by_type='agent', agent_id NULL = "agency in general"). Amounts and
-delays are indicative, never a rule.
+DOER on an agency-less sample:
+- client step  → participant type=expat (the case principal).
+- agency step  → participant type=agent with agent_id NULL = "the agency in
+  general" (no named member — symmetric to the validator). This is the `None`
+  role below.
+- a PROVIDER doer (escribano, sworn translator…) is NOT a sample participant
+  (it is case-scoped): it is carried on the CLIENT step as `provides_documents`
+  + a content_note "à assigner au dossier"; the agency names it on the CLONE.
+The validator is always "the agency" (validated_by_type='agent', agent_id
+NULL). Amounts and delays are indicative, never a rule.
 """
 
 import uuid
@@ -23,12 +26,14 @@ from shared.models.journey import (
     StepPrerequisite,
 )
 from shared.models.step_requirement import StepRequirement
+from src.core.enums import StepParticipantRole
 
-# A step: (name, estimated_days | None, content_note, client_role | None,
-# [doc labels]). estimated_days None ⇒ open-ended (e.g. a multi-year backlog
-# wait). client_role None ⇒ an agency/provider doer (a content_note, no
-# participant on the sample). Steps form a linear AND chain (each requires the
-# previous). The validator is the agency on every step.
+# A step: (name, estimated_days | None, content_note, role | None, [doc labels]).
+# estimated_days None ⇒ open-ended (e.g. a multi-year backlog wait). role is the
+# DOER: a StepParticipantRole string ⇒ the CLIENT (type=expat) with that role;
+# None ⇒ the AGENCY does it (type=agent, agent_id NULL = "the agency in
+# general"). Steps form a linear AND chain (each requires the previous). The
+# validator is the agency on every step.
 type _Step = tuple[str, int | None, str, str | None, list[str]]
 
 PY1_NAME = "Paraguay — Résidence temporaire + Cédula"
@@ -250,7 +255,7 @@ _PERM_STEPS: list[_Step] = [
         "2 ans (possible jusqu'à 1 mois après expiration, avec amende). Ne pas "
         "s'être absenté plus d'un an cumulé sur les 2 ans. Aucune exigence "
         "d'investissement pour la conversion.",
-        None,  # réalisé par l'agence — non nommable sur un sample (content_note)
+        None,  # acteur = l'agence (type=agent, agent_id NULL) (content_note)
         [],
     ),
     (
@@ -375,7 +380,7 @@ _DNV_STEPS: list[_Step] = [
         "🔴 CRITIQUE. Quota officiel = 500 permis, atteint dès 2023 ; le « 1 000 » "
         "n'est PAS confirmé. Vérifier la disponibilité réelle auprès du Deputy "
         "Ministry of Migration AVANT toute promesse client.",
-        None,  # réalisé par l'agence — non nommable sur un sample (content_note)
+        None,  # acteur = l'agence (type=agent, agent_id NULL) (content_note)
         [],
     ),
     (
@@ -507,7 +512,7 @@ _PA_FN_STEPS: list[_Step] = [
         14,
         "🟠 La liste des ~50 pays amis est modifiable par décret — revérifier sur "
         "migracion.gob.pa avant le dossier. Avocat panaméen obligatoire.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [
             "Passeport",
             "Casier judiciaire apostillé (< 6 mois)",
@@ -685,7 +690,7 @@ _PA_CO_STEPS: list[_Step] = [
         "conseil, gros, import-export, SaaS/tech, holding, clients étrangers. "
         "Qualifier AVANT de créer. S.A. = 1 associé, propriétaires confidentiels ; "
         "SRL = 2 associés min, associés publics.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -800,7 +805,7 @@ _BG_DN_STEPS: list[_Step] = [
         "🔴 RÉGIME TRÈS RÉCENT — base légale art. 24p ЗЧРБ, demandes ouvertes le "
         "20/12/2025. Détails d'application encore évolutifs : revérifier auprès du "
         "consulat / de la Direction Migration avant toute promesse.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -947,7 +952,7 @@ _HU_WC_STEPS: list[_Step] = [
         "solution d'essai 1-2 ans. Pour s'installer durablement, basculer vers une "
         "autre voie. Interdit de travailler pour le marché hongrois. Revenu mensuel "
         "minimum 🔴 volatil, revérifier sur oif.gov.hu.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -984,7 +989,7 @@ _HU_GI_STEPS: list[_Step] = [
         "immobilier résidentiel direct ≈ 500 000 € (option possiblement REPORTÉE — "
         "vérifier si réellement ouverte) ; donation enseignement supérieur "
         "≈ 1 000 000 €. Vérifier la liste des fonds MNB réellement souscriptibles.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1089,7 +1094,7 @@ _AE_GV_STEPS: list[_Step] = [
         "≥ 30 000 AED/mois + diplôme + classification MOHRE 1er/2e niveau · "
         "entrepreneur projet ≥ 500 000 AED ou validation incubateur · immobilier "
         "≥ 2 M AED.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1245,7 +1250,7 @@ _AE_RET_STEPS: list[_Step] = [
         "mois · OU épargne ≥ 1 M AED · OU bien ≥ 1 M AED. Réservé aux 55 ans et +. "
         "Au-delà de 2 M AED de patrimoine, préférer le Golden Visa (10 ans + "
         "exemption règle d'absence).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1283,7 +1288,7 @@ _AE_CO_STEPS: list[_Step] = [
         "zone : 100 % propriété + auto-sponsoring du visa. 100 % propriété "
         "étrangère désormais permis pour beaucoup d'activités mainland (liste "
         "d'activités à impact stratégique encadrée — vérifier auprès du DET).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1495,7 +1500,7 @@ _MU_CO_STEPS: list[_Step] = [
         "INTERNATIONAL + besoin des conventions DTAA → GBC (~3 % effectif via "
         "exemption partielle 80 %). INTERNATIONAL SANS besoin des DTAA → Authorised "
         "Company (0 % à Maurice, déclaration MRA, pas d'accès aux DTAA).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1576,7 +1581,7 @@ _TH_LTR_STEPS: list[_Step] = [
         "USD) · Work-from-Thailand Professional (revenu ≥ 80 000 USD/an + employeur "
         "coté ou > 150 M USD CA ; donne un work permit numérique) · Highly-Skilled "
         "Professional (secteurs ciblés). Relaxations 2024-2025 à confirmer.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1718,7 +1723,7 @@ _TH_CO_STEPS: list[_Step] = [
         'approbation du Cabinet (rare). 🔴 LE MONTAGE "ACTIONNAIRES THAÏS NOMINEE" '
         "EST ILLÉGAL (art. 36 FBA — amende et prison possibles, ordre de cession). "
         "NE JAMAIS le proposer.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1922,7 +1927,7 @@ _ID_CO_STEPS: list[_Step] = [
         "convention, perte possible de l'investissement, le prête-nom est "
         "légalement propriétaire. NE JAMAIS le proposer (risque max sur "
         "l'immobilier Bali).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -1968,7 +1973,7 @@ _PH_SRRV_STEPS: list[_Step] = [
         "requis en sus). NOTE : un Digital Nomad Visa (EO 86, 2025) existe sur le "
         "papier mais N'EST PAS opérationnel — ne pas le proposer tant que la "
         "délivrance n'est pas confirmée.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2077,7 +2082,7 @@ _PH_CO_STEPS: list[_Step] = [
         "est ILLÉGAL — sanctions pénales pour l'étranger ET le prête-nom. Le 60/40 "
         "doit refléter un contrôle économique philippin RÉEL. NE JAMAIS le "
         "proposer.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2228,7 +2233,7 @@ _PT_GV_STEPS: list[_Step] = [
         "capitalisation d'entreprise ≥ 500 000 €. ⚠️ L'IMMOBILIER et le simple "
         "transfert de capital ont été RETIRÉS en 2023 (loi Mais Habitação) — toute "
         "brochure citant l'achat immobilier (280k/350k/500k) est FAUSSE.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2389,7 +2394,7 @@ _US_E2_STEPS: list[_Step] = [
         "l'entreprise et NON MARGINAL (le ~100k USD souvent cité est observé, PAS "
         "une règle). Pas d'investissement passif/immobilier spéculatif. Avocat US "
         "indispensable (honoraires ~8-20k+ USD).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2433,7 +2438,7 @@ _US_L1_STEPS: list[_Step] = [
         "1 an d'emploi continu à l'étranger dans l'entité liée sur les 3 dernières "
         "années. Relation qualifiante (maison mère/filiale/affiliée). L-1A "
         "dirigeant (≤ 7 ans) / L-1B savoir spécialisé (≤ 5 ans, plus scruté).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2468,7 +2473,7 @@ _US_O1_STEPS: list[_Step] = [
         "🟠 Prix majeur reconnu OU au moins 3 critères réglementaires "
         "(publications, presse, rôle critique, rémunération élevée, jugement de "
         "pairs…). Qualité des preuves décisive. Sponsor US ou agent requis.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2533,7 +2538,7 @@ _US_EB5_STEPS: list[_Step] = [
         "de 10 emplois à temps plein. Réindexation prévue 1/1/2027. Traçabilité "
         "licite des fonds exigée (sévèrement scrutée). Investissement direct OU via "
         "Regional Center. Honoraires avocat ~15-50k+ USD.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2575,7 +2580,7 @@ _US_NIW_STEPS: list[_Step] = [
         "Dhanasar (mérite & importance nationale, bonne position pour avancer, "
         "bénéfice de renoncer à l'offre d'emploi). Les deux permettent "
         "l'auto-pétition.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2622,7 +2627,7 @@ _US_CO_STEPS: list[_Step] = [
         "Wyoming (coûts bas, pas d'impôt d'État) / État d'activité réelle. "
         "⚠️ s'immatriculer au DE/WY ne dispense PAS de s'enregistrer là où la "
         "société opère (nexus).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2763,7 +2768,7 @@ _CH_RET_STEPS: list[_Step] = [
         "certains cantons accueillants, d'autres restrictifs — le choix du canton "
         "est déterminant. Un rentier non-UE de MOINS de 55 ans n'a pas de voie "
         "claire.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2801,7 +2806,7 @@ _CH_TCN_STEPS: list[_Step] = [
         "suisse/UE) + CONTINGENT annuel (risque de blocage si quota épuisé). Sans "
         "employeur et sans profil cadre/spécialiste, cette voie est de fait "
         "FERMÉE.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2839,7 +2844,7 @@ _CH_CO_STEPS: list[_Step] = [
         "PLUS un canton à forte imposition). Structure : Sàrl (capital 20 000 CHF "
         "libéré, associés inscrits) / SA (100 000 CHF souscrit, min 50 000 libéré, "
         "actionnaires non inscrits).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2884,7 +2889,7 @@ _CA_EE_STEPS: list[_Step] = [
         'français" à seuils CRS nettement plus bas. Une nomination PNP ajoute '
         "+600 CRS (invitation quasi garantie). Pas de visa retraité/investisseur "
         "au Canada.",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -2919,7 +2924,7 @@ _CA_PNP_STEPS: list[_Step] = [
         "profession en demande, une offre d'emploi locale, ou un lien avec la "
         "province). Allocation PNP 2025 réduite (~55 000) — disponibilité des "
         "volets volatile, à confirmer par province (OINP/BC PNP/AAIP…).",
-        None,  # réalisé par l'agence — non nommable sur un sample
+        None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
     (
@@ -3129,9 +3134,58 @@ _SAMPLES: list[tuple[str, str, list[_Step]]] = [
 ]
 
 
+def _add_participant(db: AsyncSession, step_id: uuid.UUID, role: str | None) -> None:
+    """The step's DOER. role None ⇒ the agency in general (type=agent, agent_id
+    NULL); a StepParticipantRole string ⇒ the client (type=expat)."""
+    if role is None:
+        db.add(
+            JourneyStepParticipant(
+                step_id=step_id,
+                type="agent",
+                agent_id=None,  # NULL = the agency in general
+                role=StepParticipantRole.EXECUTANT.value,
+            )
+        )
+    else:
+        db.add(JourneyStepParticipant(step_id=step_id, type="expat", agent_id=None, role=role))
+
+
+async def _reconcile_existing(
+    db: AsyncSession, tpl: JourneyTemplate, country: str, steps: list[_Step]
+) -> None:
+    """An already-seeded sample: refresh country, and BACKFILL the agency doer
+    (type=agent) on steps that have no participant yet — for the rows seeded
+    before the "agency in general" participant existed. Idempotent: adds only
+    what is missing. Samples are read-only for agencies, so this never fights a
+    user edit. Steps match the spec by position (stable)."""
+    if tpl.country != country:
+        tpl.country = country
+    db_steps = list(
+        (
+            await db.execute(
+                select(JourneyTemplateStep)
+                .where(JourneyTemplateStep.template_id == tpl.id)
+                .order_by(JourneyTemplateStep.position)
+            )
+        ).scalars()
+    )
+    existing = (
+        await db.execute(
+            select(JourneyStepParticipant.step_id).where(
+                JourneyStepParticipant.step_id.in_([s.id for s in db_steps])
+            )
+        )
+    ).scalars()
+    steps_with_participant = set(existing)
+    for db_step, (_n, _d, _note, role, _docs) in zip(db_steps, steps, strict=False):
+        if role is None and db_step.id not in steps_with_participant:
+            _add_participant(db, db_step.id, None)
+    await db.commit()
+
+
 async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step]) -> None:
     """Idempotent: keyed on (agency_id IS NULL, is_sample, name). If it exists,
-    only refresh the country in place (no duplicate, no re-create)."""
+    reconcile in place (country + backfill the agency doer); else create it."""
     existing = (
         await db.execute(
             select(JourneyTemplate).where(
@@ -3142,9 +3196,7 @@ async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step
         )
     ).scalar_one_or_none()
     if existing is not None:
-        if existing.country != country:
-            existing.country = country
-            await db.commit()
+        await _reconcile_existing(db, existing, country, steps)
         return
 
     tpl = JourneyTemplate(
@@ -3175,10 +3227,7 @@ async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step
         db.add(StepPrerequisite(step_id=step_ids[i], prerequisite_step_id=step_ids[i - 1]))
 
     for i, (_step_name, _days, _note, role, docs) in enumerate(steps):
-        if role is not None:
-            db.add(
-                JourneyStepParticipant(step_id=step_ids[i], type="expat", agent_id=None, role=role)
-            )
+        _add_participant(db, step_ids[i], role)
         for position, label in enumerate(docs):
             db.add(
                 StepRequirement(

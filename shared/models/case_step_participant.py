@@ -21,8 +21,11 @@ class CaseStepParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "case_step_participant"
     __table_args__ = (
+        # `agent` with agent_id NULL = "the agency in general" (no named member),
+        # symmetric to validated_by_type='agent' + agent_id NULL. A named member
+        # sets agent_id; an external provider uses type='external' + external_id.
         CheckConstraint(
-            "(type = 'agent' AND agent_id IS NOT NULL AND external_id IS NULL)"
+            "(type = 'agent' AND external_id IS NULL)"
             " OR (type = 'expat' AND agent_id IS NULL AND external_id IS NULL)"
             " OR (type = 'external' AND external_id IS NOT NULL AND agent_id IS NULL)",
             name="participant_instance_type_matches_fk",

@@ -147,10 +147,11 @@ class JourneyStepParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "journey_step_participant"
     __table_args__ = (
-        # Polymorphic person, mirror of responsible_type_matches_fk:
-        # expat ⟹ no agent; agent (internal OR is_external) ⟹ agent_id set.
+        # Polymorphic person: expat ⟹ no agent; agent ⟹ agent_id OPTIONAL —
+        # a named member sets it, NULL = "the agency in general" (symmetric to
+        # default_validated_by_type='agent' + agent_id NULL).
         CheckConstraint(
-            "(type = 'expat' AND agent_id IS NULL) OR (type = 'agent' AND agent_id IS NOT NULL)",
+            "(type = 'expat' AND agent_id IS NULL) OR (type = 'agent')",
             name="participant_template_type_matches_fk",
         ),
     )
