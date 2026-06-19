@@ -8,6 +8,7 @@ from shared.models.expat_user import ExpatUser
 from src.core.dependencies import get_current_expat, get_db
 from src.core.enums import Audience
 from src.core.http import file_download_response
+from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.expat.expat_manager import ExpatPortalManager
 from src.expat.expat_schema import (
@@ -60,8 +61,10 @@ async def list_my_cases(expat: ExpatDep, db: DbDep) -> list[ExpatCaseSummaryResp
 
 
 @router.get("/cases/{case_id}", response_model=ExpatCaseDetailResponse)
-async def get_my_case(case_id: uuid.UUID, expat: ExpatDep, db: DbDep) -> ExpatCaseDetailResponse:
-    return await ExpatPortalManager(db).get_my_case(expat, case_id)
+async def get_my_case(
+    case_id: uuid.UUID, expat: ExpatDep, db: DbDep, lang: RequestLang
+) -> ExpatCaseDetailResponse:
+    return await ExpatPortalManager(db).get_my_case(expat, case_id, lang)
 
 
 @router.put(

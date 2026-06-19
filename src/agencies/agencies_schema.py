@@ -1,8 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+# The agency's default content language — the fallback for its i18n blobs.
+Language = Literal["fr", "en", "es"]
 
 
 class AgencyResponse(BaseModel):
@@ -12,6 +15,7 @@ class AgencyResponse(BaseModel):
     name: str
     slug: str
     settings: dict[str, Any]
+    default_language: Language
 
 
 class AgencyUpdateRequest(BaseModel):
@@ -20,6 +24,8 @@ class AgencyUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     settings: dict[str, Any] | None = None
+    # i18n fallback language for this agency's content (validated fr/en/es).
+    default_language: Language | None = None
 
 
 class AgencyMemberResponse(BaseModel):

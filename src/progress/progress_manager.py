@@ -32,6 +32,7 @@ from src.core.enums import (
     StepValidatorType,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.i18n import DEFAULT_LANG, resolve_i18n
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
@@ -279,12 +280,12 @@ class ProgressManager:
         )
 
     async def assign_journey(
-        self, agent: Agent, case_id: uuid.UUID, template_id: uuid.UUID
+        self, agent: Agent, case_id: uuid.UUID, template_id: uuid.UUID, lang: str = DEFAULT_LANG
     ) -> list[StepProgressResponse]:
         case = await self._get_case(agent, case_id)
         await self.apply_journey(agent, case, template_id)
         await self.db.commit()
-        return await self.timeline_for_case(case)
+        return await self.timeline_for_case(case, lang)
 
     async def backfill_step(self, agent: Agent, step: JourneyTemplateStep) -> int:
         """Option-A contract (step 8): a step added to an ASSIGNED
@@ -371,10 +372,15 @@ class ProgressManager:
 
     # --- projection -------------------------------------------------------------------
 
-    async def timeline_for_case(self, case: ClientCase) -> list[StepProgressResponse]:
+    async def timeline_for_case(
+        self, case: ClientCase, lang: str = DEFAULT_LANG
+    ) -> list[StepProgressResponse]:
         rows = await self.repo.list_progress_for_case(case.id)
         if not rows:
             return []
+        # i18n: resolve step name/content_note for the display `lang`, falling
+        # back to the case agency's default then the legacy scalar (BLOC 2).
+        agency_default = (await self.repo.agency_default_language(case.agency_id)) or DEFAULT_LANG
         step_ids = [row.template_step_id for row in rows]
         steps_by_id = await self.repo.get_template_steps_by_ids(step_ids)
         prerequisites: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
@@ -496,7 +502,15 @@ class ProgressManager:
                 if sid not in done_step_ids
             ]
             blocked_by = [
-                BlockingStep(template_step_id=sid, name=steps_by_id[sid].name)
+                BlockingStep(
+                    template_step_id=sid,
+                    name=resolve_i18n(
+                        steps_by_id[sid].name_i18n,
+                        lang,
+                        agency_default,
+                        steps_by_id[sid].name,
+                    ),
+                )
                 for sid in unfinished
                 if sid in steps_by_id
             ]
@@ -510,7 +524,7 @@ class ProgressManager:
                 StepProgressResponse(
                     id=row.id,
                     template_step_id=row.template_step_id,
-                    name=step.name,
+                    name=resolve_i18n(step.name_i18n, lang, agency_default, step.name),
                     position=step.position,
                     estimated_days=step.estimated_days,
                     status=projected,
@@ -536,7 +550,9 @@ class ProgressManager:
                     counter=_deadline_counter(
                         row.due_at, step.estimated_days, started_ats.get(row.id), now
                     ),
-                    content_note=step.content_note,
+                    content_note=resolve_i18n(
+                        step.content_note_i18n, lang, agency_default, step.content_note
+                    ),
                     attachments=[
                         StepContentAttachment(id=a.id, filename=a.filename, position=a.position)
                         for a in attachments_by_step.get(row.template_step_id, [])
@@ -546,9 +562,11 @@ class ProgressManager:
         responses.sort(key=lambda r: r.position)
         return responses
 
-    async def get_timeline(self, agent: Agent, case_id: uuid.UUID) -> list[StepProgressResponse]:
+    async def get_timeline(
+        self, agent: Agent, case_id: uuid.UUID, lang: str = DEFAULT_LANG
+    ) -> list[StepProgressResponse]:
         case = await self._get_case(agent, case_id)
-        return await self.timeline_for_case(case)
+        return await self.timeline_for_case(case, lang)
 
     # --- transitions + responsible -------------------------------------------------------
 
@@ -573,6 +591,7 @@ class ProgressManager:
         case_id: uuid.UUID,
         progress_id: uuid.UUID,
         payload: StepProgressUpdateRequest,
+        lang: str = DEFAULT_LANG,
     ) -> StepProgressResponse:
         case = await self._get_case(agent, case_id)
         row = await self.repo.get_progress_in_case(case.id, progress_id)
@@ -599,7 +618,7 @@ class ProgressManager:
 
         await self.db.commit()
         await self.send_pending(pending)
-        timeline = await self.timeline_for_case(case)
+        timeline = await self.timeline_for_case(case, lang)
         return next(item for item in timeline if item.id == row.id)
 
     async def set_responsible(
@@ -608,6 +627,7 @@ class ProgressManager:
         case_id: uuid.UUID,
         progress_id: uuid.UUID,
         payload: ResponsibleUpdateRequest,
+        lang: str = DEFAULT_LANG,
     ) -> StepProgressResponse:
         """Nominal responsible assignment (wave C) — its own endpoint
         (gate case.edit), separate from the step.complete transitions."""
@@ -617,7 +637,7 @@ class ProgressManager:
             raise NotFoundError("Case step not found.")
         await self._apply_responsible_change(agent, case, row, payload)
         await self.db.commit()
-        timeline = await self.timeline_for_case(case)
+        timeline = await self.timeline_for_case(case, lang)
         return next(item for item in timeline if item.id == row.id)
 
     async def set_validator(
@@ -626,6 +646,7 @@ class ProgressManager:
         case_id: uuid.UUID,
         progress_id: uuid.UUID,
         payload: ValidatorUpdateRequest,
+        lang: str = DEFAULT_LANG,
     ) -> StepProgressResponse:
         """ "Action validée par" — designate the validator on the DOSSIER
         (gate case.edit), symmetric to set_responsible. This is the "precise
@@ -636,7 +657,7 @@ class ProgressManager:
             raise NotFoundError("Case step not found.")
         await self._apply_validator_change(agent, case, row, payload)
         await self.db.commit()
-        timeline = await self.timeline_for_case(case)
+        timeline = await self.timeline_for_case(case, lang)
         return next(item for item in timeline if item.id == row.id)
 
     async def _apply_validator_change(

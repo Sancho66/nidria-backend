@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.i18n import RequestLang, resolve_i18n
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
@@ -49,12 +50,19 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 async def list_custom_fields(
     agent: AgentDep,
     db: DbDep,
+    lang: RequestLang,
     include_archived: Annotated[bool, Query()] = False,
 ) -> list[CustomFieldDefinitionResponse]:
-    definitions = await CustomFieldsManager(db).list_definitions(
-        agent, include_archived=include_archived
-    )
-    return [CustomFieldDefinitionResponse.model_validate(d) for d in definitions]
+    mgr = CustomFieldsManager(db)
+    definitions = await mgr.list_definitions(agent, include_archived=include_archived)
+    agency_default = await mgr.agency_default(agent.agency_id)
+    # i18n: resolve the LABEL for the display language (the `key` stays raw).
+    return [
+        CustomFieldDefinitionResponse.model_validate(d).model_copy(
+            update={"label": resolve_i18n(d.label_i18n, lang, agency_default, d.label)}
+        )
+        for d in definitions
+    ]
 
 
 @router.post("", response_model=CustomFieldDefinitionResponse, status_code=201)

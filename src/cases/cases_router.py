@@ -33,6 +33,7 @@ from src.cases.filter_schema import AdvancedFilters
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience, CaseStatus
 from src.core.exceptions import ValidationError
+from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 
@@ -183,8 +184,10 @@ async def list_cases(
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)
-async def get_case(case_id: uuid.UUID, agent: AgentDep, db: DbDep) -> CaseDetailResponse:
-    return await CasesManager(db).get_case_detail(agent, case_id)
+async def get_case(
+    case_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
+) -> CaseDetailResponse:
+    return await CasesManager(db).get_case_detail(agent, case_id, lang)
 
 
 @router.patch("/{case_id}", response_model=CaseResponse)
@@ -196,8 +199,10 @@ async def update_case(
 
 
 @router.get("/{case_id}/export")
-async def export_case(case_id: uuid.UUID, agent: AgentDep, db: DbDep) -> Response:
-    pdf_bytes = await CasesManager(db).export_pdf(agent, case_id)
+async def export_case(
+    case_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
+) -> Response:
+    pdf_bytes = await CasesManager(db).export_pdf(agent, case_id, lang)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

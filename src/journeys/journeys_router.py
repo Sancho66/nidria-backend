@@ -9,6 +9,7 @@ from src.auth.auth_schema import MessageResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.http import file_download_response
+from src.core.i18n import DEFAULT_LANG, RequestLang, resolve_i18n
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.journeys.journeys_manager import JourneysManager
@@ -281,25 +282,43 @@ def _step_response(
 
 
 @router.get("", response_model=list[JourneyTemplateResponse])
-async def list_templates(agent: AgentDep, db: DbDep) -> list[JourneyTemplateResponse]:
-    templates = await JourneysManager(db).list_templates(agent)
-    return [JourneyTemplateResponse.model_validate(template) for template in templates]
+async def list_templates(
+    agent: AgentDep, db: DbDep, lang: RequestLang
+) -> list[JourneyTemplateResponse]:
+    manager = JourneysManager(db)
+    templates = await manager.list_templates(agent)
+    agency_default = await manager.agency_default(agent.agency_id)
+    # i18n: resolve the displayed name (scalar stays the seed anchor + fallback).
+    return [
+        JourneyTemplateResponse.model_validate(t).model_copy(
+            update={"name": resolve_i18n(t.name_i18n, lang, agency_default, t.name)}
+        )
+        for t in templates
+    ]
 
 
 # Declared BEFORE /{template_id} so the static path is not captured as an id.
 @router.get("/library", response_model=list[JourneyTemplateResponse])
-async def list_sample_templates(agent: AgentDep, db: DbDep) -> list[JourneyTemplateResponse]:
+async def list_sample_templates(
+    agent: AgentDep, db: DbDep, lang: RequestLang
+) -> list[JourneyTemplateResponse]:
     """Shared LIBRARY samples (read-only). Distinct from GET /journeys (the
     agency's own templates) — an agency consumes a sample by cloning it."""
     templates = await JourneysManager(db).list_sample_templates()
-    return [JourneyTemplateResponse.model_validate(template) for template in templates]
+    # Samples have no agency → the i18n fallback is the platform default "fr".
+    return [
+        JourneyTemplateResponse.model_validate(t).model_copy(
+            update={"name": resolve_i18n(t.name_i18n, lang, DEFAULT_LANG, t.name)}
+        )
+        for t in templates
+    ]
 
 
 @router.post("", response_model=JourneyTemplateResponse, status_code=201)
 async def create_template(
     body: JourneyTemplateCreateRequest, agent: AgentDep, db: DbDep
 ) -> JourneyTemplateResponse:
-    template = await JourneysManager(db).create_template(agent, body.name)
+    template = await JourneysManager(db).create_template(agent, body.name, body.name_i18n)
     return JourneyTemplateResponse.model_validate(template)
 
 
@@ -320,9 +339,9 @@ async def clone_template(
 
 @router.get("/{template_id}", response_model=JourneyTemplateDetailResponse)
 async def get_template(
-    template_id: uuid.UUID, agent: AgentDep, db: DbDep
+    template_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
 ) -> JourneyTemplateDetailResponse:
-    return await JourneysManager(db).get_template_detail(agent, template_id)
+    return await JourneysManager(db).get_template_detail(agent, template_id, lang)
 
 
 @router.patch("/{template_id}", response_model=JourneyTemplateResponse)

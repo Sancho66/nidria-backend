@@ -11,13 +11,20 @@ from src.core.enums import (
     StepValidatorType,
 )
 
+# BLOC 2bis — i18n WRITE: optional {lang: text} blob accepted alongside (or
+# instead of) the scalar. Empty values are dropped (absent key, never ""); the
+# manager keeps the scalar in sync via apply_i18n_write.
+I18nBlob = dict[str, str]
+
 
 class JourneyTemplateCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    name_i18n: I18nBlob | None = None
 
 
 class JourneyTemplateUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    name_i18n: I18nBlob | None = None
 
 
 class TemplateStepCreateRequest(BaseModel):
@@ -25,6 +32,7 @@ class TemplateStepCreateRequest(BaseModel):
     through the declarative reorder endpoint."""
 
     name: str = Field(min_length=1, max_length=200)
+    name_i18n: I18nBlob | None = None
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
     # Wave C: a named default responsible — a precise INTERNAL agent only
@@ -42,6 +50,7 @@ class TemplateStepCreateRequest(BaseModel):
 
 class TemplateStepUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    name_i18n: I18nBlob | None = None
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
     default_responsible_agent_id: uuid.UUID | None = None
@@ -51,6 +60,7 @@ class TemplateStepUpdateRequest(BaseModel):
     # Feature 2 — descending agency note (null clears). Partial PATCH:
     # only applied when the key is present.
     content_note: str | None = Field(default=None, max_length=5000)
+    content_note_i18n: I18nBlob | None = None
 
 
 class StepAttachmentResponse(BaseModel):
@@ -253,14 +263,18 @@ class CaseFieldOrderRequest(BaseModel):
 
 class SectionCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    name_i18n: I18nBlob | None = None
     description: str | None = Field(default=None, max_length=500)
+    description_i18n: I18nBlob | None = None
 
 
 class SectionUpdateRequest(BaseModel):
     """Partial: rename and/or edit the description."""
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    name_i18n: I18nBlob | None = None
     description: str | None = Field(default=None, max_length=500)
+    description_i18n: I18nBlob | None = None
 
 
 class SectionOrderRequest(BaseModel):
@@ -290,7 +304,11 @@ class JourneySectionDetail(BaseModel):
 
     id: uuid.UUID
     name: str
+    # BLOC 2bis — RAW i18n blobs for the editor (alongside the resolved
+    # `name`/`description` above). Display surfaces keep the resolved value.
+    name_i18n: I18nBlob
     description: str | None
+    description_i18n: I18nBlob
     position: int
     fields: list["TemplateFieldResponse"]
     case_fields: list["TemplateCaseFieldResponse"]
@@ -323,6 +341,8 @@ class JourneyCloneRequest(BaseModel):
 class TemplateStepResponse(BaseModel):
     id: uuid.UUID
     name: str
+    # BLOC 2bis — RAW i18n blob for the editor (alongside the resolved `name`).
+    name_i18n: I18nBlob
     position: int
     estimated_days: int | None
     default_responsible_type: str | None
@@ -336,6 +356,7 @@ class TemplateStepResponse(BaseModel):
     prerequisite_step_ids: list[uuid.UUID]
     # Feature 2 — descending agency content on the step (template-level).
     content_note: str | None
+    content_note_i18n: I18nBlob
     attachments: list[StepAttachmentResponse]
 
 
@@ -354,6 +375,8 @@ class CanvasLayoutRequest(BaseModel):
 class JourneyTemplateDetailResponse(BaseModel):
     id: uuid.UUID
     name: str
+    # BLOC 2bis — RAW i18n blob for the editor (alongside the resolved `name`).
+    name_i18n: I18nBlob
     steps: list[TemplateStepResponse]
     # Fields collected at case creation (NEW WAVE) — embedded like steps.
     fields: list[TemplateFieldResponse]

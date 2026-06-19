@@ -9,6 +9,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from src.core.enums import StepStatus
+from src.core.i18n import DEFAULT_LANG, resolve_i18n
 from src.dashboard.dashboard_repository import DashboardRepository
 from src.dashboard.dashboard_schema import (
     DashboardMeCounts,
@@ -46,7 +47,7 @@ class DashboardManager:
             by_dest_country=by_dest_country,
         )
 
-    async def get_my_dashboard(self, agent: Agent) -> DashboardMeResponse:
+    async def get_my_dashboard(self, agent: Agent, lang: str = DEFAULT_LANG) -> DashboardMeResponse:
         """Agent-centric "dashboard of action". All reads are filtered
         server-side on (agency_id, agent.id); five batched queries, no N+1:
         my open steps (join), started_ats, prerequisites, per-case done
@@ -54,6 +55,9 @@ class DashboardManager:
         repo = DashboardRepository(self.db)
         prog = ProgressRepository(self.db)
 
+        # i18n: the step label is resolved for `lang`; the agency default is
+        # this agent's agency (all dashboard rows are agency-scoped).
+        agency_default = (await repo.agency_default_language(agent.agency_id)) or DEFAULT_LANG
         rows = await repo.my_open_steps(agent.agency_id, agent.id)
         progress_ids = [r.id for r in rows]
         template_step_ids = [r.template_step_id for r in rows]
@@ -95,7 +99,7 @@ class DashboardManager:
                 DashboardTodoItem(
                     progress_id=r.id,
                     case_id=r.case_id,
-                    step_name=r.step_name,
+                    step_name=resolve_i18n(r.step_name_i18n, lang, agency_default, r.step_name),
                     client_name=f"{r.first_name} {r.last_name}".strip(),
                     dest_country=r.dest_country,
                     badge="to_validate" if is_validate_role else "to_realize",

@@ -15,6 +15,7 @@ from shared.models.activity import ActivityLog
 from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.journey import JourneyTemplateStep
 from shared.models.rbac import Role
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase, MakeExternalContact
@@ -72,6 +73,38 @@ def _by_name(timeline: list[dict[str, object]]) -> dict[str, dict[str, object]]:
 
 
 # --- instantiation ---------------------------------------------------------------
+
+
+async def test_timeline_resolves_step_label_by_language_with_fallback(
+    progress_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """BLOC 2 wiring: the timeline resolves the step name for ?lang=, falling
+    back to the agency default (fr) when the language is absent. The scalar
+    column is untouched (transitional source/fallback)."""
+    headers = agent_headers(manager_agent)
+    template_id, step_ids = await _make_template(progress_client, headers, [{"name": "Casier"}])
+    # Add the EN/FR variants directly on the template step (no write endpoint
+    # in this block); the scalar "Casier" stays as the legacy fallback.
+    step = await db_session.get(JourneyTemplateStep, uuid.UUID(step_ids[0]))
+    assert step is not None
+    step.name_i18n = {"fr": "Casier judiciaire", "en": "Criminal record"}
+    await db_session.commit()
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    await _assign(progress_client, headers, case, template_id)
+
+    # ?lang=en → the English variant.
+    en = (await progress_client.get(f"/cases/{case.id}/steps?lang=en", headers=headers)).json()
+    assert en[0]["name"] == "Criminal record"
+    # ?lang=fr → the French variant.
+    fr = (await progress_client.get(f"/cases/{case.id}/steps?lang=fr", headers=headers)).json()
+    assert fr[0]["name"] == "Casier judiciaire"
+    # ?lang=es absent → fall back to the agency default (fr).
+    es = (await progress_client.get(f"/cases/{case.id}/steps?lang=es", headers=headers)).json()
+    assert es[0]["name"] == "Casier judiciaire"
 
 
 async def test_assign_instantiates_all_steps_with_projection(

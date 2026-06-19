@@ -47,6 +47,8 @@ class AgenciesManager:
             agency.name = payload.name
         if payload.settings is not None:
             agency.settings = payload.settings
+        if payload.default_language is not None:
+            agency.default_language = payload.default_language
         await self.db.commit()
         await self.db.refresh(agency)
         return agency

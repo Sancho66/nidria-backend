@@ -1,0 +1,101 @@
+"""i18n resolution for ENTERED content (BLOC 2).
+
+A single resolver, reused everywhere a translatable label is read. Entered
+content lives as a `{lang: text}` JSONB blob next to a scalar column (BLOC 1);
+this module turns (blob, display language, agency default) into the string to
+show, with a deterministic fallback chain that ends on the legacy scalar — so a
+missing translation never yields "" or None for a required field.
+
+This is ORTHOGONAL to the frontend's static-UI i18n (createScopedI18n): that
+handles chrome at build time; this resolves runtime DB content.
+"""
+
+from typing import Annotated
+
+from fastapi import Depends, Request
+
+SUPPORTED_LANGS = ("fr", "en", "es")
+DEFAULT_LANG = "fr"  # the platform fallback (also the implicit default of samples)
+
+
+def resolve_i18n(
+    blob: dict[str, str] | None,
+    lang: str,
+    agency_default: str,
+    scalar: str | None = None,
+) -> str | None:
+    """Resolve a translatable label to the string to display.
+
+    Fallback chain (first non-empty wins):
+      blob[lang] → blob[agency_default] → blob["fr"] → scalar (legacy column).
+
+    Never returns "" (an absent language is an absent key, so empty values fall
+    through). Returns None ONLY when the scalar itself is None — i.e. a genuinely
+    optional field (content_note, description) with no value anywhere. Required
+    fields always have a scalar, hence always resolve to a string.
+    """
+    b = blob or {}
+    return b.get(lang) or b.get(agency_default) or b.get(DEFAULT_LANG) or scalar
+
+
+def normalize_i18n_input(blob: dict[str, str] | None) -> dict[str, str]:
+    """Sanitize an i18n blob coming from a write request: keep only supported
+    languages with a NON-EMPTY value. An empty/whitespace value is dropped (an
+    absent language is an absent key, never "")."""
+    if not blob:
+        return {}
+    return {k: v for k, v in blob.items() if k in SUPPORTED_LANGS and v and v.strip()}
+
+
+def apply_i18n_write(
+    blob_in: dict[str, str] | None,
+    scalar_in: str | None,
+    agency_default: str,
+    current_scalar: str | None,
+    current_blob: dict[str, str] | None,
+) -> tuple[str | None, dict[str, str]]:
+    """Resolve a write of a translatable field into (new_scalar, new_blob),
+    keeping the scalar (the FR anchor / fallback / seed key) in sync with the
+    blob so the two never desynchronize.
+
+    - If an i18n blob is provided → it becomes the blob (sanitized); the scalar
+      is recomputed as blob[agency_default] → blob[fr] → the incoming scalar →
+      the current scalar (so the scalar always equals the default-language
+      variant when present).
+    - If only the scalar is provided → set the scalar and mirror it into the
+      blob under the agency default language (so a future read resolves it).
+    - If neither is provided → unchanged.
+    """
+    if blob_in is not None:
+        blob = normalize_i18n_input(blob_in)
+        scalar = blob.get(agency_default) or blob.get(DEFAULT_LANG) or scalar_in or current_scalar
+        return scalar, blob
+    if scalar_in is not None:
+        blob = dict(current_blob or {})
+        if scalar_in:
+            blob[agency_default] = scalar_in
+        return scalar_in, blob
+    return current_scalar, dict(current_blob or {})
+
+
+def resolve_request_language(request: Request) -> str:
+    """The USER's display language, mirroring the UI. Channel (first match):
+      1. explicit `?lang=` query param,
+      2. the `Accept-Language` header (first supported tag),
+      3. DEFAULT_LANG.
+    Always one of SUPPORTED_LANGS — an unknown/unsupported value falls back to
+    the default rather than reaching the resolver as a never-present key."""
+    q = request.query_params.get("lang")
+    if q and q.lower() in SUPPORTED_LANGS:
+        return q.lower()
+    header = request.headers.get("accept-language", "")
+    for part in header.split(","):
+        tag = part.split(";")[0].strip().lower()[:2]
+        if tag in SUPPORTED_LANGS:
+            return tag
+    return DEFAULT_LANG
+
+
+# The user's display language, injectable in any router endpoint that returns
+# translatable content. Passed down to the manager projection methods.
+RequestLang = Annotated[str, Depends(resolve_request_language)]

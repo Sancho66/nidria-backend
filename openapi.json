@@ -9975,6 +9975,15 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Settings"
+          },
+          "default_language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es"
+            ],
+            "title": "Default Language"
           }
         },
         "type": "object",
@@ -9982,7 +9991,8 @@
           "id",
           "name",
           "slug",
-          "settings"
+          "settings",
+          "default_language"
         ],
         "title": "AgencyResponse"
       },
@@ -10012,6 +10022,22 @@
               }
             ],
             "title": "Settings"
+          },
+          "default_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fr",
+                  "en",
+                  "es"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Language"
           }
         },
         "type": "object",
@@ -11955,6 +11981,20 @@
             "minLength": 1,
             "title": "Label"
           },
+          "label_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label I18N"
+          },
           "field_type": {
             "$ref": "#/components/schemas/CustomFieldType"
           },
@@ -12061,6 +12101,13 @@
             "type": "string",
             "title": "Label"
           },
+          "label_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Label I18N"
+          },
           "field_type": {
             "type": "string",
             "title": "Field Type"
@@ -12105,6 +12152,7 @@
           "id",
           "key",
           "label",
+          "label_i18n",
           "field_type",
           "options",
           "required",
@@ -12127,6 +12175,20 @@
               }
             ],
             "title": "Label"
+          },
+          "label_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label I18N"
           },
           "options": {
             "anyOf": [
@@ -14405,6 +14467,13 @@
             "type": "string",
             "title": "Name"
           },
+          "name_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Name I18N"
+          },
           "description": {
             "anyOf": [
               {
@@ -14415,6 +14484,13 @@
               }
             ],
             "title": "Description"
+          },
+          "description_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Description I18N"
           },
           "position": {
             "type": "integer",
@@ -14439,7 +14515,9 @@
         "required": [
           "id",
           "name",
+          "name_i18n",
           "description",
+          "description_i18n",
           "position",
           "fields",
           "case_fields"
@@ -14497,6 +14575,20 @@
             "maxLength": 200,
             "minLength": 1,
             "title": "Name"
+          },
+          "name_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name I18N"
           }
         },
         "type": "object",
@@ -14515,6 +14607,13 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "name_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Name I18N"
           },
           "steps": {
             "items": {
@@ -14566,6 +14665,7 @@
         "required": [
           "id",
           "name",
+          "name_i18n",
           "steps",
           "fields",
           "case_fields",
@@ -14619,6 +14719,20 @@
               }
             ],
             "title": "Name"
+          },
+          "name_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name I18N"
           }
         },
         "type": "object",
@@ -16454,6 +16568,20 @@
             "minLength": 1,
             "title": "Name"
           },
+          "name_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name I18N"
+          },
           "description": {
             "anyOf": [
               {
@@ -16465,6 +16593,20 @@
               }
             ],
             "title": "Description"
+          },
+          "description_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description I18N"
           }
         },
         "type": "object",
@@ -16506,6 +16648,20 @@
             ],
             "title": "Name"
           },
+          "name_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name I18N"
+          },
           "description": {
             "anyOf": [
               {
@@ -16517,6 +16673,20 @@
               }
             ],
             "title": "Description"
+          },
+          "description_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description I18N"
           }
         },
         "type": "object",
@@ -17381,6 +17551,20 @@
             "minLength": 1,
             "title": "Name"
           },
+          "name_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name I18N"
+          },
           "estimated_days": {
             "anyOf": [
               {
@@ -17504,6 +17688,13 @@
             "type": "string",
             "title": "Name"
           },
+          "name_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Name I18N"
+          },
           "position": {
             "type": "integer",
             "title": "Position"
@@ -17588,6 +17779,13 @@
             ],
             "title": "Content Note"
           },
+          "content_note_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Content Note I18N"
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/StepAttachmentResponse"
@@ -17600,6 +17798,7 @@
         "required": [
           "id",
           "name",
+          "name_i18n",
           "position",
           "estimated_days",
           "default_responsible_type",
@@ -17610,6 +17809,7 @@
           "participants",
           "prerequisite_step_ids",
           "content_note",
+          "content_note_i18n",
           "attachments"
         ],
         "title": "TemplateStepResponse"
@@ -17628,6 +17828,20 @@
               }
             ],
             "title": "Name"
+          },
+          "name_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name I18N"
           },
           "estimated_days": {
             "anyOf": [
@@ -17706,6 +17920,20 @@
               }
             ],
             "title": "Content Note"
+          },
+          "content_note_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note I18N"
           }
         },
         "type": "object",

@@ -1,11 +1,14 @@
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.custom_field import CustomFieldDefinition
 from src.core.exceptions import ConflictError, NotFoundError
+from src.core.i18n import DEFAULT_LANG, apply_i18n_write
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_schema import (
     CustomFieldDefinitionCreate,
@@ -26,20 +29,30 @@ class CustomFieldsManager:
     async def active_definitions(self, agency_id: uuid.UUID) -> list[CustomFieldDefinition]:
         return await self.repo.list_for_agency(agency_id, include_archived=False)
 
+    async def agency_default(self, agency_id: uuid.UUID) -> str:
+        """The agency's default content language (i18n label fallback)."""
+        stmt = select(Agency.default_language).where(Agency.id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none() or DEFAULT_LANG
+
     async def create(
         self, agent: Agent, payload: CustomFieldDefinitionCreate
     ) -> CustomFieldDefinition:
         if await self.repo.get_by_key(agent.agency_id, payload.key) is not None:
             raise ConflictError(f"A custom field with key {payload.key!r} already exists.")
+        agency_default = await self.agency_default(agent.agency_id)
+        label_scalar, label_blob = apply_i18n_write(
+            payload.label_i18n, payload.label, agency_default, None, {}
+        )
         definition = self.repo.add(
             agency_id=agent.agency_id,
             key=payload.key,
-            label=payload.label,
+            label=label_scalar or payload.label,
             field_type=payload.field_type.value,
             options=payload.options,
             required=payload.required,
             position=payload.position,
         )
+        definition.label_i18n = label_blob
         await self.db.commit()
         await self.db.refresh(definition)
         return definition
@@ -52,8 +65,17 @@ class CustomFieldsManager:
             raise NotFoundError("Custom field not found.")
         provided = payload.model_dump(exclude_unset=True)
         # key and field_type are immutable (not in the update schema).
-        if "label" in provided and provided["label"] is not None:
-            definition.label = provided["label"]
+        if "label" in provided or "label_i18n" in provided:
+            agency_default = await self.agency_default(agent.agency_id)
+            scalar, blob = apply_i18n_write(
+                payload.label_i18n if "label_i18n" in provided else None,
+                payload.label if "label" in provided else None,
+                agency_default,
+                definition.label,
+                definition.label_i18n,
+            )
+            definition.label = scalar or definition.label
+            definition.label_i18n = blob
         if "required" in provided and provided["required"] is not None:
             definition.required = provided["required"]
         if "position" in provided and provided["position"] is not None:

@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import Row, and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
@@ -23,6 +24,11 @@ class DashboardRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def agency_default_language(self, agency_id: uuid.UUID) -> str | None:
+        """The agency's default content language (i18n fallback)."""
+        stmt = select(Agency.default_language).where(Agency.id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def my_open_steps(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Sequence[Row[Any]]:
         """My actionable steps across ALL active cases, in ONE join.
         A step is mine when I am its responsible (any non-done status →
@@ -38,6 +44,7 @@ class DashboardRepository:
                 CaseStepProgress.validated_by_agent_id,
                 CaseStepProgress.due_at,
                 JourneyTemplateStep.name.label("step_name"),
+                JourneyTemplateStep.name_i18n.label("step_name_i18n"),
                 JourneyTemplateStep.estimated_days,
                 ExpatUser.first_name,
                 ExpatUser.last_name,

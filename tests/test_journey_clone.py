@@ -15,7 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
-from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.journey import (
+    JourneySection,
+    JourneyTemplate,
+    JourneyTemplateStep,
+    StepPrerequisite,
+)
 from shared.models.rbac import Role
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
@@ -181,6 +186,60 @@ async def test_clone_relaunch_creates_a_new_copy(
     a = (await cl.post(f"/journeys/{src_id}/clone", headers=ah, json={})).json()["id"]
     b = (await cl.post(f"/journeys/{src_id}/clone", headers=ah, json={})).json()["id"]
     assert a != b  # a clone is a copy on demand, not a dedup
+
+
+async def test_clone_copies_i18n_blobs_independently(
+    cl: AsyncClient, admin: Agent, db_session: AsyncSession, agent_headers: AuthHeaders
+) -> None:
+    """BLOC 2: the deep clone copies the {lang: text} i18n blobs on steps and
+    sections, as INDEPENDENT rows — mutating the clone never touches the
+    source."""
+    ah = agent_headers(admin)
+    src_id, [s0, _s1] = await _make_sample(cl, ah, db_session)
+    # Seed i18n variants on the source template, step S0 and section.
+    src_template = await db_session.get(JourneyTemplate, uuid.UUID(src_id))
+    assert src_template is not None
+    src_template.name_i18n = {"fr": "Setup Espagne", "en": "Spain setup"}
+    src_step = await db_session.get(JourneyTemplateStep, uuid.UUID(s0))
+    assert src_step is not None
+    src_step.name_i18n = {"fr": "S0", "en": "Step 0"}
+    src_section = (
+        await db_session.execute(
+            select(JourneySection).where(JourneySection.template_id == uuid.UUID(src_id))
+        )
+    ).scalar_one()
+    src_section.name_i18n = {"fr": "Identité", "en": "Identity"}
+    await db_session.commit()
+
+    clone_id = (await cl.post(f"/journeys/{src_id}/clone", headers=ah, json={})).json()["id"]
+    clone_template = await db_session.get(JourneyTemplate, uuid.UUID(clone_id))
+    assert clone_template is not None
+    # No rename (json={}) → the template name blob is copied verbatim.
+    assert clone_template.name_i18n == {"fr": "Setup Espagne", "en": "Spain setup"}
+    clone_step = (
+        await db_session.execute(
+            select(JourneyTemplateStep).where(
+                JourneyTemplateStep.template_id == uuid.UUID(clone_id),
+                JourneyTemplateStep.name == "S0",
+            )
+        )
+    ).scalar_one()
+    clone_section = (
+        await db_session.execute(
+            select(JourneySection).where(JourneySection.template_id == uuid.UUID(clone_id))
+        )
+    ).scalar_one()
+
+    # Blobs copied verbatim onto fresh rows (different ids).
+    assert clone_step.name_i18n == {"fr": "S0", "en": "Step 0"}
+    assert clone_section.name_i18n == {"fr": "Identité", "en": "Identity"}
+    assert clone_step.id != src_step.id
+
+    # Independence: mutating the CLONE's blob leaves the SOURCE untouched.
+    clone_step.name_i18n = {"fr": "MUTÉ"}
+    await db_session.commit()
+    await db_session.refresh(src_step)
+    assert src_step.name_i18n == {"fr": "S0", "en": "Step 0"}
 
 
 async def test_clone_foreign_template_is_404(

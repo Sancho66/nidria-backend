@@ -4,8 +4,10 @@ import uuid
 from collections import defaultdict
 
 from fastapi import UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.journey import (
     JourneySection,
@@ -33,6 +35,7 @@ from src.core.exceptions import (
     PayloadTooLargeError,
     ValidationError,
 )
+from src.core.i18n import DEFAULT_LANG, apply_i18n_write, normalize_i18n_input, resolve_i18n
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
@@ -148,10 +151,20 @@ class JourneysManager:
             raise NotFoundError("Journey template not found.")
         return template
 
+    async def agency_default(self, agency_id: uuid.UUID) -> str:
+        """The agency's default content language (i18n fallback) — DEFAULT_LANG
+        if the agency vanished."""
+        stmt = select(Agency.default_language).where(Agency.id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none() or DEFAULT_LANG
+
     async def get_template_detail(
-        self, agent: Agent, template_id: uuid.UUID
+        self, agent: Agent, template_id: uuid.UUID, lang: str = DEFAULT_LANG
     ) -> JourneyTemplateDetailResponse:
         template = await self._get_template(agent, template_id)
+        # i18n: own template → resolve step/section labels for `lang`, falling
+        # back to the agency default. (template.name has no i18n blob — BLOC 1
+        # excluded it — so it stays the scalar.)
+        agency_default = await self.agency_default(agent.agency_id)
         steps = await self.repo.list_steps(template_id)
         prerequisites = await self.repo.list_prerequisites(template_id)
         by_step: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
@@ -189,11 +202,13 @@ class JourneysManager:
             )
         return JourneyTemplateDetailResponse(
             id=template.id,
-            name=template.name,
+            name=resolve_i18n(template.name_i18n, lang, agency_default, template.name),
+            name_i18n=template.name_i18n,
             steps=[
                 TemplateStepResponse(
                     id=step.id,
-                    name=step.name,
+                    name=resolve_i18n(step.name_i18n, lang, agency_default, step.name),
+                    name_i18n=step.name_i18n,
                     position=step.position,
                     estimated_days=step.estimated_days,
                     default_responsible_type=step.default_responsible_type,
@@ -202,7 +217,10 @@ class JourneysManager:
                     default_validated_by_type=step.default_validated_by_type,
                     default_validated_by_agent_id=step.default_validated_by_agent_id,
                     prerequisite_step_ids=by_step.get(step.id, []),
-                    content_note=step.content_note,
+                    content_note=resolve_i18n(
+                        step.content_note_i18n, lang, agency_default, step.content_note
+                    ),
+                    content_note_i18n=step.content_note_i18n,
                     attachments=attach_by_step.get(step.id, []),
                     participants=participants_by_step.get(step.id, []),
                 )
@@ -213,8 +231,12 @@ class JourneysManager:
             sections=[
                 JourneySectionDetail(
                     id=s.id,
-                    name=s.name,
-                    description=s.description,
+                    name=resolve_i18n(s.name_i18n, lang, agency_default, s.name),
+                    name_i18n=s.name_i18n,
+                    description=resolve_i18n(
+                        s.description_i18n, lang, agency_default, s.description
+                    ),
+                    description_i18n=s.description_i18n,
                     position=s.position,
                     fields=fields_by_section.get(s.id, []),
                     case_fields=case_by_section.get(s.id, []),
@@ -245,8 +267,13 @@ class JourneysManager:
         await self.db.commit()
         return {k: CanvasNodePosition(**v) for k, v in blob.items()}
 
-    async def create_template(self, agent: Agent, name: str) -> JourneyTemplate:
-        template = self.repo.add_template(agent.agency_id, name)
+    async def create_template(
+        self, agent: Agent, name: str, name_i18n: dict[str, str] | None = None
+    ) -> JourneyTemplate:
+        agency_default = await self.agency_default(agent.agency_id)
+        scalar, blob = apply_i18n_write(name_i18n, name, agency_default, None, {})
+        template = self.repo.add_template(agent.agency_id, scalar or name)
+        template.name_i18n = blob
         await self.db.commit()
         await self.db.refresh(template)
         return template
@@ -280,6 +307,9 @@ class JourneysManager:
             agency_id=agent.agency_id,
             is_sample=False,  # a clone is NEVER a sample
             name=name or f"{source.name} (copie)",
+            # Copy the i18n name blob; on an EXPLICIT rename, the chosen name is
+            # the new scalar and the blob is dropped (it described the source).
+            name_i18n=dict(source.name_i18n) if name is None else {},
             country=source.country,  # keep the model's country of origin
         )
         self.db.add(new_template)
@@ -297,6 +327,8 @@ class JourneysManager:
                     template_id=new_template.id,
                     name=sec.name,
                     description=sec.description,
+                    name_i18n=dict(sec.name_i18n),  # copy i18n blobs (independent)
+                    description_i18n=dict(sec.description_i18n),
                     position=sec.position,
                 )
             )
@@ -318,6 +350,8 @@ class JourneysManager:
                     default_validated_by_type=st.default_validated_by_type,
                     default_validated_by_agent_id=st.default_validated_by_agent_id,
                     content_note=st.content_note,
+                    name_i18n=dict(st.name_i18n),  # copy i18n blobs (independent)
+                    content_note_i18n=dict(st.content_note_i18n),
                 )
             )
         # Template + sections + steps exist before their children FK them.
@@ -401,8 +435,13 @@ class JourneysManager:
         self, agent: Agent, template_id: uuid.UUID, payload: JourneyTemplateUpdateRequest
     ) -> JourneyTemplate:
         template = await self._get_template(agent, template_id)
-        if payload.name is not None:
-            template.name = payload.name
+        if payload.name is not None or payload.name_i18n is not None:
+            agency_default = await self.agency_default(agent.agency_id)
+            scalar, blob = apply_i18n_write(
+                payload.name_i18n, payload.name, agency_default, template.name, template.name_i18n
+            )
+            template.name = scalar or template.name
+            template.name_i18n = blob
         await self.db.commit()
         await self.db.refresh(template)
         return template
@@ -444,10 +483,14 @@ class JourneysManager:
         validated_by_type, completion_mode = _reconcile_validator(
             payload.validated_by_type, payload.completion_mode
         )
+        agency_default = await self.agency_default(agent.agency_id)
+        name_scalar, name_blob = apply_i18n_write(
+            payload.name_i18n, payload.name, agency_default, None, {}
+        )
         max_position = await self.repo.max_position(template_id)
         step = self.repo.add_step(
             template_id=template_id,
-            name=payload.name,
+            name=name_scalar or payload.name,
             position=(max_position if max_position is not None else -1) + 1,
             estimated_days=payload.estimated_days,
             default_responsible_type=payload.default_responsible_type,
@@ -456,6 +499,7 @@ class JourneysManager:
             default_validated_by_type=validated_by_type,
             default_validated_by_agent_id=payload.default_validated_by_agent_id,
         )
+        step.name_i18n = name_blob
         await self.db.flush()
         # Option-A backfill: on an ASSIGNED template, the new step is
         # instantiated on every live case (same transaction as the
@@ -501,6 +545,37 @@ class JourneysManager:
             step.default_validated_by_type = vt
             step.completion_mode = cm
         for key in ("validated_by_type", "completion_mode"):
+            changes.pop(key, None)
+        # i18n write (BLOC 2bis): name & content_note resolve scalar+blob via
+        # apply_i18n_write, OUT of the generic loop (so the scalar stays in sync
+        # with the blob). content_note=None explicitly clears both.
+        if "name" in changes or "name_i18n" in changes:
+            agency_default = await self.agency_default(agent.agency_id)
+            scalar, blob = apply_i18n_write(
+                payload.name_i18n if "name_i18n" in changes else None,
+                payload.name if "name" in changes else None,
+                agency_default,
+                step.name,
+                step.name_i18n,
+            )
+            step.name = scalar or step.name
+            step.name_i18n = blob
+        if "content_note" in changes or "content_note_i18n" in changes:
+            agency_default = await self.agency_default(agent.agency_id)
+            if "content_note" in changes and payload.content_note is None:
+                step.content_note = None  # explicit clear
+                step.content_note_i18n = normalize_i18n_input(payload.content_note_i18n)
+            else:
+                scalar, blob = apply_i18n_write(
+                    payload.content_note_i18n if "content_note_i18n" in changes else None,
+                    payload.content_note if "content_note" in changes else None,
+                    agency_default,
+                    step.content_note,
+                    step.content_note_i18n,
+                )
+                step.content_note = scalar
+                step.content_note_i18n = blob
+        for key in ("name", "name_i18n", "content_note", "content_note_i18n"):
             changes.pop(key, None)
         for field, value in changes.items():
             setattr(step, field, value)
@@ -1144,13 +1219,22 @@ class JourneysManager:
         self, agent: Agent, template_id: uuid.UUID, payload: SectionCreateRequest
     ) -> JourneySectionResponse:
         await self._get_template(agent, template_id)
+        agency_default = await self.agency_default(agent.agency_id)
+        name_scalar, name_blob = apply_i18n_write(
+            payload.name_i18n, payload.name, agency_default, None, {}
+        )
+        desc_scalar, desc_blob = apply_i18n_write(
+            payload.description_i18n, payload.description, agency_default, None, {}
+        )
         max_position = await self.repo.max_section_position(template_id)
         section = self.repo.add_section(
             template_id=template_id,
-            name=payload.name,
-            description=payload.description,
+            name=name_scalar or payload.name,
+            description=desc_scalar,
             position=(max_position if max_position is not None else -1) + 1,
         )
+        section.name_i18n = name_blob
+        section.description_i18n = desc_blob
         await self.db.commit()
         await self.db.refresh(section)
         return JourneySectionResponse.model_validate(section)
@@ -1167,10 +1251,31 @@ class JourneysManager:
         if section is None:
             raise NotFoundError("Section not found.")
         changes = payload.model_dump(exclude_unset=True)
-        if changes.get("name") is not None:
-            section.name = changes["name"]
-        if "description" in changes:
-            section.description = changes["description"]
+        agency_default = await self.agency_default(agent.agency_id)
+        if "name" in changes or "name_i18n" in changes:
+            scalar, blob = apply_i18n_write(
+                payload.name_i18n if "name_i18n" in changes else None,
+                payload.name if "name" in changes else None,
+                agency_default,
+                section.name,
+                section.name_i18n,
+            )
+            section.name = scalar or section.name
+            section.name_i18n = blob
+        if "description" in changes or "description_i18n" in changes:
+            if "description" in changes and payload.description is None:
+                section.description = None  # explicit clear
+                section.description_i18n = normalize_i18n_input(payload.description_i18n)
+            else:
+                scalar, blob = apply_i18n_write(
+                    payload.description_i18n if "description_i18n" in changes else None,
+                    payload.description if "description" in changes else None,
+                    agency_default,
+                    section.description,
+                    section.description_i18n,
+                )
+                section.description = scalar
+                section.description_i18n = blob
         await self.db.commit()
         await self.db.refresh(section)
         return JourneySectionResponse.model_validate(section)

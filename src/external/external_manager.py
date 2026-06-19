@@ -9,6 +9,7 @@ from shared.models.client_case import ClientCase
 from src.core import storage
 from src.core.enums import ActorType, ResponsibleType, StepStatus, StepValidatorType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.i18n import DEFAULT_LANG
 from src.external.external_repository import ExternalRepository
 from src.external.external_schema import (
     ExternalAgencyResponse,
@@ -140,7 +141,9 @@ class ExternalPortalManager:
             for c in cases
         ]
 
-    async def get_my_case(self, external: Agent, case_id: uuid.UUID) -> ExternalCaseDetailResponse:
+    async def get_my_case(
+        self, external: Agent, case_id: uuid.UUID, lang: str = DEFAULT_LANG
+    ) -> ExternalCaseDetailResponse:
         case = await self._assigned_case(external, case_id)
         counts = await self.repo.step_counts([case.id])
         principals = await self.repo.principal_names([case.principal_expat_user_id])
@@ -154,7 +157,7 @@ class ExternalPortalManager:
                     first_name=owner.first_name, last_name=owner.last_name, email=owner.email
                 )
 
-        internal_timeline = await ProgressManager(self.db).timeline_for_case(case)
+        internal_timeline = await ProgressManager(self.db).timeline_for_case(case, lang)
         timeline = [
             ExternalTimelineStepResponse(
                 progress_id=step.id,

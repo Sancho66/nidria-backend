@@ -206,6 +206,12 @@ class ProgressRepository:
         stmt = select(Agent).where(Agent.id.in_(agent_ids))
         return {a.id: a for a in (await self.db.execute(stmt)).scalars()}
 
+    async def agency_default_language(self, agency_id: uuid.UUID) -> str | None:
+        """The agency's default content language (i18n fallback). None only if
+        the agency vanished — callers default to the platform 'fr'."""
+        stmt = select(Agency.default_language).where(Agency.id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def external_contact_names(self, contact_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
         if not contact_ids:
             return {}

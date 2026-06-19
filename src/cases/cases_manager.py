@@ -40,6 +40,7 @@ from src.core.email import send_email
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
+from src.core.i18n import DEFAULT_LANG
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
@@ -195,7 +196,9 @@ class CasesManager:
             page_size=page_size,
         )
 
-    async def get_case_detail(self, agent: Agent, case_id: uuid.UUID) -> CaseDetailResponse:
+    async def get_case_detail(
+        self, agent: Agent, case_id: uuid.UUID, lang: str = DEFAULT_LANG
+    ) -> CaseDetailResponse:
         case = await self._get_case(agent, case_id)
         include_confidential = Permission.NOTE_VIEW_CONFIDENTIAL.value in effective_permissions(
             agent
@@ -218,7 +221,7 @@ class CasesManager:
                 CaseNoteResponse.model_validate(note)
                 for note in await self.repo.list_notes(case_id, include_confidential)
             ],
-            progress=await ProgressManager(self.db).timeline_for_case(case),
+            progress=await ProgressManager(self.db).timeline_for_case(case, lang),
         )
 
     # --- update --------------------------------------------------------------------
@@ -652,7 +655,7 @@ class CasesManager:
 
     # --- export -----------------------------------------------------------------------------------
 
-    async def export_pdf(self, agent: Agent, case_id: uuid.UUID) -> bytes:
+    async def export_pdf(self, agent: Agent, case_id: uuid.UUID, lang: str = DEFAULT_LANG) -> bytes:
         case = await self._get_case(agent, case_id)
         principal = await self.repo.get_expat(case.principal_expat_user_id)
         assert principal is not None
@@ -662,6 +665,8 @@ class CasesManager:
         persons = await self.repo.list_persons(case.id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         activity_rows = await self.repo.list_activity_chronological(case.id)
+        agency = await self.repo.get_agency(agent.agency_id)
+        agency_default = agency.default_language if agency else DEFAULT_LANG
         return build_case_pdf(
             case=case,
             principal=principal,
@@ -669,6 +674,8 @@ class CasesManager:
             persons=persons,
             custom_field_definitions=definitions,
             activity_rows=activity_rows,
+            lang=lang,
+            agency_default=agency_default,
         )
 
 

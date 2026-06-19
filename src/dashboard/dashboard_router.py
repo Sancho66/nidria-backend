@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.dashboard.dashboard_manager import DashboardManager
@@ -31,5 +32,5 @@ async def get_dashboard(agent: AgentDep, db: DbDep) -> DashboardResponse:
 
 
 @router.get("/dashboard/me", response_model=DashboardMeResponse)
-async def get_my_dashboard(agent: AgentDep, db: DbDep) -> DashboardMeResponse:
-    return await DashboardManager(db).get_my_dashboard(agent)
+async def get_my_dashboard(agent: AgentDep, db: DbDep, lang: RequestLang) -> DashboardMeResponse:
+    return await DashboardManager(db).get_my_dashboard(agent, lang)

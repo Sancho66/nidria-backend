@@ -26,6 +26,7 @@ from src.core.enums import (
     StepValidatorType,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.i18n import DEFAULT_LANG
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge
 from src.documents.documents_manager import DocumentsManager
@@ -116,7 +117,9 @@ class ExpatPortalManager:
         counts = await self.repo.step_counts([case.id for case, _ in rows])
         return [self._summary(case, agency, counts) for case, agency in rows]
 
-    async def get_my_case(self, expat: ExpatUser, case_id: uuid.UUID) -> ExpatCaseDetailResponse:
+    async def get_my_case(
+        self, expat: ExpatUser, case_id: uuid.UUID, lang: str = DEFAULT_LANG
+    ) -> ExpatCaseDetailResponse:
         case, agency = await self._get_owned_case(expat, case_id)
         counts = await self.repo.step_counts([case.id])
 
@@ -132,7 +135,7 @@ class ExpatPortalManager:
 
         # The agency timeline (projected statuses) re-shaped for the
         # client: names instead of ids everywhere.
-        internal_timeline = await ProgressManager(self.db).timeline_for_case(case)
+        internal_timeline = await ProgressManager(self.db).timeline_for_case(case, lang)
         timeline = [
             ExpatTimelineStepResponse(
                 progress_id=step.id,

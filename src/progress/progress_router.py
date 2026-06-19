@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.progress.progress_manager import ProgressManager
@@ -56,16 +57,16 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 
 @router.post("/{case_id}/journey", response_model=list[StepProgressResponse], status_code=201)
 async def assign_journey(
-    case_id: uuid.UUID, body: AssignJourneyRequest, agent: AgentDep, db: DbDep
+    case_id: uuid.UUID, body: AssignJourneyRequest, agent: AgentDep, db: DbDep, lang: RequestLang
 ) -> list[StepProgressResponse]:
-    return await ProgressManager(db).assign_journey(agent, case_id, body.journey_template_id)
+    return await ProgressManager(db).assign_journey(agent, case_id, body.journey_template_id, lang)
 
 
 @router.get("/{case_id}/steps", response_model=list[StepProgressResponse])
 async def get_timeline(
-    case_id: uuid.UUID, agent: AgentDep, db: DbDep
+    case_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
 ) -> list[StepProgressResponse]:
-    return await ProgressManager(db).get_timeline(agent, case_id)
+    return await ProgressManager(db).get_timeline(agent, case_id, lang)
 
 
 @router.patch("/{case_id}/steps/{step_progress_id}", response_model=StepProgressResponse)
@@ -75,8 +76,9 @@ async def update_step(
     body: StepProgressUpdateRequest,
     agent: AgentDep,
     db: DbDep,
+    lang: RequestLang,
 ) -> StepProgressResponse:
-    return await ProgressManager(db).update_step(agent, case_id, step_progress_id, body)
+    return await ProgressManager(db).update_step(agent, case_id, step_progress_id, body, lang)
 
 
 @router.put("/{case_id}/steps/{step_progress_id}/responsible", response_model=StepProgressResponse)
@@ -86,8 +88,9 @@ async def set_responsible(
     body: ResponsibleUpdateRequest,
     agent: AgentDep,
     db: DbDep,
+    lang: RequestLang,
 ) -> StepProgressResponse:
-    return await ProgressManager(db).set_responsible(agent, case_id, step_progress_id, body)
+    return await ProgressManager(db).set_responsible(agent, case_id, step_progress_id, body, lang)
 
 
 @router.put("/{case_id}/steps/{step_progress_id}/validator", response_model=StepProgressResponse)
@@ -97,5 +100,6 @@ async def set_validator(
     body: ValidatorUpdateRequest,
     agent: AgentDep,
     db: DbDep,
+    lang: RequestLang,
 ) -> StepProgressResponse:
-    return await ProgressManager(db).set_validator(agent, case_id, step_progress_id, body)
+    return await ProgressManager(db).set_validator(agent, case_id, step_progress_id, body, lang)

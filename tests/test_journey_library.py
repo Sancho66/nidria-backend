@@ -36,6 +36,26 @@ async def _sample(
     return s
 
 
+async def test_library_resolves_sample_name_by_language(
+    lib_client: AsyncClient,
+    admin: Agent,
+    db_session: AsyncSession,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The library resolves the sample NAME for ?lang= (samples fall back to
+    "fr", they have no agency). The scalar stays the fallback + seed anchor."""
+    ah = agent_headers(admin)
+    s = await _sample(db_session, name="Espagne — Résidence")
+    s.name_i18n = {"fr": "Espagne — Résidence", "en": "Spain — Residence"}
+    await db_session.commit()
+
+    en = (await lib_client.get("/journeys/library?lang=en", headers=ah)).json()
+    assert next(t["name"] for t in en if t["id"] == str(s.id)) == "Spain — Residence"
+    # ?lang=es absent on this sample → fall back to "fr".
+    es = (await lib_client.get("/journeys/library?lang=es", headers=ah)).json()
+    assert next(t["name"] for t in es if t["id"] == str(s.id)) == "Espagne — Résidence"
+
+
 async def test_library_lists_samples_agency_list_excludes_them(
     lib_client: AsyncClient,
     admin: Agent,

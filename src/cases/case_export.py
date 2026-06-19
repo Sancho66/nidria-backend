@@ -10,6 +10,7 @@ from shared.models.client_case import ClientCase
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.expat_user import ExpatUser
 from src.core.enums import CasePersonKind
+from src.core.i18n import DEFAULT_LANG, resolve_i18n
 
 
 def _latin1(value: str) -> str:
@@ -22,9 +23,15 @@ def _address(street: str | None, postal: str | None, city: str | None, country: 
     return ", ".join(parts) if parts else "—"
 
 
-def _custom_lines(person: CasePerson, definitions: list[CustomFieldDefinition]) -> list[str]:
+def _custom_lines(
+    person: CasePerson,
+    definitions: list[CustomFieldDefinition],
+    lang: str,
+    agency_default: str,
+) -> list[str]:
     """Agency custom fields (label: value) — only active definitions with
-    a saved value. Multi-select values are joined."""
+    a saved value. Multi-select values are joined. The LABEL is resolved for
+    `lang` (BLOC 2); the stored value is keyed by the untranslated `key`."""
     stored = person.custom_fields or {}
     out: list[str] = []
     for definition in definitions:
@@ -32,12 +39,17 @@ def _custom_lines(person: CasePerson, definitions: list[CustomFieldDefinition]) 
             continue
         value = stored[definition.key]
         rendered = ", ".join(str(v) for v in value) if isinstance(value, list) else str(value)
-        out.append(f"{definition.label}: {rendered}")
+        label = resolve_i18n(definition.label_i18n, lang, agency_default, definition.label)
+        out.append(f"{label}: {rendered}")
     return out
 
 
 def _civil_lines(
-    label: str, person: CasePerson, definitions: list[CustomFieldDefinition]
+    label: str,
+    person: CasePerson,
+    definitions: list[CustomFieldDefinition],
+    lang: str,
+    agency_default: str,
 ) -> list[str]:
     """Civil-status + custom-field lines for one person — only filled."""
     fields = [
@@ -50,7 +62,7 @@ def _civil_lines(
         ("Phone", person.phone),
     ]
     filled = [f"{k}: {v}" for k, v in fields if v]
-    filled += _custom_lines(person, definitions)
+    filled += _custom_lines(person, definitions, lang, agency_default)
     if not filled:
         return [f"{label}: (no details)"]
     return [f"{label}:", *[f"  - {line}" for line in filled]]
@@ -64,6 +76,8 @@ def build_case_pdf(
     persons: list[CasePerson],
     custom_field_definitions: list[CustomFieldDefinition],
     activity_rows: list[ActivityLog],
+    lang: str = DEFAULT_LANG,
+    agency_default: str = DEFAULT_LANG,
 ) -> bytes:
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -105,7 +119,7 @@ def build_case_pdf(
         else:
             rel = f" ({person.relationship})" if person.relationship else ""
             label = f"{person.full_name or '—'}{rel}"
-        for line in _civil_lines(label, person, custom_field_definitions):
+        for line in _civil_lines(label, person, custom_field_definitions, lang, agency_default):
             pdf.cell(0, 6, _latin1(line))
             pdf.ln(6)
 

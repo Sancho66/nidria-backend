@@ -16,6 +16,9 @@ class CustomFieldDefinitionResponse(BaseModel):
     id: uuid.UUID
     key: str
     label: str
+    # BLOC 2bis — RAW i18n blob for the editor (the resolved `label` is set by
+    # the listing endpoint; `key` stays the untranslated identifier).
+    label_i18n: dict[str, str]
     field_type: str
     options: list[str] | None
     required: bool
@@ -26,6 +29,7 @@ class CustomFieldDefinitionResponse(BaseModel):
 class CustomFieldDefinitionCreate(BaseModel):
     key: str = Field(pattern=_KEY_PATTERN)
     label: str = Field(min_length=1, max_length=200)
+    label_i18n: dict[str, str] | None = None
     field_type: CustomFieldType
     options: list[str] | None = None
     required: bool = False
@@ -47,6 +51,7 @@ class CustomFieldDefinitionUpdate(BaseModel):
     """`key` and `field_type` are IMMUTABLE — deliberately absent."""
 
     label: str | None = Field(default=None, min_length=1, max_length=200)
+    label_i18n: dict[str, str] | None = None
     options: list[str] | None = None
     required: bool | None = None
     position: int | None = None
