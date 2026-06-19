@@ -10,14 +10,28 @@ built by the callers on settings.frontend_url, never hardcoded here.
 import html as html_lib
 from dataclasses import dataclass
 
-_FOOTER = (
-    "Cet email a été envoyé par Nidria. "
-    "Si vous n'êtes pas à l'origine de cette demande, ignorez-le."
-)
+# Per-language chrome strings (BLOC NOTIF-2). The body strings live in each
+# builder's own {fr,en,es} catalog; these are the shared layout bits.
+_FOOTER = {
+    "fr": (
+        "Cet email a été envoyé par Nidria. "
+        "Si vous n'êtes pas à l'origine de cette demande, ignorez-le."
+    ),
+    "en": (
+        "This email was sent by Nidria. If you did not initiate this request, please ignore it."
+    ),
+    "es": ("Este correo fue enviado por Nidria. Si no originó esta solicitud, ignórelo."),
+}
+
+_COPY_PASTE = {
+    "fr": "Ou copiez-collez ce lien",
+    "en": "Or copy and paste this link",
+    "es": "O copie y pegue este enlace",
+}
 
 _HTML_LAYOUT = """\
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="{lang}">
   <body style="margin:0;padding:0;background-color:#f4f5f7;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" \
 style="background-color:#f4f5f7;padding:24px 0;">
@@ -64,7 +78,7 @@ font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none;">{label}</a>
                   </tr>
                 </table>
                 <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:#8a8a94;\
-word-break:break-all;">Ou copiez-collez ce lien&nbsp;: \
+word-break:break-all;">{copy_paste}&nbsp;: \
 <a href="{url}" style="color:#3b3bd6;">{url}</a></p>
 """
 
@@ -95,23 +109,28 @@ def _render(
     button_url: str | None = None,
     body_text: str | None = None,
     validity: str | None = None,
+    lang: str = "fr",
 ) -> EmailContent:
+    footer = _FOOTER.get(lang, _FOOTER["fr"])
     action_blocks = ""
     if body_text is not None:
         escaped = html_lib.escape(body_text).replace("\n", "<br>")
         action_blocks += _HTML_BODY_TEXT.format(body=escaped)
     if button_label is not None and button_url is not None:
         action_blocks += _HTML_BUTTON.format(
-            label=html_lib.escape(button_label), url=html_lib.escape(button_url, quote=True)
+            label=html_lib.escape(button_label),
+            url=html_lib.escape(button_url, quote=True),
+            copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]),
         )
     if validity is not None:
         action_blocks += _HTML_VALIDITY.format(validity=html_lib.escape(validity))
 
     html = _HTML_LAYOUT.format(
+        lang=lang,
         title=html_lib.escape(title),
         intro=html_lib.escape(intro),
         action_blocks=action_blocks,
-        footer=html_lib.escape(_FOOTER),
+        footer=html_lib.escape(footer),
     )
 
     text_parts = ["Nidria", "", title, "", intro]
@@ -121,7 +140,7 @@ def _render(
         text_parts += ["", f"{button_label} : {button_url}"]
     if validity is not None:
         text_parts += ["", validity]
-    text_parts += ["", "—", _FOOTER]
+    text_parts += ["", "—", footer]
     return EmailContent(subject=subject, text="\n".join(text_parts), html=html)
 
 
@@ -188,80 +207,236 @@ def reminder_email(message_body: str) -> EmailContent:
     )
 
 
-def requirement_request_email(agency_name: str, step_name: str, space_link: str) -> EmailContent:
-    """(a) A step became active and needs info/documents from the client."""
-    return _render(
-        subject="Nidria — De nouvelles informations sont attendues",
-        title="De nouvelles informations sont attendues",
-        intro=(
-            f"{agency_name} a besoin d'informations ou de documents pour "
-            f"l'étape « {step_name} » de votre dossier. Connectez-vous à votre "
-            "espace pour les fournir."
+def _pick(catalog: dict[str, dict[str, str]], lang: str) -> dict[str, str]:
+    """Select a template's strings for `lang`, falling back to FR. `lang` is
+    already the resolved recipient language (BLOC NOTIF-1)."""
+    return catalog.get(lang, catalog["fr"])
+
+
+# Each catalog: lang → {subject, title, intro (named placeholders), button}.
+# The SAME placeholders appear in the 3 languages (a missing one would silently
+# drop a variable — guarded by the render tests). step_name arrives already
+# resolved in the recipient language.
+_REQUIREMENT_REQUEST = {
+    "fr": {
+        "subject": "Nidria — De nouvelles informations sont attendues",
+        "title": "De nouvelles informations sont attendues",
+        "intro": (
+            "{agency} a besoin d'informations ou de documents pour l'étape « {step} » de votre "
+            "dossier. Connectez-vous à votre espace pour les fournir."
         ),
-        button_label="Compléter mon dossier",
+        "button": "Compléter mon dossier",
+    },
+    "en": {
+        "subject": "Nidria — New information is required",
+        "title": "New information is required",
+        "intro": (
+            "{agency} needs information or documents for the step “{step}” of your case. Log in "
+            "to your space to provide them."
+        ),
+        "button": "Complete my case",
+    },
+    "es": {
+        "subject": "Nidria — Se requiere nueva información",
+        "title": "Se requiere nueva información",
+        "intro": (
+            "{agency} necesita información o documentos para la etapa «{step}» de su expediente. "
+            "Inicie sesión en su espacio para proporcionarlos."
+        ),
+        "button": "Completar mi expediente",
+    },
+}
+
+_STEP_REOPENED = {
+    "fr": {
+        "subject": "Nidria — Votre agence a besoin de précisions",
+        "title": "Votre agence a besoin de précisions",
+        "intro": (
+            "{agency} a rouvert l'étape « {step} » de votre dossier et a besoin de précisions ou "
+            "d'un complément. Connectez-vous à votre espace pour la mettre à jour."
+        ),
+        "button": "Mettre à jour mon dossier",
+    },
+    "en": {
+        "subject": "Nidria — Your agency needs clarification",
+        "title": "Your agency needs clarification",
+        "intro": (
+            "{agency} reopened the step “{step}” of your case and needs clarification or "
+            "additional details. Log in to your space to update it."
+        ),
+        "button": "Update my case",
+    },
+    "es": {
+        "subject": "Nidria — Su agencia necesita aclaraciones",
+        "title": "Su agencia necesita aclaraciones",
+        "intro": (
+            "{agency} reabrió la etapa «{step}» de su expediente y necesita aclaraciones o "
+            "información adicional. Inicie sesión en su espacio para actualizarla."
+        ),
+        "button": "Actualizar mi expediente",
+    },
+}
+
+_READY_TO_VALIDATE = {
+    "fr": {
+        "subject": "Nidria — Un dossier est prêt à valider",
+        "title": "Un dossier est prêt à valider",
+        "intro": (
+            "Toutes les informations attendues pour l'étape « {step} » du dossier {case} ont été "
+            "fournies. Vous pouvez la valider."
+        ),
+        "button": "Ouvrir le dossier",
+    },
+    "en": {
+        "subject": "Nidria — A case is ready to validate",
+        "title": "A case is ready to validate",
+        "intro": (
+            "All the information expected for the step “{step}” of case {case} has been provided. "
+            "You can validate it."
+        ),
+        "button": "Open the case",
+    },
+    "es": {
+        "subject": "Nidria — Un expediente está listo para validar",
+        "title": "Un expediente está listo para validar",
+        "intro": (
+            "Toda la información esperada para la etapa «{step}» del expediente {case} ha sido "
+            "proporcionada. Puede validarla."
+        ),
+        "button": "Abrir el expediente",
+    },
+}
+
+_NEW_COMMENT_CLIENT = {
+    "fr": {
+        "subject": "Nidria — Nouveau message de votre conseiller",
+        "title": "Vous avez un nouveau message",
+        "intro": (
+            "{author} de {agency} vous a écrit au sujet de l'étape « {step} ». Répondez depuis "
+            "votre espace."
+        ),
+        "button": "Voir la conversation",
+    },
+    "en": {
+        "subject": "Nidria — New message from your advisor",
+        "title": "You have a new message",
+        "intro": (
+            "{author} from {agency} wrote to you about the step “{step}”. Reply from your space."
+        ),
+        "button": "View the conversation",
+    },
+    "es": {
+        "subject": "Nidria — Nuevo mensaje de su asesor",
+        "title": "Tiene un nuevo mensaje",
+        "intro": (
+            "{author} de {agency} le escribió sobre la etapa «{step}». Responda desde su espacio."
+        ),
+        "button": "Ver la conversación",
+    },
+}
+
+_NEW_COMMENT_AGENT = {
+    "fr": {
+        "subject": "Nidria — Nouveau message de votre client",
+        "title": "Nouveau message d'un client",
+        "intro": (
+            "{client} a écrit au sujet de l'étape « {step} ». Ouvrez le dossier pour répondre."
+        ),
+        "button": "Ouvrir le dossier",
+    },
+    "en": {
+        "subject": "Nidria — New message from your client",
+        "title": "New message from a client",
+        "intro": "{client} wrote about the step “{step}”. Open the case to reply.",
+        "button": "Open the case",
+    },
+    "es": {
+        "subject": "Nidria — Nuevo mensaje de su cliente",
+        "title": "Nuevo mensaje de un cliente",
+        "intro": "{client} escribió sobre la etapa «{step}». Abra el expediente para responder.",
+        "button": "Abrir el expediente",
+    },
+}
+
+
+def requirement_request_email(
+    agency_name: str, step_name: str, space_link: str, lang: str = "fr"
+) -> EmailContent:
+    """(a) A step became active and needs info/documents from the client.
+    Rendered in the recipient language `lang` (BLOC NOTIF-2). step_name is
+    already resolved in `lang`."""
+    s = _pick(_REQUIREMENT_REQUEST, lang)
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name, step=step_name),
+        button_label=s["button"],
         button_url=space_link,
+        lang=lang,
     )
 
 
-def step_reopened_email(agency_name: str, step_name: str, space_link: str) -> EmailContent:
-    """(c) The agency reopened a step — distinct tone from the first
-    request: this is a follow-up, not an initial ask."""
+def step_reopened_email(
+    agency_name: str, step_name: str, space_link: str, lang: str = "fr"
+) -> EmailContent:
+    """(c) The agency reopened a step — distinct tone from the first request.
+    Rendered in the recipient language `lang`."""
+    s = _pick(_STEP_REOPENED, lang)
     return _render(
-        subject="Nidria — Votre agence a besoin de précisions",
-        title="Votre agence a besoin de précisions",
-        intro=(
-            f"{agency_name} a rouvert l'étape « {step_name} » de votre dossier "
-            "et a besoin de précisions ou d'un complément. Connectez-vous à "
-            "votre espace pour la mettre à jour."
-        ),
-        button_label="Mettre à jour mon dossier",
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name, step=step_name),
+        button_label=s["button"],
         button_url=space_link,
+        lang=lang,
     )
 
 
-def ready_to_validate_email(case_label: str, step_name: str, app_link: str) -> EmailContent:
-    """(b) agency_validation step has all requirements provided — the
-    owner agent can close it."""
+def ready_to_validate_email(
+    case_label: str, step_name: str, app_link: str, lang: str = "fr"
+) -> EmailContent:
+    """(b) agency_validation step has all requirements provided — the owner
+    agent can close it. Rendered in the recipient (agent) language `lang`."""
+    s = _pick(_READY_TO_VALIDATE, lang)
     return _render(
-        subject="Nidria — Un dossier est prêt à valider",
-        title="Un dossier est prêt à valider",
-        intro=(
-            f"Toutes les informations attendues pour l'étape « {step_name} » du "
-            f"dossier {case_label} ont été fournies. Vous pouvez la valider."
-        ),
-        button_label="Ouvrir le dossier",
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(step=step_name, case=case_label),
+        button_label=s["button"],
         button_url=app_link,
+        lang=lang,
     )
 
 
 def new_comment_to_client(
-    agency_name: str, author_first_name: str, step_name: str, space_link: str
+    agency_name: str, author_first_name: str, step_name: str, space_link: str, lang: str = "fr"
 ) -> EmailContent:
-    """Agent posted on a step thread → notify the client. Uses the
-    agent's FIRST NAME (a deliberate, scoped exception to the wave-1
-    anti-staffing rule: a conversation is not a status — a name humanizes
-    and reassures the client that a person is replying)."""
+    """Agent posted on a step thread → notify the client. Uses the agent's
+    FIRST NAME (a deliberate, scoped exception to the anti-staffing rule: a
+    conversation is not a status — a name humanizes the reply). Rendered in the
+    client language `lang`."""
+    s = _pick(_NEW_COMMENT_CLIENT, lang)
     return _render(
-        subject="Nidria — Nouveau message de votre conseiller",
-        title="Vous avez un nouveau message",
-        intro=(
-            f"{author_first_name} de {agency_name} vous a écrit au sujet de "
-            f"l'étape « {step_name} ». Répondez depuis votre espace."
-        ),
-        button_label="Voir la conversation",
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(author=author_first_name, agency=agency_name, step=step_name),
+        button_label=s["button"],
         button_url=space_link,
+        lang=lang,
     )
 
 
-def new_comment_to_agent(client_name: str, step_name: str, app_link: str) -> EmailContent:
-    """Client posted on a step thread → notify the case owner agent."""
+def new_comment_to_agent(
+    client_name: str, step_name: str, app_link: str, lang: str = "fr"
+) -> EmailContent:
+    """Client posted on a step thread → notify the case owner agent. Rendered
+    in the agent language `lang`."""
+    s = _pick(_NEW_COMMENT_AGENT, lang)
     return _render(
-        subject="Nidria — Nouveau message de votre client",
-        title="Nouveau message d'un client",
-        intro=(
-            f"{client_name} a écrit au sujet de l'étape « {step_name} ». "
-            "Ouvrez le dossier pour répondre."
-        ),
-        button_label="Ouvrir le dossier",
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(client=client_name, step=step_name),
+        button_label=s["button"],
         button_url=app_link,
+        lang=lang,
     )

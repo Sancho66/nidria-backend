@@ -2,7 +2,13 @@
 request-language channel. Pure-function unit tests: no DB, fast. The
 projection wiring is exercised by the domain tests (timeline/clone)."""
 
-from src.core.i18n import DEFAULT_LANG, resolve_i18n
+from src.core.i18n import (
+    DEFAULT_LANG,
+    resolve_i18n,
+    resolve_notification_lang_agent,
+    resolve_notification_lang_client,
+    resolve_step_name_for_notif,
+)
 
 
 def test_resolve_prefers_requested_language() -> None:
@@ -39,3 +45,34 @@ def test_resolve_optional_field_with_no_value_is_none() -> None:
     # An optional field (content_note/description) with nothing anywhere → None
     # (genuinely "no content"), the only case where None is allowed.
     assert resolve_i18n({}, "en", "fr", None) is None
+
+
+# --- notification language (BLOC NOTIF-1) -------------------------------------
+
+
+def test_notif_lang_client_supported_kept() -> None:
+    for lang in ("fr", "en", "es"):
+        assert resolve_notification_lang_client(lang) == lang
+
+
+def test_notif_lang_client_unsupported_falls_back_to_english() -> None:
+    # A client whose preferred_lang is not supported gets ENGLISH (NOT the
+    # agency default fr).
+    for lang in ("de", "ko", "ru", "pt", None, ""):
+        assert resolve_notification_lang_client(lang) == "en"
+
+
+def test_notif_lang_agent_default_kept_else_french() -> None:
+    assert resolve_notification_lang_agent("es") == "es"
+    assert resolve_notification_lang_agent("en") == "en"
+    # Absent/unsupported agency default → fr.
+    assert resolve_notification_lang_agent(None) == "fr"
+    assert resolve_notification_lang_agent("de") == "fr"
+
+
+def test_resolve_step_name_for_notif_never_empty() -> None:
+    blob = {"fr": "Dépôt", "en": "Submission"}
+    assert resolve_step_name_for_notif(blob, "Dépôt", "en") == "Submission"
+    # No EN variant → falls back through fr → the scalar (never empty).
+    assert resolve_step_name_for_notif({"fr": "Dépôt"}, "Dépôt", "en") == "Dépôt"
+    assert resolve_step_name_for_notif({}, "Dépôt", "es") == "Dépôt"

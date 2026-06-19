@@ -78,6 +78,38 @@ def apply_i18n_write(
     return current_scalar, dict(current_blob or {})
 
 
+# --- notification language (BLOC NOTIF-1) ------------------------------------
+#
+# DISTINCT from the display resolution above. A notification is read in the
+# RECIPIENT's language, with a recipient-specific fallback that must NOT reuse
+# the display chain (which would give an agent's FR default to a client).
+
+
+def resolve_notification_lang_client(preferred_lang: str | None) -> str:
+    """The language of a notification sent to a CLIENT (expat). Their stored
+    preferred_lang if supported, else ENGLISH — never the agency default."""
+    if preferred_lang and preferred_lang.lower()[:2] in SUPPORTED_LANGS:
+        return preferred_lang.lower()[:2]
+    return "en"
+
+
+def resolve_notification_lang_agent(agency_default: str | None) -> str:
+    """The language of a notification sent to an AGENT. The agency default if
+    supported, else FRENCH (the platform default)."""
+    if agency_default and agency_default.lower()[:2] in SUPPORTED_LANGS:
+        return agency_default.lower()[:2]
+    return DEFAULT_LANG
+
+
+def resolve_step_name_for_notif(name_i18n: dict[str, str] | None, scalar: str, lang: str) -> str:
+    """Resolve a step name for a notification in the recipient's `lang`. The
+    recipient language is already resolved (client/agent rules), so the chain
+    is blob[lang] → blob[fr] → the scalar. Never empty — the scalar (a required
+    field) is the ultimate fallback."""
+    resolved = resolve_i18n(name_i18n, lang, lang, scalar)
+    return resolved if resolved is not None else scalar
+
+
 def resolve_request_language(request: Request) -> str:
     """The USER's display language, mirroring the UI. Channel (first match):
       1. explicit `?lang=` query param,

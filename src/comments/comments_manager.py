@@ -16,6 +16,11 @@ from src.core.email import send_email
 from src.core.email_templates import new_comment_to_agent, new_comment_to_client
 from src.core.enums import ActorType
 from src.core.exceptions import ForbiddenError, NotFoundError
+from src.core.i18n import (
+    resolve_notification_lang_agent,
+    resolve_notification_lang_client,
+    resolve_step_name_for_notif,
+)
 from src.external.scoping import get_case_for_external
 
 logger = logging.getLogger(__name__)
@@ -290,17 +295,25 @@ class CommentsManager:
         if not await self._notifications_enabled(case):
             return
         recipient_type = ActorType.EXPAT if author_type is ActorType.AGENT else ActorType.AGENT
-        step_name = await self.repo.get_step_name(template_step_id) or ""
+        step_scalar, step_i18n = await self.repo.get_step_name_and_i18n(template_step_id)
+        step_scalar = step_scalar or ""
         settings = get_settings()
 
         if recipient_type is ActorType.EXPAT:
-            _, email = await self.repo.get_principal_name_email(case)
+            _, email, preferred_lang = await self.repo.get_principal_name_email(case)
             if not email:
                 return
             agency = await self.repo.get_agency(case.agency_id)
             agency_name = agency.name if agency else "Votre agence"
+            # Recipient = CLIENT → preferred_lang, else EN.
+            lang = resolve_notification_lang_client(preferred_lang)
+            step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang)
             content = new_comment_to_client(
-                agency_name, author_first_name or "", step_name, f"{settings.frontend_url}/space"
+                agency_name,
+                author_first_name or "",
+                step_name,
+                f"{settings.frontend_url}/space",
+                lang,
             )
         else:
             if case.owner_agent_id is None:
@@ -308,11 +321,16 @@ class CommentsManager:
             email = await self.repo.get_agent_email(case.owner_agent_id)
             if not email:
                 return
-            client_name, _ = await self.repo.get_principal_name_email(case)
+            client_name, _, _ = await self.repo.get_principal_name_email(case)
+            # Recipient = AGENT → agency default language, else fr.
+            agency = await self.repo.get_agency(case.agency_id)
+            lang = resolve_notification_lang_agent(agency.default_language if agency else None)
+            step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang)
             content = new_comment_to_agent(
                 client_name or "Votre client",
                 step_name,
                 f"{settings.frontend_url}/app/cases/{case.id}",
+                lang,
             )
 
         now = datetime.now(UTC)

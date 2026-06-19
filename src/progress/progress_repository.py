@@ -338,13 +338,20 @@ class ProgressRepository:
             await self.db.execute(select(Agent.email).where(Agent.id == owner_agent_id))
         ).scalar_one_or_none()
 
-    async def get_principal_email_and_agency_name(self, case: ClientCase) -> tuple[str | None, str]:
-        email = (
+    async def get_principal_email_and_agency_name(
+        self, case: ClientCase
+    ) -> tuple[str | None, str, str | None]:
+        """(principal email, agency name, principal preferred_lang). The lang
+        feeds the notification-language resolution (BLOC NOTIF-1)."""
+        row = (
             await self.db.execute(
-                select(ExpatUser.email).where(ExpatUser.id == case.principal_expat_user_id)
+                select(ExpatUser.email, ExpatUser.preferred_lang).where(
+                    ExpatUser.id == case.principal_expat_user_id
+                )
             )
-        ).scalar_one_or_none()
+        ).first()
         name = (
             await self.db.execute(select(Agency.name).where(Agency.id == case.agency_id))
         ).scalar_one_or_none()
-        return email, (name or "Votre agence")
+        email, lang = (row[0], row[1]) if row is not None else (None, None)
+        return email, (name or "Votre agence"), lang

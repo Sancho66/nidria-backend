@@ -59,6 +59,52 @@ async def _thread(
     return case, steps[0]["id"]
 
 
+async def test_notif_routes_recipient_language_and_resolves_step_name(
+    c_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """BLOC NOTIF-1: a comment to a CLIENT whose preferred_lang='en' carries
+    lang='en' to the builder AND resolves the step name in EN — even though the
+    body text is still FR at this stage. The step name is the proof the right
+    language reached the rendering point."""
+    ah = agent_headers(admin)
+    en_client = await make_expat_user(email="en@example.com", preferred_lang="en")
+    tid = (await c_client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    # The step carries both FR and EN names.
+    await c_client.post(
+        f"/journeys/{tid}/steps",
+        headers=ah,
+        json={"name": "Étape FR", "name_i18n": {"fr": "Étape FR", "en": "Step EN"}},
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id,
+        principal_expat_user_id=en_client.id,
+        owner_agent_id=admin.id,
+    )
+    pid = (
+        await c_client.post(
+            f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid}
+        )
+    ).json()[0]["id"]
+
+    email.outbox.clear()
+    # Agent posts → the EN client is notified.
+    r = await c_client.post(
+        f"/cases/{case.id}/steps/{pid}/comments", headers=ah, json={"body": "hello"}
+    )
+    assert r.status_code == 201, r.text
+
+    sent = next(m for m in email.outbox if m.to == "en@example.com")
+    # The step name was resolved in the recipient's language (EN), not the FR scalar.
+    assert "Step EN" in sent.body and "Étape FR" not in sent.body
+    # NOTIF-2: the subject + body are now in EN (recipient language).
+    assert sent.subject == "Nidria — New message from your advisor"
+    assert 'html lang="en"' in sent.html
+
+
 def _to(fragment: str) -> list[email.OutboxEmail]:
     return [m for m in email.outbox if fragment in m.subject]
 

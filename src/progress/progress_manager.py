@@ -32,7 +32,13 @@ from src.core.enums import (
     StepValidatorType,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
-from src.core.i18n import DEFAULT_LANG, resolve_i18n
+from src.core.i18n import (
+    DEFAULT_LANG,
+    resolve_i18n,
+    resolve_notification_lang_agent,
+    resolve_notification_lang_client,
+    resolve_step_name_for_notif,
+)
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
@@ -1042,8 +1048,13 @@ class ProgressManager:
         email = await self.repo.get_owner_email(case.owner_agent_id)
         if not email:
             return None
+        # Recipient = the owner AGENT → agency default language (else fr).
+        lang = resolve_notification_lang_agent(
+            await self.repo.agency_default_language(case.agency_id)
+        )
+        step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang)
         link = f"{get_settings().frontend_url}/app/cases/{case.id}"
-        content = ready_to_validate_email(str(case.id), step.name, link)
+        content = ready_to_validate_email(str(case.id), step_name, link, lang)
         return PendingMail(to=email, content=content)
 
     async def _client_step_mail_for_row(
@@ -1072,14 +1083,19 @@ class ProgressManager:
         templates. Only when the step has concrete requirements."""
         if not await self._notifications_enabled(case):
             return None
-        email, agency_name = await self.repo.get_principal_email_and_agency_name(case)
+        email, agency_name, preferred_lang = await self.repo.get_principal_email_and_agency_name(
+            case
+        )
         if not email:
             return None
+        # Recipient = the CLIENT → preferred_lang, else EN (never agency fr).
+        lang = resolve_notification_lang_client(preferred_lang)
+        step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang)
         link = f"{get_settings().frontend_url}/space"
         content = (
-            step_reopened_email(agency_name, step.name, link)
+            step_reopened_email(agency_name, step_name, link, lang)
             if reopened
-            else requirement_request_email(agency_name, step.name, link)
+            else requirement_request_email(agency_name, step_name, link, lang)
         )
         return PendingMail(to=email, content=content)
 

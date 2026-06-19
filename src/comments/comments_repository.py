@@ -96,30 +96,44 @@ class CommentsRepository:
     async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
         return await self.db.get(Agency, agency_id)
 
-    async def get_step_name(self, template_step_id: uuid.UUID) -> str | None:
-        return (
+    async def get_step_name_and_i18n(
+        self, template_step_id: uuid.UUID
+    ) -> tuple[str | None, dict[str, str]]:
+        """(scalar name, name_i18n blob) — the blob lets the notification
+        resolve the step name in the recipient's language (BLOC NOTIF-1)."""
+        row = (
             await self.db.execute(
-                select(JourneyTemplateStep.name).where(JourneyTemplateStep.id == template_step_id)
+                select(JourneyTemplateStep.name, JourneyTemplateStep.name_i18n).where(
+                    JourneyTemplateStep.id == template_step_id
+                )
             )
-        ).scalar_one_or_none()
+        ).first()
+        return (row[0], row[1]) if row is not None else (None, {})
 
     async def get_agent_email(self, agent_id: uuid.UUID) -> str | None:
         return (
             await self.db.execute(select(Agent.email).where(Agent.id == agent_id))
         ).scalar_one_or_none()
 
-    async def get_principal_name_email(self, case: ClientCase) -> tuple[str | None, str | None]:
+    async def get_principal_name_email(
+        self, case: ClientCase
+    ) -> tuple[str | None, str | None, str | None]:
+        """(display name, email, preferred_lang). The lang feeds the client
+        notification-language resolution (BLOC NOTIF-1)."""
         row = (
             await self.db.execute(
-                select(ExpatUser.first_name, ExpatUser.last_name, ExpatUser.email).where(
-                    ExpatUser.id == case.principal_expat_user_id
-                )
+                select(
+                    ExpatUser.first_name,
+                    ExpatUser.last_name,
+                    ExpatUser.email,
+                    ExpatUser.preferred_lang,
+                ).where(ExpatUser.id == case.principal_expat_user_id)
             )
         ).first()
         if row is None:
-            return None, None
-        first, last, email = row
-        return f"{first} {last}".strip(), email
+            return None, None, None
+        first, last, email, lang = row
+        return f"{first} {last}".strip(), email, lang
 
     # --- anti-burst tracker (effective-send timestamp) ------------------------------
 
