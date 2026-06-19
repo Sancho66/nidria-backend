@@ -52,6 +52,22 @@ PA_PEN_NAME = "Panama — Visa Pensionado (retraité)"
 PA_GV_NAME = "Panama — Investisseur Qualifié (Golden Visa)"
 PA_DN_NAME = "Panama — Visa nomade numérique (Trabajador Remoto)"
 PA_CO_NAME = "Panama — Création de société (S.A. / SRL)"
+BG_EU_NAME = "Bulgarie — Enregistrement de résidence UE"
+BG_RET_NAME = "Bulgarie — Résidence retraité hors-UE"
+BG_DN_NAME = "Bulgarie — Visa nomade digital (hors-UE)"
+BG_FL_NAME = "Bulgarie — Freelance / profession libérale (hors-UE)"
+BG_CO_NAME = "Bulgarie — Création de société (EOOD / OOD)"
+HU_EU_NAME = "Hongrie — Enregistrement de séjour UE"
+HU_WC_NAME = "Hongrie — White Card (nomade digital, hors-UE)"
+HU_GI_NAME = "Hongrie — Guest Investor (golden visa, hors-UE)"
+HU_SP_NAME = "Hongrie — Autorisation unique (salarié hors-UE)"
+HU_CO_NAME = "Hongrie — Création de société (Kft.)"
+AE_GV_NAME = "Dubaï (EAU) — Golden Visa (10 ans)"
+AE_FZ_NAME = "Dubaï (EAU) — Résidence par société free zone"
+AE_RE_NAME = "Dubaï (EAU) — Visa immobilier (2 ans)"
+AE_RW_NAME = "Dubaï (EAU) — Visa remote work (1 an)"
+AE_RET_NAME = "Dubaï (EAU) — Visa retraité (5 ans, 55 ans et +)"
+AE_CO_NAME = "Dubaï (EAU) — Création de société (free zone / mainland)"
 
 _PY1_STEPS: list[_Step] = [
     (
@@ -660,6 +676,602 @@ _PA_CO_STEPS: list[_Step] = [
     ),
 ]
 
+# Bulgarie — enregistrement de résidence d'un citoyen UE/EEE/Suisse (> 3 mois).
+_BG_EU_STEPS: list[_Step] = [
+    (
+        "Enregistrer l'adresse à la municipalité",
+        5,
+        "Enregistrement de l'adresse de résidence auprès de la municipalité.",
+        "provides_documents",
+        ["Passeport / CNI", "Preuve de logement"],
+    ),
+    (
+        "Demande de certificat de séjour (Direction Migration)",
+        3,
+        "Certificat valable jusqu'à 5 ans, souvent émis en ≈ 3 jours ouvrés.",
+        "executant",
+        ["Passeport / CNI", "Preuve de logement", "Assurance santé (EHIC ou locale)"],
+    ),
+    (
+        "Obtention du numéro personnel (LNCh)",
+        None,
+        "🟠 Les citoyens UE reçoivent un LNCh (et non un EGN), ce qui peut créer des "
+        "obstacles administratifs (banque, services publics). Requis pour banque, "
+        "fisc, bail, santé.",
+        "executant",
+        [],
+    ),
+]
+
+# Bulgarie — résidence retraité hors-UE (art. 24(1)(10) ЗЧРБ).
+_BG_RET_STEPS: list[_Step] = [
+    (
+        "Demande de visa D au consulat bulgare",
+        30,
+        "🔴 Moyens de subsistance ≥ pension/salaire minimum (≈ 620 €/mois en 2026, "
+        "indexé SMIC, post-euro) — montant indicatif, revérifier la source "
+        "officielle. Les pensions privées (ex. 401k) peuvent être refusées sans "
+        "document officiel de pension d'État. Frais visa ≈ 100 €.",
+        "provides_documents",
+        [
+            "Passeport (≥ 3 mois, 2 pages vierges)",
+            "2 photos",
+            "Preuve de logement",
+            "Casier apostillé / traduit",
+            "Assurance santé",
+            "Justificatif officiel de pension",
+        ],
+    ),
+    (
+        "Entrée en Bulgarie & enregistrement de l'adresse (sous 5 j)",
+        5,
+        "Enregistrement de l'adresse sous 5 jours après l'entrée.",
+        "executant",
+        [],
+    ),
+    (
+        "Dépôt du permis de séjour prolongé (Direction Migration)",
+        14,
+        "Permis valable jusqu'à 1 an, renouvelable. Ne donne pas accès au marché du travail.",
+        "executant",
+        [
+            "Formulaire",
+            "Passeport + copie visa/tampon",
+            "Assurance",
+            "Justificatif de pension",
+            "Preuve de logement",
+        ],
+    ),
+]
+
+# Bulgarie — visa nomade digital hors-UE (art. 24p ЗЧРБ, régime récent).
+_BG_DN_STEPS: list[_Step] = [
+    (
+        "Vérifier le régime (récent) & réunir le dossier",
+        5,
+        "🔴 RÉGIME TRÈS RÉCENT — base légale art. 24p ЗЧРБ, demandes ouvertes le "
+        "20/12/2025. Détails d'application encore évolutifs : revérifier auprès du "
+        "consulat / de la Direction Migration avant toute promesse.",
+        None,  # réalisé par l'agence — non nommable sur un sample
+        [],
+    ),
+    (
+        "Demande de visa D au consulat",
+        45,
+        "🔴 Seuil ≈ 31 000 €/an indexé SMIC, post-euro — indicatif, revérifier. "
+        "Interdiction de travailler pour des clients/employeurs bulgares.",
+        "provides_documents",
+        [
+            "Passeport",
+            "Preuve de revenu (≥ 50× salaire minimum mensuel, ≈ 31 000 €/an)",
+            "Assurance santé (≥ 30 000 € de couverture)",
+            "Casier",
+            "Logement",
+        ],
+    ),
+    (
+        "Entrée & permis de séjour (Direction Migration, sous 14 j)",
+        28,
+        "Permis 1 an, renouvelable 1 an (max ≈ 2 ans). Ne mène PAS à la résidence permanente.",
+        "executant",
+        [],
+    ),
+]
+
+# Bulgarie — freelance / profession libérale hors-UE (art. 24a ЗЧРБ).
+_BG_FL_STEPS: list[_Step] = [
+    (
+        "Obtenir le permis d'activité freelance (Agence pour l'emploi)",
+        30,
+        "🟠 Le permis est délivré par l'AGENCE POUR L'EMPLOI (relevant du MTSP), PAS "
+        "par la Direction Migration — erreur de nommage fréquente. Bulgare B1 requis.",
+        "provides_documents",
+        [
+            "Plan d'activité détaillé",
+            "Preuve de ≥ 2 ans d'expérience professionnelle",
+            "Moyens financiers",
+            "Preuve de niveau de bulgare B1",
+        ],
+    ),
+    (
+        "Demande de visa D au consulat",
+        30,
+        "Demande de visa D sur la base du permis freelance.",
+        "provides_documents",
+        [
+            "Permis freelance",
+            "Passeport",
+            "Casier apostillé",
+            "Assurance",
+            "Logement",
+            "Paiement ≈ 100 €",
+        ],
+    ),
+    (
+        "Permis de séjour (Direction Migration)",
+        14,
+        "Permis 12 mois renouvelable. Pas de seuil de revenu statutaire fixe publié "
+        "(évalué sur le plan d'activité). Indicatif.",
+        "executant",
+        [],
+    ),
+]
+
+# Bulgarie — création de société (EOOD = associé unique, OOD = ≥ 2 associés ;
+# 100 % étranger possible, résidence non requise).
+_BG_CO_STEPS: list[_Step] = [
+    (
+        "Vérifier / réserver le nom & choisir la structure",
+        3,
+        "EOOD = 1 associé · OOD = ≥ 2 associés (acte constitutif notarié + "
+        "déclaration UBO). Capital minimum ≈ 1 € (2 BGN). Le nombre d'associés est "
+        "le seul paramètre stable de ce parcours.",
+        "executant",
+        [],
+    ),
+    (
+        "Rédiger les statuts & déposer le capital",
+        5,
+        "Siège bulgare requis ; si gérant non-résident, personne de contact locale nécessaire.",
+        "executant",
+        [],
+    ),
+    (
+        "Immatriculation au Registre du Commerce",
+        7,
+        "Obtention de l'EIK / BULSTAT (code unique). 3 à 10 jours ouvrés (2 à 4 "
+        "semaines en remote).",
+        "executant",
+        ["Statuts", "Preuve de dépôt du capital", "Déclaration UBO"],
+    ),
+    (
+        "TVA, compte bancaire & mise en route",
+        14,
+        "🔴 IS 10 % (le plus bas de l'UE), dividendes 5 % — taux indicatifs, "
+        "revérifier (post-euro 2026). TVA si CA > ≈ 51 000 €. Goulot connu : "
+        "ouverture de compte bancaire (KYC, parfois présence requise). ⚠️ Détenir à "
+        "distance ≠ s'installer : le 10 % d'IS ne tient que si la société est "
+        "réellement pilotée DEPUIS la Bulgarie (substance).",
+        "executant",
+        [],
+    ),
+]
+
+# Hongrie — enregistrement de séjour d'un citoyen UE/EEE/Suisse (> 90 jours).
+_HU_EU_STEPS: list[_Step] = [
+    (
+        "Déclaration de séjour (> 90 j) à l'Office de l'immigration",
+        14,
+        "🟠 Le montant « ressources suffisantes » en HUF est à revérifier (source "
+        "primaire non confirmée). Travail et établissement autorisés sans titre.",
+        "provides_documents",
+        [
+            "Passeport / CNI",
+            "Ressources suffisantes + assurance maladie (inactif) OU preuve d'emploi (salarié)",
+        ],
+    ),
+    (
+        "Carte d'enregistrement (registration card)",
+        7,
+        "Résidence permanente accessible à 5 ans, naturalisation à 8 ans.",
+        "executant",
+        [],
+    ),
+    (
+        "Identifiants d'installation (carte d'adresse, n° fiscal, TAJ santé)",
+        None,
+        "lakcímkártya (carte d'adresse) · adóazonosító jel (n° fiscal NAV) · TAJ "
+        "(sécurité sociale NEAK). Blocages pratiques fréquents — à prévoir dès "
+        "l'arrivée.",
+        "executant",
+        [],
+    ),
+]
+
+# Hongrie — White Card (nomade digital hors-UE), travail à distance pour une
+# entité hors Hongrie. Impasse : ne mène ni à la PR ni à la naturalisation.
+_HU_WC_STEPS: list[_Step] = [
+    (
+        "Avertissement préalable & vérification du seuil",
+        3,
+        "🔴 FICHE NON VÉRIFIÉE EN SOURCE PRIMAIRE. ⚠️ IMPASSE : la White Card ne "
+        "compte NI pour la résidence permanente NI pour la naturalisation — "
+        "solution d'essai 1-2 ans. Pour s'installer durablement, basculer vers une "
+        "autre voie. Interdit de travailler pour le marché hongrois. Revenu mensuel "
+        "minimum 🔴 volatil, revérifier sur oif.gov.hu.",
+        None,  # réalisé par l'agence — non nommable sur un sample
+        [],
+    ),
+    (
+        "Demande de visa D / White Card",
+        30,
+        "Demande de visa D / White Card sur la base du dossier réuni.",
+        "provides_documents",
+        [
+            "Passeport",
+            "Preuve de revenu de source étrangère",
+            "Preuve de travail à distance pour entité hors Hongrie",
+            "Assurance santé",
+            "Logement",
+            "Casier",
+        ],
+    ),
+    (
+        "Titre de séjour & identifiants",
+        21,
+        "Carte d'adresse + n° fiscal + TAJ. Conditions de renouvellement et de "
+        "regroupement familial 🔴 à vérifier.",
+        "executant",
+        [],
+    ),
+]
+
+# Hongrie — Guest Investor (golden visa hors-UE), titre 10 ans à faible présence.
+_HU_GI_STEPS: list[_Step] = [
+    (
+        "Avertissement & choix de l'option d'investissement",
+        5,
+        "🔴 FICHE NON VÉRIFIÉE EN SOURCE PRIMAIRE. Options (montants indicatifs, "
+        "revérifier) : fonds agréés MNB ≈ 250 000 € (voie la moins chère) ; "
+        "immobilier résidentiel direct ≈ 500 000 € (option possiblement REPORTÉE — "
+        "vérifier si réellement ouverte) ; donation enseignement supérieur "
+        "≈ 1 000 000 €. Vérifier la liste des fonds MNB réellement souscriptibles.",
+        None,  # réalisé par l'agence — non nommable sur un sample
+        [],
+    ),
+    (
+        "Réalisation de l'investissement",
+        30,
+        "Déploiement du capital selon l'option retenue.",
+        "executant",
+        [],
+    ),
+    (
+        "Demande du titre Guest Investor",
+        45,
+        "Titre 10 ans, faible présence exigée. Voie patrimoniale.",
+        "executant",
+        ["Preuve d'investissement", "Passeport", "Casier", "Assurance"],
+    ),
+    (
+        "Titre de séjour & identifiants",
+        None,
+        "Carte d'adresse + n° fiscal + TAJ.",
+        "executant",
+        [],
+    ),
+]
+
+# Hongrie — autorisation unique (single permit) : titre de séjour + autorisation
+# de travail en UNE procédure portée par l'employeur. Compte pour la PR et la
+# naturalisation.
+_HU_SP_STEPS: list[_Step] = [
+    (
+        "L'employeur initie la demande (single permit)",
+        30,
+        "Titre + autorisation de travail en UNE procédure, portée par l'employeur. "
+        "🟠 Test du marché du travail éventuel + seuils salariaux à vérifier. Cette "
+        "voie COMPTE pour la résidence permanente et la naturalisation.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Demande de visa D au consulat",
+        30,
+        "Demande de visa D au consulat sur la base de l'autorisation obtenue.",
+        "provides_documents",
+        ["Passeport"],
+    ),
+]
+
+# Hongrie — création de société (Kft.). Ouverte aux étrangers NON-RÉSIDENTS,
+# ne donne AUCUN titre de séjour.
+_HU_CO_STEPS: list[_Step] = [
+    (
+        "Préparer la constitution (avocat) & le capital",
+        5,
+        "⚠️ SOCIÉTÉ ≠ RÉSIDENCE. Constituer une Kft. ne donne aucun titre de "
+        "séjour : un étranger pays-tiers peut piloter une Kft. À DISTANCE sans "
+        "titre ; pour résider physiquement, c'est un titre distinct (et incertain "
+        "post-réforme). Capital social ~3 M HUF (~7 600 €, apport différable si "
+        "l'acte le prévoit). Montants indicatifs, reconvertir au taux du jour.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Acte constitutif & enregistrement au registre du commerce (Cégbíróság)",
+        7,
+        "Enregistrement au Cégbíróság (registre du commerce).",
+        "provides_documents",
+        [
+            "Acte constitutif (avocat obligatoire)",
+            "Statuts",
+            "Déclaration des bénéficiaires (UBO)",
+            "Siège hongrois",
+        ],
+    ),
+    (
+        "Numéro fiscal, TVA & registres",
+        7,
+        "🟠 IS 9 % (le plus bas de l'UE), 0 % de retenue sur dividendes sortants — "
+        "taux indicatifs à revérifier (NAV). Franchise TVA (ÁFA) sous ~18 M HUF/an "
+        "(~45 000 €), sinon 27 %. Taxe locale (HIPA). KIVA possible si forte masse "
+        "salariale.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Compte bancaire professionnel",
+        14,
+        "🟠 GOULOT : ouverture de compte pour gérant/UBO étranger — présence "
+        "physique souvent exigée, poste le plus lent.",
+        "provides_documents",
+        [],
+    ),
+]
+
+# Dubaï (EAU) — Golden Visa 10 ans : seul parcours autonome (pas de sponsor),
+# renouvelable, exempté de la règle d'absence de 6 mois.
+_AE_GV_STEPS: list[_Step] = [
+    (
+        "Vérifier la porte d'éligibilité",
+        5,
+        "🟠 Portes (montants AED volatils, revérifier u.ae / icp.gov.ae) : "
+        "investisseur ≥ 2 M AED (fonds agréé ou bien) · talents salaire "
+        "≥ 30 000 AED/mois + diplôme + classification MOHRE 1er/2e niveau · "
+        "entrepreneur projet ≥ 500 000 AED ou validation incubateur · immobilier "
+        "≥ 2 M AED.",
+        None,  # réalisé par l'agence — non nommable sur un sample
+        [],
+    ),
+    (
+        "Constituer le dossier de nomination",
+        14,
+        "Dossier de nomination à constituer selon la porte d'éligibilité retenue.",
+        "provides_documents",
+        [
+            "Passeport",
+            "Preuve du critère (propriété / investissement / contrat+classification / projet)",
+            "Photos",
+            "Documents légalisés (apostille pour les ressortissants UE)",
+        ],
+    ),
+    (
+        "Examen médical & Emirates ID",
+        10,
+        "Examen médical + Emirates ID obligatoires (transverses à tout parcours "
+        "EAU). Présence requise (biométrie).",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Émission du visa Golden 10 ans",
+        None,
+        "10 ans renouvelable, autonome (pas de sponsor), exempté de la règle "
+        "d'absence de 6 mois — adapté aux profils très mobiles. Peut sponsoriser "
+        "la famille.",
+        "provides_documents",
+        [],
+    ),
+]
+
+# Dubaï (EAU) — résidence via société free zone : la société sponsorise le visa
+# de son propriétaire (auto-sponsoring, 100 % propriété étrangère).
+_AE_FZ_STEPS: list[_Step] = [
+    (
+        "Choisir la free zone & l'activité, réserver le nom",
+        7,
+        "Activité hors marché intérieur EAU / B2B international / holding / "
+        "numérique. Pour vendre sur le marché local → mainland (autre parcours). "
+        "Réalisé via un prestataire agréé, à assigner au dossier.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Licence & establishment card",
+        10,
+        "🟠 Quota de visas selon la formule/bureau (~1 visa/9 m², variable selon "
+        "l'autorité). Coûts = sources commerciales, recouper 2-3 prestataires.",
+        "provides_documents",
+        ["Passeport", "Dossier société", "Paiement package free zone"],
+    ),
+    (
+        "Entry permit → examen médical → Emirates ID",
+        10,
+        "Médical + Emirates ID obligatoires. Présence requise.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Visa de résidence apposé (2-3 ans, renouvelable)",
+        None,
+        "🟠 Le sponsor est la SOCIÉTÉ : tant qu'elle est active, le visa tient. "
+        "Fiscalité : voir le parcours société (0 % QFZP NON automatique). Client "
+        "UE : documenter la sortie fiscale du pays d'origine (côté France).",
+        "provides_documents",
+        [],
+    ),
+]
+
+# Dubaï (EAU) — visa immobilier : le bien (750 000 – 2 M AED) sponsorise le visa.
+_AE_RE_STEPS: list[_Step] = [
+    (
+        "Acquisition & qualification du bien",
+        14,
+        "🟠 Bien ≥ 750 000 AED (montant indicatif, DLD). NE PAS confondre avec le "
+        "Golden Visa immobilier (≥ 2 M AED / 10 ans).",
+        "provides_documents",
+        ["Titre de propriété (Dubai Land Department)", "Passeport"],
+    ),
+    (
+        "Demande de visa immobilier",
+        10,
+        "Demande déposée via un prestataire agréé, à assigner au dossier.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Examen médical & Emirates ID",
+        10,
+        "Médical + Emirates ID obligatoires. Présence requise.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Visa de résidence apposé (2 ans renouvelable)",
+        None,
+        "🟠 Le sponsor est le BIEN : la résidence tient tant que le bien est "
+        "détenu. Au-delà de 2 M AED, préférer le Golden Visa (10 ans + exemption "
+        "règle d'absence).",
+        "provides_documents",
+        [],
+    ),
+]
+
+# Dubaï (EAU) — visa remote work : télétravail pour un employeur HORS EAU.
+# Rapide mais court (1 an), ne mène pas à une résidence longue.
+_AE_RW_STEPS: list[_Step] = [
+    (
+        "Vérifier l'éligibilité & réunir le dossier",
+        7,
+        "🟠 Seuil indicatif. ⚠️ Le remote work ne mène PAS à une résidence longue "
+        "(1 an) — pour une base durable + optimisation fiscale, préférer une "
+        "société free zone dès le départ. Le dire avant que le client s'y enferme.",
+        "provides_documents",
+        [
+            "Passeport",
+            "Preuve de revenu étranger ≥ 3 500 USD/mois (~12 850 AED)",
+            "Contrat de travail / preuve d'activité hors EAU",
+            "Assurance santé",
+        ],
+    ),
+    (
+        "Demande du visa remote work",
+        10,
+        "Demande du visa remote work sur la base du dossier réuni.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Examen médical & Emirates ID",
+        10,
+        "Médical + Emirates ID obligatoires. Présence requise.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Émission du visa (1 an)",
+        None,
+        "Émission du visa remote work, valable 1 an.",
+        "provides_documents",
+        [],
+    ),
+]
+
+# Dubaï (EAU) — visa retraité (55 ans et +), un critère financier suffit.
+_AE_RET_STEPS: list[_Step] = [
+    (
+        "Vérifier le critère financier (un seul suffit)",
+        5,
+        "🟠 Un des trois (montants indicatifs, revérifier) : revenu ≥ 20 000 AED/"
+        "mois · OU épargne ≥ 1 M AED · OU bien ≥ 1 M AED. Réservé aux 55 ans et +. "
+        "Au-delà de 2 M AED de patrimoine, préférer le Golden Visa (10 ans + "
+        "exemption règle d'absence).",
+        None,  # réalisé par l'agence — non nommable sur un sample
+        [],
+    ),
+    (
+        "Constituer le dossier",
+        14,
+        "Dossier de demande à constituer sur la base du critère financier retenu.",
+        "provides_documents",
+        ["Passeport", "Preuve du critère financier", "Assurance santé"],
+    ),
+    (
+        "Examen médical & Emirates ID",
+        10,
+        "Médical + Emirates ID obligatoires. Présence requise.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Visa retraité apposé (5 ans renouvelable)",
+        None,
+        "Visa retraité apposé, valable 5 ans renouvelable.",
+        "provides_documents",
+        [],
+    ),
+]
+
+# Dubaï (EAU) — création de société : la décision n°1 est free zone vs mainland.
+# Une société free zone sponsorise aussi le visa de son propriétaire.
+_AE_CO_STEPS: list[_Step] = [
+    (
+        "Trancher free zone vs mainland (question filtre)",
+        5,
+        "QUESTION FILTRE : le client vend-il directement sur le marché intérieur "
+        "des EAU ? OUI → mainland (DET) : accès onshore + marchés publics. NON "
+        "(international / B2B / holding / numérique / objectif résidence) → free "
+        "zone : 100 % propriété + auto-sponsoring du visa. 100 % propriété "
+        "étrangère désormais permis pour beaucoup d'activités mainland (liste "
+        "d'activités à impact stratégique encadrée — vérifier auprès du DET).",
+        None,  # réalisé par l'agence — non nommable sur un sample
+        [],
+    ),
+    (
+        "Réservation du nom & approbation de l'activité",
+        7,
+        "Réservation du nom et approbation de l'activité via un prestataire agréé, "
+        "à assigner au dossier.",
+        "provides_documents",
+        [],
+    ),
+    (
+        "Licence & établissement",
+        10,
+        "🔴 Coûts (package free zone / frais DET / establishment card) = "
+        "majoritairement sources commerciales → recouper 2-3 prestataires + "
+        "autorités (DMCC, IFZA, Meydan, DET). Ne jamais devis-er sur un seul "
+        "chiffre marketing.",
+        "provides_documents",
+        ["Passeport(s) actionnaire(s)", "Dossier", "Paiement de la licence"],
+    ),
+    (
+        "Enregistrement fiscal (corporate tax / TVA) & compte bancaire",
+        21,
+        "🟢 Corporate tax 0 % jusqu'à 375 000 AED de bénéfice, 9 % au-delà. TVA "
+        "5 % obligatoire si CA > 375 000 AED (volontaire dès 187 500). Small "
+        "Business Relief si CA < 3 M AED (jusqu'aux exercices clos au 31/12/2026). "
+        "⚠️ Le 0 % FREE ZONE (QFZP) n'est PAS automatique : exige substance, "
+        "qualifying income B2B, respect du de minimis (min 5 M AED / 5 % du CA), "
+        "prix de transfert, ÉTATS FINANCIERS AUDITÉS. Un trading B2C local en free "
+        "zone n'y donne généralement pas droit. NE JAMAIS promettre le 0 % sans "
+        "validation.",
+        "provides_documents",
+        [],
+    ),
+]
+
 # (name, country, steps) — every library sample, seeded idempotently by name.
 _SAMPLES: list[tuple[str, str, list[_Step]]] = [
     (PY1_NAME, PY1_COUNTRY, _PY1_STEPS),
@@ -675,6 +1287,22 @@ _SAMPLES: list[tuple[str, str, list[_Step]]] = [
     (PA_GV_NAME, "PA", _PA_GV_STEPS),
     (PA_DN_NAME, "PA", _PA_DN_STEPS),
     (PA_CO_NAME, "PA", _PA_CO_STEPS),
+    (BG_EU_NAME, "BG", _BG_EU_STEPS),
+    (BG_RET_NAME, "BG", _BG_RET_STEPS),
+    (BG_DN_NAME, "BG", _BG_DN_STEPS),
+    (BG_FL_NAME, "BG", _BG_FL_STEPS),
+    (BG_CO_NAME, "BG", _BG_CO_STEPS),
+    (HU_EU_NAME, "HU", _HU_EU_STEPS),
+    (HU_WC_NAME, "HU", _HU_WC_STEPS),
+    (HU_GI_NAME, "HU", _HU_GI_STEPS),
+    (HU_SP_NAME, "HU", _HU_SP_STEPS),
+    (HU_CO_NAME, "HU", _HU_CO_STEPS),
+    (AE_GV_NAME, "AE", _AE_GV_STEPS),
+    (AE_FZ_NAME, "AE", _AE_FZ_STEPS),
+    (AE_RE_NAME, "AE", _AE_RE_STEPS),
+    (AE_RW_NAME, "AE", _AE_RW_STEPS),
+    (AE_RET_NAME, "AE", _AE_RET_STEPS),
+    (AE_CO_NAME, "AE", _AE_CO_STEPS),
 ]
 
 
