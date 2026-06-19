@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -39,6 +39,38 @@ class JourneysRepository:
         stmt = select(JourneyTemplate).where(
             JourneyTemplate.id == template_id,
             JourneyTemplate.agency_id == agency_id,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def list_sample_templates(self) -> list[JourneyTemplate]:
+        """The shared LIBRARY samples (agency_id IS NULL + is_sample). Global,
+        read-only — separate from the agency list (which excludes NULL)."""
+        stmt = (
+            select(JourneyTemplate)
+            .where(
+                JourneyTemplate.agency_id.is_(None),
+                JourneyTemplate.is_sample.is_(True),
+            )
+            .order_by(JourneyTemplate.created_at)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_template_for_clone(
+        self, agency_id: uuid.UUID, template_id: uuid.UUID
+    ) -> JourneyTemplate | None:
+        """A clone SOURCE: the agency's own template OR a library sample
+        (agency_id NULL + is_sample). Read-only resolver — the clone itself is
+        a later block. NOT a write path: never use this to mutate (that stays
+        get_template_in_agency, which rejects samples)."""
+        stmt = select(JourneyTemplate).where(
+            JourneyTemplate.id == template_id,
+            or_(
+                JourneyTemplate.agency_id == agency_id,
+                and_(
+                    JourneyTemplate.agency_id.is_(None),
+                    JourneyTemplate.is_sample.is_(True),
+                ),
+            ),
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

@@ -5914,6 +5914,96 @@
         ]
       }
     },
+    "/journeys/library": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "List Sample Templates",
+        "description": "Shared LIBRARY samples (read-only). Distinct from GET /journeys (the\nagency's own templates) — an agency consumes a sample by cloning it.",
+        "operationId": "list_sample_templates_journeys_library_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JourneyTemplateResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Sample Templates Journeys Library Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/journeys/{template_id}/clone": {
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Clone Template",
+        "description": "Deep-clone a sample or own template into the calling agency. Attachments\nare not cloned (the file stays on the source).",
+        "operationId": "clone_template_journeys__template_id__clone_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JourneyCloneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}": {
       "get": {
         "tags": [
@@ -14277,6 +14367,26 @@
         "type": "object",
         "title": "JobTriggerRequest"
       },
+      "JourneyCloneRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "title": "JourneyCloneRequest",
+        "description": "Optional new name for a deep clone; defaults to \"{source} (copie)\"."
+      },
       "JourneySectionDetail": {
         "properties": {
           "id": {
@@ -14468,6 +14578,17 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
           }
         },
         "type": "object",

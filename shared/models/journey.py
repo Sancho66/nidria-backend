@@ -9,15 +9,31 @@ from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Reusable journey MODEL configured by the agency.
+    """Reusable journey MODEL. Owned by an agency (`agency_id` set), OR a
+    shared LIBRARY sample (`agency_id IS NULL` + `is_sample=true`) — same
+    pattern as a system `role` (agency_id NULL + is_system). A sample is
+    READ-ONLY for agencies: every write path resolves via
+    get_template_in_agency (WHERE agency_id == me), and `NULL = <agency>` is
+    never true in SQL → a sample is unreachable for list/edit/delete/assign.
+    The agency consumes a sample only by CLONING it (later block).
     Its instantiation on a case is `case_step_progress`."""
 
     __tablename__ = "journey_template"
 
-    agency_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
+    # NULL ⟺ library sample (is_sample=true); otherwise the owning agency.
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agency.id", ondelete="CASCADE"), index=True
+    )
+    # Library sample (shared, agency-less). Mirrors role.is_system.
+    is_sample: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # ISO 3166-1 alpha-2 country code (e.g. "PY") — for grouping / flag /
+    # search of samples. NULLABLE: an ordinary agency template may have none;
+    # a sample carries one. No country table/referential — the flag + the
+    # localized name are a FRONT concern (Intl.DisplayNames from the code).
+    country: Mapped[str | None] = mapped_column(String(2))
     # Visual canvas editor (MVP-1): pure-presentation node positions,
     # { "<step_id>": {"x": float, "y": float} }. NULL = never opened in
     # canvas (the front auto-lays-out with dagre). Never affects journey

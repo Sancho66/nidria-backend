@@ -36,6 +36,7 @@ from src.external.external_router import external_router
 from src.impersonation.impersonation_router import router as impersonation_router
 from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
+from src.journeys.sample_seed import seed_sample_journeys
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
@@ -78,6 +79,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         await sync_permissions(session)
         await seed_bindings(session, collect_bindings())
         await assert_all_routes_bound(application, session)
+        # Library samples (shared, read-only) — idempotent, like the system
+        # roles. Agencies consume them by cloning.
+        await seed_sample_journeys(session)
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()
     scheduler = None

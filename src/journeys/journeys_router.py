@@ -18,6 +18,7 @@ from src.journeys.journeys_schema import (
     CaseFieldCreateRequest,
     CaseFieldOrderRequest,
     CaseFieldUpdateRequest,
+    JourneyCloneRequest,
     JourneySectionResponse,
     JourneyTemplateCreateRequest,
     JourneyTemplateDetailResponse,
@@ -55,7 +56,13 @@ router = APIRouter(prefix="/journeys", tags=["journeys"])
 # journey.configure (admin + case_manager in the default matrix).
 BINDINGS = [
     RouteBinding("GET", "/journeys", Audience.AGENT),
+    # Library samples (read-only) — any agent reads; gated like GET /journeys.
+    RouteBinding("GET", "/journeys/library", Audience.AGENT),
     RouteBinding("POST", "/journeys", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
+    # Deep clone (source = sample OR own template) into the calling agency.
+    RouteBinding(
+        "POST", "/journeys/{template_id}/clone", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
     RouteBinding("GET", "/journeys/{template_id}", Audience.AGENT),
     RouteBinding("PATCH", "/journeys/{template_id}", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
     RouteBinding("DELETE", "/journeys/{template_id}", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
@@ -279,11 +286,35 @@ async def list_templates(agent: AgentDep, db: DbDep) -> list[JourneyTemplateResp
     return [JourneyTemplateResponse.model_validate(template) for template in templates]
 
 
+# Declared BEFORE /{template_id} so the static path is not captured as an id.
+@router.get("/library", response_model=list[JourneyTemplateResponse])
+async def list_sample_templates(agent: AgentDep, db: DbDep) -> list[JourneyTemplateResponse]:
+    """Shared LIBRARY samples (read-only). Distinct from GET /journeys (the
+    agency's own templates) — an agency consumes a sample by cloning it."""
+    templates = await JourneysManager(db).list_sample_templates()
+    return [JourneyTemplateResponse.model_validate(template) for template in templates]
+
+
 @router.post("", response_model=JourneyTemplateResponse, status_code=201)
 async def create_template(
     body: JourneyTemplateCreateRequest, agent: AgentDep, db: DbDep
 ) -> JourneyTemplateResponse:
     template = await JourneysManager(db).create_template(agent, body.name)
+    return JourneyTemplateResponse.model_validate(template)
+
+
+@router.post("/{template_id}/clone", response_model=JourneyTemplateResponse, status_code=201)
+async def clone_template(
+    template_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    body: JourneyCloneRequest | None = None,
+) -> JourneyTemplateResponse:
+    """Deep-clone a sample or own template into the calling agency. Attachments
+    are not cloned (the file stays on the source). The body is OPTIONAL: no
+    body / {} → default name "{source} (copie)"; {name} → that name."""
+    name = body.name if body is not None else None
+    template = await JourneysManager(db).clone_template(agent, template_id, name)
     return JourneyTemplateResponse.model_validate(template)
 
 

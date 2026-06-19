@@ -8,9 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.journey import (
+    JourneySection,
+    JourneyStepParticipant,
     JourneyTemplate,
+    JourneyTemplateCaseField,
     JourneyTemplateField,
     JourneyTemplateStep,
+    StepPrerequisite,
 )
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_requirement import StepRequirement
@@ -125,6 +129,19 @@ class JourneysManager:
     async def list_templates(self, agent: Agent) -> list[JourneyTemplate]:
         return await self.repo.list_templates(agent.agency_id)
 
+    async def list_sample_templates(self) -> list[JourneyTemplate]:
+        """The shared library samples — global, read-only (any agent reads
+        them; agency scoping does not apply, samples are agency-less)."""
+        return await self.repo.list_sample_templates()
+
+    async def get_clone_source(self, agent: Agent, template_id: uuid.UUID) -> JourneyTemplate:
+        """Resolve a clone SOURCE: the agency's own template OR a library
+        sample. Read-only (the deep clone is a later block). 404 if neither."""
+        template = await self.repo.get_template_for_clone(agent.agency_id, template_id)
+        if template is None:
+            raise NotFoundError("Journey template not found.")
+        return template
+
     async def _get_template(self, agent: Agent, template_id: uuid.UUID) -> JourneyTemplate:
         template = await self.repo.get_template_in_agency(agent.agency_id, template_id)
         if template is None:
@@ -233,6 +250,152 @@ class JourneysManager:
         await self.db.commit()
         await self.db.refresh(template)
         return template
+
+    async def clone_template(
+        self, agent: Agent, template_id: uuid.UUID, name: str | None
+    ) -> JourneyTemplate:
+        """Deep-clone a SOURCE (a library sample OR the agency's own template,
+        resolved via get_clone_source — a foreign agency's template is 404)
+        into the CALLING agency, in ONE transaction (all-or-nothing). Every id
+        is remapped (sections, steps) so the clone shares NOTHING with the
+        source: no shared step, no prerequisite pointing at a source step, no
+        canvas key referencing a source step. The clone is never a sample
+        (is_sample=False). Attachments (journey_step_attachment) are NOT
+        cloned — deliberate (the file lives on the source template).
+        Relaunching clones again (a copy on demand, not idempotent-dedup)."""
+        source = await self.get_clone_source(agent, template_id)
+        src_sections = await self.repo.list_sections(template_id)
+        src_steps = await self.repo.list_steps(template_id)
+        src_prereqs = await self.repo.list_prerequisites(template_id)
+        src_fields = await self.repo.list_fields(template_id)
+        src_case_fields = await self.repo.list_case_fields(template_id)
+        src_participants = await self.repo.list_step_participants_for_steps(
+            [s.id for s in src_steps]
+        )
+
+        # Parents with EXPLICIT ids → children can FK them, and the old→new
+        # maps are built before any flush.
+        new_template = JourneyTemplate(
+            id=uuid.uuid4(),
+            agency_id=agent.agency_id,
+            is_sample=False,  # a clone is NEVER a sample
+            name=name or f"{source.name} (copie)",
+            country=source.country,  # keep the model's country of origin
+        )
+        self.db.add(new_template)
+        # Insert the template FIRST so sections/steps FK it (no ORM
+        # relationship to topologically order the inserts otherwise).
+        await self.db.flush()
+
+        section_map: dict[uuid.UUID, uuid.UUID] = {}
+        for sec in src_sections:
+            nid = uuid.uuid4()
+            section_map[sec.id] = nid
+            self.db.add(
+                JourneySection(
+                    id=nid,
+                    template_id=new_template.id,
+                    name=sec.name,
+                    description=sec.description,
+                    position=sec.position,
+                )
+            )
+
+        step_map: dict[uuid.UUID, uuid.UUID] = {}
+        for st in src_steps:
+            nid = uuid.uuid4()
+            step_map[st.id] = nid
+            self.db.add(
+                JourneyTemplateStep(
+                    id=nid,
+                    template_id=new_template.id,
+                    name=st.name,
+                    position=st.position,
+                    estimated_days=st.estimated_days,
+                    default_responsible_type=st.default_responsible_type,
+                    default_responsible_agent_id=st.default_responsible_agent_id,
+                    completion_mode=st.completion_mode,
+                    default_validated_by_type=st.default_validated_by_type,
+                    default_validated_by_agent_id=st.default_validated_by_agent_id,
+                    content_note=st.content_note,
+                )
+            )
+        # Template + sections + steps exist before their children FK them.
+        await self.db.flush()
+
+        for pr in src_prereqs:
+            self.db.add(
+                StepPrerequisite(
+                    step_id=step_map[pr.step_id],
+                    prerequisite_step_id=step_map[pr.prerequisite_step_id],
+                )
+            )
+        for st in src_steps:
+            for r in await self.repo.list_requirements(st.id):
+                self.db.add(
+                    StepRequirement(
+                        step_id=step_map[st.id],
+                        kind=r.kind,
+                        reference=r.reference,
+                        scope=r.scope,
+                        position=r.position,
+                    )
+                )
+            for cr in await self.repo.list_step_case_requirements(st.id):
+                self.db.add(
+                    StepCaseRequirement(
+                        step_id=step_map[st.id],
+                        case_field=cr.case_field,
+                        position=cr.position,
+                    )
+                )
+        for p in src_participants:
+            self.db.add(
+                JourneyStepParticipant(
+                    step_id=step_map[p.step_id],
+                    type=p.type,
+                    agent_id=p.agent_id,
+                    role=p.role,
+                )
+            )
+        for f in src_fields:
+            self.db.add(
+                JourneyTemplateField(
+                    template_id=new_template.id,
+                    kind=f.kind,
+                    reference=f.reference,
+                    position=f.position,
+                    required_at_creation=f.required_at_creation,
+                    section_id=section_map.get(f.section_id) if f.section_id else None,
+                )
+            )
+        for cf in src_case_fields:
+            self.db.add(
+                JourneyTemplateCaseField(
+                    template_id=new_template.id,
+                    case_field=cf.case_field,
+                    position=cf.position,
+                    required_at_creation=cf.required_at_creation,
+                    section_id=section_map.get(cf.section_id) if cf.section_id else None,
+                )
+            )
+        # Canvas layout: remap step-id KEYS; drop any stale/non-mapped key so
+        # no source step id survives in the clone.
+        if source.canvas_layout:
+            remapped: dict[str, object] = {}
+            for key, pos in source.canvas_layout.items():
+                try:
+                    old = uuid.UUID(key)
+                except ValueError:
+                    continue
+                new = step_map.get(old)
+                if new is not None:
+                    remapped[str(new)] = pos
+            new_template.canvas_layout = remapped or None
+
+        await self.db.commit()
+        await self.db.refresh(new_template)
+        return new_template
 
     async def update_template(
         self, agent: Agent, template_id: uuid.UUID, payload: JourneyTemplateUpdateRequest

@@ -309,6 +309,15 @@ class JourneyTemplateResponse(BaseModel):
 
     id: uuid.UUID
     name: str
+    # ISO 3166-1 alpha-2 (e.g. "PY") for sample grouping/flag/search; NULL
+    # for an ordinary agency template. Flag + localized name are front-side.
+    country: str | None = None
+
+
+class JourneyCloneRequest(BaseModel):
+    """Optional new name for a deep clone; defaults to "{source} (copie)"."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class TemplateStepResponse(BaseModel):
