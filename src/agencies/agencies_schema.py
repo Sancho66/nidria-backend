@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 # The agency's default content language — the fallback for its i18n blobs.
-Language = Literal["fr", "en", "es"]
+# Single source of truth: src.core.i18n (SUPPORTED_LANGUAGES / Language).
+from src.core.i18n import Language
 
 
 class AgencyResponse(BaseModel):

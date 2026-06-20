@@ -10,12 +10,26 @@ This is ORTHOGONAL to the frontend's static-UI i18n (createScopedI18n): that
 handles chrome at build time; this resolves runtime DB content.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal, get_args
 
 from fastapi import Depends, Request
 
-SUPPORTED_LANGS = ("fr", "en", "es")
+# THE single source of truth for supported content/UI languages. Add a language
+# here (and to the `Language` literal just below) and every reader follows: the
+# blob filter, the resolvers, the notification routing, the request-language
+# negotiation, and the agency.default_language Pydantic schema. The SQL CHECK on
+# agency.default_language is widened by a dedicated migration, never here.
+SUPPORTED_LANGUAGES: tuple[str, ...] = ("fr", "en", "es", "ru", "pt", "it")
 DEFAULT_LANG = "fr"  # the platform fallback (also the implicit default of samples)
+
+# The Pydantic/OpenAPI face of SUPPORTED_LANGUAGES. mypy needs a STATIC Literal,
+# so it is spelled out and kept in lock-step with the tuple by the assert below —
+# edit BOTH in the same change when adding a language (the assert fails at import
+# otherwise, turning any drift into an immediate startup error).
+Language = Literal["fr", "en", "es", "ru", "pt", "it"]
+assert set(get_args(Language)) == set(SUPPORTED_LANGUAGES), (
+    "Language literal and SUPPORTED_LANGUAGES drifted apart"
+)
 
 
 def resolve_i18n(
@@ -44,7 +58,7 @@ def normalize_i18n_input(blob: dict[str, str] | None) -> dict[str, str]:
     absent language is an absent key, never "")."""
     if not blob:
         return {}
-    return {k: v for k, v in blob.items() if k in SUPPORTED_LANGS and v and v.strip()}
+    return {k: v for k, v in blob.items() if k in SUPPORTED_LANGUAGES and v and v.strip()}
 
 
 def apply_i18n_write(
@@ -88,7 +102,7 @@ def apply_i18n_write(
 def resolve_notification_lang_client(preferred_lang: str | None) -> str:
     """The language of a notification sent to a CLIENT (expat). Their stored
     preferred_lang if supported, else ENGLISH — never the agency default."""
-    if preferred_lang and preferred_lang.lower()[:2] in SUPPORTED_LANGS:
+    if preferred_lang and preferred_lang.lower()[:2] in SUPPORTED_LANGUAGES:
         return preferred_lang.lower()[:2]
     return "en"
 
@@ -96,7 +110,7 @@ def resolve_notification_lang_client(preferred_lang: str | None) -> str:
 def resolve_notification_lang_agent(agency_default: str | None) -> str:
     """The language of a notification sent to an AGENT. The agency default if
     supported, else FRENCH (the platform default)."""
-    if agency_default and agency_default.lower()[:2] in SUPPORTED_LANGS:
+    if agency_default and agency_default.lower()[:2] in SUPPORTED_LANGUAGES:
         return agency_default.lower()[:2]
     return DEFAULT_LANG
 
@@ -115,15 +129,15 @@ def resolve_request_language(request: Request) -> str:
       1. explicit `?lang=` query param,
       2. the `Accept-Language` header (first supported tag),
       3. DEFAULT_LANG.
-    Always one of SUPPORTED_LANGS — an unknown/unsupported value falls back to
+    Always one of SUPPORTED_LANGUAGES — an unknown/unsupported value falls back to
     the default rather than reaching the resolver as a never-present key."""
     q = request.query_params.get("lang")
-    if q and q.lower() in SUPPORTED_LANGS:
+    if q and q.lower() in SUPPORTED_LANGUAGES:
         return q.lower()
     header = request.headers.get("accept-language", "")
     for part in header.split(","):
         tag = part.split(";")[0].strip().lower()[:2]
-        if tag in SUPPORTED_LANGS:
+        if tag in SUPPORTED_LANGUAGES:
             return tag
     return DEFAULT_LANG
 

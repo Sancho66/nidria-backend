@@ -51,14 +51,15 @@ def test_resolve_optional_field_with_no_value_is_none() -> None:
 
 
 def test_notif_lang_client_supported_kept() -> None:
-    for lang in ("fr", "en", "es"):
+    for lang in ("fr", "en", "es", "ru", "pt", "it"):
         assert resolve_notification_lang_client(lang) == lang
 
 
 def test_notif_lang_client_unsupported_falls_back_to_english() -> None:
     # A client whose preferred_lang is not supported gets ENGLISH (NOT the
-    # agency default fr).
-    for lang in ("de", "ko", "ru", "pt", None, ""):
+    # agency default fr). NB: ru/pt/it are now supported (6-language capacity),
+    # so the "unsupported" examples are genuinely-absent codes.
+    for lang in ("de", "ko", "zh", None, ""):
         assert resolve_notification_lang_client(lang) == "en"
 
 

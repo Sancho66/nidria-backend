@@ -9981,7 +9981,10 @@
             "enum": [
               "fr",
               "en",
-              "es"
+              "es",
+              "ru",
+              "pt",
+              "it"
             ],
             "title": "Default Language"
           }
@@ -10030,7 +10033,10 @@
                 "enum": [
                   "fr",
                   "en",
-                  "es"
+                  "es",
+                  "ru",
+                  "pt",
+                  "it"
                 ]
               },
               {
