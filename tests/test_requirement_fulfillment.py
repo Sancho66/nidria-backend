@@ -61,6 +61,14 @@ async def _step(
 async def _add_req(
     client: AsyncClient, headers: dict[str, str], tid: str, sid: str, **body: object
 ) -> dict:
+    # Strict membership (BLOC): a base/custom field must be declared in the
+    # Informations tab before a step can request it. (document = free label.)
+    if body.get("kind") in ("base_field", "custom_field"):
+        await client.post(
+            f"/journeys/{tid}/fields",
+            headers=headers,
+            json={"kind": body["kind"], "reference": body["reference"]},
+        )
     r = await client.post(f"/journeys/{tid}/steps/{sid}/requirements", headers=headers, json=body)
     assert r.status_code == 201, r.text
     return r.json()

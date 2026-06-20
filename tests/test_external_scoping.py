@@ -197,6 +197,12 @@ async def _setup_rich_case(
     step = (
         await b_client.post(f"/journeys/{tid}/steps", headers=ah, json={"name": "Collecte"})
     ).json()
+    # Strict membership (BLOC): declare the field in the Informations tab.
+    await b_client.post(
+        f"/journeys/{tid}/fields",
+        headers=ah,
+        json={"kind": "base_field", "reference": "passport_number"},
+    )
     await b_client.post(
         f"/journeys/{tid}/steps/{step['id']}/requirements",
         headers=ah,

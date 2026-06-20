@@ -71,6 +71,12 @@ async def _template_step(
 async def _declare(
     client: AsyncClient, headers: dict[str, str], tid: str, sid: str, **body: object
 ) -> dict:
+    # Strict membership (BLOC): the case field must be declared in the
+    # template's Informations tab before a step can request it.
+    if "case_field" in body:
+        await client.post(
+            f"/journeys/{tid}/case-fields", headers=headers, json={"case_field": body["case_field"]}
+        )
     r = await client.post(
         f"/journeys/{tid}/steps/{sid}/case-requirements", headers=headers, json=body
     )
@@ -260,6 +266,12 @@ async def test_person_only_step_unchanged(
     no spurious case-req in the projection."""
     headers = agent_headers(admin)
     tid, sid = await _template_step(cr_client, headers)
+    # Strict membership (BLOC): declare the field in the Informations tab.
+    await cr_client.post(
+        f"/journeys/{tid}/fields",
+        headers=headers,
+        json={"kind": "base_field", "reference": "passport_number"},
+    )
     await cr_client.post(
         f"/journeys/{tid}/steps/{sid}/requirements",
         headers=headers,

@@ -71,6 +71,12 @@ async def _journey_step(
         body["validated_by_type"] = validated_by_type
     sid = (await vc.post(f"/journeys/{tid}/steps", headers=ah, json=body)).json()["id"]
     if with_req:
+        # Strict membership (BLOC): declare the field in the Informations tab.
+        await vc.post(
+            f"/journeys/{tid}/fields",
+            headers=ah,
+            json={"kind": "base_field", "reference": "passport_number"},
+        )
         await vc.post(
             f"/journeys/{tid}/steps/{sid}/requirements",
             headers=ah,

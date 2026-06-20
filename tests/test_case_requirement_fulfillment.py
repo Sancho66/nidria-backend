@@ -56,6 +56,8 @@ async def _step(
 async def _declare(
     client: AsyncClient, headers: dict[str, str], tid: str, sid: str, ref: str
 ) -> None:
+    # Strict membership (BLOC): declare the case field in the Informations tab.
+    await client.post(f"/journeys/{tid}/case-fields", headers=headers, json={"case_field": ref})
     r = await client.post(
         f"/journeys/{tid}/steps/{sid}/case-requirements", headers=headers, json={"case_field": ref}
     )

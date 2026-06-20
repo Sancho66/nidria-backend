@@ -829,6 +829,20 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
         await self._validate_reference(agent, payload.kind, payload.reference)
+        # Strict membership (NEW requirements only): a base_field / custom_field
+        # may only reference a field DECLARED in this template's Informations
+        # tab (a journey_template_field of the SAME template). document is a free
+        # label → no referential, no check. Existing rows and deep-clone copies
+        # are written directly (not via this path), so they are never re-checked.
+        if payload.kind in (StepRequirementKind.BASE_FIELD, StepRequirementKind.CUSTOM_FIELD):
+            declared = await self.repo.get_field_by_reference(
+                template_id, payload.kind.value, payload.reference
+            )
+            if declared is None:
+                raise ValidationError(
+                    f"The field {payload.reference!r} must first be added to the journey's "
+                    "Informations tab before it can be requested at a step."
+                )
         requirement = self.repo.add_requirement(
             step_id=step_id,
             kind=payload.kind.value,
@@ -843,9 +857,13 @@ class JourneysManager:
     async def _validate_reference(
         self, agent: Agent, kind: StepRequirementKind, reference: str
     ) -> None:
-        """base_field → whitelist; custom_field → an ACTIVE definition of
-        the agency must exist (a later archive is handled at read time
-        via is_archived); document → free label, nothing to check."""
+        """Catalog/definition validity, shared by requirements AND Informations
+        fields: base_field → whitelist; custom_field → an ACTIVE definition of
+        the agency must exist (a later archive is handled at read time via
+        is_archived); document → free label, nothing to check. (The strict
+        membership rule — a requirement may only reference an Informations
+        field — lives in add_requirement, NOT here: a field added to the
+        Informations tab cannot require itself to already be there.)"""
         if kind is StepRequirementKind.BASE_FIELD:
             if reference not in COLLECTABLE_BASE_FIELDS:
                 raise ValidationError(
@@ -923,6 +941,15 @@ class JourneysManager:
             raise ValidationError(
                 f"Unknown case field {payload.case_field!r}. "
                 f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}."
+            )
+        # Strict membership: the case field must be DECLARED in this template's
+        # Informations tab (a journey_template_case_field of the SAME template).
+        # NEW requirements only — existing rows and clone copies bypass this.
+        declared = await self.repo.get_case_field_by_ref(template_id, payload.case_field)
+        if declared is None:
+            raise ValidationError(
+                f"The case field {payload.case_field!r} must first be added to the "
+                "journey's Informations tab before it can be requested at a step."
             )
         existing = await self.repo.get_step_case_requirement_by_ref(step_id, payload.case_field)
         if existing is not None:
