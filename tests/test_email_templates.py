@@ -43,10 +43,31 @@ def test_agent_template_default_fr() -> None:
     assert 'html lang="fr"' in c.html
 
 
+def test_client_template_ru_subject_body_and_html_lang() -> None:
+    # A client whose resolved language is RU → RU subject, RU body, html lang=ru.
+    lang = resolve_notification_lang_client("ru")
+    assert lang == "ru"
+    c = requirement_request_email("Acme", "Виза D7", "https://x/space", lang=lang)
+    assert c.subject == "Nidria — Ожидается новая информация"
+    assert "для этапа «Виза D7»" in c.text
+    assert 'html lang="ru"' in c.html
+    assert "Заполнить моё дело" in c.html  # button localized
+
+
+def test_agent_template_default_it() -> None:
+    # An agent whose agency default is "it" → IT template.
+    lang = resolve_notification_lang_agent("it")
+    assert lang == "it"
+    c = new_comment_to_agent("Jean Martin", "Numero fiscale", "https://x/app", lang=lang)
+    assert c.subject == "Nidria — Nuovo messaggio dal tuo cliente"
+    assert "ha scritto in merito alla fase «Numero fiscale»" in c.text
+    assert 'html lang="it"' in c.html
+
+
 def test_all_builders_interpolate_step_name_in_every_language() -> None:
     # Guard: no language drops the step-name (or other) placeholder.
     step = "STEP_MARKER"
-    for lang in ("fr", "en", "es"):
+    for lang in ("fr", "en", "es", "ru", "pt", "it"):
         assert step in requirement_request_email("A", step, "u", lang=lang).text
         assert step in step_reopened_email("A", step, "u", lang=lang).text
         assert step in ready_to_validate_email("Case", step, "u", lang=lang).text

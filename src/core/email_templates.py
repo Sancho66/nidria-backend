@@ -21,12 +21,22 @@ _FOOTER = {
         "This email was sent by Nidria. If you did not initiate this request, please ignore it."
     ),
     "es": ("Este correo fue enviado por Nidria. Si no originó esta solicitud, ignórelo."),
+    "ru": (
+        "Это письмо отправлено Nidria. Если вы не инициировали этот запрос, проигнорируйте его."
+    ),
+    "pt": ("Este email foi enviado pela Nidria. Se não originou este pedido, ignore-o."),
+    "it": (
+        "Questa email è stata inviata da Nidria. Se non hai effettuato questa richiesta, ignorala."
+    ),
 }
 
 _COPY_PASTE = {
     "fr": "Ou copiez-collez ce lien",
     "en": "Or copy and paste this link",
     "es": "O copie y pegue este enlace",
+    "ru": "Или скопируйте и вставьте эту ссылку",
+    "pt": "Ou copie e cole este link",
+    "it": "Oppure copia e incolla questo link",
 }
 
 _HTML_LAYOUT = """\
@@ -245,6 +255,33 @@ _REQUIREMENT_REQUEST = {
         ),
         "button": "Completar mi expediente",
     },
+    "ru": {
+        "subject": "Nidria — Ожидается новая информация",
+        "title": "Ожидается новая информация",
+        "intro": (
+            "{agency} требуются сведения или документы для этапа «{step}» вашего дела. Войдите в "
+            "свой кабинет, чтобы их предоставить."
+        ),
+        "button": "Заполнить моё дело",
+    },
+    "pt": {
+        "subject": "Nidria — São necessárias novas informações",
+        "title": "São necessárias novas informações",
+        "intro": (
+            "{agency} precisa de informações ou documentos para a etapa «{step}» do seu processo. "
+            "Inicie sessão no seu espaço para os fornecer."
+        ),
+        "button": "Completar o meu processo",
+    },
+    "it": {
+        "subject": "Nidria — Sono richieste nuove informazioni",
+        "title": "Sono richieste nuove informazioni",
+        "intro": (
+            "{agency} ha bisogno di informazioni o documenti per la fase «{step}» della tua "
+            "pratica. Accedi al tuo spazio per fornirli."
+        ),
+        "button": "Completare la mia pratica",
+    },
 }
 
 _STEP_REOPENED = {
@@ -274,6 +311,33 @@ _STEP_REOPENED = {
             "información adicional. Inicie sesión en su espacio para actualizarla."
         ),
         "button": "Actualizar mi expediente",
+    },
+    "ru": {
+        "subject": "Nidria — Вашему агентству нужны уточнения",
+        "title": "Вашему агентству нужны уточнения",
+        "intro": (
+            "{agency} вновь открыло этап «{step}» вашего дела и нуждается в уточнениях или "
+            "дополнении. Войдите в свой кабинет, чтобы его обновить."
+        ),
+        "button": "Обновить моё дело",
+    },
+    "pt": {
+        "subject": "Nidria — A sua agência precisa de esclarecimentos",
+        "title": "A sua agência precisa de esclarecimentos",
+        "intro": (
+            "{agency} reabriu a etapa «{step}» do seu processo e precisa de esclarecimentos ou de "
+            "informações adicionais. Inicie sessão no seu espaço para a atualizar."
+        ),
+        "button": "Atualizar o meu processo",
+    },
+    "it": {
+        "subject": "Nidria — La tua agenzia ha bisogno di chiarimenti",
+        "title": "La tua agenzia ha bisogno di chiarimenti",
+        "intro": (
+            "{agency} ha riaperto la fase «{step}» della tua pratica e ha bisogno di chiarimenti o "
+            "di informazioni aggiuntive. Accedi al tuo spazio per aggiornarla."
+        ),
+        "button": "Aggiornare la mia pratica",
     },
 }
 
@@ -305,6 +369,33 @@ _READY_TO_VALIDATE = {
         ),
         "button": "Abrir el expediente",
     },
+    "ru": {
+        "subject": "Nidria — Дело готово к проверке",
+        "title": "Дело готово к проверке",
+        "intro": (
+            "Все ожидаемые сведения по этапу «{step}» дела {case} предоставлены. Вы можете его "
+            "проверить."
+        ),
+        "button": "Открыть дело",
+    },
+    "pt": {
+        "subject": "Nidria — Um processo está pronto para validação",
+        "title": "Um processo está pronto para validação",
+        "intro": (
+            "Todas as informações esperadas para a etapa «{step}» do processo {case} foram "
+            "fornecidas. Pode validá-la."
+        ),
+        "button": "Abrir o processo",
+    },
+    "it": {
+        "subject": "Nidria — Una pratica è pronta per la convalida",
+        "title": "Una pratica è pronta per la convalida",
+        "intro": (
+            "Tutte le informazioni attese per la fase «{step}» della pratica {case} sono state "
+            "fornite. Puoi convalidarla."
+        ),
+        "button": "Aprire la pratica",
+    },
 }
 
 _NEW_COMMENT_CLIENT = {
@@ -333,6 +424,33 @@ _NEW_COMMENT_CLIENT = {
         ),
         "button": "Ver la conversación",
     },
+    "ru": {
+        "subject": "Nidria — Новое сообщение от вашего консультанта",
+        "title": "У вас новое сообщение",
+        "intro": (
+            "{author} из {agency} написал(а) вам по поводу этапа «{step}». Ответьте из своего "
+            "кабинета."
+        ),
+        "button": "Посмотреть переписку",
+    },
+    "pt": {
+        "subject": "Nidria — Nova mensagem do seu consultor",
+        "title": "Tem uma nova mensagem",
+        "intro": (
+            "{author} da {agency} escreveu-lhe sobre a etapa «{step}». Responda a partir do seu "
+            "espaço."
+        ),
+        "button": "Ver a conversa",
+    },
+    "it": {
+        "subject": "Nidria — Nuovo messaggio dal tuo consulente",
+        "title": "Hai un nuovo messaggio",
+        "intro": (
+            "{author} di {agency} ti ha scritto in merito alla fase «{step}». Rispondi dal tuo "
+            "spazio."
+        ),
+        "button": "Vedere la conversazione",
+    },
 }
 
 _NEW_COMMENT_AGENT = {
@@ -355,6 +473,26 @@ _NEW_COMMENT_AGENT = {
         "title": "Nuevo mensaje de un cliente",
         "intro": "{client} escribió sobre la etapa «{step}». Abra el expediente para responder.",
         "button": "Abrir el expediente",
+    },
+    "ru": {
+        "subject": "Nidria — Новое сообщение от вашего клиента",
+        "title": "Новое сообщение от клиента",
+        "intro": "{client} написал(а) по поводу этапа «{step}». Откройте дело, чтобы ответить.",
+        "button": "Открыть дело",
+    },
+    "pt": {
+        "subject": "Nidria — Nova mensagem do seu cliente",
+        "title": "Nova mensagem de um cliente",
+        "intro": "{client} escreveu sobre a etapa «{step}». Abra o processo para responder.",
+        "button": "Abrir o processo",
+    },
+    "it": {
+        "subject": "Nidria — Nuovo messaggio dal tuo cliente",
+        "title": "Nuovo messaggio da un cliente",
+        "intro": (
+            "{client} ha scritto in merito alla fase «{step}». Apri la pratica per rispondere."
+        ),
+        "button": "Aprire la pratica",
     },
 }
 
