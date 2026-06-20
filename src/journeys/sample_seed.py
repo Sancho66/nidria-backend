@@ -3164,10 +3164,19 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
         "name": {
             "en": "Paraguay — Temporary Residence + Cédula",
             "es": "Paraguay — Residencia temporal + Cédula",
+            "ru": "Парагвай — Временный вид на жительство + Cédula",
+            "pt": "Paraguai — Residência temporária + Cédula",
+            "it": "Paraguay — Residenza temporanea + Cédula",
         },
         "steps": [
             (
-                {"en": "Build the application file", "es": "Preparación del expediente"},
+                {
+                    "en": "Build the application file",
+                    "es": "Preparación del expediente",
+                    "ru": "Формирование пакета документов",
+                    "pt": "Montagem do processo",
+                    "it": "Preparazione del fascicolo",
+                },
                 {
                     "en": (
                         "Gather the documents: apostilled birth certificate, apostilled criminal "
@@ -3179,12 +3188,30 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "penales apostillados, pasaporte válido. La apostilla se solicita ante la "
                         "autoridad competente de su país de origen."
                     ),
+                    "ru": (
+                        "Соберите документы: апостилированное свидетельство о рождении, "
+                        "апостилированная справка о несудимости, действующий паспорт. Апостиль "
+                        "запрашивается в компетентном органе вашей страны происхождения."
+                    ),
+                    "pt": (
+                        "Reúna os documentos: certidão de nascimento apostilada, certidão de "
+                        "antecedentes criminais apostilada, passaporte válido. A apostila é "
+                        "solicitada à autoridade competente do seu país de origem."
+                    ),
+                    "it": (
+                        "Raccolga i documenti: certificato di nascita apostillato, certificato del "
+                        "casellario giudiziale apostillato, passaporto valido. L'apostille si "
+                        "richiede all'autorità competente del suo Paese d'origine."
+                    ),
                 },
             ),
             (
                 {
                     "en": "Sworn translation of the documents",
                     "es": "Traducción jurada de los documentos",
+                    "ru": "Присяжный перевод документов",
+                    "pt": "Tradução juramentada dos documentos",
+                    "it": "Traduzione giurata dei documenti",
                 },
                 {
                     "en": (
@@ -3197,12 +3224,28 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "el proveedor externo se designa en el expediente, no en esta plantilla "
                         "compartida."
                     ),
+                    "ru": (
+                        "Перевод зарегистрированным присяжным переводчиком. Назначается в досье: "
+                        "внешний исполнитель указывается в досье, а не в этом общем шаблоне."
+                    ),
+                    "pt": (
+                        "Tradução por um tradutor juramentado inscrito. A atribuir no processo: o "
+                        "prestador externo é indicado no processo, não neste modelo partilhado."
+                    ),
+                    "it": (
+                        "Traduzione da parte di un traduttore giurato iscritto. Da assegnare nel "
+                        "fascicolo: il fornitore esterno è indicato nel fascicolo, non in questo "
+                        "modello condiviso."
+                    ),
                 },
             ),
             (
                 {
                     "en": "File submission to immigration (DNM)",
                     "es": "Presentación del expediente ante inmigración (DNM)",
+                    "ru": "Подача досье в миграционную службу (DNM)",
+                    "pt": "Submissão do processo à imigração (DNM)",
+                    "it": "Presentazione del fascicolo all'immigrazione (DNM)",
                 },
                 {
                     "en": (
@@ -3213,12 +3256,27 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "Presentación realizada por la agencia ante la Dirección Nacional de "
                         "Migraciones. Tasa DNM ≈ 2 700 000 Gs (importe indicativo, no fijo)."
                     ),
+                    "ru": (
+                        "Подача осуществляется агентством в Dirección Nacional de Migraciones. "
+                        "Сбор DNM ≈ 2 700 000 Gs (ориентировочная сумма, не фиксированная)."
+                    ),
+                    "pt": (
+                        "Submissão efetuada pela agência junto da Dirección Nacional de "
+                        "Migraciones. Taxa DNM ≈ 2 700 000 Gs (montante indicativo, não fixo)."
+                    ),
+                    "it": (
+                        "Presentazione effettuata dall'agenzia presso la Dirección Nacional de "
+                        "Migraciones. Tassa DNM ≈ 2 700 000 Gs (importo indicativo, non fisso)."
+                    ),
                 },
             ),
             (
                 {
                     "en": "Obtaining the temporary residence",
                     "es": "Obtención de la residencia temporal",
+                    "ru": "Получение временного вида на жительство",
+                    "pt": "Obtenção da residência temporária",
+                    "it": "Ottenimento della residenza temporanea",
                 },
                 {
                     "en": (
@@ -3226,12 +3284,21 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "indicative)."
                     ),
                     "es": "Plazo administrativo de la DNM, variable (≈ 30 a 45 días, indicativo).",
+                    "ru": (
+                        "Срок административной обработки DNM, переменный (≈ 30–45 дней, "
+                        "ориентировочно)."
+                    ),
+                    "pt": "Prazo administrativo da DNM, variável (≈ 30 a 45 dias, indicativo).",
+                    "it": "Tempo amministrativo della DNM, variabile (≈ 30-45 giorni, indicativo).",
                 },
             ),
             (
                 {
                     "en": "Cédula application (identity card)",
                     "es": "Solicitud de la cédula (documento de identidad)",
+                    "ru": "Подача на Cédula (удостоверение личности)",
+                    "pt": "Pedido da cédula (documento de identidade)",
+                    "it": "Richiesta della cédula (documento d'identità)",
                 },
                 {
                     "en": (
@@ -3242,15 +3309,37 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "Toma de huellas y foto en la oficina de identificación. Etapa "
                         "desbloqueada una vez obtenida la residencia temporal."
                     ),
+                    "ru": (
+                        "Снятие отпечатков пальцев и фотографирование в отделе идентификации. "
+                        "Этап разблокируется после получения временного вида на жительство."
+                    ),
+                    "pt": (
+                        "Recolha de impressões digitais e fotografia no serviço de identificação. "
+                        "Etapa desbloqueada após a obtenção da residência temporária."
+                    ),
+                    "it": (
+                        "Rilevamento delle impronte digitali e foto presso l'ufficio di "
+                        "identificazione. Tappa sbloccata una volta ottenuta la residenza "
+                        "temporanea."
+                    ),
                 },
             ),
             (
-                {"en": "Issuance of the cédula", "es": "Entrega de la cédula"},
+                {
+                    "en": "Issuance of the cédula",
+                    "es": "Entrega de la cédula",
+                    "ru": "Выдача Cédula",
+                    "pt": "Emissão da cédula",
+                    "it": "Rilascio della cédula",
+                },
                 {
                     "en": "Cédula production time, variable (≈ 3 to 9 months, indicative).",
                     "es": (
                         "Plazo de fabricación de la cédula, variable (≈ 3 a 9 meses, indicativo)."
                     ),
+                    "ru": ("Срок изготовления Cédula, переменный (≈ 3–9 месяцев, ориентировочно)."),
+                    "pt": "Prazo de fabrico da cédula, variável (≈ 3 a 9 meses, indicativo).",
+                    "it": "Tempo di produzione della cédula, variabile (≈ 3-9 mesi, indicativo).",
                 },
             ),
         ],
@@ -3259,12 +3348,18 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
         "name": {
             "en": "Thailand — Destination Thailand Visa (DTV, nomad)",
             "es": "Tailandia — Destination Thailand Visa (DTV, nómada)",
+            "ru": "Таиланд — Destination Thailand Visa (DTV, кочевник)",
+            "pt": "Tailândia — Destination Thailand Visa (DTV, nómada)",
+            "it": "Thailandia — Destination Thailand Visa (DTV, nomade)",
         },
         "steps": [
             (
                 {
                     "en": "Check eligibility & savings",
                     "es": "Verificar la elegibilidad y el ahorro",
+                    "ru": "Проверка права на участие и накоплений",
+                    "pt": "Verificar a elegibilidade e a poupança",
+                    "it": "Verificare l'idoneità e i risparmi",
                 },
                 {
                     "en": (
@@ -3279,12 +3374,33 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "residencia permanente (ni el DTV, ni la jubilación, ni Privilege cuentan "
                         "para ella — solo Non-B + work permit lo permite)."
                     ),
+                    "ru": (
+                        "🟠 Накопления ≥ 500 000 THB (ориентировочно, ~36 THB/USD). ⚠️ DTV НЕ "
+                        "РАЗРЕШАЕТ работу на ТАЙСКОГО клиента/работодателя. ⚠️ НЕ ведёт к "
+                        "постоянному виду на жительство (ни DTV, ни пенсия, ни Privilege для "
+                        "этого не засчитываются — только Non-B + work permit)."
+                    ),
+                    "pt": (
+                        "🟠 Poupança ≥ 500 000 THB (indicativo, ~36 THB/USD). ⚠️ O DTV NÃO "
+                        "AUTORIZA trabalho para um cliente/empregador TAILANDÊS. ⚠️ NÃO conduz à "
+                        "residência permanente (nem o DTV, nem a reforma, nem o Privilege contam "
+                        "para ela — apenas Non-B + work permit)."
+                    ),
+                    "it": (
+                        "🟠 Risparmi ≥ 500 000 THB (indicativo, ~36 THB/USD). ⚠️ Il DTV NON "
+                        "AUTORIZZA il lavoro per un cliente/datore di lavoro TAILANDESE. ⚠️ NON "
+                        "conduce alla residenza permanente (né il DTV, né la pensione, né "
+                        "Privilege contano a tal fine — solo Non-B + work permit)."
+                    ),
                 },
             ),
             (
                 {
                     "en": "Application via the e-visa portal (MFA)",
                     "es": "Solicitud a través del portal e-visa (MFA)",
+                    "ru": "Подача через портал e-visa (MFA)",
+                    "pt": "Pedido através do portal e-visa (MFA)",
+                    "it": "Domanda tramite il portale e-visa (MFA)",
                 },
                 {
                     "en": (
@@ -3297,14 +3413,46 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "bancario de varios meses). Tarifa de extensión de 180 días ≈ 10 000 THB "
                         "(y NO ~1 900 — error frecuente de las fuentes comerciales)."
                     ),
+                    "ru": (
+                        "🟠 Практика различается в зависимости от консульства (иногда требуется "
+                        "банковская история за несколько месяцев). Сбор за продление на 180 дней "
+                        "≈ 10 000 THB (а НЕ ~1 900 — частая ошибка в коммерческих источниках)."
+                    ),
+                    "pt": (
+                        "🟠 A prática varia consoante o consulado (por vezes é exigido histórico "
+                        "bancário de vários meses). Taxa de prorrogação de 180 dias ≈ 10 000 THB "
+                        "(e NÃO ~1 900 — erro frequente nas fontes comerciais)."
+                    ),
+                    "it": (
+                        "🟠 La prassi varia a seconda del consolato (a volte è richiesta una "
+                        "cronologia bancaria di diversi mesi). Tassa di proroga di 180 giorni ≈ "
+                        "10 000 THB (e NON ~1 900 — errore frequente nelle fonti commerciali)."
+                    ),
                 },
             ),
             (
-                {"en": "Issuance of the DTV", "es": "Emisión del DTV"},
+                {
+                    "en": "Issuance of the DTV",
+                    "es": "Emisión del DTV",
+                    "ru": "Выдача DTV",
+                    "pt": "Emissão do DTV",
+                    "it": "Rilascio del DTV",
+                },
                 {
                     "en": "5 years, multiple-entry, 180 days per entry (extendable once).",
                     "es": (
                         "5 años, entradas múltiples, 180 días por entrada (prorrogable una vez)."
+                    ),
+                    "ru": (
+                        "5 лет, многократный въезд, 180 дней на каждый въезд (продлевается один "
+                        "раз)."
+                    ),
+                    "pt": (
+                        "5 anos, entradas múltiplas, 180 dias por entrada (prorrogável uma vez)."
+                    ),
+                    "it": (
+                        "5 anni, ingressi multipli, 180 giorni per ingresso (prorogabile una "
+                        "volta)."
                     ),
                 },
             ),
@@ -4715,12 +4863,18 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
         "name": {
             "en": "Hungary — Company formation (Kft.)",
             "es": "Hungría — Creación de empresa (Kft.)",
+            "ru": "Венгрия — Создание компании (Kft.)",
+            "pt": "Hungria — Constituição de empresa (Kft.)",
+            "it": "Ungheria — Costituzione di società (Kft.)",
         },
         "steps": [
             (
                 {
                     "en": "Prepare the incorporation (lawyer) & the capital",
                     "es": "Preparar la constitución (abogado) y el capital",
+                    "ru": "Подготовка учреждения (юрист) и капитала",
+                    "pt": "Preparar a constituição (advogado) e o capital",
+                    "it": "Preparare la costituzione (avvocato) e il capitale",
                 },
                 {
                     "en": (
@@ -4738,6 +4892,31 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "diferible si el acta lo prevé). Importes indicativos, reconvertir al "
                         "tipo del día."
                     ),
+                    "ru": (
+                        "⚠️ КОМПАНИЯ ≠ ВИД НА ЖИТЕЛЬСТВО. Создание Kft. не даёт никакого вида на "
+                        "жительство: иностранец из третьей страны может управлять Kft. УДАЛЁННО "
+                        "без разрешения; для физического проживания требуется отдельное (и "
+                        "неопределённое после реформы) разрешение. Уставный капитал ~3 M HUF "
+                        "(~7 600 €, внесение может быть отсрочено, если это допускает "
+                        "учредительный акт). Суммы ориентировочные, пересчитывайте по текущему "
+                        "курсу."
+                    ),
+                    "pt": (
+                        "⚠️ EMPRESA ≠ RESIDÊNCIA. Constituir uma Kft. não confere qualquer título "
+                        "de residência: um estrangeiro de país terceiro pode dirigir uma Kft. À "
+                        "DISTÂNCIA sem título; para residir fisicamente, é um título distinto (e "
+                        "incerto após a reforma). Capital social ~3 M HUF (~7 600 €, entrada "
+                        "diferível se o ato o permitir). Montantes indicativos, reconverter à "
+                        "taxa do dia."
+                    ),
+                    "it": (
+                        "⚠️ SOCIETÀ ≠ RESIDENZA. Costituire una Kft. non conferisce alcun titolo "
+                        "di soggiorno: uno straniero di Paese terzo può dirigere una Kft. A "
+                        "DISTANZA senza titolo; per risiedere fisicamente, si tratta di un titolo "
+                        "distinto (e incerto dopo la riforma). Capitale sociale ~3 M HUF "
+                        "(~7 600 €, conferimento differibile se l'atto lo consente). Importi "
+                        "indicativi, riconvertire al tasso del giorno."
+                    ),
                 },
             ),
             (
@@ -4747,16 +4926,25 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "(Cégbíróság)"
                     ),
                     "es": "Acta constitutiva e inscripción en el registro mercantil (Cégbíróság)",
+                    "ru": "Учредительный акт и регистрация в торговом реестре (Cégbíróság)",
+                    "pt": "Ato constitutivo e registo no registo comercial (Cégbíróság)",
+                    "it": "Atto costitutivo e iscrizione al registro delle imprese (Cégbíróság)",
                 },
                 {
                     "en": "Registration with the Cégbíróság (commercial register).",
                     "es": "Inscripción en el Cégbíróság (registro mercantil).",
+                    "ru": "Регистрация в Cégbíróság (торговый реестр).",
+                    "pt": "Registo no Cégbíróság (registo comercial).",
+                    "it": "Iscrizione al Cégbíróság (registro delle imprese).",
                 },
             ),
             (
                 {
                     "en": "Tax number, VAT & registers",
                     "es": "Número fiscal, IVA y registros",
+                    "ru": "Налоговый номер, НДС и реестры",
+                    "pt": "Número fiscal, IVA e registos",
+                    "it": "Numero fiscale, IVA e registri",
                 },
                 {
                     "en": (
@@ -4771,12 +4959,33 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "(ÁFA) bajo ~18 M HUF/año (~45 000 €), si no 27 %. Impuesto local (HIPA). "
                         "KIVA posible con una masa salarial alta."
                     ),
+                    "ru": (
+                        "🟠 IS 9 % (самый низкий в ЕС), 0 % удержания с исходящих дивидендов — "
+                        "ориентировочные ставки, требуют проверки (NAV). Освобождение от НДС "
+                        "(ÁFA) при обороте ниже ~18 M HUF/год (~45 000 €), иначе 27 %. Местный "
+                        "налог (HIPA). KIVA возможен при высоком фонде оплаты труда."
+                    ),
+                    "pt": (
+                        "🟠 IS 9 % (o mais baixo da UE), 0 % de retenção sobre dividendos de "
+                        "saída — taxas indicativas a reverificar (NAV). Isenção de IVA (ÁFA) "
+                        "abaixo de ~18 M HUF/ano (~45 000 €), caso contrário 27 %. Imposto local "
+                        "(HIPA). KIVA possível com uma massa salarial elevada."
+                    ),
+                    "it": (
+                        "🟠 IS 9 % (la più bassa dell'UE), 0 % di ritenuta sui dividendi in "
+                        "uscita — aliquote indicative da riverificare (NAV). Esenzione IVA (ÁFA) "
+                        "sotto ~18 M HUF/anno (~45 000 €), altrimenti 27 %. Imposta locale "
+                        "(HIPA). KIVA possibile con un monte salari elevato."
+                    ),
                 },
             ),
             (
                 {
                     "en": "Business bank account",
                     "es": "Cuenta bancaria profesional",
+                    "ru": "Бизнес-банковский счёт",
+                    "pt": "Conta bancária profissional",
+                    "it": "Conto bancario aziendale",
                 },
                 {
                     "en": (
@@ -4786,6 +4995,18 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "es": (
                         "🟠 CUELLO DE BOTELLA: apertura de cuenta para gerente/UBO extranjero — "
                         "presencia física a menudo exigida, el paso más lento."
+                    ),
+                    "ru": (
+                        "🟠 УЗКОЕ МЕСТО: открытие счёта для иностранного управляющего/UBO — часто "
+                        "требуется физическое присутствие, самый медленный этап."
+                    ),
+                    "pt": (
+                        "🟠 ESTRANGULAMENTO: abertura de conta para gerente/UBO estrangeiro — "
+                        "presença física frequentemente exigida, o passo mais lento."
+                    ),
+                    "it": (
+                        "🟠 COLLO DI BOTTIGLIA: apertura del conto per amministratore/UBO "
+                        "straniero — presenza fisica spesso richiesta, la tappa più lenta."
                     ),
                 },
             ),
@@ -7837,6 +8058,6098 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
 }
 
 
+# ru/pt/it overlay for the library samples (the trilingual wave after the
+# fr/en/es preview). Kept in a DEDICATED table — append-only, leaving the
+# 3000-line _SAMPLE_I18N literal untouched — and merged on top of it by
+# _apply_sample_i18n. Same shape (keyed by the sample scalar name; per-step
+# (name, note) tuples). The 3 preview samples carry their ru/pt/it inline in
+# _SAMPLE_I18N, so they are absent here (no overlap, no duplication).
+_SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
+    PT_D7_NAME: {
+        "name": {
+            "ru": "Португалия — Виза D7 (пассивный доход / пенсионер, не-ЕС)",
+            "pt": "Portugal — Visto D7 (rendimento passivo / reformado, fora da UE)",
+            "it": "Portogallo — Visto D7 (reddito passivo / pensionato, extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "NIF + португальский банковский счёт",
+                    "pt": "NIF + conta bancária portuguesa",
+                    "it": "NIF + conto bancario portoghese",
+                },
+                {
+                    "ru": (
+                        "Налоговый представитель обязателен для нерезидента из страны, не входящей "
+                        "в ЕС."
+                    ),
+                    "pt": "Representante fiscal obrigatório para um não residente de fora da UE.",
+                    "it": "Rappresentante fiscale obbligatorio per un non residente extra-UE.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу D7 в консульстве",
+                    "pt": "Pedido de visto D7 no consulado",
+                    "it": "Domanda di visto D7 presso il consolato",
+                },
+                {
+                    "ru": (
+                        "🟠 Порог индексируется по SMN (~870 €/месяц 2025, требует подтверждения; "
+                        "SMN выплачивается 14×/год — уточнить ×12/×14). ⚠️ D7 = только ПАССИВНЫЙ "
+                        "доход (активная удалённая работа относится к D8)."
+                    ),
+                    "pt": (
+                        "🟠 Limiar indexado ao SMN (~870 €/mês 2025, a confirmar; SMN pago 14×/ano "
+                        "— esclarecer ×12/×14). ⚠️ D7 = rendimento PASSIVO apenas (o trabalho "
+                        "remoto ativo enquadra-se no D8)."
+                    ),
+                    "it": (
+                        "🟠 Soglia indicizzata all'SMN (~870 €/mese 2025, da confermare; SMN "
+                        "pagato 14×/anno — chiarire ×12/×14). ⚠️ D7 = solo reddito PASSIVO (il "
+                        "lavoro da remoto attivo rientra nel D8)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Конвертация в вид на жительство в AIMA",
+                    "pt": "Conversão em autorização de residência na AIMA",
+                    "it": "Conversione in permesso di soggiorno presso l'AIMA",
+                },
+                {
+                    "ru": (
+                        "🔴 Реальный срок обработки в AIMA (массовое отставание): от месяцев до > "
+                        "1 года, не гарантирован. Представлять в 2 горизонтах (консульский vs "
+                        "реальный AIMA). ⚠️ NHR отменён: нет персонального налогового освобождения "
+                        "для обычного пенсионера/рантье. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "🔴 Prazo real de processamento da AIMA (atraso massivo): de meses a > 1 "
+                        "ano, não garantido. Apresentar em 2 horizontes (consular vs AIMA real). "
+                        "⚠️ NHR abolido: sem isenção fiscal pessoal para um reformado/rentista "
+                        "comum. Biometria obrigatória."
+                    ),
+                    "it": (
+                        "🔴 Tempo reale di trattazione dell'AIMA (arretrato enorme): da mesi a > 1 "
+                        "anno, non garantito. Presentare su 2 orizzonti (consolare vs AIMA reale). "
+                        "⚠️ NHR abolito: nessuna esenzione fiscale personale per un "
+                        "pensionato/rentier ordinario. Biometria obbligatoria."
+                    ),
+                },
+            ),
+        ],
+    },
+    RUC_NAME: {
+        "name": {
+            "ru": "Парагвай — Создание компании (RUC)",
+            "pt": "Paraguai — Constituição de sociedade (RUC)",
+            "it": "Paraguay — Costituzione di società (RUC)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Подготовка электронной идентификации и устава",
+                    "pt": "Preparação de identidade eletrónica e estatutos",
+                    "it": "Preparazione dell'identità elettronica e dello statuto",
+                },
+                {
+                    "ru": (
+                        "EAS: без минимального капитала или депозита. Если у иностранца нет "
+                        "парагвайской cédula, он учреждает компанию через законного представителя, "
+                        "который ею обладает."
+                    ),
+                    "pt": (
+                        "EAS: sem capital mínimo nem depósito. Se o estrangeiro não tiver cédula "
+                        "paraguaia, constitui através de um representante legal que a detenha."
+                    ),
+                    "it": (
+                        "EAS: nessun capitale minimo né deposito. Se lo straniero non possiede la "
+                        "cédula paraguaiana, costituisce tramite un rappresentante legale che ne "
+                        "sia titolare."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Онлайн-учреждение через SUACE (eas.mic.gov.py)",
+                    "pt": "Constituição em linha via SUACE (eas.mic.gov.py)",
+                    "it": "Costituzione online tramite SUACE (eas.mic.gov.py)",
+                },
+                {
+                    "ru": (
+                        "Учреждение за 72 ч (часто 24–48 ч) с типовым уставом; ≈ 8 рабочих дней с "
+                        "индивидуальным уставом. Этот этап может выполнить escribano — назначить в "
+                        "досье."
+                    ),
+                    "pt": (
+                        "Constituição em 72 h (muitas vezes 24–48 h) com estatutos proforma; ≈ 8 "
+                        "dias úteis com estatutos personalizados. O escribano pode realizar esta "
+                        "etapa — a atribuir no processo."
+                    ),
+                    "it": (
+                        "Costituzione in 72 h (spesso 24–48 h) con statuto proforma; ≈ 8 giorni "
+                        "lavorativi con statuto personalizzato. L'escribano può svolgere questa "
+                        "fase — da assegnare nel fascicolo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Автоматические регистрации (RUC / IPS / MTESS)",
+                    "pt": "Inscrições automáticas (RUC / IPS / MTESS)",
+                    "it": "Iscrizioni automatiche (RUC / IPS / MTESS)",
+                },
+                {
+                    "ru": (
+                        "Регистрация автоматически генерирует RUC (Финансы), IPS (социальное "
+                        "обеспечение) и MTESS (труд). Для ведения деятельности регистрация в "
+                        "Registro Público de Comercio не требуется."
+                    ),
+                    "pt": (
+                        "A inscrição gera automaticamente o RUC (Finanças), o IPS (segurança "
+                        "social) e o MTESS (trabalho). Não é necessária inscrição no Registro "
+                        "Público de Comercio para operar."
+                    ),
+                    "it": (
+                        "L'iscrizione genera automaticamente il RUC (Finanze), l'IPS (previdenza "
+                        "sociale) e il MTESS (lavoro). Non è necessaria l'iscrizione al Registro "
+                        "Público de Comercio per operare."
+                    ),
+                },
+            ),
+        ],
+    },
+    PERM_NAME: {
+        "name": {
+            "ru": "Парагвай — Постоянное проживание (изменение категории)",
+            "pt": "Paraguai — Residência permanente (mudança de categoria)",
+            "it": "Paraguay — Residenza permanente (cambio di categoria)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить право на участие и сроки",
+                    "pt": "Verificar a elegibilidade e o momento",
+                    "it": "Verificare l'idoneità e la tempistica",
+                },
+                {
+                    "ru": (
+                        "Подавать в течение 90 дней до истечения временного 2-летнего carnet "
+                        "(возможно до 1 месяца после истечения, со штрафом). Не должно быть "
+                        "отсутствия более одного года суммарно за 2 года. Требование по "
+                        "инвестициям для конвертации отсутствует."
+                    ),
+                    "pt": (
+                        "Apresentar dentro dos 90 dias anteriores ao termo do carnet temporário de "
+                        "2 anos (possível até 1 mês após o termo, com multa). Não ter estado "
+                        "ausente mais de um ano acumulado ao longo dos 2 anos. Sem requisito de "
+                        "investimento para a conversão."
+                    ),
+                    "it": (
+                        "Presentare entro i 90 giorni precedenti la scadenza del carnet temporaneo "
+                        "di 2 anni (possibile fino a 1 mese dopo la scadenza, con sanzione). Non "
+                        "essere stati assenti per più di un anno cumulativo nell'arco dei 2 anni. "
+                        "Nessun requisito di investimento per la conversione."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Сформировать досье по изменению категории",
+                    "pt": "Preparar o processo de mudança de categoria",
+                    "it": "Predisporre il fascicolo di cambio di categoria",
+                },
+                {
+                    "ru": (
+                        "Собрать документы по изменению категории. Доказательства "
+                        "платёжеспособности различаются: трудовой договор (наёмные работники) или "
+                        "учредительные акты компании + реестр акционеров (предприниматели)."
+                    ),
+                    "pt": (
+                        "Reunir os documentos da mudança de categoria. As provas de solvência "
+                        "diferem: contrato de trabalho (trabalhadores por conta de outrem) ou "
+                        "escrituras da sociedade + registo de acionistas (empresários)."
+                    ),
+                    "it": (
+                        "Raccogliere i documenti del cambio di categoria. Le prove di solvibilità "
+                        "differiscono: contratto di lavoro (dipendenti) o atti della società + "
+                        "libro soci (imprenditori)."
+                    ),
+                },
+            ),
+            (
+                {"ru": "Подача в DNM", "pt": "Apresentação à DNM", "it": "Presentazione alla DNM"},
+                {
+                    "ru": "Личная подача в Dirección Nacional de Migraciones.",
+                    "pt": "Apresentação presencial à Dirección Nacional de Migraciones.",
+                    "it": "Presentazione di persona alla Dirección Nacional de Migraciones.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача постоянного carnet + обновление cédula",
+                    "pt": "Emissão do carnet permanente + renovação da cédula",
+                    "it": "Rilascio del carnet permanente + rinnovo della cédula",
+                },
+                {
+                    "ru": (
+                        "Окончательный постоянный carnet, подлежит обновлению каждые 10 лет. "
+                        "Постоянный резидент не должен отсутствовать более 3 лет подряд без "
+                        "обоснования. Конвертация доступна после ≈ 21–24 месяцев временного "
+                        "проживания."
+                    ),
+                    "pt": (
+                        "Carnet permanente definitivo, a renovar de 10 em 10 anos. O residente "
+                        "permanente não deve ausentar-se mais de 3 anos consecutivos sem "
+                        "justificação. Conversão disponível após ≈ 21 a 24 meses de residência "
+                        "temporária."
+                    ),
+                    "it": (
+                        "Carnet permanente definitivo, da rinnovare ogni 10 anni. Il residente "
+                        "permanente non deve assentarsi per più di 3 anni consecutivi senza "
+                        "giustificazione. Conversione disponibile dopo ≈ 21-24 mesi di residenza "
+                        "temporanea."
+                    ),
+                },
+            ),
+        ],
+    },
+    CY_NAME: {
+        "name": {
+            "ru": "Кипр — Регистрация резидентства ЕС (Yellow Slip, MEU1)",
+            "pt": "Chipre — Registo de residência UE (Yellow Slip, MEU1)",
+            "it": "Cipro — Registrazione di residenza UE (Yellow Slip, MEU1)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Собрать документы (форма MEU1)",
+                    "pt": "Reunir os documentos (formulário MEU1)",
+                    "it": "Raccogliere i documenti (modulo MEU1)",
+                },
+                {
+                    "ru": (
+                        "Заявление подаётся в течение 4 месяцев с момента въезда. Выписки из "
+                        "финтех-банков (Revolut, Wise, N26) могут быть отклонены."
+                    ),
+                    "pt": (
+                        "Pedido a apresentar dentro de 4 meses após a entrada. Os extratos de "
+                        "bancos fintech (Revolut, Wise, N26) podem ser recusados."
+                    ),
+                    "it": (
+                        "Domanda da presentare entro 4 mesi dall'ingresso. Gli estratti conto di "
+                        "banche fintech (Revolut, Wise, N26) possono essere rifiutati."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Запись в CRMD (районный Immigration Unit)",
+                    "pt": "Marcação no CRMD (Immigration Unit do distrito)",
+                    "it": "Appuntamento presso il CRMD (Immigration Unit distrettuale)",
+                },
+                {
+                    "ru": (
+                        "Офисы в Никосии / Лимасоле / Ларнаке / Пафосе. Бронировать за ≈ 3–4 "
+                        "недели."
+                    ),
+                    "pt": (
+                        "Escritórios em Nicósia / Limassol / Larnaca / Paphos. Marcar com ≈ 3 a 4 "
+                        "semanas de antecedência."
+                    ),
+                    "it": (
+                        "Uffici a Nicosia / Limassol / Larnaca / Paphos. Prenotare con ≈ 3-4 "
+                        "settimane di anticipo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Личная подача + выдача сертификата",
+                    "pt": "Apresentação presencial + emissão do certificado",
+                    "it": "Presentazione di persona + rilascio del certificato",
+                },
+                {
+                    "ru": (
+                        "Требуется личное присутствие (фото на месте). Сертификат часто выдаётся в "
+                        "тот же день или в течение нескольких дней; срок действия не истекает. "
+                        "Ориентировочная сумма (один источник указывает 85 €, уточнить в окне)."
+                    ),
+                    "pt": (
+                        "Presença presencial obrigatória (foto no local). Certificado "
+                        "frequentemente emitido no próprio dia ou em poucos dias; não caduca. "
+                        "Montante indicativo (uma fonte refere 85 €, a confirmar no balcão)."
+                    ),
+                    "it": (
+                        "Presenza di persona obbligatoria (foto sul posto). Certificato spesso "
+                        "rilasciato in giornata o entro pochi giorni; non scade. Importo "
+                        "indicativo (una fonte indica 85 €, da confermare allo sportello)."
+                    ),
+                },
+            ),
+        ],
+    },
+    CYF_NAME: {
+        "name": {
+            "ru": "Кипр — Резидентство не-ЕС по пассивному доходу (Pink Slip + Category F)",
+            "pt": "Chipre — Residência fora da UE por rendimento passivo (Pink Slip + Category F)",
+            "it": "Cipro — Residenza extra-UE per reddito passivo (Pink Slip + Category F)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Подготовка и легальный въезд на Кипр",
+                    "pt": "Preparação e entrada legal em Chipre",
+                    "it": "Preparazione e ingresso legale a Cipro",
+                },
+                {
+                    "ru": (
+                        "Иностранный доход ≈ 24 000 €/год для Pink Slip (+20 % супруг(а), +15 "
+                        "%/ребёнок). Заявление подаётся ≈ через 7 дней после прибытия. Выписки "
+                        "финтех-банков (Revolut/Wise/N26) иногда отклоняются. Ориентировочные "
+                        "суммы."
+                    ),
+                    "pt": (
+                        "Rendimento estrangeiro ≈ 24 000 €/ano para o Pink Slip (+20 % cônjuge, "
+                        "+15 %/filho). Pedido a apresentar ≈ 7 dias após a chegada. Extratos de "
+                        "bancos fintech (Revolut/Wise/N26) por vezes recusados. Montantes "
+                        "indicativos."
+                    ),
+                    "it": (
+                        "Reddito estero ≈ 24 000 €/anno per il Pink Slip (+20 % coniuge, +15 "
+                        "%/figlio). Domanda da presentare ≈ 7 giorni dopo l'arrivo. Estratti conto "
+                        "di banche fintech (Revolut/Wise/N26) talvolta rifiutati. Importi "
+                        "indicativi."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Медицинское обследование на Кипре",
+                    "pt": "Exame médico em Chipre",
+                    "it": "Visita medica a Cipro",
+                },
+                {
+                    "ru": (
+                        "Тесты на гепатит B/C, ВИЧ, сифилис + рентген на туберкулёз; сертификат < "
+                        "4 месяцев. Требуется медицинская страховка."
+                    ),
+                    "pt": (
+                        "Testes de hepatite B/C, VIH, sífilis + radiografia de tuberculose; "
+                        "certificado < 4 meses. Seguro de saúde obrigatório."
+                    ),
+                    "it": (
+                        "Test per epatite B/C, HIV, sifilide + radiografia per la tubercolosi; "
+                        "certificato < 4 mesi. Assicurazione sanitaria obbligatoria."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача Pink Slip (годовой вид на жительство)",
+                    "pt": "Apresentação do Pink Slip (autorização de residência anual)",
+                    "it": "Presentazione del Pink Slip (permesso di soggiorno annuale)",
+                },
+                {
+                    "ru": (
+                        "Квитанция подтверждает законность пребывания в период обработки. "
+                        "Действителен 1 год, продлеваемый. Номер ARC остаётся неизменным на "
+                        "протяжении всего срока."
+                    ),
+                    "pt": (
+                        "O comprovativo atesta a permanência legal durante a tramitação. Válido 1 "
+                        "ano, renovável. O número ARC mantém-se o mesmo durante todo o período."
+                    ),
+                    "it": (
+                        "La ricevuta attesta il soggiorno legale durante la trattazione. Valido 1 "
+                        "anno, rinnovabile. Il numero ARC resta invariato per tutto il periodo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача Category F (постоянное проживание)",
+                    "pt": "Apresentação da Category F (residência permanente)",
+                    "it": "Presentazione della Category F (residenza permanente)",
+                },
+                {
+                    "ru": (
+                        "🟠 Нормативные пороги (зафиксированы в 2023 году). Подавать заранее: "
+                        "обработка очень длительная."
+                    ),
+                    "pt": (
+                        "🟠 Limiares regulamentares (registados em 2023). Apresentar cedo: a "
+                        "tramitação é muito longa."
+                    ),
+                    "it": (
+                        "🟠 Soglie regolamentari (registrate nel 2023). Presentare per tempo: la "
+                        "trattazione è molto lunga."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Ожидание и ежегодное продление Pink Slip (отставание по Category F)",
+                    "pt": "Espera e renovação anual do Pink Slip (atraso da Category F)",
+                    "it": "Attesa e rinnovo annuale del Pink Slip (arretrato della Category F)",
+                },
+                {
+                    "ru": (
+                        "🔴 Отставание по Category F оценивается в 5–7 лет (досье 2020 года ещё в "
+                        "обработке). Продлевать Pink Slip КАЖДЫЙ год до выдачи PR. Никогда не "
+                        "обещать быстрый PR по этому пути."
+                    ),
+                    "pt": (
+                        "🔴 Atraso da Category F estimado em 5–7 anos (processos de 2020 ainda "
+                        "pendentes). Renovar o Pink Slip TODOS os anos até à emissão da PR. Nunca "
+                        "prometer uma PR rápida por esta via."
+                    ),
+                    "it": (
+                        "🔴 Arretrato della Category F stimato in 5–7 anni (pratiche del 2020 "
+                        "ancora pendenti). Rinnovare il Pink Slip OGNI anno fino al rilascio della "
+                        "PR. Non promettere mai una PR rapida per questa via."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача Category F (постоянное проживание)",
+                    "pt": "Emissão da Category F (residência permanente)",
+                    "it": "Rilascio della Category F (residenza permanente)",
+                },
+                {
+                    "ru": "Постоянное разрешение, карта подлежит обновлению каждые 10 лет.",
+                    "pt": "Autorização permanente, cartão a renovar de 10 em 10 anos.",
+                    "it": "Permesso permanente, tessera da rinnovare ogni 10 anni.",
+                },
+            ),
+        ],
+    },
+    DNV_NAME: {
+        "name": {
+            "ru": "Кипр — Digital Nomad Visa (не-ЕС)",
+            "pt": "Chipre — Digital Nomad Visa (fora da UE)",
+            "it": "Cipro — Digital Nomad Visa (extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить наличие квоты ДО любых действий",
+                    "pt": "Verificar a disponibilidade da quota ANTES de qualquer diligência",
+                    "it": "Verificare la disponibilità della quota PRIMA di qualsiasi azione",
+                },
+                {
+                    "ru": (
+                        "🔴 КРИТИЧНО. Официальная квота = 500 разрешений, исчерпана уже в 2023 "
+                        "году; «1 000» НЕ подтверждено. Проверить реальное наличие в Deputy "
+                        "Ministry of Migration ДО любого обещания клиенту."
+                    ),
+                    "pt": (
+                        "🔴 CRÍTICO. Quota oficial = 500 autorizações, atingida já em 2023; o «1 "
+                        "000» NÃO está confirmado. Verificar a disponibilidade real junto do "
+                        "Deputy Ministry of Migration ANTES de qualquer promessa ao cliente."
+                    ),
+                    "it": (
+                        "🔴 CRITICO. Quota ufficiale = 500 permessi, raggiunta già nel 2023; il «1 "
+                        "000» NON è confermato. Verificare la disponibilità reale presso il Deputy "
+                        "Ministry of Migration PRIMA di qualsiasi promessa al cliente."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Собрать документы и въехать на Кипр",
+                    "pt": "Reunir os documentos e entrar em Chipre",
+                    "it": "Raccogliere i documenti ed entrare a Cipro",
+                },
+                {
+                    "ru": "Заявление в течение 3 месяцев с момента въезда. Ориентировочная сумма.",
+                    "pt": "Pedido dentro de 3 meses após a entrada. Montante indicativo.",
+                    "it": "Domanda entro 3 mesi dall'ingresso. Importo indicativo.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача в CRMD (Никосия) + биометрия",
+                    "pt": "Apresentação no CRMD (Nicósia) + biometria",
+                    "it": "Presentazione presso il CRMD (Nicosia) + biometria",
+                },
+                {
+                    "ru": "Обработка ≈ 5–7 недель.",
+                    "pt": "Tramitação ≈ 5 a 7 semanas.",
+                    "it": "Trattazione ≈ 5-7 settimane.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача разрешения DNV",
+                    "pt": "Emissão da autorização DNV",
+                    "it": "Rilascio del permesso DNV",
+                },
+                {
+                    "ru": (
+                        "Разрешение на 1 год, продлеваемое до 2 лет. ⚠️ Время на DNV НЕ "
+                        "засчитывается для натурализации. Свыше 183 дней/год = кипрское налоговое "
+                        "резидентство."
+                    ),
+                    "pt": (
+                        "Autorização de 1 ano, renovável até 2 anos. ⚠️ O tempo em DNV NÃO conta "
+                        "para a naturalização. Para além de 183 dias/ano = residência fiscal "
+                        "cipriota."
+                    ),
+                    "it": (
+                        "Permesso di 1 anno, rinnovabile fino a 2 anni. ⚠️ Il tempo trascorso con "
+                        "il DNV NON conta ai fini della naturalizzazione. Oltre 183 giorni/anno = "
+                        "residenza fiscale cipriota."
+                    ),
+                },
+            ),
+        ],
+    },
+    LTD_NAME: {
+        "name": {
+            "ru": "Кипр — Создание компании (LTD)",
+            "pt": "Chipre — Constituição de sociedade (LTD)",
+            "it": "Cipro — Costituzione di società (LTD)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Одобрение названия и KYC",
+                    "pt": "Aprovação do nome e KYC",
+                    "it": "Approvazione del nome e KYC",
+                },
+                {
+                    "ru": "Для учреждения требуется кипрский юрист.",
+                    "pt": "Advogado cipriota obrigatório para a constituição.",
+                    "it": "Avvocato cipriota obbligatorio per la costituzione.",
+                },
+            ),
+            (
+                {
+                    "ru": "Составление устава (Memorandum & Articles of Association)",
+                    "pt": "Redação dos estatutos (Memorandum & Articles of Association)",
+                    "it": "Redazione dello statuto (Memorandum & Articles of Association)",
+                },
+                {
+                    "ru": (
+                        "≥ 1 директор (директор-резидент помогает налоговому присутствию), 1 "
+                        "секретарь (≠ единственный директор), зарегистрированный офис на Кипре. "
+                        "Без минимального капитала (обычно 1 000 €)."
+                    ),
+                    "pt": (
+                        "≥ 1 administrador (um administrador residente ajuda à substância fiscal), "
+                        "1 secretário (≠ administrador único), sede social em Chipre. Sem capital "
+                        "mínimo (1 000 € habitual)."
+                    ),
+                    "it": (
+                        "≥ 1 amministratore (un amministratore residente aiuta la sostanza "
+                        "fiscale), 1 segretario (≠ amministratore unico), sede legale a Cipro. "
+                        "Nessun capitale minimo (1 000 € abituale)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача в Registrar of Companies и выдача сертификатов",
+                    "pt": "Apresentação ao Registrar of Companies e emissão de certificados",
+                    "it": "Deposito presso il Registrar of Companies e rilascio dei certificati",
+                },
+                {
+                    "ru": (
+                        "Сертификаты учреждения / директоров / акционеров / зарегистрированного "
+                        "офиса."
+                    ),
+                    "pt": (
+                        "Certificados de constituição / administradores / acionistas / sede social."
+                    ),
+                    "it": "Certificati di costituzione / amministratori / soci / sede legale.",
+                },
+            ),
+            (
+                {
+                    "ru": "Налоговая регистрация и банковский счёт",
+                    "pt": "Registo fiscal e conta bancária",
+                    "it": "Registrazione fiscale e conto bancario",
+                },
+                {
+                    "ru": (
+                        "TIN в течение 60 дней, НДС при необходимости, реестр UBO, открытие счёта. "
+                        "IS 15 % (с 1/1/2026); дивиденды ≈ 2,65 % эффективно при non-dom. "
+                        "Регулярные расходы ≈ 2 800–4 500 €/год (аудит обязателен). "
+                        "Ориентировочные данные."
+                    ),
+                    "pt": (
+                        "TIN em 60 dias, IVA se aplicável, registo UBO, abertura de conta. IS 15 % "
+                        "(desde 1/1/2026); dividendos ≈ 2,65 % efetivo em non-dom. Custos "
+                        "recorrentes ≈ 2 800–4 500 €/ano (auditoria obrigatória). Valores "
+                        "indicativos."
+                    ),
+                    "it": (
+                        "TIN entro 60 giorni, IVA se applicabile, registro UBO, apertura del "
+                        "conto. IS 15 % (dal 1/1/2026); dividendi ≈ 2,65 % effettivo in regime "
+                        "non-dom. Costi ricorrenti ≈ 2 800–4 500 €/anno (revisione obbligatoria). "
+                        "Dati indicativi."
+                    ),
+                },
+            ),
+        ],
+    },
+    FIC_NAME: {
+        "name": {
+            "ru": "Кипр — Компания LTD + разрешение руководителя не-ЕС (FIC/BFU)",
+            "pt": "Chipre — Sociedade LTD + autorização de dirigente fora da UE (FIC/BFU)",
+            "it": "Cipro — Società LTD + permesso per dirigente extra-UE (FIC/BFU)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Учреждение LTD",
+                    "pt": "Constituição da LTD",
+                    "it": "Costituzione della LTD",
+                },
+                {
+                    "ru": (
+                        "См. путь «Создание компании (LTD)» для деталей (название, устав, "
+                        "Registrar). Компания является предварительным условием для статуса "
+                        "FIC/BFU."
+                    ),
+                    "pt": (
+                        "Ver o percurso «Constituição de sociedade (LTD)» para o detalhe (nome, "
+                        "estatutos, Registrar). A sociedade é o requisito prévio para o estatuto "
+                        "FIC/BFU."
+                    ),
+                    "it": (
+                        "Vedere il percorso «Costituzione di società (LTD)» per il dettaglio "
+                        "(nome, statuto, Registrar). La società è il prerequisito per lo status "
+                        "FIC/BFU."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Регистрация FIC/BFU (Foreign Interest Company)",
+                    "pt": "Registo FIC/BFU (Foreign Interest Company)",
+                    "it": "Registrazione FIC/BFU (Foreign Interest Company)",
+                },
+                {
+                    "ru": (
+                        "🟠 Депозит 200 000 €, требуются независимые офисы. Соотношение местной "
+                        "занятости 70:30 оценивается с 2/1/2027. Ориентировочные пороги."
+                    ),
+                    "pt": (
+                        "🟠 Depósito de 200 000 €, escritórios independentes obrigatórios. Rácio "
+                        "de emprego local 70:30 avaliado a partir de 2/1/2027. Limiares "
+                        "indicativos."
+                    ),
+                    "it": (
+                        "🟠 Deposito di 200 000 €, uffici indipendenti obbligatori. Rapporto di "
+                        "occupazione locale 70:30 valutato dal 2/1/2027. Soglie indicative."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на вид на жительство и разрешение на работу руководителя",
+                    "pt": "Pedido de autorização de residência e de trabalho do dirigente",
+                    "it": "Domanda di permesso di soggiorno e di lavoro del dirigente",
+                },
+                {
+                    "ru": (
+                        "Через BFU, БЕЗ проверки рынка труда → разрешение ≈ 1 месяц. Зарплата ≥ 2 "
+                        "500 €/месяц также открывает право на ускоренную натурализацию (3 года "
+                        "греческий B1 / 4 года A2)."
+                    ),
+                    "pt": (
+                        "Via a BFU, SEM teste do mercado de trabalho → autorização ≈ 1 mês. Um "
+                        "salário ≥ 2 500 €/mês abre também a elegibilidade à naturalização "
+                        "acelerada (3 anos grego B1 / 4 anos A2)."
+                    ),
+                    "it": (
+                        "Tramite la BFU, SENZA test del mercato del lavoro → permesso ≈ 1 mese. "
+                        "Una retribuzione ≥ 2 500 €/mese apre inoltre l'idoneità alla "
+                        "naturalizzazione accelerata (3 anni greco B1 / 4 anni A2)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача разрешения и начало деятельности",
+                    "pt": "Emissão da autorização e início da atividade",
+                    "it": "Rilascio del permesso e avvio dell'attività",
+                },
+                {
+                    "ru": (
+                        "Продлеваемое разрешение. Налогообложение: IS 15 %, дивиденды ≈ 2,65 % "
+                        "non-dom, освобождение 50 % подоходного налога при зарплате > 55 000 "
+                        "€/год."
+                    ),
+                    "pt": (
+                        "Autorização renovável. Fiscalidade: IS 15 %, dividendos ≈ 2,65 % non-dom, "
+                        "isenção de 50 % do IRS se salário > 55 000 €/ano."
+                    ),
+                    "it": (
+                        "Permesso rinnovabile. Fiscalità: IS 15 %, dividendi ≈ 2,65 % non-dom, "
+                        "esenzione del 50 % dell'imposta sul reddito se retribuzione > 55 000 "
+                        "€/anno."
+                    ),
+                },
+            ),
+        ],
+    },
+    PA_FN_NAME: {
+        "name": {
+            "ru": "Панама — резиденция Friendly Nations",
+            "pt": "Panamá — residência Friendly Nations",
+            "it": "Panama — residenza Friendly Nations",
+        },
+        "steps": [
+            (
+                {
+                    "ru": (
+                        "Проверка права на участие (дружественное гражданство) и подготовка досье"
+                    ),
+                    "pt": "Verificar a elegibilidade (nacionalidade amiga) e preparar o processo",
+                    "it": "Verificare l'idoneità (nazionalità amica) e preparare il fascicolo",
+                },
+                {
+                    "ru": (
+                        "🟠 Список из ~50 дружественных стран может быть изменён указом — "
+                        "перепроверьте на migracion.gob.pa перед подачей досье. Панамский адвокат "
+                        "обязателен."
+                    ),
+                    "pt": (
+                        "🟠 A lista de ~50 países amigos pode ser alterada por decreto — "
+                        "reverificar em migracion.gob.pa antes do processo. Advogado panamiano "
+                        "obrigatório."
+                    ),
+                    "it": (
+                        "🟠 L'elenco dei ~50 paesi amici può essere modificato con decreto — "
+                        "verificare nuovamente su migracion.gob.pa prima del fascicolo. Avvocato "
+                        "panamense obbligatorio."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Въезд в Панаму и подача на временную резиденцию (SNM)",
+                    "pt": "Entrada no Panamá e apresentação da residência provisória (SNM)",
+                    "it": "Ingresso a Panama e presentazione della residenza provvisoria (SNM)",
+                },
+                {
+                    "ru": "Карта временного резидента (6 месяцев на время рассмотрения).",
+                    "pt": "Cartão de residente provisório (6 meses durante a tramitação).",
+                    "it": "Carta di residente provvisorio (6 mesi durante la lavorazione).",
+                },
+            ),
+            (
+                {
+                    "ru": "Предоставление временной резиденции (2 года)",
+                    "pt": "Concessão da residência provisória (2 anos)",
+                    "it": "Concessione della residenza provvisoria (2 anni)",
+                },
+                {
+                    "ru": (
+                        "🟠 С 2021 года Friendly Nations больше не предоставляет немедленную "
+                        "постоянную резиденцию: сначала ВРЕМЕННАЯ резиденция на 2 года, без права "
+                        "на работу (разрешение MITRADEL = отдельная процедура)."
+                    ),
+                    "pt": (
+                        "🟠 Desde 2021, o Friendly Nations já não concede a residência permanente "
+                        "imediata: primeiro uma residência PROVISÓRIA de 2 anos, sem direito a "
+                        "trabalhar (autorização MITRADEL = processo separado)."
+                    ),
+                    "it": (
+                        "🟠 Dal 2021, Friendly Nations non concede più la residenza permanente "
+                        "immediata: prima una residenza PROVVISORIA di 2 anni, senza diritto al "
+                        "lavoro (permesso MITRADEL = procedura separata)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на постоянную резиденцию (через 2 года)",
+                    "pt": "Pedido de residência permanente (após 2 anos)",
+                    "it": "Domanda di residenza permanente (dopo 2 anni)",
+                },
+                {
+                    "ru": "Рассмотрение до 6 месяцев.",
+                    "pt": "Tramitação até 6 meses.",
+                    "it": "Lavorazione fino a 6 mesi.",
+                },
+            ),
+            (
+                {
+                    "ru": "Cédula E (Tribunal Electoral)",
+                    "pt": "Cédula E (Tribunal Electoral)",
+                    "it": "Cédula E (Tribunal Electoral)",
+                },
+                {
+                    "ru": "Удостоверение личности постоянного резидента. Продление каждые 10 лет.",
+                    "pt": (
+                        "Documento de identidade de residente permanente. Renovação a cada 10 anos."
+                    ),
+                    "it": "Documento di identità di residente permanente. Rinnovo ogni 10 anni.",
+                },
+            ),
+        ],
+    },
+    PA_PEN_NAME: {
+        "name": {
+            "ru": "Панама — Pensionado Visa (пенсионер)",
+            "pt": "Panamá — Pensionado Visa (reformado)",
+            "it": "Panama — Pensionado Visa (pensionato)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Подготовка досье (через адвоката)",
+                    "pt": "Preparação do processo (através de advogado)",
+                    "it": "Preparazione del fascicolo (tramite avvocato)",
+                },
+                {
+                    "ru": (
+                        "Пенсия ≥ 1 000 USD/месяц (или ≥ 750 USD/месяц ПРИ наличии панамской "
+                        "недвижимости ≥ 100 000 USD). +250 USD/месяц на каждого иждивенца. Работа "
+                        "запрещена при этом статусе. Ориентировочные пороги."
+                    ),
+                    "pt": (
+                        "Pensão ≥ 1 000 USD/mês (ou ≥ 750 USD/mês COM imóvel panamiano ≥ 100 000 "
+                        "USD). +250 USD/mês por dependente. Trabalho proibido sob este estatuto. "
+                        "Limiares indicativos."
+                    ),
+                    "it": (
+                        "Pensione ≥ 1 000 USD/mese (o ≥ 750 USD/mese CON immobile panamense ≥ 100 "
+                        "000 USD). +250 USD/mese per persona a carico. Lavoro vietato con questo "
+                        "status. Soglie indicative."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления в SNM",
+                    "pt": "Apresentação do pedido ao SNM",
+                    "it": "Presentazione della domanda al SNM",
+                },
+                {
+                    "ru": "Пенсионеры часто освобождаются от репатриационного депозита.",
+                    "pt": "Os pensionados estão frequentemente isentos do depósito de repatriação.",
+                    "it": "I pensionados sono spesso esentati dal deposito di rimpatrio.",
+                },
+            ),
+            (
+                {
+                    "ru": "Предоставление постоянной резиденции",
+                    "pt": "Concessão da residência permanente",
+                    "it": "Concessione della residenza permanente",
+                },
+                {
+                    "ru": (
+                        "ПРЯМАЯ постоянная резиденция (без временного периода). Преимущества: "
+                        "карта скидок pensionado (транспорт, здоровье, досуг)."
+                    ),
+                    "pt": (
+                        "Residência permanente DIRETA (sem período provisório). Vantagens: cartão "
+                        "de descontos pensionado (transporte, saúde, lazer)."
+                    ),
+                    "it": (
+                        "Residenza permanente DIRETTA (senza periodo provvisorio). Vantaggi: carta "
+                        "sconti pensionado (trasporti, salute, tempo libero)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Cédula E (Tribunal Electoral)",
+                    "pt": "Cédula E (Tribunal Electoral)",
+                    "it": "Cédula E (Tribunal Electoral)",
+                },
+                {
+                    "ru": "Удостоверение личности постоянного резидента.",
+                    "pt": "Documento de identidade de residente permanente.",
+                    "it": "Documento di identità di residente permanente.",
+                },
+            ),
+        ],
+    },
+    PA_GV_NAME: {
+        "name": {
+            "ru": "Панама — Qualified Investor (Golden Visa)",
+            "pt": "Panamá — Qualified Investor (Golden Visa)",
+            "it": "Panama — Qualified Investor (Golden Visa)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Подготовка и выбор инвестиционного инструмента",
+                    "pt": "Preparação e escolha do veículo de investimento",
+                    "it": "Preparazione e scelta del veicolo di investimento",
+                },
+                {
+                    "ru": (
+                        "🔴 КРИТИЧЕСКИ НЕСТАБИЛЬНЫЙ ПОРОГ. Недвижимость ≥ 300 000 USD в рамках "
+                        "окна, объявленного до октября 2026 года, затем вероятное повышение до 500 "
+                        "000 USD. Альтернативы: ценные бумаги на панамской фондовой бирже ≥ 500 "
+                        "000 USD, или срочный депозит ≥ 750 000 USD (5 лет). ПРОВЕРЬТЕ действующий "
+                        "порог на migracion.gob.pa."
+                    ),
+                    "pt": (
+                        "🔴 LIMIAR VOLÁTIL CRÍTICO. Imóvel ≥ 300 000 USD numa janela anunciada até "
+                        "outubro de 2026, depois provável subida para 500 000 USD. Alternativas: "
+                        "títulos na bolsa panamiana ≥ 500 000 USD, ou depósito a prazo ≥ 750 000 "
+                        "USD (5 anos). VERIFICAR o limiar em vigor em migracion.gob.pa."
+                    ),
+                    "it": (
+                        "🔴 SOGLIA VOLATILE CRITICA. Immobile ≥ 300 000 USD in una finestra "
+                        "annunciata fino a ottobre 2026, poi probabile aumento a 500 000 USD. "
+                        "Alternative: titoli sulla borsa panamense ≥ 500 000 USD, o deposito "
+                        "vincolato ≥ 750 000 USD (5 anni). VERIFICARE la soglia in vigore su "
+                        "migracion.gob.pa."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Осуществление инвестиции (перевод из-за рубежа)",
+                    "pt": "Realização do investimento (transferência do estrangeiro)",
+                    "it": "Realizzazione dell'investimento (bonifico dall'estero)",
+                },
+                {
+                    "ru": "Средства иностранного происхождения, через банковские каналы.",
+                    "pt": "Fundos de origem estrangeira, através de canais bancários.",
+                    "it": "Fondi di origine estera, tramite canali bancari.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления в SNM",
+                    "pt": "Apresentação do pedido ao SNM",
+                    "it": "Presentazione della domanda al SNM",
+                },
+                {
+                    "ru": "Предоставление постоянной резиденции за 30–45 рабочих дней.",
+                    "pt": "Concessão da residência permanente em 30 a 45 dias úteis.",
+                    "it": "Concessione della residenza permanente in 30-45 giorni lavorativi.",
+                },
+            ),
+            (
+                {
+                    "ru": "Cédula E (Tribunal Electoral)",
+                    "pt": "Cédula E (Tribunal Electoral)",
+                    "it": "Cédula E (Tribunal Electoral)",
+                },
+                {
+                    "ru": (
+                        "⚠️ Golden Visa не требует присутствия для сохранения резиденции, но "
+                        "натурализация требует фактического проживания — обсудить с адвокатом."
+                    ),
+                    "pt": (
+                        "⚠️ O Golden Visa não exige presença para manter a residência, mas a "
+                        "naturalização exige residência efetiva — a ponderar com o advogado."
+                    ),
+                    "it": (
+                        "⚠️ Il Golden Visa non richiede presenza per mantenere la residenza, ma la "
+                        "naturalizzazione richiede residenza effettiva — da valutare con "
+                        "l'avvocato."
+                    ),
+                },
+            ),
+        ],
+    },
+    PA_DN_NAME: {
+        "name": {
+            "ru": "Панама — виза цифрового кочевника (Trabajador Remoto)",
+            "pt": "Panamá — visto de nómada digital (Trabajador Remoto)",
+            "it": "Panama — visto per nomadi digitali (Trabajador Remoto)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка права на участие и сбор досье",
+                    "pt": "Verificar a elegibilidade e reunir o processo",
+                    "it": "Verificare l'idoneità e raccogliere il fascicolo",
+                },
+                {
+                    "ru": (
+                        "Доход из иностранного источника ≥ 36 000 USD/год. Ориентировочный порог."
+                    ),
+                    "pt": "Rendimentos de fonte estrangeira ≥ 36 000 USD/ano. Limiar indicativo.",
+                    "it": "Reddito di fonte estera ≥ 36 000 USD/anno. Soglia indicativa.",
+                },
+            ),
+            (
+                {
+                    "ru": "Въезд в Панаму и подача в Ventanilla de Trámites Especiales (SNM)",
+                    "pt": (
+                        "Entrada no Panamá e apresentação na Ventanilla de Trámites Especiales "
+                        "(SNM)"
+                    ),
+                    "it": (
+                        "Ingresso a Panama e presentazione presso la Ventanilla de Trámites "
+                        "Especiales (SNM)"
+                    ),
+                },
+                {
+                    "ru": "Подача в Ventanilla de Trámites Especiales при SNM.",
+                    "pt": "Apresentação na Ventanilla de Trámites Especiales do SNM.",
+                    "it": "Presentazione presso la Ventanilla de Trámites Especiales del SNM.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача карты цифрового кочевника",
+                    "pt": "Emissão do cartão de nómada digital",
+                    "it": "Rilascio della carta per nomadi digitali",
+                },
+                {
+                    "ru": (
+                        "⚠️ 9 месяцев, продлевается один раз (максимум 18 месяцев). Категория "
+                        "НЕрезидента: не ведёт НИ к резиденции, НИ к натурализации. Для "
+                        "долгосрочного обустройства перейдите на Friendly Nations / Pensionado / "
+                        "Golden Visa."
+                    ),
+                    "pt": (
+                        "⚠️ 9 meses, renovável uma vez (18 meses máx.). Categoria NÃO residente: "
+                        "não conduz NEM à residência NEM à naturalização. Para uma instalação "
+                        "duradoura, mudar para Friendly Nations / Pensionado / Golden Visa."
+                    ),
+                    "it": (
+                        "⚠️ 9 mesi, rinnovabile una volta (18 mesi max). Categoria NON residente: "
+                        "non porta NÉ alla residenza NÉ alla naturalizzazione. Per uno "
+                        "stabilimento duraturo, passare a Friendly Nations / Pensionado / Golden "
+                        "Visa."
+                    ),
+                },
+            ),
+        ],
+    },
+    PA_CO_NAME: {
+        "name": {
+            "ru": "Панама — создание компании (S.A. / SRL)",
+            "pt": "Panamá — constituição de sociedade (S.A. / SRL)",
+            "it": "Panama — costituzione di società (S.A. / SRL)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Квалификация деятельности и выбор структуры",
+                    "pt": "Qualificar a atividade e escolher a estrutura",
+                    "it": "Qualificare l'attività e scegliere la struttura",
+                },
+                {
+                    "ru": (
+                        "🔴 ЛОВУШКА РОЗНИЧНОЙ ТОРГОВЛИ (art. 293): розничная торговля панамскому "
+                        "потребителю (магазин, локальная B2C-электронная коммерция, дистрибуция, "
+                        "франшиза) ЗАКРЫТА для иностранного акционера (даже в качестве директора). "
+                        "Открыто: B2B, консалтинг, оптовая торговля, импорт-экспорт, SaaS/tech, "
+                        "холдинг, иностранные клиенты. Квалифицируйте ДО создания. S.A. = 1 "
+                        "партнёр, конфиденциальные владельцы; SRL = минимум 2 партнёра, публичные "
+                        "партнёры."
+                    ),
+                    "pt": (
+                        "🔴 ARMADILHA DO COMÉRCIO A RETALHO (art. 293): o comércio a retalho ao "
+                        "consumidor panamiano (loja, e-commerce B2C local, distribuição, franquia) "
+                        "está FECHADO a um acionista estrangeiro (nem sequer como diretor). "
+                        "Abertos: B2B, consultoria, grossista, importação-exportação, SaaS/tech, "
+                        "holding, clientes estrangeiros. Qualificar ANTES de constituir. S.A. = 1 "
+                        "sócio, proprietários confidenciais; SRL = mín. 2 sócios, sócios públicos."
+                    ),
+                    "it": (
+                        "🔴 TRAPPOLA DEL COMMERCIO AL DETTAGLIO (art. 293): il commercio al "
+                        "dettaglio al consumatore panamense (negozio, e-commerce B2C locale, "
+                        "distribuzione, franchising) è CHIUSO a un azionista straniero (nemmeno "
+                        "come amministratore). Aperti: B2B, consulenza, ingrosso, import-export, "
+                        "SaaS/tech, holding, clienti stranieri. Qualificare PRIMA di costituire. "
+                        "S.A. = 1 socio, proprietari riservati; SRL = min. 2 soci, soci pubblici."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Составление учредительного договора (адвокат)",
+                    "pt": "Redação do pacto social (advogado)",
+                    "it": "Redazione dell'atto costitutivo (avvocato)",
+                },
+                {
+                    "ru": (
+                        "S.A. = совет из не менее 3 директоров (могут быть иностранцами / "
+                        "нерезидентами)."
+                    ),
+                    "pt": (
+                        "S.A. = conselho de pelo menos 3 diretores (podem ser estrangeiros / não "
+                        "residentes)."
+                    ),
+                    "it": (
+                        "S.A. = consiglio di almeno 3 amministratori (possono essere stranieri / "
+                        "non residenti)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Регистрация в Государственном реестре Панамы",
+                    "pt": "Inscrição no Registo Público do Panamá",
+                    "it": "Iscrizione al Registro Pubblico di Panama",
+                },
+                {
+                    "ru": "Компания учреждается за 3–7 дней.",
+                    "pt": "Sociedade constituída em 3 a 7 dias.",
+                    "it": "Società costituita in 3-7 giorni.",
+                },
+            ),
+            (
+                {
+                    "ru": "Aviso de Operación и налоговая регистрация (RUC / DGI)",
+                    "pt": "Aviso de Operación e inscrição fiscal (RUC / DGI)",
+                    "it": "Aviso de Operación e registrazione fiscale (RUC / DGI)",
+                },
+                {
+                    "ru": (
+                        "Инвестированный капитал < 10 000 USD → освобождение от IAO; свыше — IAO = "
+                        "2 % от чистого капитала (мин. 100 / макс. 60 000 USD/год), только при "
+                        "деятельности в Панаме. Регистрация в CSS при найме персонала. "
+                        "Ориентировочные суммы."
+                    ),
+                    "pt": (
+                        "Capital investido < 10 000 USD → isento de IAO; acima disso, IAO = 2 % do "
+                        "capital líquido (mín. 100 / máx. 60 000 USD/ano), apenas se houver "
+                        "atividade no Panamá. Inscrição CSS em caso de contratação. Montantes "
+                        "indicativos."
+                    ),
+                    "it": (
+                        "Capitale investito < 10 000 USD → esente da IAO; oltre tale soglia, IAO = "
+                        "2 % del capitale netto (min. 100 / max. 60 000 USD/anno), solo se vi è "
+                        "attività a Panama. Iscrizione CSS in caso di assunzioni. Importi "
+                        "indicativi."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Разрешение на работу MITRADEL (если директор работает в компании)",
+                    "pt": "Autorização de trabalho MITRADEL (se o diretor trabalhar na empresa)",
+                    "it": "Permesso di lavoro MITRADEL (se l'amministratore lavora nell'azienda)",
+                },
+                {
+                    "ru": (
+                        "🟠 ОТДЕЛЬНАЯ от резиденции процедура. Квоты: макс. 10 % обычного "
+                        "иностранного персонала / 15 % специализированного. ~56 профессий, "
+                        "зарезервированных для граждан (медицина, право, инженерия, бухгалтерия, "
+                        "архитектура…), остаются недоступными до натурализации. Владение/контроль "
+                        "из-за рубежа = разрешение не нужно; работа на месте = это разрешение."
+                    ),
+                    "pt": (
+                        "🟠 Processo SEPARADO da residência. Quotas: máx. 10 % de pessoal "
+                        "estrangeiro ordinário / 15 % especializado. ~56 profissões reservadas aos "
+                        "nacionais (medicina, direito, engenharia, contabilidade, arquitetura…) "
+                        "permanecem vedadas até à naturalização. Possuir/supervisionar a partir do "
+                        "estrangeiro = nenhuma autorização; trabalhar no local = esta autorização."
+                    ),
+                    "it": (
+                        "🟠 Procedura SEPARATA dalla residenza. Quote: max 10 % di personale "
+                        "straniero ordinario / 15 % specializzato. ~56 professioni riservate ai "
+                        "cittadini (medicina, diritto, ingegneria, contabilità, architettura…) "
+                        "restano precluse fino alla naturalizzazione. Possedere/supervisionare "
+                        "dall'estero = nessun permesso; lavorare sul posto = questo permesso."
+                    ),
+                },
+            ),
+        ],
+    },
+    BG_EU_NAME: {
+        "name": {
+            "ru": "Болгария — регистрация резиденции ЕС",
+            "pt": "Bulgária — registo de residência UE",
+            "it": "Bulgaria — registrazione di residenza UE",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Регистрация адреса в муниципалитете",
+                    "pt": "Registar a morada no município",
+                    "it": "Registrare l'indirizzo presso il comune",
+                },
+                {
+                    "ru": "Регистрация адреса проживания в муниципалитете.",
+                    "pt": "Registo da morada de residência no município.",
+                    "it": "Registrazione dell'indirizzo di residenza presso il comune.",
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на свидетельство о резиденции (Direction Migration)",
+                    "pt": "Pedido de certificado de residência (Direction Migration)",
+                    "it": "Domanda di certificato di residenza (Direction Migration)",
+                },
+                {
+                    "ru": "Свидетельство действует до 5 лет, часто выдаётся за ≈ 3 рабочих дня.",
+                    "pt": (
+                        "Certificado válido até 5 anos, frequentemente emitido em ≈ 3 dias úteis."
+                    ),
+                    "it": (
+                        "Certificato valido fino a 5 anni, spesso rilasciato in ≈ 3 giorni "
+                        "lavorativi."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Получение личного номера (LNCh)",
+                    "pt": "Obtenção do número pessoal (LNCh)",
+                    "it": "Ottenimento del numero personale (LNCh)",
+                },
+                {
+                    "ru": (
+                        "🟠 Граждане ЕС получают LNCh (а не EGN), что может создавать "
+                        "административные препятствия (банк, государственные услуги). Требуется "
+                        "для банка, налоговой, аренды, здравоохранения."
+                    ),
+                    "pt": (
+                        "🟠 Os cidadãos UE recebem um LNCh (e não um EGN), o que pode criar "
+                        "obstáculos administrativos (banco, serviços públicos). Necessário para "
+                        "banco, fisco, arrendamento, saúde."
+                    ),
+                    "it": (
+                        "🟠 I cittadini UE ricevono un LNCh (e non un EGN), il che può creare "
+                        "ostacoli amministrativi (banca, servizi pubblici). Richiesto per banca, "
+                        "fisco, locazione, sanità."
+                    ),
+                },
+            ),
+        ],
+    },
+    BG_RET_NAME: {
+        "name": {
+            "ru": "Болгария — резиденция пенсионера вне ЕС",
+            "pt": "Bulgária — residência de reformado não-UE",
+            "it": "Bulgaria — residenza per pensionati extra-UE",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Заявление на визу D в болгарском консульстве",
+                    "pt": "Pedido de visto D no consulado búlgaro",
+                    "it": "Domanda di visto D presso il consolato bulgaro",
+                },
+                {
+                    "ru": (
+                        "🔴 Средства к существованию ≥ минимальной пенсии/заработной платы (≈ 620 "
+                        "€/месяц в 2026 году, индексированы по минимальной заработной плате, после "
+                        "перехода на евро) — ориентировочная сумма, перепроверьте официальный "
+                        "источник. Частные пенсии (например, 401k) могут быть отклонены без "
+                        "официального документа о государственной пенсии. Сбор за визу ≈ 100 €."
+                    ),
+                    "pt": (
+                        "🔴 Meios de subsistência ≥ pensão/salário mínimo (≈ 620 €/mês em 2026, "
+                        "indexado ao salário mínimo, pós-euro) — montante indicativo, reverificar "
+                        "a fonte oficial. As pensões privadas (ex. 401k) podem ser recusadas sem "
+                        "documento oficial de pensão estatal. Taxa de visto ≈ 100 €."
+                    ),
+                    "it": (
+                        "🔴 Mezzi di sussistenza ≥ pensione/salario minimo (≈ 620 €/mese nel 2026, "
+                        "indicizzato al salario minimo, post-euro) — importo indicativo, "
+                        "verificare nuovamente la fonte ufficiale. Le pensioni private (es. 401k) "
+                        "possono essere rifiutate senza un documento ufficiale di pensione "
+                        "statale. Tassa di visto ≈ 100 €."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Въезд в Болгарию и регистрация адреса (в течение 5 дней)",
+                    "pt": "Entrada na Bulgária e registo da morada (em 5 dias)",
+                    "it": "Ingresso in Bulgaria e registrazione dell'indirizzo (entro 5 giorni)",
+                },
+                {
+                    "ru": "Регистрация адреса в течение 5 дней после въезда.",
+                    "pt": "Registo da morada nos 5 dias após a entrada.",
+                    "it": "Registrazione dell'indirizzo entro 5 giorni dall'ingresso.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача на разрешение на длительное пребывание (Direction Migration)",
+                    "pt": (
+                        "Apresentação da autorização de residência prolongada (Direction Migration)"
+                    ),
+                    "it": (
+                        "Presentazione del permesso di soggiorno di lunga durata (Direction "
+                        "Migration)"
+                    ),
+                },
+                {
+                    "ru": (
+                        "Разрешение действует до 1 года, продлеваемое. Не даёт доступа к рынку "
+                        "труда."
+                    ),
+                    "pt": (
+                        "Autorização válida até 1 ano, renovável. Não dá acesso ao mercado de "
+                        "trabalho."
+                    ),
+                    "it": (
+                        "Permesso valido fino a 1 anno, rinnovabile. Non dà accesso al mercato del "
+                        "lavoro."
+                    ),
+                },
+            ),
+        ],
+    },
+    BG_DN_NAME: {
+        "name": {
+            "ru": "Болгария — виза цифрового кочевника (вне ЕС)",
+            "pt": "Bulgária — visto de nómada digital (não-UE)",
+            "it": "Bulgaria — visto per nomadi digitali (extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка (недавнего) режима и сбор досье",
+                    "pt": "Verificar o regime (recente) e reunir o processo",
+                    "it": "Verificare il regime (recente) e raccogliere il fascicolo",
+                },
+                {
+                    "ru": (
+                        "🔴 ОЧЕНЬ НЕДАВНИЙ РЕЖИМ — правовая основа art. 24p ЗЧРБ, приём заявлений "
+                        "открыт 20.12.2025. Детали применения всё ещё развиваются: перепроверьте в "
+                        "консульстве / Direction Migration перед любым обещанием."
+                    ),
+                    "pt": (
+                        "🔴 REGIME MUITO RECENTE — base legal art. 24p ЗЧРБ, candidaturas abertas "
+                        "em 20/12/2025. Detalhes de aplicação ainda em evolução: reverificar junto "
+                        "do consulado / da Direction Migration antes de qualquer promessa."
+                    ),
+                    "it": (
+                        "🔴 REGIME MOLTO RECENTE — base giuridica art. 24p ЗЧРБ, domande aperte il "
+                        "20/12/2025. Dettagli applicativi ancora in evoluzione: verificare "
+                        "nuovamente presso il consolato / la Direction Migration prima di "
+                        "qualsiasi promessa."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на визу D в консульстве",
+                    "pt": "Pedido de visto D no consulado",
+                    "it": "Domanda di visto D presso il consolato",
+                },
+                {
+                    "ru": (
+                        "🔴 Порог ≈ 31 000 €/год, индексированный по минимальной заработной плате, "
+                        "после перехода на евро — ориентировочно, перепроверьте. Запрет на работу "
+                        "для болгарских клиентов/работодателей."
+                    ),
+                    "pt": (
+                        "🔴 Limiar ≈ 31 000 €/ano indexado ao salário mínimo, pós-euro — "
+                        "indicativo, reverificar. Proibição de trabalhar para "
+                        "clientes/empregadores búlgaros."
+                    ),
+                    "it": (
+                        "🔴 Soglia ≈ 31 000 €/anno indicizzata al salario minimo, post-euro — "
+                        "indicativa, verificare nuovamente. Divieto di lavorare per clienti/datori "
+                        "di lavoro bulgari."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": (
+                        "Въезд и разрешение на пребывание (Direction Migration, в течение 14 дней)"
+                    ),
+                    "pt": "Entrada e autorização de residência (Direction Migration, em 14 dias)",
+                    "it": "Ingresso e permesso di soggiorno (Direction Migration, entro 14 giorni)",
+                },
+                {
+                    "ru": (
+                        "Разрешение на 1 год, продлеваемое на 1 год (макс. ≈ 2 года). НЕ ведёт к "
+                        "постоянной резиденции."
+                    ),
+                    "pt": (
+                        "Autorização de 1 ano, renovável por 1 ano (máx. ≈ 2 anos). NÃO conduz à "
+                        "residência permanente."
+                    ),
+                    "it": (
+                        "Permesso di 1 anno, rinnovabile per 1 anno (max ≈ 2 anni). NON porta alla "
+                        "residenza permanente."
+                    ),
+                },
+            ),
+        ],
+    },
+    BG_FL_NAME: {
+        "name": {
+            "ru": "Болгария — Фриланс / свободная профессия (вне ЕС)",
+            "pt": "Bulgária — Freelance / profissão liberal (fora da UE)",
+            "it": "Bulgaria — Freelance / libera professione (extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Получение разрешения на фриланс-деятельность (Агентство занятости)",
+                    "pt": "Obter a autorização de atividade freelance (Agência de Emprego)",
+                    "it": "Ottenere il permesso di attività freelance (Agenzia per l'Impiego)",
+                },
+                {
+                    "ru": (
+                        "🟠 Разрешение выдаёт АГЕНТСТВО ЗАНЯТОСТИ (при MTSP), а НЕ Direction "
+                        "Migration — частая ошибка в наименовании. Требуется болгарский B1."
+                    ),
+                    "pt": (
+                        "🟠 A autorização é emitida pela AGÊNCIA DE EMPREGO (sob o MTSP), NÃO pela "
+                        "Direction Migration — erro de denominação frequente. Búlgaro B1 exigido."
+                    ),
+                    "it": (
+                        "🟠 Il permesso è rilasciato dall'AGENZIA PER L'IMPIEGO (sotto il MTSP), "
+                        "NON dalla Direction Migration — errore di denominazione frequente. "
+                        "Bulgaro B1 richiesto."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу D в консульстве",
+                    "pt": "Pedido de visto D no consulado",
+                    "it": "Domanda di visto D presso il consolato",
+                },
+                {
+                    "ru": "Подача заявления на визу D на основании разрешения на фриланс.",
+                    "pt": "Pedido de visto D com base na autorização de freelance.",
+                    "it": "Domanda di visto D sulla base del permesso di freelance.",
+                },
+            ),
+            (
+                {
+                    "ru": "Вид на жительство (Direction Migration)",
+                    "pt": "Autorização de residência (Direction Migration)",
+                    "it": "Permesso di soggiorno (Direction Migration)",
+                },
+                {
+                    "ru": (
+                        "Разрешение на 12 месяцев с возможностью продления. Фиксированный "
+                        "законодательно установленный порог дохода не опубликован (оценивается по "
+                        "бизнес-плану). Ориентировочно."
+                    ),
+                    "pt": (
+                        "Autorização de 12 meses renovável. Sem limiar de rendimento legal fixo "
+                        "publicado (avaliado com base no plano de atividade). Indicativo."
+                    ),
+                    "it": (
+                        "Permesso di 12 mesi rinnovabile. Nessuna soglia di reddito legale fissa "
+                        "pubblicata (valutata sulla base del piano di attività). Indicativo."
+                    ),
+                },
+            ),
+        ],
+    },
+    BG_CO_NAME: {
+        "name": {
+            "ru": "Болгария — Создание компании (EOOD / OOD)",
+            "pt": "Bulgária — Constituição de empresa (EOOD / OOD)",
+            "it": "Bulgaria — Costituzione di società (EOOD / OOD)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка / резервирование наименования и выбор структуры",
+                    "pt": "Verificar / reservar o nome e escolher a estrutura",
+                    "it": "Verificare / riservare il nome e scegliere la struttura",
+                },
+                {
+                    "ru": (
+                        "EOOD = 1 участник · OOD = ≥ 2 участников (нотариальный учредительный акт "
+                        "+ декларация UBO). Минимальный капитал ≈ 1 € (2 BGN). Число участников — "
+                        "единственный устойчивый параметр этого маршрута."
+                    ),
+                    "pt": (
+                        "EOOD = 1 sócio · OOD = ≥ 2 sócios (escritura de constituição notarial + "
+                        "declaração UBO). Capital mínimo ≈ 1 € (2 BGN). O número de sócios é o "
+                        "único parâmetro estável deste percurso."
+                    ),
+                    "it": (
+                        "EOOD = 1 socio · OOD = ≥ 2 soci (atto costitutivo notarile + "
+                        "dichiarazione UBO). Capitale minimo ≈ 1 € (2 BGN). Il numero di soci è "
+                        "l'unico parametro stabile di questo percorso."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Составление устава и внесение капитала",
+                    "pt": "Redigir os estatutos e depositar o capital",
+                    "it": "Redigere lo statuto e depositare il capitale",
+                },
+                {
+                    "ru": (
+                        "Требуется зарегистрированный офис в Болгарии; если управляющий — "
+                        "нерезидент, необходимо местное контактное лицо."
+                    ),
+                    "pt": (
+                        "Sede social búlgara exigida; se o gerente for não residente, é necessária "
+                        "uma pessoa de contacto local."
+                    ),
+                    "it": (
+                        "Sede legale bulgara richiesta; se l'amministratore è non residente, è "
+                        "necessaria una persona di contatto locale."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Регистрация в Торговом реестре",
+                    "pt": "Inscrição no Registo Comercial",
+                    "it": "Iscrizione al Registro delle Imprese",
+                },
+                {
+                    "ru": (
+                        "Получение EIK / BULSTAT (уникальный код). От 3 до 10 рабочих дней (от 2 "
+                        "до 4 недель удалённо)."
+                    ),
+                    "pt": (
+                        "Obtenção do EIK / BULSTAT (código único). 3 a 10 dias úteis (2 a 4 "
+                        "semanas à distância)."
+                    ),
+                    "it": (
+                        "Ottenimento dell'EIK / BULSTAT (codice univoco). Da 3 a 10 giorni "
+                        "lavorativi (da 2 a 4 settimane da remoto)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "НДС, банковский счёт и запуск",
+                    "pt": "IVA, conta bancária e arranque",
+                    "it": "IVA, conto bancario e avvio",
+                },
+                {
+                    "ru": (
+                        "🔴 IS 10 % (самый низкий в ЕС), дивиденды 5 % — ставки ориентировочные, "
+                        "перепроверьте (после введения евро в 2026). НДС, если оборот > ≈ 51 000 "
+                        "€. Известное узкое место: открытие банковского счёта (KYC, иногда "
+                        "требуется личное присутствие). ⚠️ Владеть удалённо ≠ обосноваться: ставка "
+                        "IS 10 % сохраняется, только если компания реально управляется ИЗ Болгарии "
+                        "(субстанция)."
+                    ),
+                    "pt": (
+                        "🔴 IS 10 % (o mais baixo da UE), dividendos 5 % — taxas indicativas, "
+                        "reverificar (pós-euro 2026). IVA se o volume de negócios > ≈ 51 000 €. "
+                        "Estrangulamento conhecido: abertura de conta bancária (KYC, presença por "
+                        "vezes exigida). ⚠️ Deter à distância ≠ instalar-se: o IS de 10 % só se "
+                        "mantém se a empresa for genuinamente dirigida A PARTIR da Bulgária "
+                        "(substância)."
+                    ),
+                    "it": (
+                        "🔴 IS 10 % (la più bassa dell'UE), dividendi 5 % — aliquote indicative, "
+                        "da riverificare (post-euro 2026). IVA se il fatturato > ≈ 51 000 €. Collo "
+                        "di bottiglia noto: apertura del conto bancario (KYC, presenza talvolta "
+                        "richiesta). ⚠️ Detenere a distanza ≠ stabilirsi: l'IS al 10 % regge solo "
+                        "se la società è realmente gestita DALLA Bulgaria (sostanza)."
+                    ),
+                },
+            ),
+        ],
+    },
+    HU_EU_NAME: {
+        "name": {
+            "ru": "Венгрия — Регистрация проживания ЕС",
+            "pt": "Hungria — Registo de residência UE",
+            "it": "Ungheria — Registrazione di soggiorno UE",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Декларация о проживании (> 90 дней) в Иммиграционном бюро",
+                    "pt": "Declaração de residência (> 90 dias) no Serviço de Imigração",
+                    "it": "Dichiarazione di soggiorno (> 90 giorni) presso l'Ufficio Immigrazione",
+                },
+                {
+                    "ru": (
+                        "🟠 Сумма «достаточных средств» в HUF подлежит перепроверке (первичный "
+                        "источник не подтверждён). Работа и обоснование разрешены без разрешения."
+                    ),
+                    "pt": (
+                        "🟠 O montante de «recursos suficientes» em HUF está por reverificar "
+                        "(fonte primária não confirmada). Trabalho e estabelecimento permitidos "
+                        "sem autorização."
+                    ),
+                    "it": (
+                        "🟠 L'importo delle «risorse sufficienti» in HUF è da riverificare (fonte "
+                        "primaria non confermata). Lavoro e stabilimento consentiti senza "
+                        "permesso."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Регистрационная карта",
+                    "pt": "Cartão de registo",
+                    "it": "Carta di registrazione",
+                },
+                {
+                    "ru": (
+                        "Постоянное проживание доступно через 5 лет, натурализация — через 8 лет."
+                    ),
+                    "pt": "Residência permanente disponível aos 5 anos, naturalização aos 8 anos.",
+                    "it": "Residenza permanente disponibile a 5 anni, naturalizzazione a 8 anni.",
+                },
+            ),
+            (
+                {
+                    "ru": (
+                        "Идентификаторы для обустройства (адресная карта, налоговый номер, TAJ "
+                        "медстраховка)"
+                    ),
+                    "pt": (
+                        "Identificadores de instalação (cartão de morada, número fiscal, TAJ saúde)"
+                    ),
+                    "it": (
+                        "Identificativi di insediamento (carta di indirizzo, numero fiscale, TAJ "
+                        "sanità)"
+                    ),
+                },
+                {
+                    "ru": (
+                        "lakcímkártya (адресная карта) · adóazonosító jel (налоговый номер NAV) · "
+                        "TAJ (социальное страхование NEAK). Частые практические препятствия — "
+                        "предусмотреть по прибытии."
+                    ),
+                    "pt": (
+                        "lakcímkártya (cartão de morada) · adóazonosító jel (número fiscal NAV) · "
+                        "TAJ (segurança social NEAK). Bloqueios práticos frequentes — a antecipar "
+                        "à chegada."
+                    ),
+                    "it": (
+                        "lakcímkártya (carta di indirizzo) · adóazonosító jel (numero fiscale NAV) "
+                        "· TAJ (previdenza sociale NEAK). Ostacoli pratici frequenti — da "
+                        "anticipare all'arrivo."
+                    ),
+                },
+            ),
+        ],
+    },
+    HU_WC_NAME: {
+        "name": {
+            "ru": "Венгрия — White Card (цифровой кочевник, вне ЕС)",
+            "pt": "Hungria — White Card (nómada digital, fora da UE)",
+            "it": "Ungheria — White Card (nomade digitale, extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Предварительное предупреждение и проверка порога",
+                    "pt": "Aviso prévio e verificação do limiar",
+                    "it": "Avviso preliminare e verifica della soglia",
+                },
+                {
+                    "ru": (
+                        "🔴 КАРТОЧКА НЕ ПРОВЕРЕНА ПО ПЕРВИЧНОМУ ИСТОЧНИКУ. ⚠️ ТУПИК: White Card НЕ "
+                        "засчитывается НИ для постоянного проживания, НИ для натурализации — "
+                        "пробное решение на 1-2 года. Для долгосрочного обоснования перейдите на "
+                        "другой маршрут. Запрещено работать на венгерский рынок. Минимальный "
+                        "месячный доход 🔴 нестабилен, перепроверьте на oif.gov.hu."
+                    ),
+                    "pt": (
+                        "🔴 FICHA NÃO VERIFICADA EM FONTE PRIMÁRIA. ⚠️ BECO SEM SAÍDA: o White "
+                        "Card não conta NEM para a residência permanente NEM para a naturalização "
+                        "— solução de ensaio de 1-2 anos. Para se instalar de forma duradoura, "
+                        "mudar para outra via. Proibido trabalhar para o mercado húngaro. "
+                        "Rendimento mensal mínimo 🔴 volátil, reverificar em oif.gov.hu."
+                    ),
+                    "it": (
+                        "🔴 SCHEDA NON VERIFICATA NELLA FONTE PRIMARIA. ⚠️ VICOLO CIECO: il White "
+                        "Card non conta NÉ per la residenza permanente NÉ per la naturalizzazione "
+                        "— soluzione di prova di 1-2 anni. Per stabilirsi in modo duraturo, "
+                        "passare a un'altra via. Vietato lavorare per il mercato ungherese. "
+                        "Reddito mensile minimo 🔴 volatile, riverificare su oif.gov.hu."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу D / White Card",
+                    "pt": "Pedido de visto D / White Card",
+                    "it": "Domanda di visto D / White Card",
+                },
+                {
+                    "ru": "Подача заявления на визу D / White Card на основании собранного досье.",
+                    "pt": "Pedido de visto D / White Card com base no processo reunido.",
+                    "it": "Domanda di visto D / White Card sulla base del fascicolo predisposto.",
+                },
+            ),
+            (
+                {
+                    "ru": "Вид на жительство и идентификаторы",
+                    "pt": "Autorização de residência e identificadores",
+                    "it": "Permesso di soggiorno e identificativi",
+                },
+                {
+                    "ru": (
+                        "Адресная карта + налоговый номер + TAJ. Условия продления и воссоединения "
+                        "семьи 🔴 подлежат проверке."
+                    ),
+                    "pt": (
+                        "Cartão de morada + número fiscal + TAJ. Condições de renovação e de "
+                        "reagrupamento familiar 🔴 por verificar."
+                    ),
+                    "it": (
+                        "Carta di indirizzo + numero fiscale + TAJ. Condizioni di rinnovo e di "
+                        "ricongiungimento familiare 🔴 da verificare."
+                    ),
+                },
+            ),
+        ],
+    },
+    HU_GI_NAME: {
+        "name": {
+            "ru": "Венгрия — Guest Investor (золотая виза, вне ЕС)",
+            "pt": "Hungria — Guest Investor (golden visa, fora da UE)",
+            "it": "Ungheria — Guest Investor (golden visa, extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Предупреждение и выбор варианта инвестиции",
+                    "pt": "Aviso e escolha da opção de investimento",
+                    "it": "Avviso e scelta dell'opzione di investimento",
+                },
+                {
+                    "ru": (
+                        "🔴 КАРТОЧКА НЕ ПРОВЕРЕНА ПО ПЕРВИЧНОМУ ИСТОЧНИКУ. Варианты "
+                        "(ориентировочные суммы, перепроверьте): одобренные MNB фонды ≈ 250 000 € "
+                        "(самый дешёвый путь); прямая жилая недвижимость ≈ 500 000 € (вариант, "
+                        "возможно, ОТЛОЖЕН — проверьте, действительно ли он открыт); пожертвование "
+                        "высшему образованию ≈ 1 000 000 €. Проверьте список фондов MNB, реально "
+                        "доступных для подписки."
+                    ),
+                    "pt": (
+                        "🔴 FICHA NÃO VERIFICADA EM FONTE PRIMÁRIA. Opções (montantes indicativos, "
+                        "reverificar): fundos aprovados pelo MNB ≈ 250 000 € (via mais barata); "
+                        "imóvel residencial direto ≈ 500 000 € (opção possivelmente ADIADA — "
+                        "verificar se está realmente aberta); donativo ao ensino superior ≈ 1 000 "
+                        "000 €. Verificar a lista de fundos MNB realmente subscritíveis."
+                    ),
+                    "it": (
+                        "🔴 SCHEDA NON VERIFICATA NELLA FONTE PRIMARIA. Opzioni (importi "
+                        "indicativi, da riverificare): fondi approvati dalla MNB ≈ 250 000 € (via "
+                        "più economica); immobile residenziale diretto ≈ 500 000 € (opzione forse "
+                        "RINVIATA — verificare se realmente aperta); donazione all'istruzione "
+                        "superiore ≈ 1 000 000 €. Verificare l'elenco dei fondi MNB realmente "
+                        "sottoscrivibili."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Осуществление инвестиции",
+                    "pt": "Realização do investimento",
+                    "it": "Realizzazione dell'investimento",
+                },
+                {
+                    "ru": "Размещение капитала в соответствии с выбранным вариантом.",
+                    "pt": "Aplicação do capital de acordo com a opção escolhida.",
+                    "it": "Impiego del capitale secondo l'opzione scelta.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на разрешение Guest Investor",
+                    "pt": "Pedido da autorização Guest Investor",
+                    "it": "Domanda del permesso Guest Investor",
+                },
+                {
+                    "ru": (
+                        "Разрешение на 10 лет, требуется низкое присутствие. Имущественный маршрут."
+                    ),
+                    "pt": "Autorização de 10 anos, baixa presença exigida. Via patrimonial.",
+                    "it": "Permesso di 10 anni, presenza richiesta ridotta. Via patrimoniale.",
+                },
+            ),
+            (
+                {
+                    "ru": "Вид на жительство и идентификаторы",
+                    "pt": "Autorização de residência e identificadores",
+                    "it": "Permesso di soggiorno e identificativi",
+                },
+                {
+                    "ru": "Адресная карта + налоговый номер + TAJ.",
+                    "pt": "Cartão de morada + número fiscal + TAJ.",
+                    "it": "Carta di indirizzo + numero fiscale + TAJ.",
+                },
+            ),
+        ],
+    },
+    HU_SP_NAME: {
+        "name": {
+            "ru": "Венгрия — Single permit (наёмный работник вне ЕС)",
+            "pt": "Hungria — Single permit (trabalhador por conta de outrem fora da UE)",
+            "it": "Ungheria — Single permit (lavoratore dipendente extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Работодатель инициирует заявление (single permit)",
+                    "pt": "O empregador inicia o pedido (single permit)",
+                    "it": "Il datore di lavoro avvia la domanda (single permit)",
+                },
+                {
+                    "ru": (
+                        "Вид на жительство + разрешение на работу в ОДНОЙ процедуре, "
+                        "осуществляемой работодателем. 🟠 Возможна проверка рынка труда + "
+                        "зарплатные пороги для проверки. Этот маршрут ЗАСЧИТЫВАЕТСЯ для "
+                        "постоянного проживания и натурализации."
+                    ),
+                    "pt": (
+                        "Autorização de residência + autorização de trabalho num ÚNICO "
+                        "procedimento, conduzido pelo empregador. 🟠 Possível teste do mercado de "
+                        "trabalho + limiares salariais por verificar. Esta via CONTA para a "
+                        "residência permanente e a naturalização."
+                    ),
+                    "it": (
+                        "Permesso di soggiorno + autorizzazione al lavoro in UN'UNICA procedura, "
+                        "condotta dal datore di lavoro. 🟠 Possibile test del mercato del lavoro + "
+                        "soglie salariali da verificare. Questa via CONTA per la residenza "
+                        "permanente e la naturalizzazione."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу D в консульстве",
+                    "pt": "Pedido de visto D no consulado",
+                    "it": "Domanda di visto D presso il consolato",
+                },
+                {
+                    "ru": (
+                        "Подача заявления на визу D в консульстве на основании полученного "
+                        "разрешения."
+                    ),
+                    "pt": "Pedido de visto D no consulado com base na autorização obtida.",
+                    "it": (
+                        "Domanda di visto D presso il consolato sulla base dell'autorizzazione "
+                        "ottenuta."
+                    ),
+                },
+            ),
+        ],
+    },
+    AE_GV_NAME: {
+        "name": {
+            "ru": "Дубай (ОАЭ) — Golden Visa (10 лет)",
+            "pt": "Dubai (EAU) — Golden Visa (10 anos)",
+            "it": "Dubai (EAU) — Golden Visa (10 anni)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить критерий приемлемости",
+                    "pt": "Verificar a porta de elegibilidade",
+                    "it": "Verificare il criterio di ammissibilità",
+                },
+                {
+                    "ru": (
+                        "🟠 Критерии (нестабильные суммы в AED, перепроверьте u.ae / icp.gov.ae): "
+                        "инвестор ≥ 2 M AED (одобренный фонд или недвижимость) · таланты — "
+                        "зарплата ≥ 30 000 AED/месяц + диплом + классификация MOHRE уровня 1/2 · "
+                        "предприниматель — проект ≥ 500 000 AED или одобрение инкубатора · "
+                        "недвижимость ≥ 2 M AED."
+                    ),
+                    "pt": (
+                        "🟠 Portas (montantes AED voláteis, reverificar u.ae / icp.gov.ae): "
+                        "investidor ≥ 2 M AED (fundo aprovado ou imóvel) · talentos salário ≥ 30 "
+                        "000 AED/mês + diploma + classificação MOHRE nível 1/2 · empreendedor "
+                        "projeto ≥ 500 000 AED ou validação de incubadora · imóvel ≥ 2 M AED."
+                    ),
+                    "it": (
+                        "🟠 Criteri (importi AED volatili, riverificare u.ae / icp.gov.ae): "
+                        "investitore ≥ 2 M AED (fondo approvato o immobile) · talenti salario ≥ 30 "
+                        "000 AED/mese + titolo di studio + classificazione MOHRE livello 1/2 · "
+                        "imprenditore progetto ≥ 500 000 AED o validazione di incubatore · "
+                        "immobile ≥ 2 M AED."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Сформировать досье для номинации",
+                    "pt": "Preparar o processo de nomeação",
+                    "it": "Preparare il fascicolo di nomina",
+                },
+                {
+                    "ru": (
+                        "Досье для номинации, которое нужно собрать в соответствии с выбранным "
+                        "критерием приемлемости."
+                    ),
+                    "pt": (
+                        "Processo de nomeação a reunir de acordo com a porta de elegibilidade "
+                        "escolhida."
+                    ),
+                    "it": (
+                        "Fascicolo di nomina da predisporre secondo il criterio di ammissibilità "
+                        "scelto."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Медицинское обследование и Emirates ID",
+                    "pt": "Exame médico e Emirates ID",
+                    "it": "Esame medico ed Emirates ID",
+                },
+                {
+                    "ru": (
+                        "Медицинское обследование + Emirates ID обязательны (общие для любого "
+                        "маршрута в ОАЭ). Требуется присутствие (биометрия)."
+                    ),
+                    "pt": (
+                        "Exame médico + Emirates ID obrigatórios (comuns a todas as vias nos EAU). "
+                        "Presença exigida (biometria)."
+                    ),
+                    "it": (
+                        "Esame medico + Emirates ID obbligatori (comuni a ogni via negli EAU). "
+                        "Presenza richiesta (biometria)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача Golden Visa на 10 лет",
+                    "pt": "Emissão do Golden Visa de 10 anos",
+                    "it": "Rilascio del Golden Visa di 10 anni",
+                },
+                {
+                    "ru": (
+                        "10 лет с возможностью продления, автономная (без спонсора), освобождена "
+                        "от правила 6-месячного отсутствия — подходит для очень мобильных "
+                        "профилей. Может спонсировать семью."
+                    ),
+                    "pt": (
+                        "10 anos renovável, autónomo (sem patrocinador), isento da regra de "
+                        "ausência de 6 meses — adequado a perfis muito móveis. Pode patrocinar a "
+                        "família."
+                    ),
+                    "it": (
+                        "10 anni rinnovabile, autonomo (senza sponsor), esente dalla regola di "
+                        "assenza di 6 mesi — adatto a profili molto mobili. Può sponsorizzare la "
+                        "famiglia."
+                    ),
+                },
+            ),
+        ],
+    },
+    AE_FZ_NAME: {
+        "name": {
+            "ru": "Дубай (ОАЭ) — Резидентство через компанию в free zone",
+            "pt": "Dubai (EAU) — Residência através de empresa free zone",
+            "it": "Dubai (EAU) — Residenza tramite società free zone",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбрать free zone и вид деятельности, зарезервировать наименование",
+                    "pt": "Escolher a free zone e a atividade, reservar o nome",
+                    "it": "Scegliere la free zone e l'attività, riservare il nome",
+                },
+                {
+                    "ru": (
+                        "Деятельность вне внутреннего рынка ОАЭ / международный B2B / холдинг / "
+                        "цифровая. Для продаж на местном рынке → mainland (отдельный маршрут). "
+                        "Осуществляется через одобренного провайдера, назначить в досье."
+                    ),
+                    "pt": (
+                        "Atividade fora do mercado interno dos EAU / B2B internacional / holding / "
+                        "digital. Para vender no mercado local → mainland (percurso separado). "
+                        "Realizado através de um prestador aprovado, a atribuir no processo."
+                    ),
+                    "it": (
+                        "Attività al di fuori del mercato interno degli EAU / B2B internazionale / "
+                        "holding / digitale. Per vendere sul mercato locale → mainland (percorso "
+                        "separato). Effettuato tramite un fornitore approvato, da assegnare nel "
+                        "fascicolo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Лицензия и establishment card",
+                    "pt": "Licença e establishment card",
+                    "it": "Licenza ed establishment card",
+                },
+                {
+                    "ru": (
+                        "🟠 Квота виз зависит от пакета/офиса (~1 виза/9 м², варьируется в "
+                        "зависимости от органа). Расходы = коммерческие источники, сверьте 2-3 "
+                        "провайдеров."
+                    ),
+                    "pt": (
+                        "🟠 Quota de vistos depende do pacote/escritório (~1 visto/9 m², varia "
+                        "conforme a autoridade). Custos = fontes comerciais, cruzar 2-3 "
+                        "prestadores."
+                    ),
+                    "it": (
+                        "🟠 La quota di visti dipende dal pacchetto/ufficio (~1 visto/9 m², varia "
+                        "secondo l'autorità). Costi = fonti commerciali, confrontare 2-3 "
+                        "fornitori."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Entry permit → медицинское обследование → Emirates ID",
+                    "pt": "Entry permit → exame médico → Emirates ID",
+                    "it": "Entry permit → esame medico → Emirates ID",
+                },
+                {
+                    "ru": (
+                        "Медицинское обследование + Emirates ID обязательны. Требуется присутствие."
+                    ),
+                    "pt": "Médico + Emirates ID obrigatórios. Presença exigida.",
+                    "it": "Medico + Emirates ID obbligatori. Presenza richiesta.",
+                },
+            ),
+            (
+                {
+                    "ru": "Резидентская виза проставлена (2-3 года, с возможностью продления)",
+                    "pt": "Visto de residência carimbado (2-3 anos, renovável)",
+                    "it": "Visto di residenza vidimato (2-3 anni, rinnovabile)",
+                },
+                {
+                    "ru": (
+                        "🟠 Спонсором является КОМПАНИЯ: пока она активна, виза действует. "
+                        "Налогообложение: см. маршрут компании (0 % QFZP НЕ автоматически). Клиент "
+                        "из ЕС: задокументируйте налоговый выход из страны происхождения (со "
+                        "стороны Франции)."
+                    ),
+                    "pt": (
+                        "🟠 O patrocinador é a EMPRESA: enquanto estiver ativa, o visto mantém-se. "
+                        "Fiscalidade: ver o percurso de empresa (0 % QFZP NÃO automático). Cliente "
+                        "UE: documentar a saída fiscal do país de origem (lado França)."
+                    ),
+                    "it": (
+                        "🟠 Lo sponsor è la SOCIETÀ: finché è attiva, il visto regge. Fiscalità: "
+                        "vedere il percorso societario (0 % QFZP NON automatico). Cliente UE: "
+                        "documentare l'uscita fiscale dal paese di origine (lato Francia)."
+                    ),
+                },
+            ),
+        ],
+    },
+    AE_RE_NAME: {
+        "name": {
+            "ru": "Дубай (ОАЭ) — Виза за недвижимость (2 года)",
+            "pt": "Dubai (EAU) — Visto imobiliário (2 anos)",
+            "it": "Dubai (EAU) — Visto immobiliare (2 anni)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Приобретение и квалификация недвижимости",
+                    "pt": "Aquisição e qualificação do imóvel",
+                    "it": "Acquisizione e qualificazione dell'immobile",
+                },
+                {
+                    "ru": (
+                        "🟠 Недвижимость ≥ 750 000 AED (ориентировочная сумма, DLD). НЕ путать с "
+                        "Golden Visa за недвижимость (≥ 2 M AED / 10 лет)."
+                    ),
+                    "pt": (
+                        "🟠 Imóvel ≥ 750 000 AED (montante indicativo, DLD). NÃO confundir com o "
+                        "Golden Visa imobiliário (≥ 2 M AED / 10 anos)."
+                    ),
+                    "it": (
+                        "🟠 Immobile ≥ 750 000 AED (importo indicativo, DLD). NON confondere con "
+                        "il Golden Visa immobiliare (≥ 2 M AED / 10 anni)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу за недвижимость",
+                    "pt": "Pedido de visto imobiliário",
+                    "it": "Domanda di visto immobiliare",
+                },
+                {
+                    "ru": "Заявление подаётся через утверждённого провайдера, назначить в досье.",
+                    "pt": (
+                        "Pedido apresentado através de um fornecedor aprovado, a atribuir no "
+                        "processo."
+                    ),
+                    "it": (
+                        "Domanda presentata tramite un fornitore approvato, da assegnare nel "
+                        "fascicolo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Медицинский осмотр и Emirates ID",
+                    "pt": "Exame médico e Emirates ID",
+                    "it": "Visita medica ed Emirates ID",
+                },
+                {
+                    "ru": "Медосмотр + Emirates ID обязательны. Требуется личное присутствие.",
+                    "pt": "Médico + Emirates ID obrigatórios. Presença exigida.",
+                    "it": "Visita medica + Emirates ID obbligatori. Presenza richiesta.",
+                },
+            ),
+            (
+                {
+                    "ru": "Резидентская виза проставлена (2 года, продлеваемая)",
+                    "pt": "Visto de residência carimbado (2 anos renovável)",
+                    "it": "Visto di residenza apposto (2 anni rinnovabile)",
+                },
+                {
+                    "ru": (
+                        "🟠 Спонсором является НЕДВИЖИМОСТЬ: резидентство сохраняется, пока "
+                        "недвижимость находится в собственности. Свыше 2 M AED предпочтительнее "
+                        "Golden Visa (10 лет + освобождение от правила отсутствия)."
+                    ),
+                    "pt": (
+                        "🟠 O sponsor é o IMÓVEL: a residência mantém-se enquanto o bem for "
+                        "detido. Acima de 2 M AED, preferir o Golden Visa (10 anos + isenção da "
+                        "regra de ausência)."
+                    ),
+                    "it": (
+                        "🟠 Lo sponsor è l'IMMOBILE: la residenza si mantiene finché il bene è "
+                        "detenuto. Oltre i 2 M AED, preferire il Golden Visa (10 anni + esenzione "
+                        "dalla regola di assenza)."
+                    ),
+                },
+            ),
+        ],
+    },
+    AE_RW_NAME: {
+        "name": {
+            "ru": "Дубай (ОАЭ) — Виза для удалённой работы (1 год)",
+            "pt": "Dubai (EAU) — Visto de remote work (1 ano)",
+            "it": "Dubai (EAU) — Visto remote work (1 anno)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить право на участие и собрать досье",
+                    "pt": "Verificar a elegibilidade e reunir o processo",
+                    "it": "Verificare l'idoneità e raccogliere il fascicolo",
+                },
+                {
+                    "ru": (
+                        "🟠 Ориентировочный порог. ⚠️ Удалённая работа НЕ ведёт к долгосрочному "
+                        "резидентству (1 год) — для устойчивой базы + налоговой оптимизации лучше "
+                        "с самого начала создать компанию в free zone. Сказать об этом до того, "
+                        "как клиент окажется связан этим выбором."
+                    ),
+                    "pt": (
+                        "🟠 Limiar indicativo. ⚠️ O remote work NÃO conduz a uma residência de "
+                        "longo prazo (1 ano) — para uma base duradoura + otimização fiscal, "
+                        "preferir uma empresa em free zone desde o início. Dizê-lo antes de o "
+                        "cliente ficar preso a esta opção."
+                    ),
+                    "it": (
+                        "🟠 Soglia indicativa. ⚠️ Il remote work NON conduce a una residenza a "
+                        "lungo termine (1 anno) — per una base duratura + ottimizzazione fiscale, "
+                        "preferire una società in free zone fin dall'inizio. Dirlo prima che il "
+                        "cliente si vincoli a questa scelta."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу для удалённой работы",
+                    "pt": "Pedido de visto de remote work",
+                    "it": "Domanda di visto remote work",
+                },
+                {
+                    "ru": "Заявление на визу для удалённой работы на основе собранного досье.",
+                    "pt": "Pedido de visto de remote work com base no processo reunido.",
+                    "it": "Domanda di visto remote work sulla base del fascicolo raccolto.",
+                },
+            ),
+            (
+                {
+                    "ru": "Медицинский осмотр и Emirates ID",
+                    "pt": "Exame médico e Emirates ID",
+                    "it": "Visita medica ed Emirates ID",
+                },
+                {
+                    "ru": "Медосмотр + Emirates ID обязательны. Требуется личное присутствие.",
+                    "pt": "Médico + Emirates ID obrigatórios. Presença exigida.",
+                    "it": "Visita medica + Emirates ID obbligatori. Presenza richiesta.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача визы (1 год)",
+                    "pt": "Emissão do visto (1 ano)",
+                    "it": "Rilascio del visto (1 anno)",
+                },
+                {
+                    "ru": "Выдача визы для удалённой работы, действительной 1 год.",
+                    "pt": "Emissão do visto de remote work, válido 1 ano.",
+                    "it": "Rilascio del visto remote work, valido 1 anno.",
+                },
+            ),
+        ],
+    },
+    AE_RET_NAME: {
+        "name": {
+            "ru": "Дубай (ОАЭ) — Виза для пенсионеров (5 лет, 55 лет и старше)",
+            "pt": "Dubai (EAU) — Visto de reformado (5 anos, 55 anos e mais)",
+            "it": "Dubai (EAU) — Visto per pensionati (5 anni, 55 anni e oltre)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить финансовый критерий (достаточно одного)",
+                    "pt": "Verificar o critério financeiro (basta um)",
+                    "it": "Verificare il criterio finanziario (ne basta uno)",
+                },
+                {
+                    "ru": (
+                        "🟠 Один из трёх (ориентировочные суммы, перепроверить): доход ≥ 20 000 "
+                        "AED/месяц · ИЛИ сбережения ≥ 1 M AED · ИЛИ недвижимость ≥ 1 M AED. Только "
+                        "для лиц 55 лет и старше. При капитале свыше 2 M AED предпочтительнее "
+                        "Golden Visa (10 лет + освобождение от правила отсутствия)."
+                    ),
+                    "pt": (
+                        "🟠 Um de três (montantes indicativos, reverificar): rendimento ≥ 20 000 "
+                        "AED/mês · OU poupança ≥ 1 M AED · OU imóvel ≥ 1 M AED. Reservado a "
+                        "pessoas com 55 anos e mais. Acima de 2 M AED de património, preferir o "
+                        "Golden Visa (10 anos + isenção da regra de ausência)."
+                    ),
+                    "it": (
+                        "🟠 Uno dei tre (importi indicativi, riverificare): reddito ≥ 20 000 "
+                        "AED/mese · OPPURE risparmi ≥ 1 M AED · OPPURE immobile ≥ 1 M AED. "
+                        "Riservato alle persone di 55 anni e oltre. Oltre i 2 M AED di patrimonio, "
+                        "preferire il Golden Visa (10 anni + esenzione dalla regola di assenza)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подготовить досье",
+                    "pt": "Preparar o processo",
+                    "it": "Preparare il fascicolo",
+                },
+                {
+                    "ru": "Досье для подачи готовится на основе выбранного финансового критерия.",
+                    "pt": (
+                        "Processo de pedido a preparar com base no critério financeiro escolhido."
+                    ),
+                    "it": (
+                        "Fascicolo della domanda da preparare sulla base del criterio finanziario "
+                        "scelto."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Медицинский осмотр и Emirates ID",
+                    "pt": "Exame médico e Emirates ID",
+                    "it": "Visita medica ed Emirates ID",
+                },
+                {
+                    "ru": "Медосмотр + Emirates ID обязательны. Требуется личное присутствие.",
+                    "pt": "Médico + Emirates ID obrigatórios. Presença exigida.",
+                    "it": "Visita medica + Emirates ID obbligatori. Presenza richiesta.",
+                },
+            ),
+            (
+                {
+                    "ru": "Виза для пенсионеров проставлена (5 лет, продлеваемая)",
+                    "pt": "Visto de reformado carimbado (5 anos renovável)",
+                    "it": "Visto per pensionati apposto (5 anni rinnovabile)",
+                },
+                {
+                    "ru": "Виза для пенсионеров проставлена, действительна 5 лет, продлеваемая.",
+                    "pt": "Visto de reformado carimbado, válido 5 anos renovável.",
+                    "it": "Visto per pensionati apposto, valido 5 anni rinnovabile.",
+                },
+            ),
+        ],
+    },
+    AE_CO_NAME: {
+        "name": {
+            "ru": "Дубай (ОАЭ) — Создание компании (free zone / mainland)",
+            "pt": "Dubai (EAU) — Constituição de empresa (free zone / mainland)",
+            "it": "Dubai (EAU) — Costituzione di società (free zone / mainland)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбрать free zone или mainland (фильтрующий вопрос)",
+                    "pt": "Decidir free zone vs mainland (pergunta filtro)",
+                    "it": "Decidere free zone vs mainland (domanda filtro)",
+                },
+                {
+                    "ru": (
+                        "ФИЛЬТРУЮЩИЙ ВОПРОС: продаёт ли клиент напрямую на внутреннем рынке ОАЭ? "
+                        "ДА → mainland (DET): доступ onshore + государственные тендеры. НЕТ "
+                        "(международная / B2B / холдинг / цифровая деятельность / цель — "
+                        "резидентство) → free zone: 100 % собственности + самоспонсирование визы. "
+                        "100 % иностранной собственности теперь разрешено для многих видов "
+                        "деятельности на mainland (регулируемый перечень видов деятельности "
+                        "стратегического значения — уточнить в DET)."
+                    ),
+                    "pt": (
+                        "PERGUNTA FILTRO: o cliente vende diretamente no mercado interno dos EAU? "
+                        "SIM → mainland (DET): acesso onshore + concursos públicos. NÃO "
+                        "(internacional / B2B / holding / digital / objetivo residência) → free "
+                        "zone: 100 % de propriedade + auto-patrocínio do visto. 100 % de "
+                        "propriedade estrangeira agora permitida para muitas atividades mainland "
+                        "(uma lista regulada de atividades de impacto estratégico — verificar "
+                        "junto do DET)."
+                    ),
+                    "it": (
+                        "DOMANDA FILTRO: il cliente vende direttamente sul mercato interno degli "
+                        "EAU? SÌ → mainland (DET): accesso onshore + gare pubbliche. NO "
+                        "(internazionale / B2B / holding / digitale / obiettivo residenza) → free "
+                        "zone: 100 % di proprietà + auto-sponsorizzazione del visto. 100 % di "
+                        "proprietà straniera ora consentita per molte attività mainland (un elenco "
+                        "regolamentato di attività a impatto strategico — verificare presso il "
+                        "DET)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Резервирование названия и одобрение вида деятельности",
+                    "pt": "Reserva do nome e aprovação da atividade",
+                    "it": "Riserva del nome e approvazione dell'attività",
+                },
+                {
+                    "ru": (
+                        "Резервирование названия и одобрение вида деятельности через утверждённого "
+                        "провайдера, назначить в досье."
+                    ),
+                    "pt": (
+                        "Reserva do nome e aprovação da atividade através de um fornecedor "
+                        "aprovado, a atribuir no processo."
+                    ),
+                    "it": (
+                        "Riserva del nome e approvazione dell'attività tramite un fornitore "
+                        "approvato, da assegnare nel fascicolo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Лицензия и учреждение",
+                    "pt": "Licença e estabelecimento",
+                    "it": "Licenza e stabilimento",
+                },
+                {
+                    "ru": (
+                        "🔴 Расходы (пакет free zone / сборы DET / establishment card) = в "
+                        "основном коммерческие источники → перепроверить по 2-3 провайдерам + "
+                        "органам (DMCC, IFZA, Meydan, DET). Никогда не давать котировку на основе "
+                        "единственной маркетинговой цифры."
+                    ),
+                    "pt": (
+                        "🔴 Custos (pacote free zone / taxas DET / establishment card) = "
+                        "maioritariamente fontes comerciais → cruzar 2-3 fornecedores + "
+                        "autoridades (DMCC, IFZA, Meydan, DET). Nunca cotar com base num único "
+                        "valor de marketing."
+                    ),
+                    "it": (
+                        "🔴 Costi (pacchetto free zone / tasse DET / establishment card) = "
+                        "principalmente fonti commerciali → confrontare 2-3 fornitori + autorità "
+                        "(DMCC, IFZA, Meydan, DET). Mai preventivare sulla base di una singola "
+                        "cifra di marketing."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Налоговая регистрация (corporate tax / НДС) и банковский счёт",
+                    "pt": "Registo fiscal (corporate tax / IVA) e conta bancária",
+                    "it": "Registrazione fiscale (corporate tax / IVA) e conto bancario",
+                },
+                {
+                    "ru": (
+                        "🟢 Corporate tax 0 % до 375 000 AED прибыли, 9 % сверх этого. НДС 5 % "
+                        "обязателен при обороте > 375 000 AED (добровольно от 187 500). Small "
+                        "Business Relief при обороте < 3 M AED (до отчётных периодов, "
+                        "заканчивающихся 31/12/2026). ⚠️ 0 % FREE ZONE (QFZP) НЕ предоставляется "
+                        "автоматически: требуются субстанция, qualifying B2B income, соблюдение de "
+                        "minimis (мин. 5 M AED / 5 % оборота), трансфертное ценообразование, "
+                        "ПРОАУДИРОВАННАЯ ФИНАНСОВАЯ ОТЧЁТНОСТЬ. Локальная B2C-торговля в free "
+                        "zone, как правило, права не даёт. НИКОГДА не обещать 0 % без проверки."
+                    ),
+                    "pt": (
+                        "🟢 Corporate tax 0 % até 375 000 AED de lucro, 9 % acima. IVA 5 % "
+                        "obrigatório se o volume de negócios > 375 000 AED (voluntário a partir de "
+                        "187 500). Small Business Relief se o volume de negócios < 3 M AED (até "
+                        "aos exercícios encerrados em 31/12/2026). ⚠️ O 0 % FREE ZONE (QFZP) NÃO é "
+                        "automático: exige substância, qualifying B2B income, cumprimento do de "
+                        "minimis (mín. 5 M AED / 5 % do volume de negócios), preços de "
+                        "transferência, DEMONSTRAÇÕES FINANCEIRAS AUDITADAS. O trading B2C local "
+                        "numa free zone geralmente não dá direito. NUNCA prometer o 0 % sem "
+                        "validação."
+                    ),
+                    "it": (
+                        "🟢 Corporate tax 0 % fino a 375 000 AED di utile, 9 % oltre. IVA 5 % "
+                        "obbligatoria se il fatturato > 375 000 AED (volontaria da 187 500). Small "
+                        "Business Relief se il fatturato < 3 M AED (fino agli esercizi chiusi al "
+                        "31/12/2026). ⚠️ Lo 0 % FREE ZONE (QFZP) NON è automatico: richiede "
+                        "sostanza, qualifying B2B income, rispetto del de minimis (min. 5 M AED / "
+                        "5 % del fatturato), prezzi di trasferimento, BILANCI SOTTOPOSTI A "
+                        "REVISIONE. Il trading B2C locale in free zone generalmente non dà "
+                        "diritto. MAI promettere lo 0 % senza validazione."
+                    ),
+                },
+            ),
+        ],
+    },
+    MU_OPI_NAME: {
+        "name": {
+            "ru": "Маврикий — Occupation Permit Investor (предприниматель)",
+            "pt": "Maurícia — Occupation Permit Investor (empreendedor)",
+            "it": "Mauritius — Occupation Permit Investor (imprenditore)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Учредить компанию и внести вклад",
+                    "pt": "Constituir a empresa e a contribuição",
+                    "it": "Costituire la società e il conferimento",
+                },
+                {
+                    "ru": (
+                        "🟠 Вклад ≥ 50 000 USD + ожидаемый оборот ≥ 4 M MUR с 3-го года "
+                        "(ориентировочные пороги, пересматриваются в годовом Budget ~июнь). Выбор "
+                        "структуры (Domestic / GBC / Authorised): см. путь создания компании. "
+                        "Осуществляется через маврикийского консультанта, назначить в досье."
+                    ),
+                    "pt": (
+                        "🟠 Contribuição ≥ 50 000 USD + volume de negócios ≥ 4 M MUR esperado a "
+                        "partir do ano 3 (limiares indicativos, revistos no Budget anual ~junho). "
+                        "Escolha do veículo (Domestic / GBC / Authorised): ver o percurso de "
+                        "empresa. Realizado através de um consultor mauriciano, a atribuir no "
+                        "processo."
+                    ),
+                    "it": (
+                        "🟠 Conferimento ≥ 50 000 USD + fatturato ≥ 4 M MUR atteso dal terzo anno "
+                        "(soglie indicative, riviste nel Budget annuale ~giugno). Scelta del "
+                        "veicolo (Domestic / GBC / Authorised): vedere il percorso societario. "
+                        "Realizzato tramite un consulente mauriziano, da assegnare nel fascicolo."
+                    ),
+                },
+            ),
+            (
+                {"ru": "Подача в EDB", "pt": "Submissão ao EDB", "it": "Presentazione all'EDB"},
+                {
+                    "ru": "Заявление на Occupation Permit подано в EDB.",
+                    "pt": "Pedido de Occupation Permit submetido ao EDB.",
+                    "it": "Domanda di Occupation Permit presentata all'EDB.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача Occupation Permit и регистрация в PIO",
+                    "pt": "Concessão do Occupation Permit e registo no PIO",
+                    "it": "Concessione dell'Occupation Permit e registrazione al PIO",
+                },
+                {
+                    "ru": (
+                        "EDB рассматривает, PIO выдаёт. Единое разрешение на резидентство + "
+                        "деятельность. Члены семьи — на производном разрешении. Требуется "
+                        "биометрия."
+                    ),
+                    "pt": (
+                        "O EDB trata, o PIO emite. Título único de residência + atividade. Família "
+                        "em título derivado. Biometria exigida."
+                    ),
+                    "it": (
+                        "L'EDB istruisce, il PIO rilascia. Titolo unico di residenza + attività. "
+                        "Famiglia su titolo derivato. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    MU_OPP_NAME: {
+        "name": {
+            "ru": "Маврикий — Occupation Permit Professional (наёмный работник)",
+            "pt": "Maurícia — Occupation Permit Professional (assalariado)",
+            "it": "Mauritius — Occupation Permit Professional (lavoratore dipendente)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Договор и проверка зарплатного порога",
+                    "pt": "Contrato e verificação do limiar salarial",
+                    "it": "Contratto e verifica della soglia salariale",
+                },
+                {
+                    "ru": (
+                        "🔴 Минимальная зарплата 30 000 против 60 000 MUR/месяц в зависимости от "
+                        "периода/сектора — САМЫЙ нестабильный порог, обязательно перепроверить. "
+                        "Исключения для ICT/BPO возможно ниже (🟠)."
+                    ),
+                    "pt": (
+                        "🔴 Salário mínimo 30 000 vs 60 000 MUR/mês consoante o período/setor — O "
+                        "limiar mais instável, reverificar imperativamente. Exceções ICT/BPO "
+                        "possivelmente mais baixas (🟠)."
+                    ),
+                    "it": (
+                        "🔴 Salario minimo 30 000 vs 60 000 MUR/mese a seconda del periodo/settore "
+                        "— LA soglia più instabile, riverificare tassativamente. Eccezioni ICT/BPO "
+                        "possibilmente più basse (🟠)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача в EDB (осуществляется работодателем)",
+                    "pt": "Submissão ao EDB (efetuada pelo empregador)",
+                    "it": "Presentazione all'EDB (a cura del datore di lavoro)",
+                },
+                {
+                    "ru": "Заявление подаётся работодателем в EDB.",
+                    "pt": "Pedido efetuado pelo empregador ao EDB.",
+                    "it": "Domanda presentata dal datore di lavoro all'EDB.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача OP и регистрация в PIO",
+                    "pt": "Concessão do OP e registo no PIO",
+                    "it": "Concessione dell'OP e registrazione al PIO",
+                },
+                {
+                    "ru": (
+                        "Единое разрешение на резидентство + работу (без отдельного разрешения), "
+                        "до 10 лет. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "Título único de residência + trabalho (sem permissão separada), até 10 "
+                        "anos. Biometria exigida."
+                    ),
+                    "it": (
+                        "Titolo unico di residenza + lavoro (senza permesso separato), fino a 10 "
+                        "anni. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    MU_OPS_NAME: {
+        "name": {
+            "ru": "Маврикий — Occupation Permit Self-Employed (индивидуальный консультант)",
+            "pt": "Maurícia — Occupation Permit Self-Employed (consultor individual)",
+            "it": "Mauritius — Occupation Permit Self-Employed (consulente individuale)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить право на участие и вклад",
+                    "pt": "Verificar a elegibilidade e a contribuição",
+                    "it": "Verificare l'idoneità e il conferimento",
+                },
+                {
+                    "ru": (
+                        "🟠 Вклад ≈ 35 000 USD + ожидаемый доход от деятельности ≈ 800 000 MUR "
+                        "(год 2/3). Ориентировочные пороги, пересматриваются в годовом Budget."
+                    ),
+                    "pt": (
+                        "🟠 Contribuição ≈ 35 000 USD + rendimento de atividade ≈ 800 000 MUR "
+                        "esperado (ano 2/3). Limiares indicativos, revistos no Budget anual."
+                    ),
+                    "it": (
+                        "🟠 Conferimento ≈ 35 000 USD + reddito di attività ≈ 800 000 MUR atteso "
+                        "(anno 2/3). Soglie indicative, riviste nel Budget annuale."
+                    ),
+                },
+            ),
+            (
+                {"ru": "Подача в EDB", "pt": "Submissão ao EDB", "it": "Presentazione all'EDB"},
+                {
+                    "ru": "Заявление на Occupation Permit подано в EDB.",
+                    "pt": "Pedido de Occupation Permit submetido ao EDB.",
+                    "it": "Domanda di Occupation Permit presentata all'EDB.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача OP и регистрация в PIO",
+                    "pt": "Concessão do OP e registo no PIO",
+                    "it": "Concessione dell'OP e registrazione al PIO",
+                },
+                {
+                    "ru": (
+                        "Единое разрешение на резидентство + деятельность, до 10 лет. Требуется "
+                        "биометрия."
+                    ),
+                    "pt": "Título único de residência + atividade, até 10 anos. Biometria exigida.",
+                    "it": (
+                        "Titolo unico di residenza + attività, fino a 10 anni. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    MU_PV_NAME: {
+        "name": {
+            "ru": "Маврикий — Premium Visa (номад / пассивный иностранный доход)",
+            "pt": "Maurícia — Premium Visa (nómada / rendimento passivo estrangeiro)",
+            "it": "Mauritius — Premium Visa (nomade / reddito passivo estero)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить право на участие (иностранный доход)",
+                    "pt": "Verificar a elegibilidade (rendimento estrangeiro)",
+                    "it": "Verificare l'idoneità (reddito estero)",
+                },
+                {
+                    "ru": (
+                        "🟠 Доход ≥ 1 500 USD/месяц (+ ~500/иждивенец). Объявлена бесплатной. ⚠️ "
+                        "Местный рынок запрещён (только доход из иностранного источника). "
+                        "Ориентировочные пороги, годовой Budget."
+                    ),
+                    "pt": (
+                        "🟠 Rendimento ≥ 1 500 USD/mês (+ ~500/dependente). Anunciado gratuito. ⚠️ "
+                        "Mercado local proibido (rendimento de fonte estrangeira apenas). Limiares "
+                        "indicativos, Budget anual."
+                    ),
+                    "it": (
+                        "🟠 Reddito ≥ 1 500 USD/mese (+ ~500/familiare a carico). Annunciato "
+                        "gratuito. ⚠️ Mercato locale vietato (solo reddito di fonte estera). "
+                        "Soglie indicative, Budget annuale."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Онлайн-заявление (EDB)",
+                    "pt": "Pedido online (EDB)",
+                    "it": "Domanda online (EDB)",
+                },
+                {
+                    "ru": "Заявление на Premium Visa онлайн в EDB.",
+                    "pt": "Pedido de Premium Visa online junto do EDB.",
+                    "it": "Domanda di Premium Visa online presso l'EDB.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача Premium Visa",
+                    "pt": "Concessão do Premium Visa",
+                    "it": "Concessione del Premium Visa",
+                },
+                {
+                    "ru": (
+                        "1 год, продлеваемая. Не даёт доступа к долгосрочному резидентству — для "
+                        "стабильности рассмотреть недвижимость ≥ 375k USD (отдельный путь)."
+                    ),
+                    "pt": (
+                        "1 ano renovável. Não dá acesso a uma residência de longo prazo — para a "
+                        "estabilidade, considerar o imóvel ≥ 375k USD (percurso separado)."
+                    ),
+                    "it": (
+                        "1 anno rinnovabile. Non dà accesso a una residenza a lungo termine — per "
+                        "la stabilità, considerare l'immobile ≥ 375k USD (percorso separato)."
+                    ),
+                },
+            ),
+        ],
+    },
+    MU_RE_NAME: {
+        "name": {
+            "ru": "Маврикий — Резидентство через инвестиции в недвижимость (≥ 375k USD)",
+            "pt": "Maurícia — Residência por investimento imobiliário (≥ 375k USD)",
+            "it": "Mauritius — Residenza tramite investimento immobiliare (≥ 375k USD)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбор подходящего объекта недвижимости",
+                    "pt": "Seleção de um imóvel qualificável",
+                    "it": "Selezione di un immobile idoneo",
+                },
+                {
+                    "ru": (
+                        "🟠 Порог ≥ 375 000 USD открывает резидентство (схемы IRS/RES/PDS/Smart "
+                        "City/допустимые G+2). Ниже: покупка возможна, но БЕЗ автоматического "
+                        "резидентства. Регистрационные пошлины ~5 % (требует подтверждения). "
+                        "Осуществляется через консультанта, подлежит назначению по делу."
+                    ),
+                    "pt": (
+                        "🟠 Limiar ≥ 375 000 USD que abre a residência (esquemas IRS/RES/PDS/Smart "
+                        "City/G+2 elegíveis). Abaixo: compra possível mas SEM residência "
+                        "automática. Direitos de registo ~5 % (a confirmar). Realizado através de "
+                        "um consultor, a atribuir no processo."
+                    ),
+                    "it": (
+                        "🟠 Soglia ≥ 375 000 USD che apre la residenza (schemi IRS/RES/PDS/Smart "
+                        "City/G+2 idonei). Al di sotto: acquisto possibile ma SENZA residenza "
+                        "automatica. Diritti di registrazione ~5 % (da confermare). Effettuato "
+                        "tramite un consulente, da assegnare sulla pratica."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Приобретение и регистрация",
+                    "pt": "Aquisição e registo",
+                    "it": "Acquisizione e registrazione",
+                },
+                {
+                    "ru": "Приобретение недвижимости и регистрация.",
+                    "pt": "Aquisição do imóvel e registo.",
+                    "it": "Acquisizione dell'immobile e registrazione.",
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на резидентство (EDB) и регистрация PIO",
+                    "pt": "Pedido de residência (EDB) e registo PIO",
+                    "it": "Domanda di residenza (EDB) e registrazione PIO",
+                },
+                {
+                    "ru": (
+                        "Резидентство сохраняется, пока объект находится в собственности "
+                        "(разрешение до 20 лет для недвижимости ≥ 375k). Нет налога на прирост "
+                        "капитала и пошлин на наследование на Маврикии. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "Residência enquanto o imóvel for detido (autorização até 20 anos para "
+                        "imóvel ≥ 375k). Sem imposto sobre mais-valias nem direitos de sucessão na "
+                        "Maurícia. Biometria exigida."
+                    ),
+                    "it": (
+                        "Residenza finché l'immobile è detenuto (permesso fino a 20 anni per "
+                        "immobile ≥ 375k). Nessuna imposta sulle plusvalenze né diritti di "
+                        "successione a Mauritius. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    MU_CO_NAME: {
+        "name": {
+            "ru": "Маврикий — Создание компании (Domestic / GBC / Authorised)",
+            "pt": "Maurícia — Constituição de sociedade (Domestic / GBC / Authorised)",
+            "it": "Mauritius — Costituzione di società (Domestic / GBC / Authorised)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбор структуры (фильтрующий вопрос)",
+                    "pt": "Escolher o veículo (pergunta de filtro)",
+                    "it": "Scegliere il veicolo (domanda filtro)",
+                },
+                {
+                    "ru": (
+                        "ЛОКАЛЬНЫЙ РЫНОК → Domestic Company (IS 15 %, ≥ 1 директор-резидент). "
+                        "МЕЖДУНАРОДНЫЙ + потребность в налоговых соглашениях (DTAA) → GBC (~3 % "
+                        "эффективно через частичное освобождение 80 %). МЕЖДУНАРОДНЫЙ БЕЗ "
+                        "потребности в DTAA → Authorised Company (0 % на Маврикии, подача в MRA, "
+                        "без доступа к DTAA)."
+                    ),
+                    "pt": (
+                        "MERCADO LOCAL → Domestic Company (IS 15 %, ≥ 1 administrador residente). "
+                        "INTERNACIONAL + necessidade de tratados fiscais (DTAA) → GBC (~3 % "
+                        "efetivo via a isenção parcial de 80 %). INTERNACIONAL SEM necessidade de "
+                        "DTAA → Authorised Company (0 % na Maurícia, declaração MRA, sem acesso "
+                        "aos DTAA)."
+                    ),
+                    "it": (
+                        "MERCATO LOCALE → Domestic Company (IS 15 %, ≥ 1 amministratore "
+                        "residente). INTERNAZIONALE + necessità di trattati fiscali (DTAA) → GBC "
+                        "(~3 % effettivo tramite l'esenzione parziale dell'80 %). INTERNAZIONALE "
+                        "SENZA necessità di DTAA → Authorised Company (0 % a Mauritius, "
+                        "dichiarazione MRA, senza accesso ai DTAA)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Учреждение и регистрация (CBRD)",
+                    "pt": "Constituição e registo (CBRD)",
+                    "it": "Costituzione e registrazione (CBRD)",
+                },
+                {
+                    "ru": (
+                        "GBC → 2 директора-резидента + обязательная управляющая компания с "
+                        "лицензией FSC + ежегодный аудит. Authorised → лицензированный registered "
+                        "agent, управление/контроль за пределами Маврикия."
+                    ),
+                    "pt": (
+                        "GBC → 2 administradores residentes + management company licenciada pela "
+                        "FSC obrigatória + auditoria anual. Authorised → registered agent "
+                        "licenciado, gestão/controlo fora da Maurícia."
+                    ),
+                    "it": (
+                        "GBC → 2 amministratori residenti + management company autorizzata dalla "
+                        "FSC obbligatoria + revisione annuale. Authorised → registered agent "
+                        "autorizzato, gestione/controllo fuori da Mauritius."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Лицензия FSC (GBC) / налоговая регистрация и НДС",
+                    "pt": "Licença FSC (GBC) / registo fiscal e IVA",
+                    "it": "Licenza FSC (GBC) / registrazione fiscale e IVA",
+                },
+                {
+                    "ru": (
+                        "🟠 Стандартный НДС 15 % (отложить ниже порога). CCR Levy 2 % при "
+                        "превышении порога оборота. Нет прироста капитала и пошлин на "
+                        "наследование."
+                    ),
+                    "pt": (
+                        "🟠 IVA padrão 15 % (diferir abaixo do limiar). CCR Levy 2 % acima de um "
+                        "limiar de volume de negócios. Sem mais-valias nem direitos de sucessão."
+                    ),
+                    "it": (
+                        "🟠 IVA standard 15 % (rinviare al di sotto della soglia). CCR Levy 2 % "
+                        "oltre una soglia di fatturato. Nessuna plusvalenza né diritti di "
+                        "successione."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Содержание и управление (если GBC)",
+                    "pt": "Substância e governação (se GBC)",
+                    "it": "Sostanza e governance (se GBC)",
+                },
+                {
+                    "ru": (
+                        "⚠️ НИКОГДА не создавать GBC как «почтовый ящик»: без реального содержания "
+                        "(2 директора-резидента, локальные расходы / CIGA, управление на Маврикии) "
+                        "освобождение 80 % (~3 %) ОТПАДАЕТ и существует риск переквалификации."
+                    ),
+                    "pt": (
+                        "⚠️ NUNCA constituir uma GBC como caixa de correio: sem substância real (2 "
+                        "administradores residentes, despesa local / CIGA, governação na "
+                        "Maurícia), a isenção de 80 % (~3 %) CAI e existe um risco de "
+                        "requalificação."
+                    ),
+                    "it": (
+                        "⚠️ MAI costituire una GBC come casella postale: senza sostanza reale (2 "
+                        "amministratori residenti, spesa locale / CIGA, governance a Mauritius), "
+                        "l'esenzione dell'80 % (~3 %) DECADE ed esiste un rischio di "
+                        "riqualificazione."
+                    ),
+                },
+            ),
+        ],
+    },
+    TH_LTR_NAME: {
+        "name": {
+            "ru": "Таиланд — Long-Term Resident (LTR, 10 лет)",
+            "pt": "Tailândia — Long-Term Resident (LTR, 10 anos)",
+            "it": "Thailandia — Long-Term Resident (LTR, 10 anni)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Определить категорию LTR",
+                    "pt": "Identificar a categoria LTR",
+                    "it": "Identificare la categoria LTR",
+                },
+                {
+                    "ru": (
+                        "🟠 4 категории (ориентировочные пороги, перепроверить ltr.boi.go.th): "
+                        "Wealthy Global Citizen (высокий капитал + инвестиции) · Wealthy Pensioner "
+                        "(50+, пассивный доход ≥ 80 000 USD/год, или 40-80k с инвестицией 250k "
+                        "USD) · Work-from-Thailand Professional (доход ≥ 80 000 USD/год + "
+                        "котируемый работодатель или оборот > 150 M USD; даёт цифровой work "
+                        "permit) · Highly-Skilled Professional (целевые секторы). Послабления "
+                        "2024-2025 требуют подтверждения."
+                    ),
+                    "pt": (
+                        "🟠 4 categorias (limiares indicativos, reverificar ltr.boi.go.th): "
+                        "Wealthy Global Citizen (património elevado + investimento) · Wealthy "
+                        "Pensioner (50+, rendimento passivo ≥ 80 000 USD/ano, ou 40-80k com "
+                        "investimento de 250k USD) · Work-from-Thailand Professional (rendimento ≥ "
+                        "80 000 USD/ano + empregador cotado ou > 150 M USD de volume de negócios; "
+                        "concede um work permit digital) · Highly-Skilled Professional (setores "
+                        "específicos). Flexibilizações 2024-2025 a confirmar."
+                    ),
+                    "it": (
+                        "🟠 4 categorie (soglie indicative, riverificare ltr.boi.go.th): Wealthy "
+                        "Global Citizen (patrimonio elevato + investimento) · Wealthy Pensioner "
+                        "(50+, reddito passivo ≥ 80 000 USD/anno, oppure 40-80k con investimento "
+                        "di 250k USD) · Work-from-Thailand Professional (reddito ≥ 80 000 USD/anno "
+                        "+ datore di lavoro quotato o > 150 M USD di fatturato; concede un work "
+                        "permit digitale) · Highly-Skilled Professional (settori mirati). "
+                        "Allentamenti 2024-2025 da confermare."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление о квалификации в BOI",
+                    "pt": "Pedido de qualificação ao BOI",
+                    "it": "Domanda di qualificazione al BOI",
+                },
+                {
+                    "ru": "Заявление о квалификации, поданное в BOI.",
+                    "pt": "Pedido de qualificação apresentado ao BOI.",
+                    "it": "Domanda di qualificazione presentata al BOI.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача визы LTR и регистрация",
+                    "pt": "Emissão do visto LTR e registo",
+                    "it": "Rilascio del visto LTR e registrazione",
+                },
+                {
+                    "ru": (
+                        "10 лет, ежегодная отчётность (вместо 90 дней). Work-from-Thailand "
+                        "включает цифровой work permit."
+                    ),
+                    "pt": (
+                        "10 anos, relatório anual (em vez de 90 dias). Work-from-Thailand inclui "
+                        "um work permit digital."
+                    ),
+                    "it": (
+                        "10 anni, rendicontazione annuale (invece di 90 giorni). "
+                        "Work-from-Thailand include un work permit digitale."
+                    ),
+                },
+            ),
+        ],
+    },
+    TH_OA_NAME: {
+        "name": {
+            "ru": "Таиланд — Виза пенсионера (O-A, 50 лет и старше)",
+            "pt": "Tailândia — Visto de reformado (O-A, 50+)",
+            "it": "Thailandia — Visto pensionati (O-A, 50+)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить возраст и финансовый критерий",
+                    "pt": "Verificar a idade e o critério financeiro",
+                    "it": "Verificare l'età e il criterio finanziario",
+                },
+                {
+                    "ru": (
+                        "🟠 ≥ 50 лет + депозит 800 000 THB ИЛИ доход 65 000 THB/месяц + "
+                        "медицинская страховка (покрытие ~3 M THB). Ориентировочные пороги. "
+                        "ПРИМЕЧАНИЕ: O-X (до 10 лет) существует для некоторых допустимых "
+                        "национальностей (US, Канада, Австралия, UK, Япония…), порог 3 M THB — "
+                        "список требует подтверждения. ⚠️ Не ведёт к PR."
+                    ),
+                    "pt": (
+                        "🟠 ≥ 50 anos + depósito 800 000 THB OU rendimento 65 000 THB/mês + seguro "
+                        "de saúde (cobertura ~3 M THB). Limiares indicativos. NOTA: o O-X (até 10 "
+                        "anos) existe para certas nacionalidades elegíveis (US, Canadá, Austrália, "
+                        "UK, Japão…), limiar 3 M THB — lista a confirmar. ⚠️ Não conduz à PR."
+                    ),
+                    "it": (
+                        "🟠 ≥ 50 anni + deposito 800 000 THB OPPURE reddito 65 000 THB/mese + "
+                        "assicurazione sanitaria (copertura ~3 M THB). Soglie indicative. NOTA: "
+                        "l'O-X (fino a 10 anni) esiste per alcune nazionalità idonee (US, Canada, "
+                        "Australia, UK, Giappone…), soglia 3 M THB — elenco da confermare. ⚠️ Non "
+                        "porta alla PR."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на визу O-A (консульство)",
+                    "pt": "Pedido de visto O-A (consulado)",
+                    "it": "Domanda di visto O-A (consolato)",
+                },
+                {
+                    "ru": "Заявление на визу O-A, поданное в консульство.",
+                    "pt": "Pedido de visto O-A apresentado no consulado.",
+                    "it": "Domanda di visto O-A presentata al consolato.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача и регистрация по прибытии",
+                    "pt": "Emissão e registo à chegada",
+                    "it": "Rilascio e registrazione all'arrivo",
+                },
+                {
+                    "ru": "Отчётность о месте жительства каждые 90 дней. Возобновляется ежегодно.",
+                    "pt": "Reporte de morada a cada 90 dias. Renovável anualmente.",
+                    "it": "Comunicazione del domicilio ogni 90 giorni. Rinnovabile annualmente.",
+                },
+            ),
+        ],
+    },
+    TH_PRIV_NAME: {
+        "name": {
+            "ru": "Таиланд — Thailand Privilege (платная карта пребывания)",
+            "pt": "Tailândia — Thailand Privilege (cartão de residência pago)",
+            "it": "Thailandia — Thailand Privilege (carta di soggiorno a pagamento)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбрать уровень членства",
+                    "pt": "Escolher o nível de adesão",
+                    "it": "Scegliere il livello di membership",
+                },
+                {
+                    "ru": (
+                        "🟠 Уровни 2026 (ориентировочно, thailandprivilege.co.th): Bronze ~650k / "
+                        "Gold ~900k / Platinum ~1,5M / Diamond ~2,5M / Reserve ~5M THB. ⚠️ НЕ даёт "
+                        "права на работу. НЕ ведёт к PR."
+                    ),
+                    "pt": (
+                        "🟠 Níveis 2026 (indicativos, thailandprivilege.co.th): Bronze ~650k / "
+                        "Gold ~900k / Platinum ~1,5M / Diamond ~2,5M / Reserve ~5M THB. ⚠️ NÃO "
+                        "concede o direito de trabalhar. NÃO conduz à PR."
+                    ),
+                    "it": (
+                        "🟠 Livelli 2026 (indicativi, thailandprivilege.co.th): Bronze ~650k / "
+                        "Gold ~900k / Platinum ~1,5M / Diamond ~2,5M / Reserve ~5M THB. ⚠️ NON "
+                        "concede il diritto di lavorare. NON porta alla PR."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на членство и оплата",
+                    "pt": "Pedido de adesão e pagamento",
+                    "it": "Domanda di membership e pagamento",
+                },
+                {
+                    "ru": "Заявление на членство и оплата выбранного уровня.",
+                    "pt": "Pedido de adesão e pagamento do nível escolhido.",
+                    "it": "Domanda di membership e pagamento del livello scelto.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача карты и визы Privilege",
+                    "pt": "Emissão do cartão e do visto Privilege",
+                    "it": "Rilascio della carta e del visto Privilege",
+                },
+                {
+                    "ru": (
+                        "Длительное пребывание в зависимости от уровня, услуги включены "
+                        "(fast-track в аэропорту, ассистанс). Упрощённое продление визы."
+                    ),
+                    "pt": (
+                        "Estadia longa consoante o nível, serviços incluídos (fast-track no "
+                        "aeroporto, assistência). Renovação de visto simplificada."
+                    ),
+                    "it": (
+                        "Soggiorno lungo a seconda del livello, servizi inclusi (fast-track in "
+                        "aeroporto, assistenza). Rinnovo del visto semplificato."
+                    ),
+                },
+            ),
+        ],
+    },
+    TH_NONB_NAME: {
+        "name": {
+            "ru": "Таиланд — Non-B + Work Permit (наёмный работник)",
+            "pt": "Tailândia — Non-B + Work Permit (trabalhador por conta de outrem)",
+            "it": "Thailandia — Non-B + Work Permit (lavoratore dipendente)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Работодатель проверяет капитал и соотношение",
+                    "pt": "O empregador verifica capital e rácio",
+                    "it": "Il datore di lavoro verifica capitale e rapporto",
+                },
+                {
+                    "ru": (
+                        "🟠 Сторона работодателя: капитал 2 M THB на каждую иностранную позицию (1 "
+                        "M при браке с тайцем/тайкой) + соотношение 4 тайских работника : 1 "
+                        "иностранец. Сектор S-Curve + высокая зарплата → возможна SMART Visa "
+                        "(SMART-T ≥ 100 000 THB/месяц, без отдельного work permit — внимание, "
+                        "многие источники по-прежнему указывают 200k)."
+                    ),
+                    "pt": (
+                        "🟠 Lado do empregador: capital 2 M THB por posto estrangeiro (1 M se "
+                        "casado com um·a tailandês·a) + rácio 4 empregados tailandeses : 1 "
+                        "estrangeiro. Setor S-Curve + salário elevado → SMART Visa possível "
+                        "(SMART-T ≥ 100 000 THB/mês, sem work permit separado — atenção, muitas "
+                        "fontes ainda citam 200k)."
+                    ),
+                    "it": (
+                        "🟠 Lato datore di lavoro: capitale 2 M THB per posizione straniera (1 M "
+                        "se sposato con un·a thailandese) + rapporto 4 dipendenti thailandesi : 1 "
+                        "straniero. Settore S-Curve + stipendio elevato → SMART Visa possibile "
+                        "(SMART-T ≥ 100 000 THB/mese, senza work permit separato — attenzione, "
+                        "molte fonti citano ancora 200k)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Виза Non-B (консульство)",
+                    "pt": "Visto Non-B (consulado)",
+                    "it": "Visto Non-B (consolato)",
+                },
+                {
+                    "ru": "Заявление на визу Non-B, поданное в консульство.",
+                    "pt": "Pedido de visto Non-B apresentado no consulado.",
+                    "it": "Domanda di visto Non-B presentata al consolato.",
+                },
+            ),
+            (
+                {
+                    "ru": "Work Permit (Department of Employment) и регистрация",
+                    "pt": "Work Permit (Department of Employment) e registo",
+                    "it": "Work Permit (Department of Employment) e registrazione",
+                },
+                {
+                    "ru": (
+                        "Отчётность каждые 90 дней. После 3 последовательных лет на Non-B + work "
+                        "permit → возможно заявление на PR (квота ~100/национальность/год). Только "
+                        "этот путь ведёт к PR."
+                    ),
+                    "pt": (
+                        "Reporte a cada 90 dias. Após 3 anos consecutivos sob Non-B + work permit "
+                        "→ pedido de PR possível (quota ~100/nacionalidade/ano). Só esta via "
+                        "conduz à PR."
+                    ),
+                    "it": (
+                        "Comunicazione ogni 90 giorni. Dopo 3 anni consecutivi sotto Non-B + work "
+                        "permit → domanda di PR possibile (quota ~100/nazionalità/anno). Solo "
+                        "questa via porta alla PR."
+                    ),
+                },
+            ),
+        ],
+    },
+    TH_CO_NAME: {
+        "name": {
+            "ru": "Таиланд — Создание компании (FBA: 100 % / BOI / Amity / FBL)",
+            "pt": "Tailândia — Constituição de sociedade (FBA: 100 % / BOI / Amity / FBL)",
+            "it": "Thailandia — Costituzione di società (FBA: 100 % / BOI / Amity / FBL)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Квалифицировать деятельность в дереве FBA",
+                    "pt": "Qualificar a atividade na árvore FBA",
+                    "it": "Qualificare l'attività nell'albero FBA",
+                },
+                {
+                    "ru": (
+                        "ДЕРЕВО РЕШЕНИЙ: (a) деятельность ВНЕ 3 списков "
+                        "(промышленность/производство) → 100 % иностранное, освобождение не "
+                        "требуется. (b) деятельность из Списка 3 (услуги, случай консультанта) → "
+                        "требуется исключение: гражданин US → US Treaty of Amity (100 %, кроме "
+                        "исключённых секторов); продвигаемая деятельность → BOI (100 % + "
+                        "освобождение от IS до 8 лет/13 для передовых + облегчённые work permits, "
+                        "освобождение от соотношения 4:1); иначе → FBL (дискреционно, медленно, "
+                        "капитал 3 M THB) ИЛИ реальный тайский партнёр ≥ 51 %. (c) Список 1 = "
+                        "запрещено, Список 2 = одобрение Кабинета (редко). 🔴 СХЕМА «THAI NOMINEE "
+                        "SHAREHOLDERS» НЕЗАКОННА (art. 36 FBA — штрафы и возможное тюремное "
+                        "заключение, предписание о ликвидации участия). НИКОГДА не предлагать её."
+                    ),
+                    "pt": (
+                        "ÁRVORE DE DECISÃO: (a) atividade FORA das 3 listas (indústria/manufatura) "
+                        "→ 100 % estrangeiro, sem isenção necessária. (b) atividade da Lista 3 "
+                        "(serviços, o caso do consultor) → isenção exigida: cidadão US → US Treaty "
+                        "of Amity (100 %, exceto setores excluídos); atividade promovível → BOI "
+                        "(100 % + isenção de IS até 8 anos/13 para a ponta + work permits "
+                        "facilitados, isento do rácio 4:1); caso contrário → FBL (discricionário, "
+                        "lento, capital 3 M THB) OU um sócio tailandês real ≥ 51 %. (c) Lista 1 = "
+                        "proibido, Lista 2 = aprovação do Conselho de Ministros (raro). 🔴 O "
+                        'ESQUEMA "THAI NOMINEE SHAREHOLDERS" É ILEGAL (art. 36 FBA — multas e '
+                        "possível prisão, ordem de alienação). NUNCA o propor."
+                    ),
+                    "it": (
+                        "ALBERO DECISIONALE: (a) attività FUORI dalle 3 liste "
+                        "(industria/manifattura) → 100 % straniero, nessuna esenzione necessaria. "
+                        "(b) attività della Lista 3 (servizi, il caso del consulente) → esenzione "
+                        "richiesta: cittadino US → US Treaty of Amity (100 %, salvo settori "
+                        "esclusi); attività promuovibile → BOI (100 % + esenzione da IS fino a 8 "
+                        "anni/13 per l'avanguardia + work permit facilitati, esente dal rapporto "
+                        "4:1); altrimenti → FBL (discrezionale, lento, capitale 3 M THB) OPPURE un "
+                        "socio thailandese reale ≥ 51 %. (c) Lista 1 = vietato, Lista 2 = "
+                        'approvazione del Consiglio dei Ministri (raro). 🔴 LO SCHEMA "THAI '
+                        'NOMINEE SHAREHOLDERS" È ILLEGALE (art. 36 FBA — multe ed eventuale '
+                        "carcere, ordine di dismissione). MAI proporlo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Учреждение и регистрация (DBD)",
+                    "pt": "Constituição e registo (DBD)",
+                    "it": "Costituzione e registrazione (DBD)",
+                },
+                {
+                    "ru": (
+                        "🟠 Сборы DBD ~5 000-6 000 THB. Продвижение BOI / FBL = дополнительная "
+                        "процедура в зависимости от пути, выбранного на шаге 1."
+                    ),
+                    "pt": (
+                        "🟠 Taxas DBD ~5 000-6 000 THB. Promoção BOI / FBL = procedimento "
+                        "adicional consoante a via escolhida no passo 1."
+                    ),
+                    "it": (
+                        "🟠 Tasse DBD ~5 000-6 000 THB. Promozione BOI / FBL = procedura "
+                        "aggiuntiva a seconda della via scelta al passo 1."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Налоговая регистрация и НДС",
+                    "pt": "Registo fiscal e IVA",
+                    "it": "Registrazione fiscale e IVA",
+                },
+                {
+                    "ru": (
+                        "🟠 IS для МСП (оплаченный капитал ≤ 5 M THB И оборот ≤ 30 M THB): шкала 0 "
+                        "% / 15 % / 20 %; иначе 20 % фиксированно. НДС 7 % обязателен, если оборот "
+                        "> 1,8 M THB/год. Ориентировочные ставки (rd.go.th)."
+                    ),
+                    "pt": (
+                        "🟠 IS PME (capital realizado ≤ 5 M THB E volume de negócios ≤ 30 M THB): "
+                        "escala 0 % / 15 % / 20 %; caso contrário 20 % fixo. IVA 7 % obrigatório "
+                        "se o volume de negócios > 1,8 M THB/ano. Taxas indicativas (rd.go.th)."
+                    ),
+                    "it": (
+                        "🟠 IS PMI (capitale versato ≤ 5 M THB E fatturato ≤ 30 M THB): scala 0 % "
+                        "/ 15 % / 20 %; altrimenti 20 % fisso. IVA 7 % obbligatoria se il "
+                        "fatturato > 1,8 M THB/anno. Aliquote indicative (rd.go.th)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Виза/разрешение иностранного директора",
+                    "pt": "Visto/autorização do diretor estrangeiro",
+                    "it": "Visto/permesso del dirigente straniero",
+                },
+                {
+                    "ru": (
+                        "Вне BOI управление собственной компанией требует Non-B + work permit "
+                        "(капитал 2 M THB/позицию + соотношение 4:1). BOI = облегчённые work "
+                        "permits, освобождение от соотношения."
+                    ),
+                    "pt": (
+                        "Fora do BOI, dirigir a própria empresa exige Non-B + work permit (capital "
+                        "2 M THB/posto + rácio 4:1). BOI = work permits facilitados, isento do "
+                        "rácio."
+                    ),
+                    "it": (
+                        "Fuori dal BOI, dirigere la propria società richiede Non-B + work permit "
+                        "(capitale 2 M THB/posizione + rapporto 4:1). BOI = work permit "
+                        "facilitati, esente dal rapporto."
+                    ),
+                },
+            ),
+        ],
+    },
+    ID_RW_NAME: {
+        "name": {
+            "ru": "Индонезия — Remote Worker KITAS (E33G, кочевник)",
+            "pt": "Indonésia — Remote Worker KITAS (E33G, nómada)",
+            "it": "Indonesia — Remote Worker KITAS (E33G, nomade)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить право на участие (иностранный доход)",
+                    "pt": "Verificar a elegibilidade (rendimento estrangeiro)",
+                    "it": "Verificare l'idoneità (reddito estero)",
+                },
+                {
+                    "ru": (
+                        "🟠 Иностранный доход ~60 000 USD/год (ориентировочно, "
+                        "evisa.imigrasi.go.id). ⚠️ Работа ТОЛЬКО на клиентов/работодателей ВНЕ "
+                        "Индонезии. Нет более высокого уровня типа LTR — E33G является "
+                        "единственным путём для кочевника."
+                    ),
+                    "pt": (
+                        "🟠 Rendimento estrangeiro ~60 000 USD/ano (indicativo, "
+                        "evisa.imigrasi.go.id). ⚠️ Trabalho APENAS para clientes/empregadores FORA "
+                        "da Indonésia. Sem nível superior tipo LTR — E33G é a única via do nómada."
+                    ),
+                    "it": (
+                        "🟠 Reddito estero ~60 000 USD/anno (indicativo, evisa.imigrasi.go.id). ⚠️ "
+                        "Lavoro SOLO per clienti/datori di lavoro FUORI dall'Indonesia. Nessun "
+                        "livello superiore tipo LTR — E33G è l'unica via del nomade."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на e-visa (самоспонсорство по доходу)",
+                    "pt": "Pedido de e-visa (autopatrocínio por rendimento)",
+                    "it": "Domanda di e-visa (autosponsorizzazione tramite reddito)",
+                },
+                {
+                    "ru": "Заявление на e-visa, самоспонсорство через иностранный доход.",
+                    "pt": "Pedido de e-visa, autopatrocínio através do rendimento estrangeiro.",
+                    "it": "Domanda di e-visa, autosponsorizzazione tramite il reddito estero.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача KITAS и регистрация по прибытии",
+                    "pt": "Emissão do KITAS e registo à chegada",
+                    "it": "Rilascio del KITAS e registrazione all'arrivo",
+                },
+                {
+                    "ru": "~1 год с возможностью продления. Не ведёт к KITAP. Требуется биометрия.",
+                    "pt": "~1 ano renovável. Não conduz ao KITAP. Biometria exigida.",
+                    "it": "~1 anno rinnovabile. Non porta al KITAP. Biometria richiesta.",
+                },
+            ),
+        ],
+    },
+    ID_SH_NAME: {
+        "name": {
+            "ru": "Индонезия — Second Home Visa (рантье)",
+            "pt": "Indonésia — Second Home Visa (rendista)",
+            "it": "Indonesia — Second Home Visa (redditiere)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка депозита / подтверждения средств",
+                    "pt": "Verificar o depósito / comprovativo de fundos",
+                    "it": "Verificare il deposito / prova dei fondi",
+                },
+                {
+                    "ru": (
+                        "🟠 Депозит ~IDR 2 млрд (≈ 130 000 USD) — сумма расходится по источникам, "
+                        "перепроверить на evisa.imigrasi.go.id. Без возрастного требования. ⚠️ Без "
+                        "права на работу."
+                    ),
+                    "pt": (
+                        "🟠 Depósito ~IDR 2 mil milhões (≈ 130 000 USD) — montante divergente "
+                        "consoante as fontes, reverificar evisa.imigrasi.go.id. Sem requisito de "
+                        "idade. ⚠️ Sem direito a trabalhar."
+                    ),
+                    "it": (
+                        "🟠 Deposito ~IDR 2 miliardi (≈ 130 000 USD) — importo divergente a "
+                        "seconda delle fonti, riverificare evisa.imigrasi.go.id. Nessun requisito "
+                        "di età. ⚠️ Nessun diritto al lavoro."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на e-visa (самоспонсирование за счёт средств)",
+                    "pt": "Pedido de e-visa (autopatrocínio através de fundos)",
+                    "it": "Domanda di e-visa (autosponsorizzazione tramite fondi)",
+                },
+                {
+                    "ru": (
+                        "Подача заявления на e-visa, самоспонсирование за счёт депонированных "
+                        "средств."
+                    ),
+                    "pt": "Pedido de e-visa, autopatrocínio através dos fundos depositados.",
+                    "it": "Domanda di e-visa, autosponsorizzazione tramite i fondi depositati.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача визы (5 или 10 лет)",
+                    "pt": "Emissão do visto (5 ou 10 anos)",
+                    "it": "Rilascio del visto (5 o 10 anni)",
+                },
+                {
+                    "ru": (
+                        "5 или 10 лет в зависимости от дела. Более высокий капитал + долгий "
+                        "горизонт → сравнить с Golden Visa."
+                    ),
+                    "pt": (
+                        "5 ou 10 anos consoante o processo. Capital mais elevado + horizonte longo "
+                        "→ comparar com o Golden Visa."
+                    ),
+                    "it": (
+                        "5 o 10 anni a seconda della pratica. Capitale più elevato + orizzonte "
+                        "lungo → confrontare con il Golden Visa."
+                    ),
+                },
+            ),
+        ],
+    },
+    ID_RET_NAME: {
+        "name": {
+            "ru": "Индонезия — Retirement KITAS (E33F, 55 лет и старше)",
+            "pt": "Indonésia — Retirement KITAS (E33F, 55+)",
+            "it": "Indonesia — Retirement KITAS (E33F, 55+)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка возраста и назначение лицензированного агента-спонсора",
+                    "pt": "Verificar a idade e mandatar um agente patrocinador licenciado",
+                    "it": "Verificare l'età e incaricare un agente sponsor autorizzato",
+                },
+                {
+                    "ru": (
+                        "🟠 ≥ 55 лет + минимальная пенсия + медицинская страховка. ЛИЦЕНЗИРОВАННЫЙ "
+                        "АГЕНТ-СПОНСОР ОБЯЗАТЕЛЕН (иногда требуется нанять местного работника — "
+                        "практика варьируется). ⚠️ Без права на работу."
+                    ),
+                    "pt": (
+                        "🟠 ≥ 55 anos + pensão mínima + seguro de saúde. AGENTE PATROCINADOR "
+                        "LICENCIADO OBRIGATÓRIO (por vezes exige-se empregar um local — prática "
+                        "variável). ⚠️ Sem direito a trabalhar."
+                    ),
+                    "it": (
+                        "🟠 ≥ 55 anni + pensione minima + assicurazione sanitaria. AGENTE SPONSOR "
+                        "AUTORIZZATO OBBLIGATORIO (talvolta è richiesto l'impiego di un locale — "
+                        "prassi variabile). ⚠️ Nessun diritto al lavoro."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на KITAS через агента",
+                    "pt": "Pedido de KITAS através do agente",
+                    "it": "Domanda di KITAS tramite l'agente",
+                },
+                {
+                    "ru": (
+                        "Подача заявления на KITAS осуществляется лицензированным "
+                        "агентом-спонсором."
+                    ),
+                    "pt": "Pedido de KITAS conduzido pelo agente patrocinador licenciado.",
+                    "it": "Domanda di KITAS gestita dall'agente sponsor autorizzato.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача KITAS и регистрация",
+                    "pt": "Emissão do KITAS e registo",
+                    "it": "Rilascio del KITAS e registrazione",
+                },
+                {
+                    "ru": (
+                        "1 год с продлением, возможная цепочка к KITAP. ⚠️ РИСК СПОНСОРА: "
+                        "разрешение утрачивается, если спонсор (агент) прекращает деятельность — "
+                        "предусмотреть запасной путь. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "1 ano renovável, possível encadeamento até ao KITAP. ⚠️ RISCO SPONSOR: o "
+                        "título cai se o sponsor (agente) cessar — prever uma via de recuo. "
+                        "Biometria exigida."
+                    ),
+                    "it": (
+                        "1 anno rinnovabile, possibile catena verso il KITAP. ⚠️ RISCHIO SPONSOR: "
+                        "il titolo decade se lo sponsor (agente) cessa — prevedere una via di "
+                        "ripiego. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    ID_WORK_NAME: {
+        "name": {
+            "ru": "Индонезия — Work KITAS (E23, наёмный работник)",
+            "pt": "Indonésia — Work KITAS (E23, trabalhador por conta de outrem)",
+            "it": "Indonesia — Work KITAS (E23, lavoratore dipendente)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Работодатель получает RPTKA (план найма иностранных работников)",
+                    "pt": "O empregador obtém o RPTKA (plano de emprego de estrangeiros)",
+                    "it": "Il datore di lavoro ottiene il RPTKA (piano di impiego di stranieri)",
+                },
+                {
+                    "ru": (
+                        "Работодатель-спонсор ОБЯЗАТЕЛЕН, должность открыта для иностранцев. "
+                        "DKP-TKA ~100 USD/мес (~1 200/год) за счёт работодателя."
+                    ),
+                    "pt": (
+                        "Empregador patrocinador OBRIGATÓRIO, posição aberta a estrangeiros. "
+                        "DKP-TKA ~100 USD/mês (~1 200/ano) a cargo do empregador."
+                    ),
+                    "it": (
+                        "Datore di lavoro sponsor OBBLIGATORIO, posizione aperta agli stranieri. "
+                        "DKP-TKA ~100 USD/mese (~1 200/anno) a carico del datore di lavoro."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Рабочая виза и выдача KITAS",
+                    "pt": "Visto de trabalho e emissão do KITAS",
+                    "it": "Visto di lavoro e rilascio del KITAS",
+                },
+                {
+                    "ru": "Рабочая виза, затем выдача KITAS.",
+                    "pt": "Visto de trabalho e depois emissão do KITAS.",
+                    "it": "Visto di lavoro e poi rilascio del KITAS.",
+                },
+            ),
+            (
+                {
+                    "ru": "Регистрация и разрешение на работу",
+                    "pt": "Registo e autorização de trabalho",
+                    "it": "Registrazione e permesso di lavoro",
+                },
+                {
+                    "ru": (
+                        "От 6 месяцев до 2 лет с продлением. После 3-4 непрерывных лет → возможен "
+                        "KITAP. ⚠️ РИСК СПОНСОРА: KITAS утрачивается по окончании контракта — "
+                        "предусмотреть запасной путь. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "6 meses a 2 anos renovável. Após 3-4 anos contínuos → KITAP possível. ⚠️ "
+                        "RISCO SPONSOR: o KITAS cai no final do contrato — prever um recuo. "
+                        "Biometria exigida."
+                    ),
+                    "it": (
+                        "Da 6 mesi a 2 anni rinnovabile. Dopo 3-4 anni continuativi → KITAP "
+                        "possibile. ⚠️ RISCHIO SPONSOR: il KITAS decade al termine del contratto — "
+                        "prevedere un ripiego. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    ID_INV_NAME: {
+        "name": {
+            "ru": "Индонезия — Investor KITAS (E28A) + PT PMA",
+            "pt": "Indonésia — Investor KITAS (E28A) + PT PMA",
+            "it": "Indonesia — Investor KITAS (E28A) + PT PMA",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Создание PT PMA (предварительное условие)",
+                    "pt": "Constituir a PT PMA (pré-requisito)",
+                    "it": "Costituire la PT PMA (prerequisito)",
+                },
+                {
+                    "ru": (
+                        "См. маршрут «Компания PT PMA» для деталей (KBLI, капитал). Компания "
+                        "спонсирует визу своего директора. Осуществляется через "
+                        "нотариуса/консультанта, назначить в досье."
+                    ),
+                    "pt": (
+                        "Ver o percurso «Sociedade PT PMA» para o detalhe (KBLI, capital). A "
+                        "empresa patrocina o visto do seu diretor. Realizado através de um "
+                        "notário/consultor, a atribuir no processo."
+                    ),
+                    "it": (
+                        "Vedere il percorso «Società PT PMA» per il dettaglio (KBLI, capitale). La "
+                        "società sponsorizza il visto del suo direttore. Realizzato tramite un "
+                        "notaio/consulente, da assegnare nella pratica."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Проверка роли и порога участия в капитале",
+                    "pt": "Verificar o papel e o limiar de participação",
+                    "it": "Verificare il ruolo e la soglia di partecipazione",
+                },
+                {
+                    "ru": (
+                        "🔴 Участие ~IDR 1 млрд (иногда 1,125 млрд) — в основном источник "
+                        "агентств, перепроверить. АКТИВНЫЙ ДИРЕКТОР → может работать (Investor "
+                        "KITAS); ПАССИВНЫЙ АКЦИОНЕР → только владение, без права на работу."
+                    ),
+                    "pt": (
+                        "🔴 Participação ~IDR 1 mil milhões (por vezes 1,125 mil milhões) — "
+                        "maioritariamente fonte de agências, reverificar. DIRETOR ATIVO → pode "
+                        "trabalhar (Investor KITAS); ACIONISTA PASSIVO → apenas detenção, sem "
+                        "direito a trabalhar."
+                    ),
+                    "it": (
+                        "🔴 Partecipazione ~IDR 1 miliardo (talvolta 1,125 miliardi) — perlopiù "
+                        "fonte di agenzie, riverificare. DIRETTORE ATTIVO → può lavorare (Investor "
+                        "KITAS); AZIONISTA PASSIVO → solo detenzione, nessun diritto al lavoro."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на Investor KITAS (спонсор = PT PMA)",
+                    "pt": "Pedido de Investor KITAS (sponsor = PT PMA)",
+                    "it": "Domanda di Investor KITAS (sponsor = PT PMA)",
+                },
+                {
+                    "ru": "Подача заявления на Investor KITAS, PT PMA выступает спонсором.",
+                    "pt": "Pedido de Investor KITAS, com a PT PMA a atuar como sponsor.",
+                    "it": "Domanda di Investor KITAS, con la PT PMA che agisce come sponsor.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача KITAS и регистрация",
+                    "pt": "Emissão do KITAS e registo",
+                    "it": "Rilascio del KITAS e registrazione",
+                },
+                {
+                    "ru": (
+                        "1-2 года с продлением, цепочка к KITAP. ⚠️ РИСК СПОНСОРА: ликвидация PT "
+                        "PMA аннулирует KITAS. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "1-2 anos renovável, encadeamento até ao KITAP. ⚠️ RISCO SPONSOR: a "
+                        "dissolução da PT PMA anula o KITAS. Biometria exigida."
+                    ),
+                    "it": (
+                        "1-2 anni rinnovabile, catena verso il KITAP. ⚠️ RISCHIO SPONSOR: lo "
+                        "scioglimento della PT PMA annulla il KITAS. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    ID_CO_NAME: {
+        "name": {
+            "ru": "Индонезия — Создание компании (PT PMA)",
+            "pt": "Indonésia — Constituição de empresa (PT PMA)",
+            "it": "Indonesia — Costituzione di società (PT PMA)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Определение KBLI и проверка Positive Investment List",
+                    "pt": "Identificar o KBLI e verificar a Positive Investment List",
+                    "it": "Identificare il KBLI e verificare la Positive Investment List",
+                },
+                {
+                    "ru": (
+                        "Определить код KBLI 2020 (5 цифр). ЗАКРЫТО (~6 секторов) → без PT PMA. "
+                        "ОГРАНИЧЕНО → макс. % иностранного участия + местный партнёр. ОТКРЫТО "
+                        "(большинство случаев с момента Omnibus 2020) → 100 % иностранного "
+                        "участия. 🔴 NOMINEE (индонезийский подставной владелец) НЕЗАКОНЕН И "
+                        "НИЧТОЖЕН (art. 33 UU 25/2007): соглашение ничтожно, возможна потеря "
+                        "инвестиции, подставной владелец является законным собственником. НИКОГДА "
+                        "не предлагать это (макс. риск для недвижимости на Бали)."
+                    ),
+                    "pt": (
+                        "Identificar o código KBLI 2020 (5 dígitos). FECHADA (~6 setores) → sem PT "
+                        "PMA. LIMITADA → % máx. estrangeiro + sócio local. ABERTA (a maioria dos "
+                        "casos desde o Omnibus 2020) → 100 % estrangeiro. 🔴 O NOMINEE (testa de "
+                        "ferro indonésio) É ILEGAL E NULO (art. 33 UU 25/2007): nulidade do "
+                        "acordo, possível perda do investimento, o testa de ferro é o proprietário "
+                        "legal. NUNCA o propor (risco máx. sobre o imobiliário em Bali)."
+                    ),
+                    "it": (
+                        "Identificare il codice KBLI 2020 (5 cifre). CHIUSA (~6 settori) → niente "
+                        "PT PMA. LIMITATA → % max straniero + socio locale. APERTA (la maggior "
+                        "parte dei casi dall'Omnibus 2020) → 100 % straniero. 🔴 IL NOMINEE "
+                        "(prestanome indonesiano) È ILLEGALE E NULLO (art. 33 UU 25/2007): nullità "
+                        "dell'accordo, possibile perdita dell'investimento, il prestanome è il "
+                        "proprietario legale. MAI proporlo (rischio max sull'immobiliare a Bali)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Проверка капитала и уровня риска OSS",
+                    "pt": "Verificar o capital e o nível de risco OSS",
+                    "it": "Verificare il capitale e il livello di rischio OSS",
+                },
+                {
+                    "ru": (
+                        "🟠 Инвестиционный план > IDR 10 млрд (без учёта земли/здания) на "
+                        "KBLI/локацию + оплаченный капитал ~IDR 10 млрд. ⚠️ ПРЕКРАТИТЬ "
+                        "ИСПОЛЬЗОВАТЬ старый порог 2,5 млрд (до 2021) — частая ошибка агентств. "
+                        "Уровень риска OSS: низкий → достаточно NIB; высокий → NIB + izin."
+                    ),
+                    "pt": (
+                        "🟠 Plano de investimento > IDR 10 mil milhões (excluindo "
+                        "terreno/edifício) por KBLI/localização + capital realizado ~IDR 10 mil "
+                        "milhões. ⚠️ DEIXAR DE USAR o antigo limiar de 2,5 mil milhões (pré-2021) "
+                        "— erro frequente das agências. Nível de risco OSS: baixo → NIB basta; "
+                        "alto → NIB + izin."
+                    ),
+                    "it": (
+                        "🟠 Piano d'investimento > IDR 10 miliardi (esclusi terreno/edificio) per "
+                        "KBLI/localizzazione + capitale versato ~IDR 10 miliardi. ⚠️ SMETTERE DI "
+                        "USARE la vecchia soglia di 2,5 miliardi (pre-2021) — errore frequente "
+                        "delle agenzie. Livello di rischio OSS: basso → NIB sufficiente; alto → "
+                        "NIB + izin."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Учреждение (нотариус) и регистрация в OSS (NIB)",
+                    "pt": "Constituição (notário) e registo OSS (NIB)",
+                    "it": "Costituzione (notaio) e registrazione OSS (NIB)",
+                },
+                {
+                    "ru": "Учреждение перед нотариусом и регистрация в OSS (NIB).",
+                    "pt": "Constituição perante notário e registo OSS (NIB).",
+                    "it": "Costituzione dinanzi a notaio e registrazione OSS (NIB).",
+                },
+            ),
+            (
+                {
+                    "ru": "Налоговая регистрация и НДС",
+                    "pt": "Registo fiscal e IVA",
+                    "it": "Registrazione fiscale e IVA",
+                },
+                {
+                    "ru": (
+                        "🟠 IS 22 % стандарт (снижение art. 31E ≈ 11 % эффективно, если оборот ≤ "
+                        "IDR 50 млрд). Окончательный режим для МСП 0,5 % от оборота, если оборот ≤ "
+                        "IDR 4,8 млрд (макс. 3 года для PT). НДС обязателен, если оборот > IDR 4,8 "
+                        "млрд (~11 % эффективно, самый изменчивый пункт). Ориентировочные ставки "
+                        "(pajak.go.id)."
+                    ),
+                    "pt": (
+                        "🟠 IS 22 % padrão (redução art. 31E ≈ 11 % efetivo se o volume de "
+                        "negócios ≤ IDR 50 mil milhões). Regime PME final 0,5 % do volume de "
+                        "negócios se o volume de negócios ≤ IDR 4,8 mil milhões (máx. 3 anos para "
+                        "uma PT). IVA obrigatório se o volume de negócios > IDR 4,8 mil milhões "
+                        "(~11 % efetivo, o ponto mais volátil). Taxas indicativas (pajak.go.id)."
+                    ),
+                    "it": (
+                        "🟠 IS 22 % standard (riduzione art. 31E ≈ 11 % effettivo se il fatturato "
+                        "≤ IDR 50 miliardi). Regime PMI finale 0,5 % del fatturato se il fatturato "
+                        "≤ IDR 4,8 miliardi (max 3 anni per una PT). IVA obbligatoria se il "
+                        "fatturato > IDR 4,8 miliardi (~11 % effettivo, il punto più volatile). "
+                        "Aliquote indicative (pajak.go.id)."
+                    ),
+                },
+            ),
+        ],
+    },
+    PH_SRRV_NAME: {
+        "name": {
+            "ru": "Филиппины — SRRV (резиденция через депозит, via PRA)",
+            "pt": "Filipinas — SRRV (residência por depósito, via PRA)",
+            "it": "Filippine — SRRV (residenza tramite deposito, via PRA)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбор варианта и депозита",
+                    "pt": "Escolher a variante e o depósito",
+                    "it": "Scegliere la variante e il deposito",
+                },
+                {
+                    "ru": (
+                        "🟠 Варианты (депозиты в USD, ориентировочно, pra.gov.ph): Smile 20k (не "
+                        "конвертируется в недвижимость) · Classic 35-49 лет 50k (конвертируется в "
+                        "condo/аренду) · Classic 50+ С пенсией ≥ 800 USD/мес (1 000 для пары) 10k "
+                        "· Classic 50+ без пенсии 20k · Human Touch 10k (+1 500 USD/мес). ⚠️ "
+                        "ПРОЖИВАНИЕ ≠ РАБОТА: SRRV НЕ даёт права на работу (дополнительно "
+                        "требуется DOLE AEP). ПРИМЕЧАНИЕ: Digital Nomad Visa (EO 86, 2025) "
+                        "существует на бумаге, но НЕ функционирует — не предлагать его до "
+                        "подтверждения выдачи."
+                    ),
+                    "pt": (
+                        "🟠 Variantes (depósitos USD, indicativos, pra.gov.ph): Smile 20k (não "
+                        "convertível em imóvel) · Classic 35-49 anos 50k (convertível em "
+                        "condo/arrendamento) · Classic 50+ COM pensão ≥ 800 USD/mês (1 000 casal) "
+                        "10k · Classic 50+ sem pensão 20k · Human Touch 10k (+1 500 USD/mês). ⚠️ "
+                        "RESIDIR ≠ TRABALHAR: o SRRV NÃO confere o direito a trabalhar (AEP do "
+                        "DOLE exigido adicionalmente). NOTA: um Digital Nomad Visa (EO 86, 2025) "
+                        "existe no papel mas NÃO é operacional — não o propor até confirmar a "
+                        "emissão."
+                    ),
+                    "it": (
+                        "🟠 Varianti (depositi USD, indicativi, pra.gov.ph): Smile 20k (non "
+                        "convertibile in immobile) · Classic 35-49 anni 50k (convertibile in "
+                        "condo/locazione) · Classic 50+ CON pensione ≥ 800 USD/mese (1 000 coppia) "
+                        "10k · Classic 50+ senza pensione 20k · Human Touch 10k (+1 500 USD/mese). "
+                        "⚠️ RISIEDERE ≠ LAVORARE: l'SRRV NON conferisce il diritto al lavoro (AEP "
+                        "del DOLE richiesto in aggiunta). NOTA: un Digital Nomad Visa (EO 86, "
+                        "2025) esiste sulla carta ma NON è operativo — non proporlo fino a "
+                        "conferma del rilascio."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Формирование досье и перевод депозита",
+                    "pt": "Preparar o processo e transferir o depósito",
+                    "it": "Preparare la pratica e trasferire il deposito",
+                },
+                {
+                    "ru": "Формирование досье и перевод депозита на счёт, назначенный PRA.",
+                    "pt": (
+                        "Preparação do processo e transferência do depósito para a conta designada "
+                        "pela PRA."
+                    ),
+                    "it": (
+                        "Preparazione della pratica e trasferimento del deposito sul conto "
+                        "designato dalla PRA."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Предоставление SRRV (PRA) и ID",
+                    "pt": "Concessão do SRRV (PRA) e ID",
+                    "it": "Concessione dell'SRRV (PRA) e ID",
+                },
+                {
+                    "ru": (
+                        "🟠 Сборы PRA ~1 400 USD + ~300/иждивенец + ~360/год. Депозит может быть "
+                        "конвертирован в condo (но не в землю: иностранцы не могут владеть землёй; "
+                        "condo ограничены 40 % здания)."
+                    ),
+                    "pt": (
+                        "🟠 Taxas PRA ~1 400 USD + ~300/dependente + ~360/ano. O depósito pode ser "
+                        "convertido num condo (não em terreno: os estrangeiros não podem possuir "
+                        "terreno; condos limitados a 40 % do edifício)."
+                    ),
+                    "it": (
+                        "🟠 Tasse PRA ~1 400 USD + ~300/familiare a carico + ~360/anno. Il "
+                        "deposito può essere convertito in un condo (non in terreno: gli stranieri "
+                        "non possono possedere terreno; condo limitati al 40 % dell'edificio)."
+                    ),
+                },
+            ),
+        ],
+    },
+    PH_SIRV_NAME: {
+        "name": {
+            "ru": "Филиппины — SIRV (виза инвестора, via BOI)",
+            "pt": "Filipinas — SIRV (visto de investidor, via BOI)",
+            "it": "Filippine — SIRV (visto investitore, via BOI)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка допустимой инвестиции",
+                    "pt": "Verificar o investimento admissível",
+                    "it": "Verificare l'investimento ammissibile",
+                },
+                {
+                    "ru": (
+                        "🟠 ~75 000 USD инвестировано и поддерживается (простая покупка "
+                        "недвижимости, как правило, не квалифицируется — допустимые активы "
+                        "определяются BOI). ⚠️ ПРОЖИВАНИЕ ≠ РАБОТА: статус инвестора, не наёмного "
+                        "работника — управление своей компанией в качестве наёмного работника "
+                        "требует 9(g) + AEP."
+                    ),
+                    "pt": (
+                        "🟠 ~75 000 USD investidos e mantidos (uma simples compra imobiliária "
+                        "geralmente não qualifica — ativos admissíveis definidos pelo BOI). ⚠️ "
+                        "RESIDIR ≠ TRABALHAR: estatuto de investidor, não trabalhador por conta de "
+                        "outrem — dirigir a sua empresa como trabalhador exige um 9(g) + AEP."
+                    ),
+                    "it": (
+                        "🟠 ~75 000 USD investiti e mantenuti (un semplice acquisto immobiliare "
+                        "generalmente non qualifica — attivi ammissibili definiti dal BOI). ⚠️ "
+                        "RISIEDERE ≠ LAVORARE: status di investitore, non lavoratore dipendente — "
+                        "dirigere la propria società come dipendente richiede un 9(g) + AEP."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Осуществление инвестиции и подача заявления (BOI)",
+                    "pt": "Realizar o investimento e apresentar o pedido (BOI)",
+                    "it": "Effettuare l'investimento e presentare la domanda (BOI)",
+                },
+                {
+                    "ru": "Осуществление инвестиции и подача заявления в BOI.",
+                    "pt": "Realização do investimento e apresentação do pedido junto do BOI.",
+                    "it": (
+                        "Realizzazione dell'investimento e presentazione della domanda presso il "
+                        "BOI."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Предоставление SIRV (BI на основании одобрения BOI) и ID",
+                    "pt": "Concessão do SIRV (BI sob endosso do BOI) e ID",
+                    "it": "Concessione del SIRV (BI su avallo del BOI) e ID",
+                },
+                {
+                    "ru": "Резиденция, пока поддерживается инвестиция.",
+                    "pt": "Residência enquanto o investimento for mantido.",
+                    "it": "Residenza finché l'investimento è mantenuto.",
+                },
+            ),
+        ],
+    },
+    PH_13A_NAME: {
+        "name": {
+            "ru": "Филиппины — Виза 13(a) (супруг·а гражданина·ки Филиппин)",
+            "pt": "Filipinas — Visto 13(a) (cônjuge de um·a nacional filipino·a)",
+            "it": "Filippine — Visto 13(a) (coniuge di un·a cittadino·a filippino·a)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверка взаимности и брака",
+                    "pt": "Verificar a reciprocidade e o casamento",
+                    "it": "Verificare la reciprocità e il matrimonio",
+                },
+                {
+                    "ru": (
+                        "🟠 13(a) подчиняется ВЗАИМНОСТИ: открыта для граждан стран, "
+                        "предоставляющих эквивалентное право филиппинцам (у большинства западных "
+                        "стран оно есть — проверять по гражданству). Требуется действительный брак "
+                        "с гражданином·кой Филиппин."
+                    ),
+                    "pt": (
+                        "🟠 O 13(a) está sujeito a RECIPROCIDADE: aberto aos nacionais de países "
+                        "que concedem um direito equivalente aos filipinos (a maioria dos países "
+                        "ocidentais tem-no — a verificar por nacionalidade). Casamento válido com "
+                        "um·a nacional filipino·a exigido."
+                    ),
+                    "it": (
+                        "🟠 Il 13(a) è soggetto a RECIPROCITÀ: aperto ai cittadini di paesi che "
+                        "concedono un diritto equivalente ai filippini (la maggior parte dei paesi "
+                        "occidentali lo prevede — da verificare per nazionalità). Matrimonio "
+                        "valido con un·a cittadino·a filippino·a richiesto."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления (BI) — испытательный статус на 1 год",
+                    "pt": "Apresentar o pedido (BI) — estatuto probatório de 1 ano",
+                    "it": "Presentare la domanda (BI) — status probatorio di 1 anno",
+                },
+                {
+                    "ru": "Заявление подаётся в BI; испытательный статус на один год.",
+                    "pt": "Pedido apresentado junto do BI; estatuto probatório de um ano.",
+                    "it": "Domanda presentata presso il BI; status probatorio di un anno.",
+                },
+            ),
+            (
+                {
+                    "ru": (
+                        "Преобразование в постоянного резидента (после 1 года испытательного срока)"
+                    ),
+                    "pt": "Conversão em residente permanente (após 1 ano de probação)",
+                    "it": "Conversione in residente permanente (dopo 1 anno di probazione)",
+                },
+                {
+                    "ru": (
+                        "Постоянный резидент, освобождён от AEP для работы (уточнить). ACR I-Card "
+                        "+ Annual Report."
+                    ),
+                    "pt": (
+                        "Residente permanente, isento de AEP para trabalhar (a confirmar). ACR "
+                        "I-Card + Annual Report."
+                    ),
+                    "it": (
+                        "Residente permanente, esente da AEP per lavorare (da confermare). ACR "
+                        "I-Card + Annual Report."
+                    ),
+                },
+            ),
+        ],
+    },
+    PH_CO_NAME: {
+        "name": {
+            "ru": "Филиппины — Создание компании (60/40 / FINL / экспорт / DME)",
+            "pt": "Filipinas — Constituição de sociedade (60/40 / FINL / exportação / DME)",
+            "it": "Filippine — Costituzione di società (60/40 / FINL / esportazione / DME)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Квалифицировать вид деятельности (FINL) и режим рынка",
+                    "pt": "Qualificar a atividade (FINL) e o modo de mercado",
+                    "it": "Qualificare l'attività (FINL) e la modalità di mercato",
+                },
+                {
+                    "ru": (
+                        "ДЕРЕВО: (a) деятельность в FINL List A (земля, ресурсы, public utilities, "
+                        "медиа, отдельные профессии) → 60/40 с РЕАЛЬНЫМ филиппинским партнёром, "
+                        "владеющим большинством. (b) экспорт ≥ 60 % → 100 % иностранное участие, "
+                        "освобождение от порога в 200k USD (капитал ~5 000 PHP; обязанность "
+                        "сохранять 60 % экспорта). (c) внутренний рынок, иностранное большинство → "
+                        "DME, капитал 200 000 USD (снижается до 100 000 при передовых "
+                        "технологиях/одобренном стартапе/≥ 50 филиппинских сотрудниках). 🔴 "
+                        "ANTI-DUMMY LAW (CA 108): фиктивное 60/40 (филиппинский подставной "
+                        "владелец, скрытый voting trust, займы под обеспечение акциями) НЕЗАКОННО "
+                        "— уголовная ответственность для иностранца И для подставного лица. 60/40 "
+                        "должно отражать РЕАЛЬНЫЙ филиппинский экономический контроль. НИКОГДА не "
+                        "предлагать это."
+                    ),
+                    "pt": (
+                        "ÁRVORE: (a) atividade na FINL List A (solo, recursos, public utilities, "
+                        "media, certas profissões) → 60/40 com um sócio filipino maioritário REAL. "
+                        "(b) exportação ≥ 60 % → 100 % estrangeiro, isento do limiar de 200k USD "
+                        "(capital ~5 000 PHP; obrigação de manter 60 % de exportação). (c) mercado "
+                        "interno, estrangeiro maioritário → DME, capital 200 000 USD (redutível a "
+                        "100 000 se tecnologia avançada/startup endossada/≥ 50 empregados "
+                        "filipinos). 🔴 ANTI-DUMMY LAW (CA 108): o 60/40 de fachada (testa de "
+                        "ferro filipino, voting trust oculto, empréstimos garantidos por ações) é "
+                        "ILEGAL — sanções penais para o estrangeiro E para o testa de ferro. O "
+                        "60/40 deve refletir um controlo económico filipino REAL. NUNCA o propor."
+                    ),
+                    "it": (
+                        "ALBERO: (a) attività nella FINL List A (suolo, risorse, public utilities, "
+                        "media, alcune professioni) → 60/40 con un socio filippino maggioritario "
+                        "REALE. (b) esportazione ≥ 60 % → 100 % straniero, esente dalla soglia di "
+                        "200k USD (capitale ~5 000 PHP; obbligo di mantenere il 60 % di "
+                        "esportazione). (c) mercato interno, straniero maggioritario → DME, "
+                        "capitale 200 000 USD (riducibile a 100 000 se tecnologia avanzata/startup "
+                        "avallata/≥ 50 dipendenti filippini). 🔴 ANTI-DUMMY LAW (CA 108): il 60/40 "
+                        "di facciata (prestanome filippino, voting trust occulto, prestiti "
+                        "garantiti da azioni) è ILLEGALE — sanzioni penali per lo straniero E per "
+                        "il prestanome. Il 60/40 deve riflettere un controllo economico filippino "
+                        "REALE. MAI proporlo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Учреждение и регистрация в SEC",
+                    "pt": "Constituição e registo na SEC",
+                    "it": "Costituzione e registrazione presso la SEC",
+                },
+                {
+                    "ru": "Учреждение и регистрация в SEC.",
+                    "pt": "Constituição e registo na SEC.",
+                    "it": "Costituzione e registrazione presso la SEC.",
+                },
+            ),
+            (
+                {
+                    "ru": "Налоговая регистрация (BIR) и НДС",
+                    "pt": "Registo fiscal (BIR) e IVA",
+                    "it": "Registrazione fiscale (BIR) e IVA",
+                },
+                {
+                    "ru": (
+                        "🟠 CIT 25 % стандарт (20 % если налогооблагаемый доход ≤ 5 M PHP И активы "
+                        "≤ 100 M PHP без учёта земли). НДС 12 % если оборот > 3 M PHP (иначе "
+                        "percentage tax 3 %). Ориентировочные ставки (bir.gov.ph)."
+                    ),
+                    "pt": (
+                        "🟠 CIT 25 % padrão (20 % se rendimento tributável ≤ 5 M PHP E ativos ≤ "
+                        "100 M PHP excluindo terreno). IVA 12 % se volume de negócios > 3 M PHP "
+                        "(caso contrário, percentage tax 3 %). Taxas indicativas (bir.gov.ph)."
+                    ),
+                    "it": (
+                        "🟠 CIT 25 % standard (20 % se reddito imponibile ≤ 5 M PHP E attività ≤ "
+                        "100 M PHP esclusi i terreni). IVA 12 % se fatturato > 3 M PHP (altrimenti "
+                        "percentage tax 3 %). Aliquote indicative (bir.gov.ph)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "(Опционально) стимулы BOI/PEZA",
+                    "pt": "(Opcional) incentivos BOI/PEZA",
+                    "it": "(Facoltativo) incentivi BOI/PEZA",
+                },
+                {
+                    "ru": (
+                        "Если деятельность подпадает (SIPP): ITH 4-7 лет, затем 5 % SCIT или "
+                        "Enhanced Deductions. Возможна связь с SIRV/9(g) директора."
+                    ),
+                    "pt": (
+                        "Se a atividade for elegível (SIPP): ITH 4-7 anos depois 5 % SCIT ou "
+                        "Enhanced Deductions. Ligação possível com o SIRV/9(g) do diretor."
+                    ),
+                    "it": (
+                        "Se l'attività è ammissibile (SIPP): ITH 4-7 anni poi 5 % SCIT o Enhanced "
+                        "Deductions. Collegamento possibile con il SIRV/9(g) del dirigente."
+                    ),
+                },
+            ),
+        ],
+    },
+    PT_CRUE_NAME: {
+        "name": {
+            "ru": "Португалия — Регистрация резидентства ЕС (CRUE)",
+            "pt": "Portugal — Registo de residência UE (CRUE)",
+            "it": "Portogallo — Registrazione di residenza UE (CRUE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Получить NIF (налоговый номер)",
+                    "pt": "Obter o NIF (número fiscal)",
+                    "it": "Ottenere il NIF (numero fiscale)",
+                },
+                {
+                    "ru": (
+                        "NIF необходим для аренды, банка, формальностей. NISS (социальное "
+                        "страхование) в зависимости от вида деятельности."
+                    ),
+                    "pt": (
+                        "NIF necessário para arrendamento, banco, formalidades. NISS (segurança "
+                        "social) consoante a atividade."
+                    ),
+                    "it": (
+                        "NIF necessario per locazione, banca, formalità. NISS (previdenza sociale) "
+                        "a seconda dell'attività."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на CRUE в мэрии (Câmara Municipal)",
+                    "pt": "Pedido de CRUE na câmara municipal (Câmara Municipal)",
+                    "it": "Domanda di CRUE presso il comune (Câmara Municipal)",
+                },
+                {
+                    "ru": (
+                        "Сертификат часто выдаётся в тот же день. Выдаётся мэрией, НЕ AIMA → вне "
+                        "очереди задержек. Требуется личное присутствие."
+                    ),
+                    "pt": (
+                        "Certificado muitas vezes emitido no próprio dia. Emitido pela câmara "
+                        "municipal, NÃO pela AIMA → fora do backlog. Presença obrigatória."
+                    ),
+                    "it": (
+                        "Certificato spesso rilasciato in giornata. Rilasciato dal comune, NON "
+                        "dall'AIMA → fuori dal backlog. Presenza richiesta."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Постоянное проживание (через 5 лет)",
+                    "pt": "Residência permanente (aos 5 anos)",
+                    "it": "Residenza permanente (a 5 anni)",
+                },
+                {
+                    "ru": (
+                        "⚠️ Натурализация через 5 лет сегодня, но проводимая реформа 2025 может "
+                        "продлить этот срок (7/10 лет) — регуляторный риск, а не данность."
+                    ),
+                    "pt": (
+                        "⚠️ Naturalização aos 5 anos hoje, mas uma reforma de 2025 em curso pode "
+                        "prolongá-la (7/10 anos) — risco regulatório, não um direito adquirido."
+                    ),
+                    "it": (
+                        "⚠️ Naturalizzazione a 5 anni oggi, ma una riforma del 2025 in corso "
+                        "potrebbe allungarla (7/10 anni) — rischio regolatorio, non un dato di "
+                        "fatto."
+                    ),
+                },
+            ),
+        ],
+    },
+    PT_D8_NAME: {
+        "name": {
+            "ru": "Португалия — Виза D8 (цифровой кочевник, не из ЕС)",
+            "pt": "Portugal — Visto D8 (nómada digital, fora da UE)",
+            "it": "Portogallo — Visto D8 (nomade digitale, extra-UE)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "NIF + португальский банковский счёт",
+                    "pt": "NIF + conta bancária portuguesa",
+                    "it": "NIF + conto bancario portoghese",
+                },
+                {
+                    "ru": "Налоговый представитель обязателен для нерезидента не из ЕС.",
+                    "pt": "Representante fiscal obrigatório para um não residente de fora da UE.",
+                    "it": "Rappresentante fiscale obbligatorio per un non residente extra-UE.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу D8 в консульстве",
+                    "pt": "Pedido de visto D8 no consulado",
+                    "it": "Domanda di visto D8 al consolato",
+                },
+                {
+                    "ru": (
+                        "🟠 Порог ~4× SMN (~3 480 €/месяц 2025, подлежит подтверждению). ⚠️ D8 = "
+                        "АКТИВНЫЙ иностранный доход (пассивный доход относится к D7). 2 варианта: "
+                        "временное пребывание (~1 год) ИЛИ виза резидента (засчитывается в 5 лет). "
+                        "Для проекта переселения выбирать вариант резидента."
+                    ),
+                    "pt": (
+                        "🟠 Limiar ~4× o SMN (~3 480 €/mês 2025, a confirmar). ⚠️ D8 = rendimento "
+                        "ATIVO estrangeiro (o rendimento passivo enquadra-se no D7). 2 variantes: "
+                        "estada temporária (~1 ano) OU visto de residência (conta para os 5 anos). "
+                        "Escolher a variante residência para um projeto de instalação."
+                    ),
+                    "it": (
+                        "🟠 Soglia ~4× lo SMN (~3 480 €/mese 2025, da confermare). ⚠️ D8 = reddito "
+                        "ATTIVO estero (il reddito passivo rientra nel D7). 2 varianti: soggiorno "
+                        "temporaneo (~1 anno) OPPURE visto di residenza (conta ai fini dei 5 "
+                        "anni). Scegliere la variante residenza per un progetto di insediamento."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Преобразование в вид на жительство в AIMA",
+                    "pt": "Conversão em autorização de residência na AIMA",
+                    "it": "Conversione in permesso di soggiorno presso l'AIMA",
+                },
+                {
+                    "ru": (
+                        "🔴 Реальный срок обработки AIMA (backlog), от месяцев до > 1 года, не "
+                        "гарантирован. Требуется биометрия."
+                    ),
+                    "pt": (
+                        "🔴 Prazo real da AIMA (backlog), de meses a > 1 ano, não garantido. "
+                        "Biometria obrigatória."
+                    ),
+                    "it": (
+                        "🔴 Tempo reale di trattazione dell'AIMA (backlog), da mesi a > 1 anno, "
+                        "non garantito. Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    PT_GV_NAME: {
+        "name": {
+            "ru": "Португалия — Golden Visa / ARI (пассивный инвестор, после 2023)",
+            "pt": "Portugal — Golden Visa / ARI (investidor passivo, pós-2023)",
+            "it": "Portogallo — Golden Visa / ARI (investitore passivo, post-2023)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбрать инвестиционный путь (после 2023)",
+                    "pt": "Escolher a via de investimento (pós-2023)",
+                    "it": "Scegliere la via di investimento (post-2023)",
+                },
+                {
+                    "ru": (
+                        "🟠 ТЕКУЩИЕ пути (ориентировочные суммы): квалифицированные фонды ≥ 500 "
+                        "000 € · создание 10 рабочих мест · R&D ≥ 500 000 € · поддержка культуры ≥ "
+                        "250 000 € · капитализация компании ≥ 500 000 €. ⚠️ НЕДВИЖИМОСТЬ и простой "
+                        "перевод капитала были ОТМЕНЕНЫ в 2023 (закон Mais Habitação) — любая "
+                        "брошюра, упоминающая покупку недвижимости (280k/350k/500k), ЛОЖНА."
+                    ),
+                    "pt": (
+                        "🟠 Vias ATUAIS (montantes indicativos): fundos qualificados ≥ 500 000 € · "
+                        "criação de 10 postos de trabalho · I&D ≥ 500 000 € · apoio cultural ≥ 250 "
+                        "000 € · capitalização de empresa ≥ 500 000 €. ⚠️ O IMOBILIÁRIO e a "
+                        "simples transferência de capital foram RETIRADOS em 2023 (lei Mais "
+                        "Habitação) — qualquer folheto que cite a compra imobiliária "
+                        "(280k/350k/500k) é FALSO."
+                    ),
+                    "it": (
+                        "🟠 Vie ATTUALI (importi indicativi): fondi qualificati ≥ 500 000 € · "
+                        "creazione di 10 posti di lavoro · R&S ≥ 500 000 € · sostegno culturale ≥ "
+                        "250 000 € · capitalizzazione d'impresa ≥ 500 000 €. ⚠️ L'IMMOBILIARE e il "
+                        "semplice trasferimento di capitale sono stati RIMOSSI nel 2023 (legge "
+                        "Mais Habitação) — qualsiasi brochure che citi l'acquisto immobiliare "
+                        "(280k/350k/500k) è FALSA."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Осуществить инвестицию + NIF",
+                    "pt": "Realizar o investimento + NIF",
+                    "it": "Effettuare l'investimento + NIF",
+                },
+                {
+                    "ru": "Осуществление выбранной инвестиции и получение NIF.",
+                    "pt": "Realização do investimento escolhido e obtenção do NIF.",
+                    "it": "Realizzazione dell'investimento scelto e ottenimento del NIF.",
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на ARI в AIMA",
+                    "pt": "Pedido de ARI na AIMA",
+                    "it": "Domanda di ARI presso l'AIMA",
+                },
+                {
+                    "ru": (
+                        "🔴 Сборы ~5 300 € + ~600 €. Реальный срок обработки AIMA (backlog), не "
+                        "гарантирован. Минимальное присутствие ~7 дней/год. Время по ARI "
+                        "засчитывается в постоянное проживание/гражданство (с учётом реформы "
+                        "гражданства 2025)."
+                    ),
+                    "pt": (
+                        "🔴 Taxas ~5 300 € + ~600 €. Prazo real da AIMA (backlog), não garantido. "
+                        "Presença mínima ~7 dias/ano. O tempo de ARI conta para a residência "
+                        "permanente/nacionalidade (sujeito à reforma de cidadania de 2025)."
+                    ),
+                    "it": (
+                        "🔴 Tariffe ~5 300 € + ~600 €. Tempo reale di trattazione dell'AIMA "
+                        "(backlog), non garantito. Presenza minima ~7 giorni/anno. Il tempo di ARI "
+                        "conta ai fini della residenza permanente/cittadinanza (soggetto alla "
+                        "riforma della cittadinanza del 2025)."
+                    ),
+                },
+            ),
+        ],
+    },
+    VN_WP_NAME: {
+        "name": {
+            "ru": "Вьетнам — Work Permit + TRC (наёмный работник)",
+            "pt": "Vietname — Work Permit + TRC (trabalhador por conta de outrem)",
+            "it": "Vietnam — Work Permit + TRC (lavoratore dipendente)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Работодатель получает одобрение потребности в иностранной рабочей силе",
+                    "pt": (
+                        "O empregador obtém a aprovação da necessidade de mão de obra estrangeira"
+                    ),
+                    "it": (
+                        "Il datore di lavoro ottiene l'approvazione del fabbisogno di manodopera "
+                        "straniera"
+                    ),
+                },
+                {
+                    "ru": (
+                        "🔴 Орган, выдающий work permit, НЕОПРЕДЕЛЁН после административной "
+                        "реорганизации 2025 (DOLISA → Министерство внутренних дел?) — уточнять по "
+                        "каждой провинции. Квота + квалификация (~3 года опыта для «эксперта»). "
+                        "Освобождение от разрешения (LD1) при внесённом капитале ≥ ~3 млрд VND."
+                    ),
+                    "pt": (
+                        "🔴 Autoridade emissora do work permit INCERTA desde a reorganização "
+                        "administrativa de 2025 (DOLISA → Ministério do Interior?) — a confirmar "
+                        "província a província. Quota + qualificação (~3 anos de experiência para "
+                        '"perito"). Isenção de autorização (LD1) se o capital aportado ≥ ~3 mil '
+                        "milhões VND."
+                    ),
+                    "it": (
+                        "🔴 Autorità emittente del work permit INCERTA dalla riorganizzazione "
+                        "amministrativa del 2025 (DOLISA → Ministero dell'Interno?) — da "
+                        "confermare provincia per provincia. Quota + qualifica (~3 anni di "
+                        'esperienza per "esperto"). Esenzione dal permesso (LD1) se il capitale '
+                        "apportato ≥ ~3 miliardi VND."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Work Permit + виза LD2 (или LD1 при освобождении)",
+                    "pt": "Work Permit + visto LD2 (ou LD1 se isento)",
+                    "it": "Work Permit + visto LD2 (o LD1 se esentato)",
+                },
+                {
+                    "ru": "Выдача Work Permit и визы LD2 (LD1 при освобождении).",
+                    "pt": "Emissão do Work Permit e do visto LD2 (LD1 se isento).",
+                    "it": "Rilascio del Work Permit e del visto LD2 (LD1 se esentato).",
+                },
+            ),
+            (
+                {
+                    "ru": "Карта временного проживания (TRC)",
+                    "pt": "Cartão de residência temporária (TRC)",
+                    "it": "Carta di residenza temporanea (TRC)",
+                },
+                {
+                    "ru": (
+                        "TRC до 2 лет, привязана к работодателю. После 3 лет непрерывного TRC + "
+                        "спонсор → возможен PRC (редко, на усмотрение). ⚠️ Для потребности «выход "
+                        "на пенсию» или «кочевник» у Вьетнама нет пути — перенаправить "
+                        "(Таиланд/Индонезия/Филиппины). Требуется биометрия."
+                    ),
+                    "pt": (
+                        "TRC até 2 anos, vinculado ao empregador. Após 3 anos de TRC contínuo + "
+                        "sponsor → PRC possível (raro, discricionário). ⚠️ Para uma necessidade de "
+                        '"reforma" ou "nómada", o Vietname não tem via — reorientar '
+                        "(Tailândia/Indonésia/Filipinas). Biometria obrigatória."
+                    ),
+                    "it": (
+                        "TRC fino a 2 anni, vincolato al datore di lavoro. Dopo 3 anni di TRC "
+                        "continuativo + sponsor → PRC possibile (raro, discrezionale). ⚠️ Per "
+                        'un\'esigenza di "pensionamento" o "nomade", il Vietnam non ha una via '
+                        "— reindirizzare (Thailandia/Indonesia/Filippine). Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    VN_INV_NAME: {
+        "name": {
+            "ru": "Вьетнам — Investor TRC (DT1-DT4)",
+            "pt": "Vietname — Investor TRC (DT1-DT4)",
+            "it": "Vietnam — Investor TRC (DT1-DT4)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Создать компанию (предварительное условие) и откалибровать капитал",
+                    "pt": "Constituir a sociedade (pré-requisito) e calibrar o capital",
+                    "it": "Costituire la società (prerequisito) e calibrare il capitale",
+                },
+                {
+                    "ru": (
+                        "См. путь «Компания (FDI LLC)» для деталей (IRC→ERC, OMC, DICA). 🟠 "
+                        "КАПИТАЛ ↔ TRC: DT1 ≥ 100 млрд VND (~3,9 M USD) → TRC 10 лет (+ путь PRC) "
+                        "· DT2 50-100 млрд → 5 лет · DT3 3-50 млрд (~120k USD) → 3 года "
+                        "(практический минимум для TRC) · DT4 < 3 млрд → НЕТ TRC (виза ≤ 12 "
+                        "месяцев). Калибровать капитал под целевой горизонт проживания. "
+                        "Осуществляется через адвоката, назначить в досье."
+                    ),
+                    "pt": (
+                        'Ver o percurso "Sociedade (FDI LLC)" para o detalhe (IRC→ERC, OMC, '
+                        "DICA). 🟠 CAPITAL ↔ TRC: DT1 ≥ 100 mil milhões VND (~3,9 M USD) → TRC 10 "
+                        "anos (+ via PRC) · DT2 50-100 mil milhões → 5 anos · DT3 3-50 mil milhões "
+                        "(~120k USD) → 3 anos (mínimo prático para um TRC) · DT4 < 3 mil milhões → "
+                        "SEM TRC (visto ≤ 12 meses). Calibrar o capital ao horizonte de residência "
+                        "pretendido. Realizado através de um advogado, a atribuir no processo."
+                    ),
+                    "it": (
+                        'Vedere il percorso "Società (FDI LLC)" per il dettaglio (IRC→ERC, OMC, '
+                        "DICA). 🟠 CAPITALE ↔ TRC: DT1 ≥ 100 miliardi VND (~3,9 M USD) → TRC 10 "
+                        "anni (+ via PRC) · DT2 50-100 miliardi → 5 anni · DT3 3-50 miliardi "
+                        "(~120k USD) → 3 anni (minimo pratico per un TRC) · DT4 < 3 miliardi → "
+                        "NESSUN TRC (visto ≤ 12 mesi). Calibrare il capitale all'orizzonte di "
+                        "residenza desiderato. Svolto tramite un avvocato, da assegnare nel "
+                        "fascicolo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу инвестора (категория DTx)",
+                    "pt": "Pedido de visto de investidor (categoria DTx)",
+                    "it": "Domanda di visto da investitore (categoria DTx)",
+                },
+                {
+                    "ru": (
+                        "Подача заявления на визу инвестора согласно откалиброванной категории DTx."
+                    ),
+                    "pt": "Pedido de visto de investidor de acordo com a categoria DTx calibrada.",
+                    "it": "Domanda di visto da investitore secondo la categoria DTx calibrata.",
+                },
+            ),
+            (
+                {
+                    "ru": "Карта временного проживания (TRC)",
+                    "pt": "Cartão de residência temporária (TRC)",
+                    "it": "Carta di residenza temporanea (TRC)",
+                },
+                {
+                    "ru": "Срок согласно категории DTx. DT4 не даёт TRC. Требуется биометрия.",
+                    "pt": (
+                        "Duração consoante a categoria DTx. O DT4 não dá TRC. Biometria "
+                        "obrigatória."
+                    ),
+                    "it": (
+                        "Durata secondo la categoria DTx. Il DT4 non dà il TRC. Biometria "
+                        "richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    VN_TT_NAME: {
+        "name": {
+            "ru": "Вьетнам — Семейный TRC (TT, супруг(а) гражданина(ки) Вьетнама)",
+            "pt": "Vietname — TRC familiar (TT, cônjuge de um(a) cidadão(ã) vietnamita)",
+            "it": "Vietnam — TRC familiare (TT, coniuge di un(a) cittadino(a) vietnamita)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Собрать документы о браке и о спонсоре",
+                    "pt": "Reunir os documentos de casamento e do sponsor",
+                    "it": "Raccogliere i documenti di matrimonio e dello sponsor",
+                },
+                {
+                    "ru": "Сбор документов о браке и удостоверения личности вьетнамского спонсора.",
+                    "pt": (
+                        "Reunião dos documentos de casamento e da identidade do sponsor vietnamita."
+                    ),
+                    "it": (
+                        "Raccolta dei documenti di matrimonio e dell'identità dello sponsor "
+                        "vietnamita."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на визу TT (спонсируется супругом(ой))",
+                    "pt": "Pedido de visto TT (patrocinado pelo cônjuge)",
+                    "it": "Domanda di visto TT (sponsorizzato dal coniuge)",
+                },
+                {
+                    "ru": "Подача заявления на визу TT, спонсируемую вьетнамским супругом(ой).",
+                    "pt": "Pedido de visto TT patrocinado pelo cônjuge vietnamita.",
+                    "it": "Domanda di visto TT sponsorizzato dal coniuge vietnamita.",
+                },
+            ),
+            (
+                {
+                    "ru": "Семейная карта временного проживания (TRC)",
+                    "pt": "Cartão de residência temporária familiar (TRC)",
+                    "it": "Carta di residenza temporanea familiare (TRC)",
+                },
+                {
+                    "ru": (
+                        "TRC до 3 лет. PRC доступен после 3 лет непрерывного TRC (вьетнамский "
+                        "семейный спонсор). Сам по себе не даёт права на работу (для наёмной "
+                        "работы требуется отдельный work permit). Требуется биометрия."
+                    ),
+                    "pt": (
+                        "TRC até 3 anos. PRC acessível após 3 anos de TRC contínuo (sponsor "
+                        "familiar vietnamita). Não confere por si só o direito de trabalhar (work "
+                        "permit separado obrigatório para emprego por conta de outrem). Biometria "
+                        "obrigatória."
+                    ),
+                    "it": (
+                        "TRC fino a 3 anni. PRC accessibile dopo 3 anni di TRC continuativo "
+                        "(sponsor familiare vietnamita). Non conferisce di per sé il diritto al "
+                        "lavoro (work permit separato richiesto per il lavoro dipendente). "
+                        "Biometria richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    VN_RO_NAME: {
+        "name": {
+            "ru": "Вьетнам — Representative Office (представительство)",
+            "pt": "Vietname — Representative Office (escritório de representação)",
+            "it": "Vietnam — Representative Office (ufficio di rappresentanza)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить соответствие материнской компании требованиям",
+                    "pt": "Verificar a elegibilidade da empresa-mãe",
+                    "it": "Verificare l'ammissibilità della casa madre",
+                },
+                {
+                    "ru": (
+                        "Материнская компания существует ≥ 1 года (Decree 07/2016). RO НЕ МОЖЕТ "
+                        "генерировать прямой коммерческий доход — только функция "
+                        "связи/представительства."
+                    ),
+                    "pt": (
+                        "Empresa-mãe existente há ≥ 1 ano (Decree 07/2016). O RO NÃO PODE gerar "
+                        "receita comercial direta — função de ligação/representação apenas."
+                    ),
+                    "it": (
+                        "Casa madre esistente da ≥ 1 anno (Decree 07/2016). Il RO NON PUÒ generare "
+                        "ricavi commerciali diretti — solo funzione di "
+                        "collegamento/rappresentanza."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подача заявления на лицензию RO",
+                    "pt": "Pedido de licença de RO",
+                    "it": "Domanda di licenza RO",
+                },
+                {
+                    "ru": "Подача заявления на лицензию Representative Office.",
+                    "pt": "Apresentação do pedido de licença de Representative Office.",
+                    "it": "Presentazione della domanda di licenza di Representative Office.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача лицензии и регистрация",
+                    "pt": "Emissão da licença e registo",
+                    "it": "Rilascio della licenza e registrazione",
+                },
+                {
+                    "ru": (
+                        "Лицензия на 5 лет с возможностью продления. Иностранный руководитель "
+                        "офиса получает визу/разрешение, привязанное к RO. Для генерации дохода "
+                        "перейти на FDI LLC (отдельный путь)."
+                    ),
+                    "pt": (
+                        "Licença de 5 anos renovável. O chefe de escritório estrangeiro obtém um "
+                        "visto/autorização vinculado ao RO. Para gerar receita, mudar para uma FDI "
+                        "LLC (percurso dedicado)."
+                    ),
+                    "it": (
+                        "Licenza di 5 anni rinnovabile. Il capo ufficio straniero ottiene un "
+                        "visto/permesso vincolato al RO. Per generare ricavi, passare a una FDI "
+                        "LLC (percorso dedicato)."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_E2_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Виза E-2 (инвестор по договору)",
+            "pt": "Estados Unidos — Visa E-2 (investidor ao abrigo de tratado)",
+            "it": "Stati Uniti — Visa E-2 (investitore in base a trattato)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить соответствие договору и структурировать инвестицию",
+                    "pt": (
+                        "Verificar a elegibilidade ao abrigo do tratado e estruturar o investimento"
+                    ),
+                    "it": "Verificare l'idoneità in base al trattato e strutturare l'investimento",
+                },
+                {
+                    "ru": (
+                        "🟠 Франция является страной — участницей договора E-2. Фиксированного "
+                        "законодательного порога НЕТ: инвестиция должна быть «существенной» "
+                        "относительно стоимости бизнеса и НЕМАРГИНАЛЬНОЙ (часто упоминаемые ~100k "
+                        "USD являются наблюдаемой практикой, а НЕ правилом). Никаких "
+                        "пассивных/спекулятивных вложений в недвижимость. Американский юрист "
+                        "необходим (гонорары ~8-20k+ USD)."
+                    ),
+                    "pt": (
+                        "🟠 A França é um país com tratado E-2. SEM limiar legal fixo: o "
+                        'investimento deve ser "substancial" relativamente ao custo do negócio e '
+                        "NÃO MARGINAL (os ~100k USD frequentemente citados são observados, NÃO uma "
+                        "regra). Sem investimento imobiliário passivo/especulativo. Advogado "
+                        "norte-americano indispensável (honorários ~8-20k+ USD)."
+                    ),
+                    "it": (
+                        "🟠 La Francia è un paese con trattato E-2. NESSUNA soglia legale fissa: "
+                        'l\'investimento deve essere "sostanziale" rispetto al costo '
+                        "dell'attività e NON MARGINALE (i ~100k USD spesso citati sono osservati, "
+                        "NON una regola). Nessun investimento immobiliare passivo/speculativo. "
+                        "Avvocato statunitense indispensabile (onorari ~8-20k+ USD)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Создать/приобрести американский бизнес и внести средства",
+                    "pt": "Criar/adquirir o negócio nos EUA e comprometer os fundos",
+                    "it": "Creare/acquisire l'attività statunitense e impegnare i fondi",
+                },
+                {
+                    "ru": (
+                        "См. процесс «Компания (LLC / C-Corp)». C-Corp облегчает доказательство "
+                        "реального бизнеса. Средства внесены безотзывно («at risk»)."
+                    ),
+                    "pt": (
+                        'Ver o percurso "Sociedade (LLC / C-Corp)". A C-Corp facilita a '
+                        "demonstração de um negócio real. Fundos comprometidos irrevogavelmente "
+                        '("at risk").'
+                    ),
+                    "it": (
+                        'Vedere il percorso "Società (LLC / C-Corp)". La C-Corp facilita la '
+                        "dimostrazione di un'attività reale. Fondi impegnati irrevocabilmente "
+                        '("at risk").'
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подать заявление (консульство США, DS-160 + DS-156E)",
+                    "pt": "Apresentar o pedido (consulado dos EUA, DS-160 + DS-156E)",
+                    "it": "Presentare la domanda (consolato USA, DS-160 + DS-156E)",
+                },
+                {
+                    "ru": "Заявление подаётся в консульстве США (формы DS-160 + DS-156E).",
+                    "pt": "Pedido apresentado no consulado dos EUA (formulários DS-160 + DS-156E).",
+                    "it": "Domanda presentata presso il consolato USA (moduli DS-160 + DS-156E).",
+                },
+            ),
+            (
+                {
+                    "ru": "Консульское собеседование и выдача",
+                    "pt": "Entrevista consular e emissão",
+                    "it": "Colloquio consolare ed emissione",
+                },
+                {
+                    "ru": (
+                        "🔴 ДИСКРЕЦИОННОЕ решение (существенность/маргинальность тщательно "
+                        "изучаются), никогда не гарантированный результат или срок. Продлевается, "
+                        "пока бизнес активен. Dual intent деликатен (формально не признаётся). "
+                        "Требуется присутствие."
+                    ),
+                    "pt": (
+                        "🔴 Decisão DISCRICIONÁRIA (substancialidade/marginalidade escrutinadas), "
+                        "nunca um resultado nem um prazo firme. Renovável enquanto o negócio "
+                        "estiver ativo. Dual intent delicado (não admitido formalmente). Presença "
+                        "obrigatória."
+                    ),
+                    "it": (
+                        "🔴 Decisione DISCREZIONALE (sostanzialità/marginalità esaminate), mai un "
+                        "esito né una tempistica certa. Rinnovabile finché l'attività è attiva. "
+                        "Dual intent delicato (non ammesso formalmente). Presenza richiesta."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_L1_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Виза L-1 (внутрикорпоративный перевод)",
+            "pt": "Estados Unidos — Visa L-1 (transferência intraempresa)",
+            "it": "Stati Uniti — Visa L-1 (trasferimento infragruppo)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить связь между организациями и стаж работы",
+                    "pt": "Verificar a relação entre entidades e a antiguidade",
+                    "it": "Verificare il rapporto tra le entità e l'anzianità",
+                },
+                {
+                    "ru": (
+                        "1 год непрерывной работы за рубежом в связанной организации в течение "
+                        "последних 3 лет. Квалифицирующая связь (материнская "
+                        "компания/дочерняя/аффилированная). L-1A руководитель (≤ 7 лет) / L-1B "
+                        "специализированные знания (≤ 5 лет, более тщательная проверка)."
+                    ),
+                    "pt": (
+                        "1 ano de emprego contínuo no estrangeiro na entidade relacionada nos "
+                        "últimos 3 anos. Relação qualificante (empresa-mãe/filial/afiliada). L-1A "
+                        "quadro dirigente (≤ 7 anos) / L-1B conhecimento especializado (≤ 5 anos, "
+                        "mais escrutinado)."
+                    ),
+                    "it": (
+                        "1 anno di impiego continuativo all'estero nell'entità collegata negli "
+                        "ultimi 3 anni. Rapporto qualificante (capogruppo/controllata/affiliata). "
+                        "L-1A dirigente (≤ 7 anni) / L-1B conoscenze specializzate (≤ 5 anni, più "
+                        "esaminato)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Петиция I-129 в USCIS (подаётся работодателем в США)",
+                    "pt": "Petição I-129 ao USCIS (apresentada pelo empregador nos EUA)",
+                    "it": (
+                        "Petizione I-129 all'USCIS (presentata dal datore di lavoro statunitense)"
+                    ),
+                },
+                {
+                    "ru": (
+                        "«New office L-1» возможна для открытия американской организации "
+                        "(усиленные условия, проверка через 1 год)."
+                    ),
+                    "pt": (
+                        '"New office L-1" possível para abrir uma entidade nos EUA (condições '
+                        "reforçadas, revisão ao fim de 1 ano)."
+                    ),
+                    "it": (
+                        '"New office L-1" possibile per aprire un\'entità statunitense '
+                        "(condizioni rafforzate, revisione a 1 anno)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Виза в консульстве и въезд",
+                    "pt": "Visa no consulado e entrada",
+                    "it": "Visa al consolato e ingresso",
+                },
+                {
+                    "ru": (
+                        "🔴 Дискреционное решение (L-1B проверяется особенно тщательно). Возможный "
+                        "путь к green card EB-1C (руководитель транснациональной компании)."
+                    ),
+                    "pt": (
+                        "🔴 Decisão discricionária (L-1B particularmente escrutinado). Via "
+                        "possível para a green card EB-1C (quadro dirigente multinacional)."
+                    ),
+                    "it": (
+                        "🔴 Decisione discrezionale (L-1B particolarmente esaminato). Via "
+                        "possibile verso la green card EB-1C (dirigente multinazionale)."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_O1_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Виза O-1 (исключительные способности)",
+            "pt": "Estados Unidos — Visa O-1 (capacidades extraordinárias)",
+            "it": "Stati Uniti — Visa O-1 (capacità straordinarie)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Оценить доказательную базу",
+                    "pt": "Avaliar o processo de provas",
+                    "it": "Valutare il fascicolo probatorio",
+                },
+                {
+                    "ru": (
+                        "🟠 Крупная признанная награда ЛИБО не менее 3 нормативных критериев "
+                        "(публикации, пресса, ключевая роль, высокое вознаграждение, оценка "
+                        "коллег…). Качество доказательств решающее. Требуется американский спонсор "
+                        "или агент."
+                    ),
+                    "pt": (
+                        "🟠 Um prémio importante reconhecido OU pelo menos 3 critérios "
+                        "regulamentares (publicações, imprensa, papel crítico, remuneração "
+                        "elevada, juízo de pares…). Qualidade das provas decisiva. Patrocinador "
+                        "nos EUA ou agente exigido."
+                    ),
+                    "it": (
+                        "🟠 Un premio importante riconosciuto OPPURE almeno 3 criteri normativi "
+                        "(pubblicazioni, stampa, ruolo critico, remunerazione elevata, giudizio "
+                        "dei pari…). Qualità delle prove decisiva. Sponsor statunitense o agente "
+                        "richiesto."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Петиция I-129 + консультация peer group",
+                    "pt": "Petição I-129 + consulta de um peer group",
+                    "it": "Petizione I-129 + consultazione di un peer group",
+                },
+                {
+                    "ru": "Петиция I-129 сопровождается консультативным заключением peer group.",
+                    "pt": "Petição I-129 acompanhada do parecer consultivo de um peer group.",
+                    "it": "Petizione I-129 accompagnata dal parere consultivo di un peer group.",
+                },
+            ),
+            (
+                {
+                    "ru": "Виза в консульстве и въезд",
+                    "pt": "Visa no consulado e entrada",
+                    "it": "Visa al consolato e ingresso",
+                },
+                {
+                    "ru": (
+                        "🔴 Дискреционное решение (качество доказательств). До 3 лет, "
+                        "продлевается. Dual intent деликатен. Профиль часто переносим на EB-1A "
+                        "(green card, self-petition)."
+                    ),
+                    "pt": (
+                        "🔴 Decisão discricionária (qualidade das provas). Até 3 anos, renovável. "
+                        "Dual intent delicado. Perfil frequentemente transponível para EB-1A "
+                        "(green card, self-petition)."
+                    ),
+                    "it": (
+                        "🔴 Decisione discrezionale (qualità delle prove). Fino a 3 anni, "
+                        "rinnovabile. Dual intent delicato. Profilo spesso trasferibile a EB-1A "
+                        "(green card, self-petition)."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_H1B_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Виза H-1B (specialty occupation)",
+            "pt": "Estados Unidos — Visa H-1B (specialty occupation)",
+            "it": "Stati Uniti — Visa H-1B (specialty occupation)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Регистрация в лотерее (работодатель)",
+                    "pt": "Inscrição na lotaria (empregador)",
+                    "it": "Registrazione alla lotteria (datore di lavoro)",
+                },
+                {
+                    "ru": (
+                        "🔴 Годовая квота 65 000 + 20 000 (магистратура США) → ЛОТЕРЕЯ: отбор НЕ "
+                        "гарантирован. ⚠️ Прокламация от 19/09/2025, вводящая сбор в 100 000 USD — "
+                        "сфера применения/исключения/судебный статус НЕОПРЕДЕЛЁННЫ, пункт №1 для "
+                        "проверки. Регистрационный сбор уточняется (FY2027)."
+                    ),
+                    "pt": (
+                        "🔴 Quota anual 65 000 + 20 000 (mestrado nos EUA) → LOTARIA: seleção NÃO "
+                        "garantida. ⚠️ Proclamação de 19/09/2025 que impõe uma taxa de 100 000 USD "
+                        "— âmbito/isenções/estatuto judicial INCERTOS, o ponto n.º 1 a verificar. "
+                        "Taxa de inscrição a confirmar (FY2027)."
+                    ),
+                    "it": (
+                        "🔴 Quota annuale 65 000 + 20 000 (master USA) → LOTTERIA: selezione NON "
+                        "garantita. ⚠️ Proclamazione del 19/09/2025 che impone una tassa di 100 "
+                        "000 USD — ambito/esenzioni/stato giudiziario INCERTI, il punto n. 1 da "
+                        "verificare. Tassa di registrazione da confermare (FY2027)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "(Если отобран) Labor Condition Application (DOL) + петиция I-129",
+                    "pt": "(Se selecionado) Labor Condition Application (DOL) + petição I-129",
+                    "it": "(Se selezionato) Labor Condition Application (DOL) + petizione I-129",
+                },
+                {
+                    "ru": "После отбора: LCA в DOL, затем петиция I-129.",
+                    "pt": "Após a seleção: LCA junto do DOL e depois petição I-129.",
+                    "it": "Dopo la selezione: LCA presso il DOL e poi petizione I-129.",
+                },
+            ),
+            (
+                {
+                    "ru": "Виза в консульстве и въезд",
+                    "pt": "Visa no consulado e entrada",
+                    "it": "Visa al consolato e ingresso",
+                },
+                {
+                    "ru": (
+                        "3 года + 3 года. Привязана к работодателю. Возможный путь к green card "
+                        "(PERM → EB-2/EB-3)."
+                    ),
+                    "pt": (
+                        "3 anos + 3 anos. Ligado ao empregador. Via possível para uma green card "
+                        "(PERM → EB-2/EB-3)."
+                    ),
+                    "it": (
+                        "3 anni + 3 anni. Legato al datore di lavoro. Via possibile verso una "
+                        "green card (PERM → EB-2/EB-3)."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_EB5_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Green card EB-5 (инвестор-иммигрант)",
+            "pt": "Estados Unidos — Green card EB-5 (investidor imigrante)",
+            "it": "Stati Uniti — Green card EB-5 (investitore immigrante)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Структурировать инвестицию и проверить источник средств",
+                    "pt": "Estruturar o investimento e verificar a origem dos fundos",
+                    "it": "Strutturare l'investimento e verificare l'origine dei fondi",
+                },
+                {
+                    "ru": (
+                        "🟢 800 000 USD в целевой зоне (TEA) / 1 050 000 USD вне TEA + создание 10 "
+                        "рабочих мест на полную ставку. Переиндексация запланирована на 1/1/2027. "
+                        "Требуется законная прослеживаемость средств (тщательно проверяется). "
+                        "Прямая инвестиция ЛИБО через Regional Center. Гонорары юриста ~15-50k+ "
+                        "USD."
+                    ),
+                    "pt": (
+                        "🟢 800 000 USD numa zona-alvo (TEA) / 1 050 000 USD fora da TEA + criação "
+                        "de 10 empregos a tempo inteiro. Reindexação prevista para 1/1/2027. "
+                        "Rastreabilidade lícita dos fundos exigida (severamente escrutinada). "
+                        "Investimento direto OU através de um Regional Center. Honorários de "
+                        "advogado ~15-50k+ USD."
+                    ),
+                    "it": (
+                        "🟢 800 000 USD in una zona mirata (TEA) / 1 050 000 USD fuori dalla TEA + "
+                        "creazione di 10 posti di lavoro a tempo pieno. Reindicizzazione prevista "
+                        "per l'1/1/2027. Tracciabilità lecita dei fondi richiesta (esaminata "
+                        "rigorosamente). Investimento diretto OPPURE tramite un Regional Center. "
+                        "Onorari dell'avvocato ~15-50k+ USD."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Петиция I-526E (USCIS)",
+                    "pt": "Petição I-526E (USCIS)",
+                    "it": "Petizione I-526E (USCIS)",
+                },
+                {
+                    "ru": "Подача петиции I-526E в USCIS.",
+                    "pt": "Apresentação da petição I-526E junto do USCIS.",
+                    "it": "Presentazione della petizione I-526E all'USCIS.",
+                },
+            ),
+            (
+                {
+                    "ru": "Условная green card (2 года) — консульство или adjustment of status",
+                    "pt": "Green card condicional (2 anos) — consulado ou adjustment of status",
+                    "it": "Green card condizionale (2 anni) — consolato o adjustment of status",
+                },
+                {
+                    "ru": (
+                        "Условная green card на 2 года, через консульскую процедуру или adjustment "
+                        "of status."
+                    ),
+                    "pt": (
+                        "Green card condicional de 2 anos, por via consular ou adjustment of "
+                        "status."
+                    ),
+                    "it": (
+                        "Green card condizionale di 2 anni, per via consolare o adjustment of "
+                        "status."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Снятие условий (I-829)",
+                    "pt": "Levantamento das condições (I-829)",
+                    "it": "Rimozione delle condizioni (I-829)",
+                },
+                {
+                    "ru": (
+                        "Примерно через 2 года доказать сохранение инвестиции и 10 рабочих мест → "
+                        "постоянная green card. Сроки USCIS длительные и переменные."
+                    ),
+                    "pt": (
+                        "Após ~2 anos, provar a manutenção do investimento e dos 10 empregos → "
+                        "green card permanente. Prazos do USCIS longos e variáveis."
+                    ),
+                    "it": (
+                        "Dopo ~2 anni, dimostrare il mantenimento dell'investimento e dei 10 posti "
+                        "di lavoro → green card permanente. Tempistiche USCIS lunghe e variabili."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_NIW_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Green card EB-2 NIW / EB-1A (по заслугам)",
+            "pt": "Estados Unidos — Green card EB-2 NIW / EB-1A (por mérito)",
+            "it": "Stati Uniti — Green card EB-2 NIW / EB-1A (per merito)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Определить подходящий путь",
+                    "pt": "Qualificar a via",
+                    "it": "Qualificare la via",
+                },
+                {
+                    "ru": (
+                        "🟠 EB-1A = исключительные способности (крупная награда ЛИБО ≥ 3 из 10 "
+                        "критериев). EB-2 NIW = учёная степень/исключительные способности + 3 "
+                        "критерия Dhanasar (значимость и национальная важность, благоприятная "
+                        "позиция для продвижения, выгода от отказа от предложения о работе). Оба "
+                        "допускают self-petition."
+                    ),
+                    "pt": (
+                        "🟠 EB-1A = capacidades extraordinárias (um prémio importante OU ≥ 3 de 10 "
+                        "critérios). EB-2 NIW = grau avançado/aptidão excecional + os 3 prongs "
+                        "Dhanasar (mérito e importância nacional, boa posição para avançar, "
+                        "benefício de dispensar a oferta de emprego). Ambas permitem a "
+                        "self-petition."
+                    ),
+                    "it": (
+                        "🟠 EB-1A = capacità straordinarie (un premio importante OPPURE ≥ 3 su 10 "
+                        "criteri). EB-2 NIW = titolo avanzato/attitudine eccezionale + i 3 prongs "
+                        "Dhanasar (merito e importanza nazionale, buona posizione per avanzare, "
+                        "beneficio della rinuncia all'offerta di lavoro). Entrambe consentono la "
+                        "self-petition."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Сформировать доказательную базу",
+                    "pt": "Preparar o processo de provas",
+                    "it": "Preparare il fascicolo probatorio",
+                },
+                {
+                    "ru": (
+                        "Подготовка доказательной базы о высоких достижениях/национальном интересе."
+                    ),
+                    "pt": "Preparação do processo de provas de excelência/interesse nacional.",
+                    "it": (
+                        "Preparazione del fascicolo probatorio di eccellenza/interesse nazionale."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Петиция I-140 (USCIS)",
+                    "pt": "Petição I-140 (USCIS)",
+                    "it": "Petizione I-140 (USCIS)",
+                },
+                {
+                    "ru": "Подача петиции I-140 в USCIS.",
+                    "pt": "Apresentação da petição I-140 junto do USCIS.",
+                    "it": "Presentazione della petizione I-140 all'USCIS.",
+                },
+            ),
+            (
+                {
+                    "ru": "Green card (visa bulletin / adjustment of status)",
+                    "pt": "Green card (visa bulletin / adjustment of status)",
+                    "it": "Green card (visa bulletin / adjustment of status)",
+                },
+                {
+                    "ru": (
+                        "🔴 Дискреционное решение (качество доказательств). Сроки и задержки "
+                        "согласно visa bulletin."
+                    ),
+                    "pt": (
+                        "🔴 Decisão discricionária (qualidade das provas). Prazos e atrasos de "
+                        "acordo com o visa bulletin."
+                    ),
+                    "it": (
+                        "🔴 Decisione discrezionale (qualità delle prove). Tempistiche e arretrati "
+                        "secondo il visa bulletin."
+                    ),
+                },
+            ),
+        ],
+    },
+    US_CO_NAME: {
+        "name": {
+            "ru": "Соединённые Штаты — Создание компании (LLC / C-Corp)",
+            "pt": "Estados Unidos — Constituição de empresa (LLC / C-Corp)",
+            "it": "Stati Uniti — Costituzione di società (LLC / C-Corp)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Выбрать структуру и штат",
+                    "pt": "Escolher a estrutura e o Estado",
+                    "it": "Scegliere la struttura e lo Stato",
+                },
+                {
+                    "ru": (
+                        "LLC (pass-through, простая) → лёгкая операционная структура без "
+                        "обустройства (выставление счетов в США, e-commerce, консалтинг, холдинг). "
+                        "C-Corp (федеральный налог 21 %, двойное налогообложение) → привлечение "
+                        "VC-финансирования ЛИБО поддержка визы E-2/L-1 с обустройством (стандарт "
+                        "Delaware). ⚠️ S-Corp ЗАКРЫТА для нерезидентов → реальный выбор = LLC vs "
+                        "C-Corp. Штат: Delaware (VC) / Wyoming (низкие издержки, без налога штата) "
+                        "/ штат фактической деятельности. ⚠️ регистрация в DE/WY НЕ освобождает от "
+                        "регистрации там, где компания ведёт деятельность (nexus)."
+                    ),
+                    "pt": (
+                        "LLC (pass-through, simples) → uma estrutura operacional ligeira sem "
+                        "instalação (faturação nos EUA, e-commerce, consultoria, holding). C-Corp "
+                        "(imposto federal 21 %, dupla tributação) → captação de fundos VC OU "
+                        "suporte de um visa E-2/L-1 com instalação (padrão Delaware). ⚠️ S-Corp "
+                        "FECHADA aos não residentes → a escolha real = LLC vs C-Corp. Estado: "
+                        "Delaware (VC) / Wyoming (custos baixos, sem imposto estadual) / Estado de "
+                        "atividade real. ⚠️ registar-se em DE/WY NÃO dispensa o registo onde a "
+                        "empresa opera (nexus)."
+                    ),
+                    "it": (
+                        "LLC (pass-through, semplice) → una struttura operativa leggera senza "
+                        "insediamento (fatturazione negli USA, e-commerce, consulenza, holding). "
+                        "C-Corp (imposta federale 21 %, doppia imposizione) → raccolta di fondi VC "
+                        "OPPURE supporto di un visa E-2/L-1 con insediamento (standard Delaware). "
+                        "⚠️ S-Corp CHIUSA ai non residenti → la scelta reale = LLC vs C-Corp. "
+                        "Stato: Delaware (VC) / Wyoming (costi bassi, senza imposta statale) / "
+                        "Stato di attività effettiva. ⚠️ registrarsi in DE/WY NON esime dalla "
+                        "registrazione dove la società opera (nexus)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Учреждение и registered agent",
+                    "pt": "Constituição e registered agent",
+                    "it": "Costituzione e registered agent",
+                },
+                {
+                    "ru": "Учреждение организации и назначение registered agent.",
+                    "pt": "Constituição da entidade e designação de um registered agent.",
+                    "it": "Costituzione dell'entità e designazione di un registered agent.",
+                },
+            ),
+            (
+                {
+                    "ru": "EIN, ITIN и банковский счёт",
+                    "pt": "EIN, ITIN e conta bancária",
+                    "it": "EIN, ITIN e conto bancario",
+                },
+                {
+                    "ru": (
+                        "EIN (форма SS-4; несколько недель без SSN, по факсу/почте), ITIN (W-7) "
+                        "часто необходим. Счёт через финтех (Mercury/Wise/Relay) при отсутствии "
+                        "поездки. Налоговые регистрации на уровне штата."
+                    ),
+                    "pt": (
+                        "EIN (Form SS-4; várias semanas sem SSN, via fax/correio), ITIN (W-7) "
+                        "frequentemente necessário. Conta via fintech (Mercury/Wise/Relay) se não "
+                        "houver deslocação. Registos fiscais estaduais."
+                    ),
+                    "it": (
+                        "EIN (Form SS-4; diverse settimane senza SSN, via fax/posta), ITIN (W-7) "
+                        "spesso necessario. Conto tramite fintech (Mercury/Wise/Relay) in assenza "
+                        "di spostamento. Registrazioni fiscali statali."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Комплаенс по иностранному владению (с 1-го года)",
+                    "pt": "Conformidade da propriedade estrangeira (a partir do ano 1)",
+                    "it": "Conformità della proprietà estera (dal primo anno)",
+                },
+                {
+                    "ru": (
+                        "🟢 Single-member LLC, принадлежащая иностранцу → Form 5472 + pro forma "
+                        "1120 (срок 15 апреля, ШТРАФ 25 000 USD). C-Corp → 1120; 5472 при "
+                        "связанном иностранном акционере ≥ 25 %; удержание налога с дивидендов 30 "
+                        "% → 15 % (договор США-Франция). 🔴 BOI/Corporate Transparency Act: "
+                        "правило FinCEN от марта 2025 года, перенацеленное на иностранные "
+                        "организации — сферу применения проверять на fincen.gov/boi."
+                    ),
+                    "pt": (
+                        "🟢 Single-member LLC detida por um estrangeiro → Form 5472 + 1120 pro "
+                        "forma (prazo 15 de abril, COIMA 25 000 USD). C-Corp → 1120; 5472 se um "
+                        "acionista estrangeiro relacionado ≥ 25 %; retenção de dividendos 30 % → "
+                        "15 % (convenção EUA-França). 🔴 BOI/Corporate Transparency Act: regra "
+                        "FinCEN de março de 2025 reorientada para as entidades estrangeiras — "
+                        "âmbito a verificar em fincen.gov/boi."
+                    ),
+                    "it": (
+                        "🟢 Single-member LLC detenuta da uno straniero → Form 5472 + 1120 pro "
+                        "forma (scadenza 15 aprile, SANZIONE 25 000 USD). C-Corp → 1120; 5472 se "
+                        "un azionista straniero collegato ≥ 25 %; ritenuta sui dividendi 30 % → 15 "
+                        "% (convenzione USA-Francia). 🔴 BOI/Corporate Transparency Act: regola "
+                        "FinCEN del marzo 2025 riorientata sulle entità estere — ambito da "
+                        "verificare su fincen.gov/boi."
+                    ),
+                },
+            ),
+        ],
+    },
+    CH_BNA_NAME: {
+        "name": {
+            "ru": "Швейцария — Разрешение B неработающего (рантье/пенсионер ЕС/ЕАСТ)",
+            "pt": "Suíça — Autorização B não ativo (rentista/reformado UE/EFTA)",
+            "it": "Svizzera — Permesso B non attivo (rentier/pensionato UE/AELS)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Собрать доказательства средств и страховки",
+                    "pt": "Reunir as provas de meios e de seguro",
+                    "it": "Raccogliere le prove di mezzi e di assicurazione",
+                },
+                {
+                    "ru": (
+                        "🟠 Достаточные финансовые средства (порог, индексируемый по "
+                        "дополнительным выплатам LPC, уточняется по кантону) + медицинская "
+                        "страховка, покрывающая Швейцарию. Требования по возрасту для гражданина "
+                        "ЕС/ЕАСТ нет."
+                    ),
+                    "pt": (
+                        "🟠 Meios financeiros suficientes (limiar indexado às prestações "
+                        "complementares LPC, a confirmar por cantão) + seguro de saúde que cubra a "
+                        "Suíça. Sem requisito de idade para um nacional UE/EFTA."
+                    ),
+                    "it": (
+                        "🟠 Mezzi finanziari sufficienti (soglia indicizzata alle prestazioni "
+                        "complementari LPC, da confermare per cantone) + assicurazione sanitaria "
+                        "che copra la Svizzera. Nessun requisito di età per un cittadino UE/AELS."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Декларация о прибытии в коммуне (в течение 14 дней)",
+                    "pt": "Declaração de chegada no município (no prazo de 14 dias)",
+                    "it": "Dichiarazione di arrivo presso il comune (entro 14 giorni)",
+                },
+                {
+                    "ru": (
+                        "Декларация о прибытии в коммуне в течение 14 дней. Требуется присутствие."
+                    ),
+                    "pt": (
+                        "Declaração de chegada no município no prazo de 14 dias. Presença "
+                        "obrigatória."
+                    ),
+                    "it": (
+                        "Dichiarazione di arrivo presso il comune entro 14 giorni. Presenza "
+                        "richiesta."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача разрешения B",
+                    "pt": "Emissão da autorização B",
+                    "it": "Emissione del permesso B",
+                },
+                {
+                    "ru": (
+                        "Разрешение B (5 лет). 🟠 Налогообложение по фиксированной ставке доступно "
+                        "в большинстве кантонов (отдельный НАЛОГОВЫЙ режим, согласуется отдельно с "
+                        "кантональной налоговой службой — не право на проживание). Кантон имеет "
+                        "решающее значение (налогообложение)."
+                    ),
+                    "pt": (
+                        "Autorização B (5 anos). 🟠 Tributação por montante fixo disponível na "
+                        "maioria dos cantões (um regime FISCAL distinto, a negociar separadamente "
+                        "com a administração fiscal cantonal — não um direito de residência). O "
+                        "cantão é determinante (fiscalidade)."
+                    ),
+                    "it": (
+                        "Permesso B (5 anni). 🟠 Tassazione forfettaria disponibile nella maggior "
+                        "parte dei cantoni (un regime FISCALE distinto, da negoziare separatamente "
+                        "con l'ufficio fiscale cantonale — non un diritto di residenza). Il "
+                        "cantone è determinante (fiscalità)."
+                    ),
+                },
+            ),
+        ],
+    },
+    CH_EMP_NAME: {
+        "name": {
+            "ru": "Швейцария — Разрешение L/B для наёмного работника (ЕС/ЕАСТ)",
+            "pt": "Suíça — Autorização L/B para trabalhador assalariado (UE/EFTA)",
+            "it": "Svizzera — Permesso L/B per lavoratore dipendente (UE/AELS)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Подписанный трудовой договор",
+                    "pt": "Contrato de trabalho assinado",
+                    "it": "Contratto di lavoro firmato",
+                },
+                {
+                    "ru": (
+                        "Тип разрешения зависит от длительности договора: < 3 месяцев = простое "
+                        "уведомление · 3–12 месяцев = разрешение L · ≥ 12 месяцев = разрешение B "
+                        "(5 лет). Для гражданина ЕС/ЕАСТ нет квот и проверки рынка труда."
+                    ),
+                    "pt": (
+                        "Tipo de autorização consoante a duração do contrato: < 3 meses = simples "
+                        "notificação · 3-12 meses = autorização L · ≥ 12 meses = autorização B (5 "
+                        "anos). Sem quota nem teste do mercado de trabalho para um nacional "
+                        "UE/EFTA."
+                    ),
+                    "it": (
+                        "Tipo di permesso in base alla durata del contratto: < 3 mesi = semplice "
+                        "notifica · 3-12 mesi = permesso L · ≥ 12 mesi = permesso B (5 anni). "
+                        "Nessuna quota né test del mercato del lavoro per un cittadino UE/AELS."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Уведомление/заявление в коммуну и кантон",
+                    "pt": "Notificação/pedido ao município e ao cantão",
+                    "it": "Notifica/domanda al comune e al cantone",
+                },
+                {
+                    "ru": "Уведомление/заявление в коммуну и кантон.",
+                    "pt": "Notificação/pedido ao município e ao cantão.",
+                    "it": "Notifica/domanda al comune e al cantone.",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача разрешения L или B",
+                    "pt": "Emissão da autorização L ou B",
+                    "it": "Rilascio del permesso L o B",
+                },
+                {
+                    "ru": (
+                        "Разрешение C (постоянное проживание) через 5 лет для граждан ЕС/ЕАСТ "
+                        "(взаимность). Кантон определяет налогообложение физических лиц."
+                    ),
+                    "pt": (
+                        "Autorização C (estabelecimento) ao fim de 5 anos para os nacionais "
+                        "UE/EFTA (reciprocidade). O cantão determina a fiscalidade pessoal."
+                    ),
+                    "it": (
+                        "Permesso C (domicilio) dopo 5 anni per i cittadini UE/AELS (reciprocità). "
+                        "Il cantone determina la fiscalità personale."
+                    ),
+                },
+            ),
+        ],
+    },
+    CH_IND_NAME: {
+        "name": {
+            "ru": "Швейцария — Самозанятый / предприниматель (ЕС/ЕАСТ)",
+            "pt": "Suíça — Trabalhador independente / empresário (UE/EFTA)",
+            "it": "Svizzera — Lavoratore autonomo / imprenditore (UE/AELS)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Подтвердить реальную и жизнеспособную самостоятельную деятельность",
+                    "pt": "Demonstrar uma atividade independente real e viável",
+                    "it": "Dimostrare un'attività autonoma reale e sostenibile",
+                },
+                {
+                    "ru": (
+                        "Бизнес-план, прогнозная бухгалтерия, помещения/клиенты — деятельность "
+                        "должна быть действительной (не фиктивной). Регистрация AVS как "
+                        "самозанятого."
+                    ),
+                    "pt": (
+                        "Business plan, contabilidade previsional, instalações/clientes — a "
+                        "atividade tem de ser efetiva (não fictícia). Inscrição na AVS como "
+                        "independente."
+                    ),
+                    "it": (
+                        "Business plan, contabilità previsionale, locali/clienti — l'attività deve "
+                        "essere effettiva (non fittizia). Affiliazione AVS come lavoratore "
+                        "autonomo."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Уведомление коммуны и заявление на разрешение B",
+                    "pt": "Notificação ao município e pedido de autorização B",
+                    "it": "Notifica al comune e domanda di permesso B",
+                },
+                {
+                    "ru": "Уведомление коммуны и заявление на разрешение B (самозанятый).",
+                    "pt": "Notificação ao município e pedido de autorização B (independente).",
+                    "it": "Notifica al comune e domanda di permesso B (lavoratore autonomo).",
+                },
+            ),
+            (
+                {
+                    "ru": "Выдача разрешения B (самозанятый)",
+                    "pt": "Emissão da autorização B (independente)",
+                    "it": "Rilascio del permesso B (lavoratore autonomo)",
+                },
+                {
+                    "ru": (
+                        "Возможность параллельно учредить Sàrl/SA (см. маршрут для компании). "
+                        "Кантон определяет налоговую нагрузку."
+                    ),
+                    "pt": (
+                        "Possibilidade de constituir uma Sàrl/SA em paralelo (ver o percurso de "
+                        "empresa). O cantão determina a carga fiscal."
+                    ),
+                    "it": (
+                        "Possibilità di costituire una Sàrl/SA in parallelo (vedere il percorso "
+                        "aziendale). Il cantone determina il carico fiscale."
+                    ),
+                },
+            ),
+        ],
+    },
+    CH_RET_NAME: {
+        "name": {
+            "ru": "Швейцария — Рантье из стран вне ЕС (55+ лет, art. 28 LEI)",
+            "pt": "Suíça — Rentista extra-UE (55+ anos, art. 28 LEI)",
+            "it": "Svizzera — Rentier extra-UE (55+ anni, art. 28 LEI)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Оценить право на участие и выбрать благоприятный кантон",
+                    "pt": "Avaliar a elegibilidade e escolher um cantão acolhedor",
+                    "it": "Valutare l'idoneità e scegliere un cantone accogliente",
+                },
+                {
+                    "ru": (
+                        "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 лет + ОСОБЫЕ личные связи со "
+                        "Швейцарией + отсутствие приносящей доход деятельности + достаточные "
+                        "средства + фактический перенос центра жизненных интересов. ОЧЕНЬ "
+                        "дискреционно: одни кантоны приветливы, другие ограничительны — выбор "
+                        "кантона имеет решающее значение. Рантье из стран вне ЕС МОЛОЖЕ 55 лет не "
+                        "имеет чёткого пути."
+                    ),
+                    "pt": (
+                        "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 anos + laços pessoais PARTICULARES "
+                        "com a Suíça + nenhuma atividade lucrativa + meios suficientes + "
+                        "transferência efetiva do centro de vida. MUITO discricionário: alguns "
+                        "cantões acolhedores, outros restritivos — a escolha do cantão é "
+                        "determinante. Um rentista extra-UE com MENOS de 55 anos não tem via "
+                        "clara."
+                    ),
+                    "it": (
+                        "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 anni + legami personali PARTICOLARI "
+                        "con la Svizzera + nessuna attività lucrativa + mezzi sufficienti + "
+                        "trasferimento effettivo del centro della vita. MOLTO discrezionale: "
+                        "alcuni cantoni accoglienti, altri restrittivi — la scelta del cantone è "
+                        "determinante. Un rentier extra-UE con MENO di 55 anni non ha una via "
+                        "chiara."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Подать заявление в кантональный миграционный орган",
+                    "pt": "Apresentar o pedido junto da autoridade cantonal de migração",
+                    "it": "Presentare la domanda all'autorità cantonale di migrazione",
+                },
+                {
+                    "ru": "Подача заявления в кантональный миграционный орган.",
+                    "pt": "Apresentação do pedido junto da autoridade cantonal de migração.",
+                    "it": "Presentazione della domanda all'autorità cantonale di migrazione.",
+                },
+            ),
+            (
+                {
+                    "ru": (
+                        "Предоставление разрешения B (без деятельности) и паушальное "
+                        "налогообложение"
+                    ),
+                    "pt": (
+                        "Concessão da autorização B (sem atividade) e tributação por montante fixo"
+                    ),
+                    "it": "Concessione del permesso B (senza attività) e imposizione forfettaria",
+                },
+                {
+                    "ru": (
+                        "🟠 Целевая аудитория паушального налогообложения (отдельный налоговый "
+                        "режим, согласуемый через кантональный ruling ДО переезда — не является "
+                        "разрешением сам по себе)."
+                    ),
+                    "pt": (
+                        "🟠 Público-alvo da tributação por montante fixo (um regime fiscal "
+                        "distinto, a negociar mediante um ruling cantonal ANTES de se instalar — "
+                        "não é uma autorização em si)."
+                    ),
+                    "it": (
+                        "🟠 Pubblico target dell'imposizione forfettaria (un regime fiscale "
+                        "distinto, da negoziare tramite un ruling cantonale PRIMA di stabilirsi — "
+                        "non è un permesso di per sé)."
+                    ),
+                },
+            ),
+        ],
+    },
+    CH_TCN_NAME: {
+        "name": {
+            "ru": "Швейцария — Наёмный работник из стран вне ЕС (art. 18-23 LEI)",
+            "pt": "Suíça — Trabalhador assalariado extra-UE (art. 18-23 LEI)",
+            "it": "Svizzera — Lavoratore dipendente extra-UE (art. 18-23 LEI)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить условия (узкое место)",
+                    "pt": "Verificar as condições (o estrangulamento)",
+                    "it": "Verificare le condizioni (il collo di bottiglia)",
+                },
+                {
+                    "ru": (
+                        "🔴 Совокупные условия: экономический интерес + профиль "
+                        "РУКОВОДИТЕЛЯ/СПЕЦИАЛИСТА/КВАЛИФИЦИРОВАННОГО работника + обычные зарплата "
+                        "и условия + ПРИОРИТЕТ внутреннего рынка/рынка ЕС-ЕАСТ (работодатель "
+                        "должен доказать отсутствие швейцарского/европейского кандидата) + годовая "
+                        "КВОТА (риск блокировки при исчерпании квоты). Без работодателя и без "
+                        "профиля руководителя/специалиста этот путь фактически ЗАКРЫТ."
+                    ),
+                    "pt": (
+                        "🔴 Condições cumulativas: interesse económico + perfil "
+                        "DIRIGENTE/ESPECIALISTA/QUALIFICADO + salário e condições habituais + "
+                        "PRIORIDADE do mercado nacional/UE-EFTA (o empregador tem de provar a "
+                        "ausência de um candidato suíço/UE) + QUOTA anual (risco de bloqueio se a "
+                        "quota se esgotar). Sem empregador e sem perfil dirigente/especialista, "
+                        "esta via está de facto FECHADA."
+                    ),
+                    "it": (
+                        "🔴 Condizioni cumulative: interesse economico + profilo "
+                        "DIRIGENTE/SPECIALISTA/QUALIFICATO + salario e condizioni abituali + "
+                        "PRIORITÀ del mercato nazionale/UE-AELS (il datore di lavoro deve provare "
+                        "l'assenza di un candidato svizzero/UE) + QUOTA annuale (rischio di blocco "
+                        "se la quota è esaurita). Senza datore di lavoro e senza profilo "
+                        "dirigente/specialista, questa via è di fatto CHIUSA."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Работодатель подаёт заявление (кантональный орган + SEM)",
+                    "pt": "O empregador apresenta o pedido (autoridade cantonal + SEM)",
+                    "it": "Il datore di lavoro presenta la domanda (autorità cantonale + SEM)",
+                },
+                {
+                    "ru": "Заявление подаётся работодателем в кантональный орган и SEM.",
+                    "pt": "Pedido conduzido pelo empregador junto da autoridade cantonal e do SEM.",
+                    "it": (
+                        "Domanda presentata dal datore di lavoro all'autorità cantonale e al SEM."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Виза D и разрешение L/B (засчитывается в квоту)",
+                    "pt": "Visto D e autorização L/B (imputado à quota)",
+                    "it": "Visto D e permesso L/B (imputato alla quota)",
+                },
+                {
+                    "ru": "🟠 Разрешение засчитывается в годовую квоту для граждан третьих стран.",
+                    "pt": (
+                        "🟠 Autorização imputada à quota anual dos nacionais de países terceiros."
+                    ),
+                    "it": "🟠 Permesso imputato alla quota annuale dei cittadini di paesi terzi.",
+                },
+            ),
+        ],
+    },
+    CH_CO_NAME: {
+        "name": {
+            "ru": "Швейцария — Создание компании (Sàrl / SA)",
+            "pt": "Suíça — Constituição de empresa (Sàrl / SA)",
+            "it": "Svizzera — Costituzione di società (Sàrl / SA)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Определить директора-резидента, кантон и структуру",
+                    "pt": "Decidir o administrador residente, o cantão e a estrutura",
+                    "it": "Decidere l'amministratore residente, il cantone e la struttura",
+                },
+                {
+                    "ru": (
+                        "⚠️ ДИРЕКТОР-РЕЗИДЕНТ ОБЯЗАТЕЛЕН: как минимум одно лицо с местожительством "
+                        "в Швейцарии и правом подписи (art. 814 п. 3 / 718 п. 4 CO) — местный "
+                        "наём, фидуциарный администратор или переезжающий учредитель. Без него "
+                        "компании нет. КАНТОН = налоговый рычаг №1: налог на прибыль ~11,5 % "
+                        "(Zug/Nidwalden) до ~21 % (Bern); Geneva ~14 % (БОЛЬШЕ НЕ кантон с высоким "
+                        "налогообложением). Структура: Sàrl (капитал 20 000 CHF оплачен, "
+                        "зарегистрированные участники) / SA (100 000 CHF подписано, мин. 50 000 "
+                        "оплачено, незарегистрированные акционеры)."
+                    ),
+                    "pt": (
+                        "⚠️ ADMINISTRADOR RESIDENTE OBRIGATÓRIO: pelo menos uma pessoa domiciliada "
+                        "na Suíça com poder de assinatura (art. 814 n.º 3 / 718 n.º 4 CO) — "
+                        "contratação local, administrador fiduciário, ou instalação do fundador. "
+                        "Sem ele, não há empresa. CANTÃO = alavanca fiscal n.º 1: imposto sobre os "
+                        "lucros ~11,5 % (Zug/Nidwalden) a ~21 % (Bern); Genebra ~14 % (JÁ NÃO é um "
+                        "cantão de alta tributação). Estrutura: Sàrl (capital 20 000 CHF "
+                        "realizado, sócios registados) / SA (100 000 CHF subscrito, mín. 50 000 "
+                        "realizado, acionistas não registados)."
+                    ),
+                    "it": (
+                        "⚠️ AMMINISTRATORE RESIDENTE OBBLIGATORIO: almeno una persona domiciliata "
+                        "in Svizzera con potere di firma (art. 814 cpv. 3 / 718 cpv. 4 CO) — "
+                        "assunzione locale, amministratore fiduciario, o insediamento del "
+                        "fondatore. Senza di esso, niente società. CANTONE = leva fiscale n°1: "
+                        "imposta sugli utili ~11,5 % (Zug/Nidwalden) a ~21 % (Bern); Ginevra ~14 % "
+                        "(NON è PIÙ un cantone ad alta imposizione). Struttura: Sàrl (capitale 20 "
+                        "000 CHF versato, soci registrati) / SA (100 000 CHF sottoscritto, min. 50 "
+                        "000 versato, azionisti non registrati)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Устав в форме нотариального акта и оплата капитала",
+                    "pt": "Estatutos por escritura notarial e capital realizado",
+                    "it": "Statuto per atto notarile e capitale versato",
+                },
+                {
+                    "ru": (
+                        "Подлинный акт обязателен + внесение капитала на эскроу-счёт (банковское "
+                        "подтверждение)."
+                    ),
+                    "pt": (
+                        "Escritura autêntica obrigatória + depósito do capital numa conta de "
+                        "consignação (atestação bancária)."
+                    ),
+                    "it": (
+                        "Atto pubblico obbligatorio + deposito del capitale su un conto vincolato "
+                        "(attestazione bancaria)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Регистрация в торговом реестре (Zefix)",
+                    "pt": "Registo no registo comercial (Zefix)",
+                    "it": "Iscrizione al registro di commercio (Zefix)",
+                },
+                {
+                    "ru": "Регистрация компании в торговом реестре (Zefix).",
+                    "pt": "Registo da empresa no registo comercial (Zefix).",
+                    "it": "Iscrizione della società al registro di commercio (Zefix).",
+                },
+            ),
+            (
+                {
+                    "ru": "НДС и социальное страхование",
+                    "pt": "IVA e seguros sociais",
+                    "it": "IVA e assicurazioni sociali",
+                },
+                {
+                    "ru": (
+                        "🟠 IFD 8,5 % по закону (~7,83 % эффективно) + кантональный/коммунальный "
+                        "(см. шаг 1). НДС 8,1 %, если оборот > 100 000 CHF. Налог у источника 35 % "
+                        "на дивиденды (остаточные ставки по соглашениям). Гербовый сбор 1 % свыше "
+                        "1 млн CHF вклада. ПРИМЕЧАНИЕ о паушальном налогообложении: режим для "
+                        "иностранного рантье без деятельности (федеральный минимум 400 000 CHF / "
+                        "7× аренды, кантональный ruling) — отдельный, не вид на жительство; "
+                        "отменён в Zurich/Basel/Schaffhausen/Appenzell AR."
+                    ),
+                    "pt": (
+                        "🟠 IFD 8,5 % estatutário (~7,83 % efetivo) + cantonal/municipal (ver "
+                        "passo 1). IVA 8,1 % se o volume de negócios > 100 000 CHF. Imposto "
+                        "antecipado 35 % sobre dividendos (taxas residuais por convenção). Imposto "
+                        "de selo 1 % acima de 1 M CHF de entrada. NOTA tributação por montante "
+                        "fixo: regime para um rentista estrangeiro sem atividade (limiar federal "
+                        "400 000 CHF / 7× renda, ruling cantonal) — distinto, não é uma "
+                        "autorização de residência; abolido em "
+                        "Zurique/Basileia/Schaffhausen/Appenzell AR."
+                    ),
+                    "it": (
+                        "🟠 IFD 8,5 % statutario (~7,83 % effettivo) + cantonale/comunale (vedere "
+                        "passo 1). IVA 8,1 % se il fatturato > 100 000 CHF. Imposta preventiva 35 "
+                        "% sui dividendi (aliquote residue da convenzione). Tassa di bollo 1 % "
+                        "oltre 1 M CHF di conferimento. NOTA imposizione forfettaria: regime per "
+                        "un rentier straniero senza attività (soglia federale 400 000 CHF / 7× "
+                        "affitto, ruling cantonale) — distinto, non è un permesso di soggiorno; "
+                        "abolito a Zurigo/Basilea/Sciaffusa/Appenzello Esterno."
+                    ),
+                },
+            ),
+        ],
+    },
+    CA_EE_NAME: {
+        "name": {
+            "ru": "Канада — Express Entry (федеральное постоянное проживание)",
+            "pt": "Canadá — Express Entry (residência permanente federal)",
+            "it": "Canada — Express Entry (residenza permanente federale)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Проверить право на участие и оценить CRS",
+                    "pt": "Verificar a elegibilidade e estimar o CRS",
+                    "it": "Verificare l'idoneità e stimare il CRS",
+                },
+                {
+                    "ru": (
+                        "🟠 FSW = минимальный балл 67/100. CEC = ~1 год квалифицированного опыта в "
+                        "Канаде. Профессия (уровень TEER), язык (CLB/NCLC), возраст, дипломы дают "
+                        "баллы CRS (макс. 1200). ⚠️ ФРАНЦУЗСКИЙ ЯЗЫК = ВАЖНОЕ ПРЕИМУЩЕСТВО: отборы "
+                        'по "French proficiency" проходят при гораздо более низких порогах CRS. '
+                        "Номинация PNP добавляет +600 CRS (почти гарантированное приглашение). В "
+                        "Канаде нет визы для пенсионера/инвестора."
+                    ),
+                    "pt": (
+                        "🟠 FSW = pontuação 67/100 mínima. CEC = ~1 ano de experiência qualificada "
+                        "no Canadá. Profissão (nível TEER), língua (CLB/NCLC), idade, diplomas "
+                        "pontuam o CRS (máx. 1200). ⚠️ FRANCÊS = TRUNFO MAIOR: sorteios de "
+                        '"French proficiency" com limiares CRS muito mais baixos. Uma nomeação '
+                        "PNP acrescenta +600 CRS (convite quase garantido). Sem visto de "
+                        "reformado/investidor no Canadá."
+                    ),
+                    "it": (
+                        "🟠 FSW = punteggio 67/100 minimo. CEC = ~1 anno di esperienza qualificata "
+                        "in Canada. Professione (livello TEER), lingua (CLB/NCLC), età, diplomi "
+                        "assegnano punti CRS (max 1200). ⚠️ FRANCESE = VANTAGGIO IMPORTANTE: "
+                        'estrazioni "French proficiency" con soglie CRS molto più basse. Una '
+                        "nomina PNP aggiunge +600 CRS (invito quasi garantito). Nessun visto per "
+                        "pensionato/investitore in Canada."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Языковые тесты, признание дипломов (ECA) и профиль в пуле",
+                    "pt": "Testes de língua, equivalência de diplomas (ECA) e perfil no pool",
+                    "it": "Test linguistici, equivalenza dei diplomi (ECA) e profilo nel pool",
+                },
+                {
+                    "ru": "Языковые тесты, ECA дипломов и создание профиля в пуле.",
+                    "pt": "Testes de língua, ECA dos diplomas, e criação do perfil no pool.",
+                    "it": "Test linguistici, ECA dei diplomi e creazione del profilo nel pool.",
+                },
+            ),
+            (
+                {
+                    "ru": "Приглашение к подаче заявления (ITA) и заявление на ПМЖ",
+                    "pt": "Convite para apresentar pedido (ITA) e pedido de RP",
+                    "it": "Invito a presentare domanda (ITA) e domanda di RP",
+                },
+                {
+                    "ru": (
+                        "🟠 Сборы за ПМЖ ~950 $ + RPRF 575 $ + биометрия 85 $. Пороги CRS в "
+                        "раундах очень изменчивы (canada.ca/IRCC), требуют перепроверки."
+                    ),
+                    "pt": (
+                        "🟠 Taxas RP ~950 $ + RPRF 575 $ + biometria 85 $. Limiares CRS das rondas "
+                        "muito voláteis (canada.ca/IRCC), a reconfirmar."
+                    ),
+                    "it": (
+                        "🟠 Tasse RP ~950 $ + RPRF 575 $ + biometria 85 $. Soglie CRS delle "
+                        "estrazioni molto volatili (canada.ca/IRCC), da riconfermare."
+                    ),
+                },
+            ),
+        ],
+    },
+    CA_PNP_NAME: {
+        "name": {
+            "ru": "Канада — Provincial Nominee Program (PNP)",
+            "pt": "Canadá — Provincial Nominee Program (PNP)",
+            "it": "Canada — Provincial Nominee Program (PNP)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Определить провинцию и поток, соответствующие профилю",
+                    "pt": "Identificar a província e o fluxo adequado ao perfil",
+                    "it": "Identificare la provincia e il flusso adatto al profilo",
+                },
+                {
+                    "ru": (
+                        "🔴 У каждой провинции свои потоки и критерии (часто привязанные к "
+                        "востребованной профессии, местному предложению работы или связи с "
+                        "провинцией). Квота PNP на 2025 год сокращена (~55 000) — доступность "
+                        "потоков изменчива, уточнять по провинции (OINP/BC PNP/AAIP…)."
+                    ),
+                    "pt": (
+                        "🔴 Cada província tem os seus próprios fluxos e critérios (muitas vezes "
+                        "ligados a uma profissão em procura, a uma oferta de emprego local, ou a "
+                        "uma ligação à província). Alocação PNP 2025 reduzida (~55 000) — "
+                        "disponibilidade dos fluxos volátil, a confirmar por província (OINP/BC "
+                        "PNP/AAIP…)."
+                    ),
+                    "it": (
+                        "🔴 Ogni provincia ha i propri flussi e criteri (spesso legati a una "
+                        "professione richiesta, a un'offerta di lavoro locale, o a un legame con "
+                        "la provincia). Allocazione PNP 2025 ridotta (~55 000) — disponibilità dei "
+                        "flussi volatile, da confermare per provincia (OINP/BC PNP/AAIP…)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Выражение заинтересованности / провинциальная заявка",
+                    "pt": "Manifestação de interesse / candidatura provincial",
+                    "it": "Manifestazione di interesse / candidatura provinciale",
+                },
+                {
+                    "ru": "Выражение заинтересованности или заявка в выбранную провинцию.",
+                    "pt": "Manifestação de interesse ou candidatura junto da província escolhida.",
+                    "it": "Manifestazione di interesse o candidatura presso la provincia scelta.",
+                },
+            ),
+            (
+                {
+                    "ru": "Провинциальная номинация → федеральная заявка на ПМЖ",
+                    "pt": "Nomeação provincial → pedido de RP federal",
+                    "it": "Nomina provinciale → domanda di RP federale",
+                },
+                {
+                    "ru": (
+                        "Номинация добавляет +600 CRS (через Express Entry, согласованный поток) "
+                        'ЛИБО составляет "базовый" путь PNP вне Express Entry, затем заявление '
+                        "на ПМЖ в IRCC."
+                    ),
+                    "pt": (
+                        "A nomeação acrescenta +600 CRS (via Express Entry, fluxo alinhado) OU "
+                        'constitui uma via PNP "base" fora do Express Entry, seguida de um '
+                        "pedido de RP ao IRCC."
+                    ),
+                    "it": (
+                        "La nomina aggiunge +600 CRS (tramite Express Entry, flusso allineato) "
+                        'OPPURE costituisce una via PNP "base" al di fuori di Express Entry, '
+                        "seguita da una domanda di RP all'IRCC."
+                    ),
+                },
+            ),
+        ],
+    },
+    CA_QC_NAME: {
+        "name": {
+            "ru": "Квебек — PSTQ / Arrima (квебекский отбор, затем ПМЖ)",
+            "pt": "Quebeque — PSTQ / Arrima (seleção quebequense, depois RP)",
+            "it": "Québec — PSTQ / Arrima (selezione quebecchese, poi RP)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Создать профиль Arrima (выражение заинтересованности)",
+                    "pt": "Criar um perfil Arrima (manifestação de interesse)",
+                    "it": "Creare un profilo Arrima (manifestazione di interesse)",
+                },
+                {
+                    "ru": (
+                        "⚠️ Квебекская система ОТДЕЛЬНАЯ от Express Entry. PSTQ = Программа отбора "
+                        "квалифицированных работников (отдельные потоки). 🟠 ФРАНЦУЗСКИЙ — важный "
+                        "рычаг (пороги и баллы). Названия потоков и пороги уточнять "
+                        "(Québec.ca/MIFI)."
+                    ),
+                    "pt": (
+                        "⚠️ Sistema quebequense SEPARADO do Express Entry. PSTQ = Programa de "
+                        "seleção de trabalhadores qualificados (fluxos distintos). 🟠 O FRANCÊS é "
+                        "uma alavanca importante (limiares e pontos). Denominações dos fluxos e "
+                        "limiares a confirmar (Québec.ca/MIFI)."
+                    ),
+                    "it": (
+                        "⚠️ Sistema quebecchese SEPARATO da Express Entry. PSTQ = Programma di "
+                        "selezione dei lavoratori qualificati (flussi distinti). 🟠 Il FRANCESE è "
+                        "una leva importante (soglie e punti). Denominazioni dei flussi e soglie "
+                        "da confermare (Québec.ca/MIFI)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Приглашение от Квебека и заявление на CSQ (MIFI)",
+                    "pt": "Convite do Quebeque e pedido de CSQ (MIFI)",
+                    "it": "Invito del Québec e domanda di CSQ (MIFI)",
+                },
+                {
+                    "ru": (
+                        "🟠 Тарифы MIFI уточнять. CSQ = Свидетельство об отборе Квебека "
+                        "(провинциальный отбор)."
+                    ),
+                    "pt": (
+                        "🟠 Taxas MIFI a confirmar. O CSQ = Certificado de seleção do Quebeque "
+                        "(seleção provincial)."
+                    ),
+                    "it": (
+                        "🟠 Tariffe MIFI da confermare. Il CSQ = Certificato di selezione del "
+                        "Québec (selezione provinciale)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Федеральное заявление на ПМЖ (IRCC) с CSQ",
+                    "pt": "Pedido de RP federal (IRCC) com o CSQ",
+                    "it": "Domanda di RP federale (IRCC) con il CSQ",
+                },
+                {
+                    "ru": (
+                        "ПМЖ по-прежнему выдаётся федеральным правительством, но ОТБОР — "
+                        "квебекский. ПРИМЕЧАНИЕ: PEQ (Программа квебекского опыта) — ускоренный "
+                        "путь для выпускников/работников, уже находящихся в Квебеке."
+                    ),
+                    "pt": (
+                        "A RP continua a ser emitida pelo governo federal, mas a SELEÇÃO é "
+                        "quebequense. NOTA: o PEQ (Programa da experiência quebequense) é uma via "
+                        "acelerada para diplomados/trabalhadores já no Quebeque."
+                    ),
+                    "it": (
+                        "La RP è ancora rilasciata dal governo federale, ma la SELEZIONE è "
+                        "quebecchese. NOTA: il PEQ (Programma dell'esperienza quebecchese) è una "
+                        "via accelerata per diplomati/lavoratori già in Québec."
+                    ),
+                },
+            ),
+        ],
+    },
+    CA_WP_NAME: {
+        "name": {
+            "ru": "Канада — Разрешение на работу → канадский опыт → PR",
+            "pt": "Canadá — Autorização de trabalho → experiência canadiana → PR",
+            "it": "Canada — Permesso di lavoro → esperienza canadese → PR",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Получить разрешение на работу (IMP или LMIA)",
+                    "pt": "Obter a autorização de trabalho (IMP ou LMIA)",
+                    "it": "Ottenere il permesso di lavoro (IMP o LMIA)",
+                },
+                {
+                    "ru": (
+                        "Два пути: IMP (освобождение от LMIA: внутрифирменный перевод C12, "
+                        "торговые соглашения, молодые специалисты/IEC-PVT для подходящих граждан "
+                        "Франции) ИЛИ TFWP (с оценкой воздействия LMIA, более громоздкий). 🟠 "
+                        "Отмена баллов CRS за предложение о работе (весна 2025) делает PNP более "
+                        "значимым, чем одно лишь предложение о работе."
+                    ),
+                    "pt": (
+                        "Duas vias: IMP (isento de LMIA: transferência intraempresa C12, acordos "
+                        "comerciais, jovens profissionais/IEC-PVT para os cidadãos franceses "
+                        "elegíveis) OU TFWP (com estudo de impacto LMIA, mais pesado). 🟠 A "
+                        "eliminação dos pontos CRS por uma oferta de emprego (primavera de 2025) "
+                        "torna o PNP mais central do que a oferta de emprego isolada."
+                    ),
+                    "it": (
+                        "Due vie: IMP (esente da LMIA: trasferimento intra-aziendale C12, accordi "
+                        "commerciali, giovani professionisti/IEC-PVT per i cittadini francesi "
+                        "idonei) OPPURE TFWP (con studio d'impatto LMIA, più oneroso). 🟠 "
+                        "L'eliminazione dei punti CRS per un'offerta di lavoro (primavera 2025) "
+                        "rende il PNP più centrale rispetto alla sola offerta di lavoro."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Работать в Канаде и накапливать квалифицированный опыт",
+                    "pt": "Trabalhar no Canadá e acumular experiência qualificada",
+                    "it": "Lavorare in Canada e accumulare esperienza qualificata",
+                },
+                {
+                    "ru": (
+                        "~1 год квалифицированного опыта (TEER 0/1/2/3) открывает доступ к CEC "
+                        "(Canadian Experience Class)."
+                    ),
+                    "pt": (
+                        "~1 ano de experiência qualificada (TEER 0/1/2/3) abre a CEC (Canadian "
+                        "Experience Class)."
+                    ),
+                    "it": (
+                        "~1 anno di esperienza qualificata (TEER 0/1/2/3) apre la CEC (Canadian "
+                        "Experience Class)."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на PR через Express Entry (CEC)",
+                    "pt": "Pedido de PR via Express Entry (CEC)",
+                    "it": "Domanda di PR tramite Express Entry (CEC)",
+                },
+                {
+                    "ru": (
+                        "CEC — самый быстрый путь к PR для тех, кто уже имеет канадский опыт. "
+                        "Французский язык = преимущество (специальные отборы)."
+                    ),
+                    "pt": (
+                        "A CEC é a via mais rápida para a PR para quem já tem experiência "
+                        "canadiana. Francês = vantagem (sorteios dedicados)."
+                    ),
+                    "it": (
+                        "La CEC è la via più rapida verso la PR per chi ha già esperienza "
+                        "canadese. Il francese = vantaggio (estrazioni dedicate)."
+                    ),
+                },
+            ),
+        ],
+    },
+    CA_SUV_NAME: {
+        "name": {
+            "ru": "Канада — Start-up Visa (SUV, предприниматель)",
+            "pt": "Canadá — Start-up Visa (SUV, empreendedor)",
+            "it": "Canada — Start-up Visa (SUV, imprenditore)",
+        },
+        "steps": [
+            (
+                {
+                    "ru": "Получить поддержку назначенной организации",
+                    "pt": "Obter o apoio de uma organização designada",
+                    "it": "Ottenere il sostegno di un'organizzazione designata",
+                },
+                {
+                    "ru": (
+                        "🟠 Назначенная организация: венчурный капитал ≥ 200 000 $ / бизнес-ангел "
+                        "≥ 75 000 $ / инкубатор (средства не требуются). Требуется письмо "
+                        "поддержки. ⚠️ В Канаде нет инвесторской/golden visa — это путь для "
+                        "проекта."
+                    ),
+                    "pt": (
+                        "🟠 Organização designada: capital de risco ≥ 200 000 $ / investidor anjo "
+                        "≥ 75 000 $ / incubadora (sem fundos exigidos). Carta de apoio "
+                        "obrigatória. ⚠️ Não existe visto de investidor/golden visa no Canadá — "
+                        "esta é a via de projeto."
+                    ),
+                    "it": (
+                        "🟠 Organizzazione designata: capitale di rischio ≥ 200 000 $ / "
+                        "investitore angel ≥ 75 000 $ / incubatore (nessun fondo richiesto). "
+                        "Lettera di sostegno obbligatoria. ⚠️ Nessun visto per investitori/golden "
+                        "visa in Canada — questa è la via del progetto."
+                    ),
+                },
+            ),
+            (
+                {
+                    "ru": "Сформировать досье SUV",
+                    "pt": "Preparar o processo SUV",
+                    "it": "Preparare il fascicolo SUV",
+                },
+                {
+                    "ru": "Сбор досье Start-up Visa.",
+                    "pt": "Montagem do processo Start-up Visa.",
+                    "it": "Assemblaggio del fascicolo Start-up Visa.",
+                },
+            ),
+            (
+                {
+                    "ru": "Заявление на PR (и временное разрешение на работу тем временем)",
+                    "pt": "Pedido de PR (e autorização de trabalho temporária entretanto)",
+                    "it": "Domanda di PR (e permesso di lavoro temporaneo nel frattempo)",
+                },
+                {
+                    "ru": (
+                        "PR прямой (не условный). Можно получить разрешение на работу, чтобы "
+                        "начать, пока обрабатывается PR."
+                    ),
+                    "pt": (
+                        "A PR é direta (não condicional). Pode obter-se uma autorização de "
+                        "trabalho para começar enquanto a PR é tramitada."
+                    ),
+                    "it": (
+                        "La PR è diretta (non condizionata). È possibile ottenere un permesso di "
+                        "lavoro per iniziare mentre la PR è in fase di trattamento."
+                    ),
+                },
+            ),
+        ],
+    },
+}
+
+
 def _merge_i18n(
     blob: dict[str, str], scalar: str | None, extra: dict[str, str] | None
 ) -> dict[str, str]:
@@ -7856,20 +14169,35 @@ def _merge_i18n(
 def _apply_sample_i18n(
     tpl: JourneyTemplate, db_steps: list[JourneyTemplateStep], name: str
 ) -> None:
-    """Populate the EN/ES i18n blobs of a sample (template name + per-step name
-    and content_note) from _SAMPLE_I18N, by position. Idempotent: re-running
+    """Populate the i18n blobs of a sample (template name + per-step name and
+    content_note) by position, from TWO tables merged together: _SAMPLE_I18N
+    (en/es, plus ru/pt/it inline for the 3 preview samples) and the
+    _SAMPLE_I18N_RUPTIT overlay (ru/pt/it for the rest). Idempotent: re-running
     re-asserts the same keys. The scalar FR + "fr" blob key are preserved. A
     sample with no translation entry still gets its "fr" key normalized."""
+
+    def _combine(a: Any, b: Any) -> dict[str, str]:
+        merged: dict[str, str] = {}
+        for d in (a, b):
+            if isinstance(d, dict):
+                merged.update(d)
+        return merged
+
     tr = _SAMPLE_I18N.get(name, {})
-    raw_name = tr.get("name")
-    name_tr = raw_name if isinstance(raw_name, dict) else None
+    ov = _SAMPLE_I18N_RUPTIT.get(name, {})
+    name_tr = _combine(tr.get("name"), ov.get("name"))
     tpl.name_i18n = _merge_i18n(tpl.name_i18n, tpl.name, name_tr)
     raw_steps = tr.get("steps")
     steps_list: list[Any] = raw_steps if isinstance(raw_steps, list) else []
+    raw_ov_steps = ov.get("steps")
+    ov_steps: list[Any] = raw_ov_steps if isinstance(raw_ov_steps, list) else []
     for i, st in enumerate(db_steps):
         nm, note = steps_list[i] if i < len(steps_list) else ({}, {})
-        st.name_i18n = _merge_i18n(st.name_i18n, st.name, nm)
-        st.content_note_i18n = _merge_i18n(st.content_note_i18n, st.content_note, note)
+        ov_nm, ov_note = ov_steps[i] if i < len(ov_steps) else ({}, {})
+        st.name_i18n = _merge_i18n(st.name_i18n, st.name, _combine(nm, ov_nm))
+        st.content_note_i18n = _merge_i18n(
+            st.content_note_i18n, st.content_note, _combine(note, ov_note)
+        )
 
 
 async def _reconcile_existing(
