@@ -36,7 +36,7 @@ from src.cases.cases_schema import (
     PersonUpdateRequest,
 )
 from src.core.config import get_settings
-from src.core.email import send_email
+from src.core.email import PendingEmail, send_email
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
@@ -84,7 +84,20 @@ class CasesManager:
 
     # --- create -------------------------------------------------------------------
 
-    async def create_case(self, agent: Agent, payload: CaseCreateRequest) -> ClientCase:
+    async def create_case(
+        self,
+        agent: Agent,
+        payload: CaseCreateRequest,
+        *,
+        email_sink: list[PendingEmail] | None = None,
+    ) -> ClientCase:
+        """Create one case (the manual UI path AND the per-row import path).
+
+        `email_sink`: when None (default, manual path) the invitation mail is
+        sent inline, exactly as before. When a list is given (CRM import) the
+        mail is APPENDED to it instead of sent, so the caller can dispatch it
+        out of band — the import never blocks on N synchronous sends.
+        """
         owner_agent_id = payload.owner_agent_id or agent.id
         if payload.owner_agent_id is not None:
             await self._validate_owner(agent, payload.owner_agent_id)
@@ -171,9 +184,20 @@ class CasesManager:
             )
         else:
             content = new_case_email(agency_name, f"{settings.frontend_url}/space/login")
-        await asyncio.to_thread(
-            send_email, payload.email, content.subject, content.text, content.html
-        )
+        if email_sink is not None:
+            # Deferred: the import collects, the router dispatches later.
+            email_sink.append(
+                PendingEmail(
+                    to=payload.email,
+                    subject=content.subject,
+                    text=content.text,
+                    html=content.html,
+                )
+            )
+        else:
+            await asyncio.to_thread(
+                send_email, payload.email, content.subject, content.text, content.html
+            )
         return case
 
     # --- read ---------------------------------------------------------------------

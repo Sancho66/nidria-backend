@@ -68,6 +68,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # Configuring custom fields is admin config, not case work —
             # case_manager fills values (case.edit), it doesn't define.
             Permission.FIELD_MANAGE,
+            # NB: IMPORT_MANAGE is deliberately NOT excluded — case_manager
+            # imports dossiers (bulk onboarding is case work). An agency can
+            # still revoke it via the matrix (data, no deploy).
             Permission.NOTE_VIEW_CONFIDENTIAL,
             *_EXTERNAL_SET,
         }
@@ -117,6 +120,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.expat.expat_router import BINDINGS as expat_bindings
     from src.external.external_router import BINDINGS as external_bindings
     from src.impersonation.impersonation_router import BINDINGS as impersonation_bindings
+    from src.imports.imports_router import BINDINGS as imports_bindings
     from src.jobs.jobs_router import BINDINGS as jobs_bindings
     from src.journeys.journeys_router import BINDINGS as journeys_bindings
     from src.progress.progress_router import BINDINGS as progress_bindings
@@ -132,6 +136,7 @@ def collect_bindings() -> list[RouteBinding]:
         *journeys_bindings,
         *cases_bindings,
         *custom_fields_bindings,
+        *imports_bindings,
         *views_bindings,
         *progress_bindings,
         *comments_bindings,

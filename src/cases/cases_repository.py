@@ -164,6 +164,23 @@ class CasesRepository:
         stmt = select(ExpatUser).where(ExpatUser.email == email)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def email_is_agency_client(self, agency_id: uuid.UUID, email: str) -> bool:
+        """RGPD-critical dedup: is this email the PRINCIPAL of a live case of
+        THIS agency? Strictly scoped to (agency_id) — an expat who is a client
+        of ANOTHER agency is NEVER matched here, so the import never reveals
+        cross-agency existence. Used to skip in-agency duplicates only."""
+        stmt = (
+            select(ClientCase.id)
+            .join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
+            .where(
+                ClientCase.agency_id == agency_id,
+                ClientCase.deleted_at.is_(None),
+                ExpatUser.email == email,
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).first() is not None
+
     async def get_expat(self, expat_id: uuid.UUID) -> ExpatUser | None:
         return await self.db.get(ExpatUser, expat_id)
 

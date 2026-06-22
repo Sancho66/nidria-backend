@@ -34,6 +34,10 @@ class Permission(StrEnum):
     ROLE_MANAGE = "role.manage"
     JOB_MANAGE = "job.manage"
     FIELD_MANAGE = "field.manage"
+    # Preparing/running a CRM import (the import socle, BLOC 1+). A config
+    # capability like field.manage / journey.configure: admin and
+    # case_manager hold it by default; viewer/member do not.
+    IMPORT_MANAGE = "import.manage"
     # External-provider permissions (wave B). The `external.` prefix is a
     # STRUCTURAL barrier: these only gate /external/* portal routes (each
     # scoped by assignment), and internal roles never hold them — so an

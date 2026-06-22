@@ -10,6 +10,7 @@ from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
+from shared.models.crm_import_mapping import CrmImportMapping
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
@@ -48,6 +49,7 @@ __all__ = [
     "CaseStepProgress",
     "CaseStepRequirement",
     "ClientCase",
+    "CrmImportMapping",
     "CustomFieldDefinition",
     "Document",
     "ExpatUser",

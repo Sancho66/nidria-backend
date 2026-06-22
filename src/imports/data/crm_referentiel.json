@@ -1,0 +1,3284 @@
+{
+  "_meta": {
+    "generated": "2026-06-22",
+    "count": 29,
+    "note": "29 CRM verified, contact entity only, CSV headers for import mapping"
+  },
+  "crms": [
+    {
+      "id": "HubSpot CRM",
+      "category": "crm-mainstream",
+      "contact_fields": [
+        {
+          "csv": "Record ID",
+          "source": "hs_object_id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "First name",
+          "source": "firstname",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last name",
+          "source": "lastname",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Phone number",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile phone number",
+          "source": "mobilephone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Job title",
+          "source": "jobtitle",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Company name",
+          "source": "company",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Street address",
+          "source": "address",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "City",
+          "source": "city",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "State/Region",
+          "source": "state",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Postal code",
+          "source": "zip",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Country/Region",
+          "source": "country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Lifecycle stage",
+          "source": "lifecyclestage",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Lead status",
+          "source": "hs_lead_status",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "hubspot_owner_id",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "createdate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "lastmodifieddate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Pipedrive",
+      "category": "crm-mainstream",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Name",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "First name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phone",
+          "source": "phone",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Organization",
+          "source": "org_id",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Owner",
+          "source": "owner_id",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Label",
+          "source": "label_ids",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Marketing status",
+          "source": "marketing_status",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Visible to",
+          "source": "visible_to",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "add_time",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "update_time",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Salesforce",
+      "category": "crm-mainstream",
+      "contact_fields": [
+        {
+          "csv": "Id",
+          "source": "Id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "FirstName",
+          "source": "FirstName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "LastName",
+          "source": "LastName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "Email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phone",
+          "source": "Phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "MobilePhone",
+          "source": "MobilePhone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Title",
+          "source": "Title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Department",
+          "source": "Department",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "AccountId",
+          "source": "AccountId",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "OwnerId",
+          "source": "OwnerId",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "MailingStreet",
+          "source": "MailingStreet",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "MailingCity",
+          "source": "MailingCity",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "MailingState",
+          "source": "MailingState",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "MailingPostalCode",
+          "source": "MailingPostalCode",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "MailingCountry",
+          "source": "MailingCountry",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "LeadSource",
+          "source": "LeadSource",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "CreatedDate",
+          "source": "CreatedDate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "LastModifiedDate",
+          "source": "LastModifiedDate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Zoho CRM",
+      "category": "crm-mainstream",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "First Name",
+          "source": "First_Name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last Name",
+          "source": "Last_Name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "Email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Secondary Email",
+          "source": "Secondary_Email",
+          "type": "string",
+          "format": "email",
+          "dedup": false
+        },
+        {
+          "csv": "Phone",
+          "source": "Phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "Mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Title",
+          "source": "Title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Department",
+          "source": "Department",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Account Name",
+          "source": "Account_Name",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Contact Owner",
+          "source": "Owner",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing Street",
+          "source": "Mailing_Street",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing City",
+          "source": "Mailing_City",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing State",
+          "source": "Mailing_State",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing Zip",
+          "source": "Mailing_Zip",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing Country",
+          "source": "Mailing_Country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Lead Source",
+          "source": "Lead_Source",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Created Time",
+          "source": "Created_Time",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Modified Time",
+          "source": "Modified_Time",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Freshsales",
+      "category": "crm-mainstream",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "First Name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last Name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Other Emails",
+          "source": "emails",
+          "type": "array",
+          "format": "email",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "mobile_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Work",
+          "source": "work_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Job Title",
+          "source": "job_title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Address",
+          "source": "address",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "City",
+          "source": "city",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "State",
+          "source": "state",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Zipcode",
+          "source": "zipcode",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Country",
+          "source": "country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Owner",
+          "source": "owner_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Sales Account",
+          "source": "sales_account_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "external_id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Copper CRM",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "assignee_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "company_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "company_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "contact_type_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "emails",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "phone_numbers",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "address",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "websites",
+          "type": "array",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "tags",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "custom_fields",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "date_created",
+          "type": "number",
+          "format": "epoch_s",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "date_modified",
+          "type": "number",
+          "format": "epoch_s",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Salesflare",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Name",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "First name",
+          "source": "firstname",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last name",
+          "source": "lastname",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phone number",
+          "source": "phone_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile phone number",
+          "source": "mobile_phone_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Role",
+          "source": "role",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "account",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "owner",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "address",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Tags",
+          "source": "tags",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "birth_date",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "custom",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "creation_date",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "modification_date",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Nimble",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "record_type",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"first name\"]",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"last name\"]",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"email\"]",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "fields[\"phone\"]",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"address\"]",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"company name\"]",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"title\"]",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields[\"url\"]",
+          "type": "array",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "tags",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "owner_id",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Insightly",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "CONTACT_ID",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "SALUTATION",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "FIRST_NAME",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "LAST_NAME",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "BACKGROUND",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "DEFAULT_LINKED_ORGANISATION",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "OWNER_USER_ID",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "DATE_CREATED_UTC",
+          "type": "datetime",
+          "format": "yyyy-MM-dd HH:mm:ss UTC",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "DATE_UPDATED_UTC",
+          "type": "datetime",
+          "format": "yyyy-MM-dd HH:mm:ss UTC",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "VISIBLE_TO",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "CONTACTINFOS",
+          "type": "array",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "ADDRESSES",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "TAGS",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "CUSTOMFIELDS",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "LINKS",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Capsule CRM",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "type",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "firstName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "lastName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "jobTitle",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "organisation",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "about",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "emailAddresses",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "phoneNumbers",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "addresses",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "websites",
+          "type": "array",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "owner",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "tags",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "fields",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "createdAt",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updatedAt",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "lastContactedAt",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Less Annoying CRM",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "ContactId",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "IsCompany",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "AssignedTo",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "Name",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Company",
+          "source": "CompanyName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "CompanyId",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Job Title",
+          "source": "JobTitle",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "Email",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phone",
+          "source": "Phone",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Address",
+          "source": "Address",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Website",
+          "source": "Website",
+          "type": "array",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "Birthday",
+          "source": "Birthday",
+          "type": "datetime",
+          "format": "YYYY-MM-DD",
+          "dedup": false
+        },
+        {
+          "csv": "Background Info",
+          "source": "BackgroundInfo",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "DateCreated",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "LastUpdate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Pipeline CRM",
+      "category": "crm-other",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "First Name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last Name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "full_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "email2",
+          "type": "string",
+          "format": "email",
+          "dedup": false
+        },
+        {
+          "csv": "Phone",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "company_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Company",
+          "source": "company_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Position",
+          "source": "position",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "user_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "City",
+          "source": "work_city",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "State",
+          "source": "work_state",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "lead_status",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "custom_fields",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "YYYY/MM/DD HH:MM:SS ZZ",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "YYYY/MM/DD HH:MM:SS ZZ",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Vtiger CRM",
+      "category": "crm-other",
+      "contact_fields": [
+        {
+          "csv": "lastname",
+          "source": "lastname",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "firstname",
+          "source": "firstname",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "salutationtype",
+          "source": "salutationtype",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "phone",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "mobile",
+          "source": "mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "title",
+          "source": "title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "department",
+          "source": "department",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "account_id",
+          "source": "account_id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "leadsource",
+          "source": "leadsource",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "contact_no",
+          "source": "contact_no",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "assigned_user_id",
+          "source": "assigned_user_id",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "birthdate",
+          "source": "birthdate",
+          "type": "datetime",
+          "format": "yyyy-mm-dd",
+          "dedup": false
+        },
+        {
+          "csv": "mailingstreet",
+          "source": "mailingstreet",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "mailingcity",
+          "source": "mailingcity",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "mailingstate",
+          "source": "mailingstate",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "mailingzip",
+          "source": "mailingzip",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "mailingcountry",
+          "source": "mailingcountry",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "SugarCRM",
+      "category": "crm-other",
+      "contact_fields": [
+        {
+          "csv": "id",
+          "source": "id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "first_name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "last_name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "salutation",
+          "source": "salutation",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "title",
+          "source": "title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "department",
+          "source": "department",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "account_name",
+          "source": "account_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "account_id",
+          "source": "account_id",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "phone_work",
+          "source": "phone_work",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "phone_mobile",
+          "source": "phone_mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "primary_address_street",
+          "source": "primary_address_street",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "primary_address_city",
+          "source": "primary_address_city",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "primary_address_postalcode",
+          "source": "primary_address_postalcode",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "primary_address_country",
+          "source": "primary_address_country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "lead_source",
+          "source": "lead_source",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "assigned_user_id",
+          "source": "assigned_user_id",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "date_entered",
+          "source": "date_entered",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "date_modified",
+          "source": "date_modified",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Bigin",
+      "category": "crm-other",
+      "contact_fields": [
+        {
+          "csv": "Last_Name",
+          "source": "Last_Name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "First_Name",
+          "source": "First_Name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Salutation",
+          "source": "Salutation",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "Email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Secondary_Email",
+          "source": "Secondary_Email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phone",
+          "source": "Phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "Mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Title",
+          "source": "Title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Date_of_Birth",
+          "source": "Date_of_Birth",
+          "type": "datetime",
+          "format": "YYYY-MM-DD",
+          "dedup": false
+        },
+        {
+          "csv": "Email_Opt_Out",
+          "source": "Email_Opt_Out",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Account_Name",
+          "source": "Account_Name",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Owner",
+          "source": "Owner",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing_Street",
+          "source": "Mailing_Street",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing_City",
+          "source": "Mailing_City",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing_State",
+          "source": "Mailing_State",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing_Country",
+          "source": "Mailing_Country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mailing_Zip",
+          "source": "Mailing_Zip",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Tag",
+          "source": "Tag",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "amoCRM",
+      "category": "crm-other",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Contact Name",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "responsible_user_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created_by",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_by",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created_at",
+          "type": "number",
+          "format": "epoch_s",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_at",
+          "type": "number",
+          "format": "epoch_s",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "is_deleted",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "account_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "custom_fields_values",
+          "type": "array",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "_embedded",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Bullhorn",
+      "category": "recruiting-legal",
+      "contact_fields": [
+        {
+          "csv": "id",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "firstName",
+          "source": "firstName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "lastName",
+          "source": "lastName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "name",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "email2",
+          "source": "email2",
+          "type": "string",
+          "format": "email",
+          "dedup": false
+        },
+        {
+          "csv": "mobile",
+          "source": "mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "phone",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "address",
+          "source": "address",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "occupation",
+          "source": "occupation",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "companyName",
+          "source": "companyName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "clientCorporation",
+          "source": "clientCorporation",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "status",
+          "source": "status",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "source",
+          "source": "source",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "owner",
+          "source": "owner",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "dateAdded",
+          "source": "dateAdded",
+          "type": "datetime",
+          "format": "epoch_ms",
+          "dedup": false
+        },
+        {
+          "csv": "dateLastModified",
+          "source": "dateLastModified",
+          "type": "datetime",
+          "format": "epoch_ms",
+          "dedup": false
+        },
+        {
+          "csv": "externalID",
+          "source": "externalID",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "isDeleted",
+          "source": "isDeleted",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Vincere",
+      "category": "recruiting-legal",
+      "contact_fields": [
+        {
+          "csv": "Contact ID",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "First Name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last Name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Personal Email",
+          "source": "personal_email",
+          "type": "string",
+          "format": "email",
+          "dedup": false
+        },
+        {
+          "csv": "Phone",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "mobile_phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Job Title",
+          "source": "job_title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Company ID",
+          "source": "company_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "LinkedIn",
+          "source": "linkedin",
+          "type": "string",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "Owners",
+          "source": "contact_owners",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Status",
+          "source": "status",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Created",
+          "source": "registration_date",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Updated",
+          "source": "updated_timestamp",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "External ID",
+          "source": "external_id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        }
+      ]
+    },
+    {
+      "id": "Recruitee",
+      "category": "recruiting-legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Name",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Emails",
+          "source": "emails",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phones",
+          "source": "phones",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Links",
+          "source": "links",
+          "type": "array",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "Social Links",
+          "source": "social_links",
+          "type": "array",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "Sources",
+          "source": "source",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Tags",
+          "source": "tags",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "duplicates",
+          "type": "array",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "admin_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "gdpr_status",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Loxo",
+      "category": "recruiting-legal",
+      "contact_fields": [
+        {
+          "csv": "Loxo ID",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Name",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Emails",
+          "source": "emails",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Phone",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Phones",
+          "source": "phones",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Job Title",
+          "source": "title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Company Name",
+          "source": "company",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "LinkedIn",
+          "source": "linkedin_url",
+          "type": "string",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "Website",
+          "source": "website",
+          "type": "string",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "Address",
+          "source": "address",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "City",
+          "source": "city",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Country",
+          "source": "country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Tags",
+          "source": "all_raw_tags",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Owner",
+          "source": "owned_by_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Created",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Updated",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Clio",
+      "category": "recruiting-legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "etag",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "type",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "first_name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "last_name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "company",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "company_name",
+          "source": "company_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "date_of_birth",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "email_addresses",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "phone_numbers",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "addresses",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "is_client",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Filevine",
+      "category": "recruiting-legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "personId",
+          "type": "object",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "First Name",
+          "source": "firstName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Middle Name",
+          "source": "middleName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last Name",
+          "source": "lastName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Full Name",
+          "source": "fullName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Nickname",
+          "source": "nickName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Person Types",
+          "source": "personTypes",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Emails",
+          "source": "emails",
+          "type": "array",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Phones",
+          "source": "phones",
+          "type": "array",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Addresses",
+          "source": "addresses",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Company",
+          "source": "fromCompany",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "SSN",
+          "source": "ssn",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Birth Date",
+          "source": "birthDate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Gender",
+          "source": "gender",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Salutation",
+          "source": "salutation",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Is Minor",
+          "source": "isMinor",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Texting Permitted",
+          "source": "isTextingPermitted",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Notes",
+          "source": "notes",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "MyCase",
+      "category": "legal",
+      "contact_fields": [
+        {
+          "csv": "Id",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "First Name",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Middle Name",
+          "source": "middle_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Last Name",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Email",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Cell Phone",
+          "source": "cell_phone_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Work Phone",
+          "source": "work_phone_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Home Phone",
+          "source": "home_phone_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Fax",
+          "source": "fax_phone_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Address",
+          "source": "address",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "People Group",
+          "source": "people_group",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Birthdate",
+          "source": "birthdate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Notes",
+          "source": "notes",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Archived",
+          "source": "archived",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Created At",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Updated At",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Smokeball",
+      "category": "legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "externalSystemId",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "isDeleted",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.firstName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.middleName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.lastName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "person.phone",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.cell",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.residentialAddress",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.mailingAddress",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.birthDate",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.occupation",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "person.notes",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "PracticePanther",
+      "category": "legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "account_ref",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "is_primary_contact",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "middle_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "display_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "phone_mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "phone_home",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "phone_work",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "notes",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "custom_field_values",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "MerusCase",
+      "category": "legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "contact_id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "case_file_id",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Actionstep",
+      "category": "legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "displayName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "isCompany",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "salutation",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "firstName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "middleName",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "lastName",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "website",
+          "type": "string",
+          "format": "url",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "phone1Number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "physicalAddressLine1",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "physicalCity",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "physicalStateProvince",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "physicalPostCode",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "taxNumber",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "birthTimestamp",
+          "type": "datetime",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Docketwise",
+      "category": "legal",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "id",
+          "type": "number",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "type",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "middle_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "lead",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "lead_phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "physical_address",
+          "type": "object",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "phone_numbers_attributes",
+          "type": "array",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "created_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "updated_at",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        }
+      ]
+    },
+    {
+      "id": "Magaya Supply Chain",
+      "category": "moving-logistics",
+      "contact_fields": [
+        {
+          "csv": "",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "",
+          "source": "name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "phone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "",
+          "source": "registration_status",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        }
+      ]
+    }
+  ]
+}

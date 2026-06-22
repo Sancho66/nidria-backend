@@ -34,6 +34,7 @@ from src.expat.expat_router import router as expat_portal_router
 from src.external.external_router import agency_router as external_agency_router
 from src.external.external_router import external_router
 from src.impersonation.impersonation_router import router as impersonation_router
+from src.imports.imports_router import router as imports_router
 from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
 from src.journeys.sample_seed import seed_sample_journeys
@@ -122,6 +123,7 @@ app.include_router(external_router)
 app.include_router(external_agency_router)
 app.include_router(expat_portal_router)
 app.include_router(impersonation_router)
+app.include_router(imports_router)
 app.include_router(jobs_router)
 app.include_router(journeys_router)
 app.include_router(progress_router)

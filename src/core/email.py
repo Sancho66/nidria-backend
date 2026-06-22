@@ -16,6 +16,19 @@ class OutboxEmail:
     html: str | None = None
 
 
+@dataclass
+class PendingEmail:
+    """A built-but-unsent email. Lets a caller (the CRM import) DEFER the
+    send out of the request transaction: the manager appends pending mails
+    to a sink and the router dispatches them on BackgroundTasks, so a
+    200-row import never blocks the response on N synchronous sends."""
+
+    to: str
+    subject: str
+    text: str
+    html: str | None = None
+
+
 # Mock-mode sink, inspectable by tests (cleared per test by an autouse
 # fixture). Real mode never touches it.
 outbox: list[OutboxEmail] = []

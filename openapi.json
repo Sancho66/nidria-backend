@@ -5472,6 +5472,377 @@
         }
       }
     },
+    "/imports/crms": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "List Crms",
+        "operationId": "list_crms_imports_crms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrmListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/crms/{slug}": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Get Crm",
+        "operationId": "get_crm_imports_crms__slug__get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrmDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/cases": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Import Cases",
+        "description": "Create N dossiers from a CSV + mapping. Returns the report\nimmediately; invitation emails are dispatched OUT of the request via\nBackgroundTasks (never N synchronous sends in the request path).",
+        "operationId": "import_cases_imports_cases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/imports/cases/preview": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Preview Import Cases",
+        "description": "Dry-run: validate the CSV + mapping and report each row's PREDICTED\noutcome WITHOUT creating any dossier or queuing any email — no\nBackgroundTasks, no commit, strictly read-only.",
+        "operationId": "preview_import_cases_imports_cases_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/imports/mappings": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "List Mappings",
+        "operationId": "list_mappings_imports_mappings_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journey_template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Journey Template Id"
+            }
+          },
+          {
+            "name": "crm_slug",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Crm Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Upsert Mapping",
+        "operationId": "upsert_mapping_imports_mappings_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/mappings/resolve": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Resolve Mapping",
+        "description": "The applicable mapping for (parcours, crm) — to pre-fill the import.",
+        "operationId": "resolve_mapping_imports_mappings_resolve_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journey_template_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Journey Template Id"
+            }
+          },
+          {
+            "name": "crm_slug",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Crm Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/mappings/{mapping_id}": {
+      "delete": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Delete Mapping",
+        "operationId": "delete_mapping_imports_mappings__mapping_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mapping_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mapping Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/jobs": {
       "get": {
         "tags": [
@@ -11221,6 +11592,63 @@
         "title": "CaseFieldUpdateRequest",
         "description": "Partial PATCH: required_at_creation AND/OR section move (mirrors\nTemplateFieldUpdateRequest)."
       },
+      "CaseImportRequest": {
+        "properties": {
+          "journey_template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Journey Template Id"
+          },
+          "csv_text": {
+            "type": "string",
+            "title": "Csv Text"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping"
+          },
+          "mapping_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Id"
+          },
+          "crm_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crm Slug"
+          }
+        },
+        "type": "object",
+        "required": [
+          "journey_template_id",
+          "csv_text"
+        ],
+        "title": "CaseImportRequest",
+        "description": "Exactly ONE mapping source is used, resolved in this order:\n`mapping` (inline, BLOC 2) → `mapping_id` (a saved mapping) →\n`crm_slug` (the saved mapping for this parcours + CRM). The inline\nfield keeps the BLOC 2 signature working unchanged."
+      },
       "CaseListItemResponse": {
         "properties": {
           "id": {
@@ -11973,6 +12401,100 @@
         ],
         "title": "CompletionMode",
         "description": "How a journey step closes. `agency_validation` (default) = the\ncurrent flow: the agency closes the step. `auto` = capability to\nself-complete when all concrete requirements are met — the active\ntrigger lands in a later wave; wave 1 only exposes the state.\n\nSUPERSEDED by `StepValidatorType` (the \"Action validée par\" refonte):\n`auto` ⇄ `none`, `agency_validation` ⇄ `agent`. KEPT during the\ntransition as a rollback-safe fallback (the migration backfills the\nvalidator FROM it, never the reverse-loses); a later wave drops it."
+      },
+      "CrmDetailResponse": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/CrmFieldOut"
+            },
+            "type": "array",
+            "title": "Headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "headers"
+        ],
+        "title": "CrmDetailResponse"
+      },
+      "CrmFieldOut": {
+        "properties": {
+          "csv": {
+            "type": "string",
+            "title": "Csv"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "dedup": {
+            "type": "boolean",
+            "title": "Dedup"
+          }
+        },
+        "type": "object",
+        "required": [
+          "csv",
+          "type",
+          "format",
+          "dedup"
+        ],
+        "title": "CrmFieldOut",
+        "description": "One importable CSV column of a source CRM (a mapping source)."
+      },
+      "CrmListResponse": {
+        "properties": {
+          "crms": {
+            "items": {
+              "$ref": "#/components/schemas/CrmSummary"
+            },
+            "type": "array",
+            "title": "Crms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "crms"
+        ],
+        "title": "CrmListResponse"
+      },
+      "CrmSummary": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "field_count": {
+            "type": "integer",
+            "title": "Field Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "field_count"
+        ],
+        "title": "CrmSummary"
       },
       "CustomFieldDefinitionCreate": {
         "properties": {
@@ -14110,6 +14632,211 @@
         "title": "ImpersonatorInfo",
         "description": "Present on /me when the token was issued by impersonation —\nthe frontend banner reads it."
       },
+      "ImportCreated": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "field_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportFieldError"
+            },
+            "type": "array",
+            "title": "Field Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "case_id",
+          "first_name",
+          "last_name"
+        ],
+        "title": "ImportCreated"
+      },
+      "ImportFieldError": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "column",
+          "target",
+          "reason"
+        ],
+        "title": "ImportFieldError",
+        "description": "A non-blocking per-cell failure: the dossier is still created, this\none field is left unset and reported."
+      },
+      "ImportPreview": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "create_count": {
+            "type": "integer",
+            "title": "Create Count"
+          },
+          "create_with_errors_count": {
+            "type": "integer",
+            "title": "Create With Errors Count"
+          },
+          "skipped_count": {
+            "type": "integer",
+            "title": "Skipped Count"
+          },
+          "rejected_count": {
+            "type": "integer",
+            "title": "Rejected Count"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewColumn"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rows",
+          "create_count",
+          "create_with_errors_count",
+          "skipped_count",
+          "rejected_count"
+        ],
+        "title": "ImportPreview",
+        "description": "The read-only dry-run: per-row predicted statuses + coerced values, with\nNO dossier created, NO email queued, NO transaction. Dedup follows the SAME\nagency-scoped rule as the real import — cross-agency existence is never\nrevealed."
+      },
+      "ImportRejected": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "details": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "reason"
+        ],
+        "title": "ImportRejected"
+      },
+      "ImportReport": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "created_count": {
+            "type": "integer",
+            "title": "Created Count"
+          },
+          "skipped_count": {
+            "type": "integer",
+            "title": "Skipped Count"
+          },
+          "rejected_count": {
+            "type": "integer",
+            "title": "Rejected Count"
+          },
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/ImportCreated"
+            },
+            "type": "array",
+            "title": "Created"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/ImportSkipped"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRejected"
+            },
+            "type": "array",
+            "title": "Rejected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rows",
+          "created_count",
+          "skipped_count",
+          "rejected_count"
+        ],
+        "title": "ImportReport"
+      },
+      "ImportSkipped": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "reason"
+        ],
+        "title": "ImportSkipped"
+      },
       "JobConfigResponse": {
         "properties": {
           "id": {
@@ -14775,6 +15502,108 @@
           "refresh_token"
         ],
         "title": "LogoutRequest"
+      },
+      "MappingListResponse": {
+        "properties": {
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/MappingResponse"
+            },
+            "type": "array",
+            "title": "Mappings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mappings"
+        ],
+        "title": "MappingListResponse"
+      },
+      "MappingResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "journey_template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Journey Template Id"
+          },
+          "crm_slug": {
+            "type": "string",
+            "title": "Crm Slug"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Mapping"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "journey_template_id",
+          "crm_slug",
+          "name",
+          "mapping"
+        ],
+        "title": "MappingResponse"
+      },
+      "MappingUpsertRequest": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "journey_template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Journey Template Id"
+          },
+          "crm_slug": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Crm Slug"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Mapping"
+          }
+        },
+        "type": "object",
+        "required": [
+          "journey_template_id",
+          "crm_slug",
+          "name",
+          "mapping"
+        ],
+        "title": "MappingUpsertRequest"
       },
       "MaritalStatus": {
         "type": "string",
@@ -15476,6 +16305,103 @@
         "type": "object",
         "title": "PersonUpdateRequest",
         "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key."
+      },
+      "PreviewCell": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "column",
+          "target"
+        ],
+        "title": "PreviewCell",
+        "description": "One mapped cell of a previewed row: the COERCED value the import would\nstore (date normalized, country → ISO-2, …) or, when invalid, the reason."
+      },
+      "PreviewColumn": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "column",
+          "target"
+        ],
+        "title": "PreviewColumn",
+        "description": "A previewed column, in mapping order (the table's column set)."
+      },
+      "PreviewRow": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "status"
+        ],
+        "title": "PreviewRow",
+        "description": "The PREDICTED outcome of one CSV row — nothing is created."
       },
       "PrincipalSummaryResponse": {
         "properties": {
