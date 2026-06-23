@@ -55,9 +55,17 @@ class MappingManager:
         )
         if template is None:
             raise NotFoundError("Journey template not found.")
-        # CRM slug must be a known, usable referential entry.
-        if crm_catalog.get_crm(payload.crm_slug) is None:
+        # CRM identity: either the "custom" sentinel (Autre / CRM générique,
+        # which needs a free label) OR a known referential slug. Custom skips
+        # the referential check — its CSV headers come from the uploaded file.
+        if payload.crm_slug == crm_catalog.CUSTOM_CRM_SLUG:
+            custom_crm_name = (payload.custom_crm_name or "").strip()
+            if not custom_crm_name:
+                raise ValidationError("custom_crm_name is required for a custom CRM import.")
+        elif crm_catalog.get_crm(payload.crm_slug) is None:
             raise ValidationError(f"Unknown CRM slug {payload.crm_slug!r}.")
+        else:
+            custom_crm_name = None  # referenced CRM carries no free label
         # Targets must belong to this parcours (reused import check, 422 if not).
         declared = await self.import_repo.declared_fields(template.id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
@@ -84,6 +92,7 @@ class MappingManager:
                         f"A mapping named {payload.name!r} already exists for this CRM."
                     )
             row.name = payload.name
+            row.custom_crm_name = custom_crm_name
             row.mapping = payload.mapping
         else:
             # CREATE: a NEW named config. Pre-check the EXACT name conflict so
@@ -100,6 +109,7 @@ class MappingManager:
                 agency_id=agent.agency_id,
                 journey_template_id=payload.journey_template_id,
                 crm_slug=payload.crm_slug,
+                custom_crm_name=custom_crm_name,
                 name=payload.name,
                 mapping=payload.mapping,
             )

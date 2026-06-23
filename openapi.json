@@ -15535,6 +15535,17 @@
             "type": "string",
             "title": "Crm Slug"
           },
+          "custom_crm_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Crm Name"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -15552,6 +15563,7 @@
           "id",
           "journey_template_id",
           "crm_slug",
+          "custom_crm_name",
           "name",
           "mapping"
         ],
@@ -15581,6 +15593,18 @@
             "maxLength": 100,
             "minLength": 1,
             "title": "Crm Slug"
+          },
+          "custom_crm_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Crm Name"
           },
           "name": {
             "type": "string",

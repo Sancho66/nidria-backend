@@ -29,6 +29,12 @@ _DATA_PATH = Path(__file__).resolve().parent / "data" / "crm_referentiel.json"
 # detail — never half-served.
 MIN_USABLE_FIELDS = 3
 
+# Sentinel slug for an import from a CRM that is NOT in the referential
+# ("Autre / CRM générique"): the CSV headers come from the uploaded file and
+# the agency provides a free label (custom_crm_name). No referential CRM is
+# named "custom", so this never collides with a real slug.
+CUSTOM_CRM_SLUG = "custom"
+
 
 @dataclass(frozen=True)
 class CrmField:

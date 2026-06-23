@@ -41,5 +41,10 @@ class CrmImportMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
     )
     crm_slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Free CRM label for an "Autre / CRM générique" import (crm_slug="custom"):
+    # the human name the agency gives the unreferenced CRM. NULL for a
+    # referenced CRM (its identity is the referential slug). Descriptive only —
+    # NOT part of the unique key; configs disambiguate by `name`.
+    custom_crm_name: Mapped[str | None] = mapped_column(String(200))
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     mapping: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

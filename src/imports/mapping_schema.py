@@ -12,6 +12,9 @@ class MappingUpsertRequest(BaseModel):
     id: uuid.UUID | None = None
     journey_template_id: uuid.UUID
     crm_slug: str = Field(min_length=1, max_length=100)
+    # Required when crm_slug == "custom" (Autre / CRM générique): the free CRM
+    # label. Ignored (nulled) for a referenced CRM.
+    custom_crm_name: str | None = Field(default=None, max_length=200)
     name: str = Field(min_length=1, max_length=200)
     mapping: dict[str, str]
 
@@ -22,6 +25,7 @@ class MappingResponse(BaseModel):
     id: uuid.UUID
     journey_template_id: uuid.UUID
     crm_slug: str
+    custom_crm_name: str | None
     name: str
     mapping: dict[str, str]
 
