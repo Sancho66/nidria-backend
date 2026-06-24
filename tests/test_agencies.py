@@ -190,6 +190,56 @@ async def test_create_invitation_foreign_or_unknown_role_422(
     assert unknown.status_code == 422
 
 
+# --- Platform-reserved superadmin role: never listed, invited, or assigned ----
+# It carries every permission + agency.create, so an agency must never reach
+# it through the role surface (escalation barrier).
+
+
+async def test_superadmin_role_not_listed_to_agency(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    admin = await make_agent(role=system_roles["admin"])
+    resp = await agencies_client.get("/agencies/me/roles", headers=agent_headers(admin))
+    assert resp.status_code == 200
+    assert "superadmin" not in {r["name"] for r in resp.json()}
+
+
+async def test_cannot_invite_as_superadmin(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    admin = await make_agent(role=system_roles["admin"])
+    resp = await agencies_client.post(
+        "/agencies/me/invitations",
+        headers=agent_headers(admin),
+        # Even with the id in hand, the platform role is opaque: 422, like a
+        # foreign/unknown role (this flow has no permission ceiling).
+        json={"email": "x@example.com", "role_id": str(system_roles["superadmin"].id)},
+    )
+    assert resp.status_code == 422
+
+
+async def test_cannot_assign_superadmin_to_member(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    admin = await make_agent(role=system_roles["admin"])
+    colleague = await make_agent(agency_id=admin.agency_id, role=system_roles["member"])
+    resp = await agencies_client.put(
+        f"/agencies/me/members/{colleague.id}/role",
+        headers=agent_headers(admin),
+        json={"role_id": str(system_roles["superadmin"].id)},
+    )
+    assert resp.status_code == 422
+
+
 async def test_create_invitation_email_already_agent_409(
     agencies_client: AsyncClient,
     make_agency: MakeAgency,

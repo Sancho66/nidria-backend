@@ -10,6 +10,7 @@ from shared.models.agent import Agent
 from shared.models.invitation import AgentInvitation
 from shared.models.rbac import Role
 from src.core.enums import InvitationStatus
+from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 
 
 class AgenciesRepository:
@@ -18,6 +19,13 @@ class AgenciesRepository:
 
     async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
         return await self.db.get(Agency, agency_id)
+
+    async def list_all_agencies(self) -> list[Agency]:
+        """EVERY agency, platform-wide. The single read that deliberately
+        crosses the tenant boundary — for the superadmin agency switcher
+        (gated agency.create at the route; no agency role ever reaches it)."""
+        stmt = select(Agency).order_by(Agency.name)
+        return list((await self.db.execute(stmt)).scalars())
 
     async def get_agency_by_slug(self, slug: str) -> Agency | None:
         stmt = select(Agency).where(Agency.slug == slug)
@@ -64,8 +72,9 @@ class AgenciesRepository:
     async def list_roles(self, agency_id: uuid.UUID) -> list[Role]:
         """System roles + the agency's customs — minus the system roles
         MASKED by one of the agency's copy-on-write clones (the clone is
-        in the list, its origin is not). EXTERNAL roles are never listed
-        here (not assignable via the internal flow)."""
+        in the list, its origin is not). EXTERNAL and PLATFORM-reserved
+        (superadmin) roles are never listed here (not assignable via the
+        internal flow)."""
         masked = (
             select(Role.cloned_from_role_id)
             .where(Role.agency_id == agency_id, Role.cloned_from_role_id.is_not(None))
@@ -77,7 +86,13 @@ class AgenciesRepository:
                 Role.is_external.is_(False),
                 or_(
                     Role.agency_id == agency_id,
-                    and_(Role.is_system, Role.id.not_in(masked)),
+                    and_(
+                        Role.is_system,
+                        Role.id.not_in(masked),
+                        # Platform-reserved roles (superadmin) are never
+                        # offered to an agency — not listable, not assignable.
+                        Role.name.not_in(PLATFORM_ROLE_NAMES),
+                    ),
                 ),
             )
             .order_by(Role.is_system.desc(), Role.name)

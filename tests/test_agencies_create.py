@@ -156,22 +156,126 @@ async def test_admin_email_already_agent_conflicts(
     assert resp.status_code == 409
 
 
-# --- (d) no cross-agency access is introduced ---------------------------------
+# --- (d) full rights in its OWN agency, still no cross-agency access ----------
 
 
-async def test_superadmin_still_reads_no_dossier(
+async def test_superadmin_has_full_rights_but_no_cross_agency(
     agencies_client: AsyncClient,
     make_agent: MakeAgent,
     agent_headers: AuthHeaders,
     system_roles: dict[str, Role],
 ) -> None:
     superadmin = await make_agent(role=system_roles["superadmin"])
-    # Creating an agency is allowed...
+    # Creating an agency is allowed (agency.create)...
     created = await agencies_client.post(
         "/agencies", json=_body(), headers=agent_headers(superadmin)
     )
     assert created.status_code == 201
-    # ...but the superadmin holds ONLY agency.create — reading dossiers is denied
-    # (no case.view): neither cross-agency nor even its own. Frontier intact.
-    denied = await agencies_client.get("/cases", headers=agent_headers(superadmin))
-    assert denied.status_code == 403
+    # ...and the platform-owner role now carries EVERY internal permission, so
+    # reading dossiers is allowed (case.view) — no longer 403. The reads stay
+    # scoped to the superadmin's OWN agency (the token's agency_id), so the
+    # agency it just created is unreachable from this token: no cross-agency
+    # access is introduced (that frontier is the separate Phase 2).
+    own = await agencies_client.get("/cases", headers=agent_headers(superadmin))
+    assert own.status_code == 200
+
+
+# --- (e) platform agency switcher: list all agencies + enter one --------------
+
+
+async def test_superadmin_lists_all_agencies(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    a = await make_agency()
+    b = await make_agency()
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.get("/agencies", headers=agent_headers(superadmin))
+    assert resp.status_code == 200
+    ids = {row["id"] for row in resp.json()}
+    assert {str(a.id), str(b.id)} <= ids  # the cross-tenant read sees every agency
+
+
+async def test_normal_agent_cannot_list_all_agencies(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    admin = await make_agent(role=system_roles["admin"])
+    resp = await agencies_client.get("/agencies", headers=agent_headers(admin))
+    assert resp.status_code == 403
+
+
+async def test_superadmin_enters_another_agency_scoped_to_it(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    target = await make_agency()
+    await make_agent(agency_id=target.id, role=system_roles["admin"])
+    superadmin = await make_agent(role=system_roles["superadmin"])
+
+    enter = await agencies_client.post(
+        f"/agencies/{target.id}/enter", headers=agent_headers(superadmin)
+    )
+    assert enter.status_code == 200, enter.text
+    token = enter.json()["access_token"]
+    assert token
+
+    # The issued token is scoped to the TARGET agency: /agencies/me resolves
+    # to it (the token's subject is a real admin of that agency).
+    me = await agencies_client.get(
+        "/agencies/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert me.status_code == 200
+    assert me.json()["id"] == str(target.id)
+
+
+async def test_normal_agent_cannot_enter_agency(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    target = await make_agency()
+    await make_agent(agency_id=target.id, role=system_roles["admin"])
+    admin = await make_agent(role=system_roles["admin"])
+    resp = await agencies_client.post(
+        f"/agencies/{target.id}/enter", headers=agent_headers(admin)
+    )
+    assert resp.status_code == 403
+
+
+async def test_superadmin_cannot_enter_own_agency(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post(
+        f"/agencies/{superadmin.agency_id}/enter", headers=agent_headers(superadmin)
+    )
+    assert resp.status_code == 422
+
+
+async def test_enter_agency_without_admin_is_404(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    empty = await make_agency()  # no agents at all
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post(
+        f"/agencies/{empty.id}/enter", headers=agent_headers(superadmin)
+    )
+    assert resp.status_code == 404

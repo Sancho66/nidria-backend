@@ -609,6 +609,35 @@
       }
     },
     "/agencies": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "List Agencies",
+        "description": "Platform agency switcher (superadmin-only, agency.create): EVERY agency.\nThe one read that deliberately crosses the tenant boundary.",
+        "operationId": "list_agencies_agencies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgencyResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Agencies Agencies Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "agencies"
@@ -5492,6 +5521,55 @@
               "type": "string",
               "format": "uuid",
               "title": "Expat User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agency_id}/enter": {
+      "post": {
+        "tags": [
+          "impersonation"
+        ],
+        "summary": "Enter Agency",
+        "description": "Superadmin steps into another agency (agency.create) — issues an\nimpersonation token for one of its admins.",
+        "operationId": "enter_agency_agencies__agency_id__enter_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
             }
           }
         ],

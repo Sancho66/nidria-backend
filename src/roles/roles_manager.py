@@ -12,6 +12,7 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.roles.roles_repository import RolesRepository
@@ -232,6 +233,10 @@ class RolesManager:
 
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None or (not role.is_system and role.agency_id != actor.agency_id):
+            raise ValidationError("Role does not exist or does not belong to this agency.")
+        if role.name in PLATFORM_ROLE_NAMES:
+            # Platform-reserved (superadmin): granted only via the seed —
+            # never assignable through the UI, not even by a superadmin.
             raise ValidationError("Role does not exist or does not belong to this agency.")
         if role.is_external:
             # An external (provider) role is never assignable via the

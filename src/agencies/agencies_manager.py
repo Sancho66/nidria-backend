@@ -26,6 +26,7 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
 
 _EMAIL_TAKEN = "This email already has an agent account."
@@ -132,6 +133,14 @@ class AgenciesManager:
         await self.db.refresh(agency)
         return agency
 
+    # --- platform: cross-tenant agency listing (superadmin only) ------------------
+
+    async def list_all_agencies(self) -> list[Agency]:
+        """ALL agencies — the platform agency switcher. Superadmin-only: the
+        route is gated agency.create, the one permission no agency role holds.
+        """
+        return await self.repo.list_all_agencies()
+
     # --- members & roles (tenant reference lists, no permission gate) -------------
 
     async def list_members(self, agent: Agent) -> list[Agent]:
@@ -167,6 +176,12 @@ class AgenciesManager:
         # OR a role of THIS agency — never another agency's role.
         role = await self.repo.get_role(role_id)
         if role is None or (not role.is_system and role.agency_id != agent.agency_id):
+            raise ValidationError("Role does not exist or does not belong to this agency.")
+        # Platform-reserved (superadmin): granted ONLY via the seed, never
+        # invitable. Closes the escalation path — this flow has no permission
+        # ceiling (unlike member-role assignment), so without this an agency
+        # admin could invite a superadmin. Opaque message: don't reveal it.
+        if role.name in PLATFORM_ROLE_NAMES:
             raise ValidationError("Role does not exist or does not belong to this agency.")
         # The two flows never cross: an external role only via the external
         # endpoint, an internal role only via the internal one.

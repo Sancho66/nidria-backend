@@ -31,6 +31,9 @@ BINDINGS = [
     # Platform operation: only the superadmin role holds agency.create, so an
     # agency admin gets 403 here (by design). No cross-agency access is opened.
     RouteBinding("POST", "/agencies", Audience.AGENT, Permission.AGENCY_CREATE),
+    # List EVERY agency — the platform agency switcher. Same superadmin gate
+    # as create (agency.create); the one deliberate cross-tenant read.
+    RouteBinding("GET", "/agencies", Audience.AGENT, Permission.AGENCY_CREATE),
     # /me without permission: every authenticated agent sees their own
     # agency (tenant identity endpoint).
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
@@ -88,6 +91,14 @@ async def create_agency(
             role=result.admin_role_name,
         ),
     )
+
+
+@router.get("", response_model=list[AgencyResponse])
+async def list_agencies(agent: AgentDep, db: DbDep) -> list[AgencyResponse]:
+    """Platform agency switcher (superadmin-only, agency.create): EVERY agency.
+    The one read that deliberately crosses the tenant boundary."""
+    agencies = await AgenciesManager(db).list_all_agencies()
+    return [AgencyResponse.model_validate(a) for a in agencies]
 
 
 @router.get("/me", response_model=AgencyResponse)

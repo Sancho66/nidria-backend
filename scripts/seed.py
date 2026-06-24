@@ -17,22 +17,16 @@ Modes (--mode or SEED_MODE env):
 
 Run: uv run python scripts/seed.py [--mode dev|prod]
 
-Assigning the `superadmin` role (BLOC 1 — platform operator that can ONLY
-create agencies, no agency-data access, no cross-agency read). The role is
-seeded by `seed_rbac_baseline` like every system role, so it is already in
-the `roles` dict below. There is intentionally NO "promote superadmin"
-endpoint — assignment is seed/script-only. Wire it with the existing
-helper, pointing at a DEDICATED empty home agency (agency_id is NOT NULL,
-and the AGENT-audience identity routes — /agencies/me, /agencies/me/members
-— expose the home agency's own data, so keep that agency client-free):
-
-    platform = await get_or_create_agency(db, "nidria-platform", "Nidria Platform")
-    await get_or_create_agent(
-        db, platform, roles["superadmin"], "Ops", "Admin", "ops@nidria.app", password=pwd()
-    )
-
-This grants agency.create only; it stays inert until BLOC 2 exposes
-POST /agencies bound to that permission.
+The `superadmin` role (PLATFORM OWNER) carries EVERY internal permission +
+agency.create and is reserved for Nidria's operators (Alexandre & Eric). It
+is seeded by `seed_rbac_baseline` like every system role and is
+platform-reserved: agencies can neither list nor assign it (baseline:
+PLATFORM_ROLE_NAMES gates GET /roles, member-role PUT and invitations), so an
+agency admin can never escalate into it. There is intentionally NO "promote
+superadmin" endpoint — it is granted ONLY here (seed_nidria_demo assigns it
+to the two founders in their home agency) and, on already-seeded databases
+(get_or_create never migrates an existing agent's role), by
+scripts/migrate_superadmins.py. Still NO cross-agency access (Phase 2).
 """
 
 import argparse
@@ -635,11 +629,16 @@ async def seed_nidria_demo(
         return _throwaway_password() if throwaway_passwords else None
 
     agency = await get_or_create_agency(db, "nidria-demo", "Nidria Demo")
+    # Alexandre & Eric are the PLATFORM owners: the `superadmin` role grants
+    # every (non-external) permission PLUS agency.create, so they fully admin
+    # this agency AND provision new ones via the wizard. The role is
+    # platform-reserved — agencies can neither list nor assign it (baseline:
+    # PLATFORM_ROLE_NAMES); it is granted ONLY here, in the seed.
     alexandre = await get_or_create_agent(
-        db, agency, roles["admin"], "Alexandre", "Montilla", PROD_AGENT_ADMIN, password=pwd()
+        db, agency, roles["superadmin"], "Alexandre", "Montilla", PROD_AGENT_ADMIN, password=pwd()
     )
     await get_or_create_agent(
-        db, agency, roles["admin"], "Eric", "Schalk", PROD_AGENT_ADMIN_2, password=pwd()
+        db, agency, roles["superadmin"], "Eric", "Schalk", PROD_AGENT_ADMIN_2, password=pwd()
     )
     membre = await get_or_create_agent(
         db, agency, roles["member"], "Membre", "Démo", PROD_AGENT_MEMBER, password=pwd()
@@ -658,7 +657,9 @@ async def seed_nidria_demo(
 
 async def seed_prod(db: AsyncSession, roles: dict[str, Role]) -> list[str]:
     """One real agency, real emails, throwaway passwords. Same journeys
-    /steps/prerequisites/required documents as the dev cases."""
+    /steps/prerequisites/required documents as the dev cases. Alexandre &
+    Eric hold the platform-reserved `superadmin` role (all permissions +
+    agency.create)."""
     return await seed_nidria_demo(db, roles, throwaway_passwords=True)
 
 
@@ -703,12 +704,13 @@ async def seed(mode: str = "dev") -> None:
     print("-" * 72)
     if mode == "prod":
         print("  Agency: Nidria Demo (nidria-demo)")
-        print(f"  Agents: {PROD_AGENT_ADMIN} (admin, Alexandre Montilla)")
-        print(f"          {PROD_AGENT_ADMIN_2} (admin, Eric Schalk)")
+        print(f"  Agents: {PROD_AGENT_ADMIN} (superadmin, Alexandre Montilla)")
+        print(f"          {PROD_AGENT_ADMIN_2} (superadmin, Eric Schalk)")
         print(f"          {PROD_AGENT_MEMBER} (member, Membre Démo)")
         print(f"  Expats: {PROD_EXPAT_MARTIN} (Client Martin)")
         print(f"          {PROD_EXPAT_VOLKOV} (Client Volkov)")
         print(f"          {PROD_EXPAT_DUPONT} (Client Dupont)")
+        print("  Superadmin = all permissions + agency.create (platform-reserved role).")
         print('  First login: use "Forgot password" — no seeded password is usable.')
     else:
         print(f"  ALL demo passwords (agents AND expats): {DEMO_PASSWORD}")
@@ -717,7 +719,7 @@ async def seed(mode: str = "dev") -> None:
         print("                           eloise@ / selim@ / ines@ / mathias@reside-paraguay.com")
         print("    Domiciliation Bulgarie artur@domiciliation-bulgarie.com (admin)")
         print("    Expatriation.io        sidney@expatriation.io (admin)")
-        print(f"    Nidria Demo            {PROD_AGENT_ADMIN} / {PROD_AGENT_ADMIN_2} (admins)")
+        print(f"    Nidria Demo            {PROD_AGENT_ADMIN} / {PROD_AGENT_ADMIN_2} (superadmins)")
         print(f"                           {PROD_AGENT_MEMBER} (member)")
         print("  Expats:")
         print(

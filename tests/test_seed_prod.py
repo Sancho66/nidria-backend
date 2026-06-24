@@ -14,7 +14,7 @@ from scripts.seed import (
     PROD_EXPAT_VOLKOV,
     run_seed,
 )
-from shared.models import Agency, Agent, ExpatUser
+from shared.models import Agency, Agent, ExpatUser, Role
 from src.core.config import get_settings
 from src.core.security import verify_password
 
@@ -57,6 +57,16 @@ async def test_prod_seed_creates_demo_agency_with_unusable_passwords(
         "Eric",
         "Schalk",
     )
+
+    # The two founders hold the platform-reserved `superadmin` role (all
+    # permissions + agency.create); Membre Démo stays a plain member.
+    system_roles = {
+        r.name: r
+        for r in (await db_session.execute(select(Role).where(Role.is_system))).scalars()
+    }
+    assert by_email[PROD_AGENT_ADMIN].role_id == system_roles["superadmin"].id
+    assert by_email[PROD_AGENT_ADMIN_2].role_id == system_roles["superadmin"].id
+    assert by_email[PROD_AGENT_MEMBER].role_id == system_roles["member"].id
 
     expat_emails = [PROD_EXPAT_MARTIN, PROD_EXPAT_VOLKOV, PROD_EXPAT_DUPONT]
     expats = (

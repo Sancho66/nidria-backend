@@ -254,9 +254,13 @@ async def test_system_role_matrix_seeded_as_specified(
     assert Permission.REMINDER_APPROVE.value in member
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in member
     assert await keys_of(system_roles["viewer"]) == {Permission.CASE_VIEW.value}
-    # superadmin = EXACTLY agency.create — a platform operator with no
-    # agency-data permission at all (no cross-agency access in Phase 1).
-    assert await keys_of(system_roles["superadmin"]) == {Permission.AGENCY_CREATE.value}
+    # superadmin = the PLATFORM-OWNER role: EVERY internal permission PLUS
+    # agency.create — i.e. all permissions except the external.* ones. It is
+    # platform-reserved (not listable/assignable by agencies); still no
+    # cross-agency access (enforce/repositories untouched — Phase 2).
+    superadmin = await keys_of(system_roles["superadmin"])
+    assert superadmin == {p.value for p in Permission} - external_keys
+    assert Permission.AGENCY_CREATE.value in superadmin
     # The 6 external system roles hold EXACTLY the 3 external.* permissions
     # (wave B: permission ∧ scoping — every external route is assignment-scoped).
     for name in EXTERNAL_ROLE_NAMES:

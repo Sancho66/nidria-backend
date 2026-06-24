@@ -101,17 +101,24 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     ),
     # viewer reads the dossier (and comment threads) but cannot post.
     "viewer": (Permission.CASE_VIEW,),
-    # superadmin is a PLATFORM operator, not an agency actor: it holds
-    # EXACTLY agency.create and nothing else — no case.view, no agency-data
-    # permission at all. Login / profile / logout need NO permission (those
-    # routes are AGENT-audience with permission=None), so this single grant
-    # suffices. BLOC 1 guarantee: it has NO cross-agency access — enforce()
-    # still ignores agency_id and the repositories' WHERE agency_id filters
-    # are untouched (cross-agency read is the separate Phase 2). agency_id
-    # stays NOT NULL, so a superadmin agent still belongs to a home agency;
-    # assign it a dedicated empty one (see scripts/seed.py docstring).
-    "superadmin": (Permission.AGENCY_CREATE,),
+    # superadmin is the PLATFORM-OWNER role, reserved for Nidria's own
+    # operators (Alexandre & Eric, granted ONLY in the seed). It holds every
+    # INTERNAL permission PLUS agency.create — a full operator of its own home
+    # agency that can ALSO provision new agencies via POST /agencies. It is
+    # platform-reserved: agencies can neither list it (GET /roles) nor assign
+    # it (member-role PUT / invitations) — see PLATFORM_ROLE_NAMES — so an
+    # agency admin can never escalate into it. Still NO cross-agency access:
+    # enforce() ignores agency_id and the repositories' WHERE agency_id
+    # filters are untouched (cross-agency reach is the separate Phase 2).
+    "superadmin": tuple(p for p in Permission if p not in _EXTERNAL_SET),
 }
+
+# Platform-reserved system roles: held only by Nidria operators, granted
+# exclusively via the seed. They are NEVER listed to an agency nor assignable
+# through the agency role flows (GET /roles, member-role PUT, invitations) —
+# the structural barrier that stops an agency from escalating into a role
+# that carries agency.create + every internal permission.
+PLATFORM_ROLE_NAMES: tuple[str, ...] = ("superadmin",)
 
 # The 6 fixed EXTERNAL system roles (providers). Wave B: they hold the
 # 3 external.* permissions — which only gate the /external portal, every

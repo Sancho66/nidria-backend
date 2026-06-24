@@ -8,11 +8,31 @@ from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.impersonation import ImpersonationLog
+from shared.models.rbac import Role
 
 
 class ImpersonationRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def get_an_admin_of_agency(self, agency_id: uuid.UUID) -> Agent | None:
+        """An INTERNAL holder of the SYSTEM 'admin' role in the agency — the
+        identity a superadmin steps in AS (full agency control, never platform
+        power: the system 'admin' role excludes agency.create). Wizard- and
+        seed-created agencies always have one; deterministic pick (oldest)."""
+        stmt = (
+            select(Agent)
+            .join(Role, Role.id == Agent.role_id)
+            .where(
+                Agent.agency_id == agency_id,
+                Agent.is_external.is_(False),
+                Role.is_system,
+                Role.name == "admin",
+            )
+            .order_by(Agent.created_at)
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
         # INTERNAL only: an external provider is never an impersonation

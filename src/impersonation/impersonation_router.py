@@ -27,6 +27,14 @@ BINDINGS = [
         Audience.AGENT,
         Permission.AGENT_IMPERSONATE,
     ),
+    # Platform agency switcher — superadmin-only (agency.create, NOT the
+    # same-agency agent.impersonate above). Cross-tenant by design.
+    RouteBinding(
+        "POST",
+        "/agencies/{agency_id}/enter",
+        Audience.AGENT,
+        Permission.AGENCY_CREATE,
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -47,3 +55,12 @@ async def impersonate_expat(
     expat_user_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> ImpersonationTokenResponse:
     return await ImpersonationManager(db).impersonate_expat(agent, expat_user_id)
+
+
+@router.post("/agencies/{agency_id}/enter", response_model=ImpersonationTokenResponse)
+async def enter_agency(
+    agency_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> ImpersonationTokenResponse:
+    """Superadmin steps into another agency (agency.create) — issues an
+    impersonation token for one of its admins."""
+    return await ImpersonationManager(db).enter_agency(agent, agency_id)
