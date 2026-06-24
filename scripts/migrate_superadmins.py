@@ -1,5 +1,7 @@
-"""One-off migration: promote Alexandre & Eric to the platform-reserved
-`superadmin` role (every permission + agency.create), IN PLACE.
+"""Ensure the platform superadmins: promote Alexandre & Eric to the
+platform-reserved `superadmin` role (every permission + agency.create), IN
+PLACE. Idempotent — runs on EVERY deploy from start.sh (after the seed), and
+can also be run by hand.
 
 Why a script and not just a re-seed: scripts/seed.py is idempotent BY EMAIL
 and NEVER migrates an existing agent's role (it only creates missing rows). On
