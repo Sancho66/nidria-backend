@@ -8,6 +8,12 @@ from sqlalchemy.orm import selectinload
 from shared.models.agent import Agent
 from shared.models.rbac import Permission as PermissionRow
 from shared.models.rbac import Role, RolePermission
+from src.core.rbac.baseline import PLATFORM_PERMISSIONS
+
+# Platform-scope permission keys (agency.create): real permissions that gate
+# platform endpoints, but NEVER part of an agency's assignable surface — kept
+# out of the catalogue so they can't appear in the role editor.
+_PLATFORM_KEYS = [p.value for p in PLATFORM_PERMISSIONS]
 
 
 class RolesRepository:
@@ -17,7 +23,14 @@ class RolesRepository:
     # --- permissions ---------------------------------------------------------------
 
     async def list_permissions(self) -> list[PermissionRow]:
-        stmt = select(PermissionRow).order_by(PermissionRow.category, PermissionRow.key)
+        # The agency-facing catalogue (GET /permissions, role editor): excludes
+        # platform-scope permissions (agency.create) — held only by the
+        # superadmin role, never assignable to an agency role.
+        stmt = (
+            select(PermissionRow)
+            .where(PermissionRow.key.not_in(_PLATFORM_KEYS))
+            .order_by(PermissionRow.category, PermissionRow.key)
+        )
         return list((await self.db.execute(stmt)).scalars())
 
     async def get_permissions_by_ids(

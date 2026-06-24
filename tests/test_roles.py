@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.rbac import Permission as PermissionRow
 from shared.models.rbac import Role
-from src.core.rbac.baseline import SYSTEM_ROLE_MATRIX
+from src.core.rbac.baseline import PLATFORM_PERMISSIONS, SYSTEM_ROLE_MATRIX
 from src.core.rbac.permissions import Permission
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -71,7 +71,13 @@ async def test_permissions_catalogue(
     response = await roles_client.get("/permissions", headers=agent_headers(admin))
     assert response.status_code == 200
     body = response.json()
-    assert {p["key"] for p in body} == {p.value for p in Permission}
+    keys = {p["key"] for p in body}
+    # Platform-scope permissions (agency.create) are NEVER in the agency
+    # catalogue — they gate platform endpoints, held only by the superadmin
+    # role, never assignable to an agency role.
+    platform_keys = {p.value for p in PLATFORM_PERMISSIONS}
+    assert keys == {p.value for p in Permission} - platform_keys
+    assert "agency.create" not in keys
     sample = next(p for p in body if p["key"] == "case.view")
     assert sample["category"] == "case"
     assert sample["label"]
