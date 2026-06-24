@@ -34,9 +34,7 @@ class ImpersonationManager:
             raise NotFoundError("Agent not found.")
         return await self._issue(actor, Audience.AGENT, ActorType.AGENT, target.id)
 
-    async def enter_agency(
-        self, actor: Agent, agency_id: uuid.UUID
-    ) -> ImpersonationTokenResponse:
+    async def enter_agency(self, actor: Agent, agency_id: uuid.UUID) -> ImpersonationTokenResponse:
         """Platform agency switcher — superadmin-only (the route is gated
         agency.create). Step into ANOTHER agency by impersonating one of its
         admins: full control of that agency, scoped naturally (the token's

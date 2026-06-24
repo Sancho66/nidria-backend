@@ -230,9 +230,7 @@ async def test_superadmin_enters_another_agency_scoped_to_it(
 
     # The issued token is scoped to the TARGET agency: /agencies/me resolves
     # to it (the token's subject is a real admin of that agency).
-    me = await agencies_client.get(
-        "/agencies/me", headers={"Authorization": f"Bearer {token}"}
-    )
+    me = await agencies_client.get("/agencies/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["id"] == str(target.id)
 
@@ -247,9 +245,7 @@ async def test_normal_agent_cannot_enter_agency(
     target = await make_agency()
     await make_agent(agency_id=target.id, role=system_roles["admin"])
     admin = await make_agent(role=system_roles["admin"])
-    resp = await agencies_client.post(
-        f"/agencies/{target.id}/enter", headers=agent_headers(admin)
-    )
+    resp = await agencies_client.post(f"/agencies/{target.id}/enter", headers=agent_headers(admin))
     assert resp.status_code == 403
 
 

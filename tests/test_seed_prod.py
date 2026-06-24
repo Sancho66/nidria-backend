@@ -61,8 +61,7 @@ async def test_prod_seed_creates_demo_agency_with_unusable_passwords(
     # The two founders hold the platform-reserved `superadmin` role (all
     # permissions + agency.create); Membre Démo stays a plain member.
     system_roles = {
-        r.name: r
-        for r in (await db_session.execute(select(Role).where(Role.is_system))).scalars()
+        r.name: r for r in (await db_session.execute(select(Role).where(Role.is_system))).scalars()
     }
     assert by_email[PROD_AGENT_ADMIN].role_id == system_roles["superadmin"].id
     assert by_email[PROD_AGENT_ADMIN_2].role_id == system_roles["superadmin"].id
