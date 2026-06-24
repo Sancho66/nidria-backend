@@ -38,6 +38,15 @@ class Permission(StrEnum):
     # capability like field.manage / journey.configure: admin and
     # case_manager hold it by default; viewer/member do not.
     IMPORT_MANAGE = "import.manage"
+    # PLATFORM-scope permission (NOT agency-scoped). Held ONLY by the
+    # `superadmin` system role: creating an agency is a platform operation,
+    # not agency work — admin/case_manager are explicitly excluded from it
+    # (see _PLATFORM_SET in baseline.py), exactly like the external.* barrier.
+    # Granting it conveys NO access to any agency's data: it gates a single
+    # future endpoint (POST /agencies, BLOC 2) and nothing else. The
+    # per-agency WHERE agency_id scoping in the repositories is untouched and
+    # enforce() still ignores agency_id, so a superadmin can read no dossier.
+    AGENCY_CREATE = "agency.create"
     # External-provider permissions (wave B). The `external.` prefix is a
     # STRUCTURAL barrier: these only gate /external/* portal routes (each
     # scoped by assignment), and internal roles never hold them — so an
