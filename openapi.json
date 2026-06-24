@@ -608,6 +608,53 @@
         }
       }
     },
+    "/agencies": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Create Agency",
+        "description": "Superadmin-only (agency.create). Creates the agency + its first admin\natomically; the activation email is dispatched OUT of the request via\nBackgroundTasks (never blocks the response).",
+        "operationId": "create_agency_agencies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgencyCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me": {
       "get": {
         "tags": [
@@ -10282,6 +10329,84 @@
         ],
         "title": "ActivityLogResponse"
       },
+      "AgencyCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "default_language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it"
+            ],
+            "title": "Default Language",
+            "default": "fr"
+          },
+          "admin_email": {
+            "type": "string",
+            "format": "email",
+            "title": "Admin Email"
+          },
+          "admin_first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Admin First Name"
+          },
+          "admin_last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Admin Last Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "admin_email",
+          "admin_first_name",
+          "admin_last_name"
+        ],
+        "title": "AgencyCreateRequest",
+        "description": "Superadmin-only (gated agency.create). Creates the agency + its first\nadmin atomically; the admin is onboarded via a set-password email."
+      },
+      "AgencyCreateResponse": {
+        "properties": {
+          "agency": {
+            "$ref": "#/components/schemas/AgencyResponse"
+          },
+          "admin": {
+            "$ref": "#/components/schemas/CreatedAdminResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency",
+          "admin"
+        ],
+        "title": "AgencyCreateResponse"
+      },
       "AgencyMemberResponse": {
         "properties": {
           "id": {
@@ -12401,6 +12526,40 @@
         ],
         "title": "CompletionMode",
         "description": "How a journey step closes. `agency_validation` (default) = the\ncurrent flow: the agency closes the step. `auto` = capability to\nself-complete when all concrete requirements are met — the active\ntrigger lands in a later wave; wave 1 only exposes the state.\n\nSUPERSEDED by `StepValidatorType` (the \"Action validée par\" refonte):\n`auto` ⇄ `none`, `agency_validation` ⇄ `agent`. KEPT during the\ntransition as a rollback-safe fallback (the migration backfills the\nvalidator FROM it, never the reverse-loses); a later wave drops it."
+      },
+      "CreatedAdminResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "first_name",
+          "last_name",
+          "role"
+        ],
+        "title": "CreatedAdminResponse"
       },
       "CrmDetailResponse": {
         "properties": {

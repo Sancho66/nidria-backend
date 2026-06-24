@@ -16,6 +16,23 @@ Modes (--mode or SEED_MODE env):
               password is ever printed.
 
 Run: uv run python scripts/seed.py [--mode dev|prod]
+
+Assigning the `superadmin` role (BLOC 1 — platform operator that can ONLY
+create agencies, no agency-data access, no cross-agency read). The role is
+seeded by `seed_rbac_baseline` like every system role, so it is already in
+the `roles` dict below. There is intentionally NO "promote superadmin"
+endpoint — assignment is seed/script-only. Wire it with the existing
+helper, pointing at a DEDICATED empty home agency (agency_id is NOT NULL,
+and the AGENT-audience identity routes — /agencies/me, /agencies/me/members
+— expose the home agency's own data, so keep that agency client-free):
+
+    platform = await get_or_create_agency(db, "nidria-platform", "Nidria Platform")
+    await get_or_create_agent(
+        db, platform, roles["superadmin"], "Ops", "Admin", "ops@nidria.app", password=pwd()
+    )
+
+This grants agency.create only; it stays inert until BLOC 2 exposes
+POST /agencies bound to that permission.
 """
 
 import argparse
@@ -50,7 +67,11 @@ from shared.models import (  # noqa: E402
 )
 from src.core.config import get_settings  # noqa: E402
 from src.core.database import async_session_maker  # noqa: E402
-from src.core.rbac.baseline import collect_bindings, seed_rbac_baseline  # noqa: E402
+from src.core.rbac.baseline import (  # noqa: E402
+    SYSTEM_ROLE_MATRIX,
+    collect_bindings,
+    seed_rbac_baseline,
+)
 from src.core.security import hash_password  # noqa: E402
 from src.jobs.jobs_baseline import seed_job_configs  # noqa: E402
 
@@ -672,7 +693,10 @@ async def seed(mode: str = "dev") -> None:
 
     print("=" * 72)
     print(f"Nidria seed complete ({mode} mode).")
-    print(f"  RBAC baseline: {len(collect_bindings())} bindings, 4 system roles")
+    print(
+        f"  RBAC baseline: {len(collect_bindings())} bindings, "
+        f"{len(SYSTEM_ROLE_MATRIX)} system roles"
+    )
     print("  Job configs: dispatch_reminders (* * * * *), auto_reminders (0 7 * * *)")
     for line in results:
         print(f"  {line}")

@@ -1,6 +1,9 @@
 import asyncio
+import re
 import secrets
+import unicodedata
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,12 +13,12 @@ from shared.models.agent import Agent
 from shared.models.invitation import AgentInvitation
 from shared.models.rbac import Role
 from src.agencies.agencies_repository import AgenciesRepository
-from src.agencies.agencies_schema import AgencyUpdateRequest
+from src.agencies.agencies_schema import AgencyCreateRequest, AgencyUpdateRequest
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.core.config import get_settings
-from src.core.email import send_email
-from src.core.email_templates import agent_invitation_email
+from src.core.email import PendingEmail, send_email
+from src.core.email_templates import agent_invitation_email, password_reset_email
 from src.core.enums import Audience, InvitationStatus
 from src.core.exceptions import (
     BadRequestError,
@@ -28,10 +31,86 @@ from src.core.security import hash_password
 _EMAIL_TAKEN = "This email already has an agent account."
 
 
+def _slugify(name: str) -> str:
+    """Derive a URL-safe slug from an agency name (ASCII, lower, hyphen)."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")[:100].strip("-")
+
+
+@dataclass(frozen=True)
+class AgencyCreated:
+    """Result of POST /agencies — the persisted agency + first admin, plus
+    the activation email staged for the router to dispatch off-request."""
+
+    agency: Agency
+    admin: Agent
+    admin_role_name: str
+    email: PendingEmail
+
+
 class AgenciesManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.repo = AgenciesRepository(db)
+
+    # --- agency creation (PLATFORM operation, gated agency.create) ----------------
+
+    async def create_agency(self, superadmin: Agent, payload: AgencyCreateRequest) -> AgencyCreated:
+        """Create an agency + its first admin ATOMICALLY, then stage one
+        activation email. PLATFORM-scoped (superadmin only); introduces NO
+        cross-agency access — the new admin, not the superadmin, will work
+        the agency. The superadmin still holds only agency.create.
+        """
+        slug = (payload.slug or _slugify(payload.name)).strip("-")
+        if not slug:
+            raise ValidationError("Could not derive a slug from the name; provide one explicitly.")
+        if await self.repo.get_agency_by_slug(slug) is not None:
+            raise ConflictError(f"Agency slug '{slug}' is already taken.")
+        # One human = one agent account at MVP (agent.email is table-unique):
+        # refuse rather than silently re-attach an agent of another agency.
+        if await self.repo.get_agent_by_email(payload.admin_email) is not None:
+            raise ConflictError(_EMAIL_TAKEN)
+        # The first admin points at the SHARED system 'admin' role
+        # (agency_id NULL) — no per-agency role is created.
+        admin_role = await self.repo.get_system_role("admin")
+        if admin_role is None:
+            raise NotFoundError("System role 'admin' is not seeded — run the RBAC baseline seed.")
+
+        agency = self.repo.add_agency(
+            name=payload.name, slug=slug, default_language=payload.default_language
+        )
+        await self.db.flush()  # need agency.id for the admin row
+        admin = self.repo.add_agent(
+            agency_id=agency.id,
+            role_id=admin_role.id,
+            email=payload.admin_email,
+            first_name=payload.admin_first_name,
+            last_name=payload.admin_last_name,
+            # Throwaway: never used. The admin sets their own password via the
+            # reset link below (same onboarding as the prod-seed admins).
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            is_external=False,
+        )
+        await self.db.flush()  # need admin.id for the reset token
+        # Reuse the password-reset machinery: create_reset_link only STAGES
+        # the token (no commit), so agency + admin + token land in ONE
+        # transaction — rollback if anything above failed.
+        reset_link = AuthManager(self.db).create_reset_link(admin.id, Audience.AGENT)
+        await self.db.commit()
+        await self.db.refresh(agency)
+        await self.db.refresh(admin)
+
+        settings = get_settings()
+        content = password_reset_email(reset_link, settings.password_reset_token_expires_minutes)
+        email = PendingEmail(
+            to=payload.admin_email,
+            subject=content.subject,
+            text=content.text,
+            html=content.html,
+        )
+        return AgencyCreated(
+            agency=agency, admin=admin, admin_role_name=admin_role.name, email=email
+        )
 
     # --- agency (tenant scoping: always from the token, never from the URL) ----
 

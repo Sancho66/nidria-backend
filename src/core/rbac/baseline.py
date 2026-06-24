@@ -50,9 +50,21 @@ EXTERNAL_PERMISSIONS: tuple[Permission, ...] = (
 )
 _EXTERNAL_SET = set(EXTERNAL_PERMISSIONS)
 
+# PLATFORM-scope permissions: held ONLY by the `superadmin` system role,
+# never by an agency role. Same matrix-level barrier as _EXTERNAL_SET —
+# excluded from admin/case_manager below so a NEW platform permission can
+# never silently land on an agency admin (deny-by-default at the matrix).
+# These gate platform endpoints (agency creation); they convey NO
+# cross-agency data access — the agency_id scoping in repositories and
+# enforce()'s agency-blindness are both untouched.
+PLATFORM_PERMISSIONS: tuple[Permission, ...] = (Permission.AGENCY_CREATE,)
+_PLATFORM_SET = set(PLATFORM_PERMISSIONS)
+
 SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
-    # admin = everything EXCEPT the external-provider permissions.
-    "admin": tuple(p for p in Permission if p not in _EXTERNAL_SET),
+    # admin = everything EXCEPT the external-provider AND platform-scope
+    # permissions (the former belong only to external roles, the latter only
+    # to superadmin — both structural barriers).
+    "admin": tuple(p for p in Permission if p not in _EXTERNAL_SET and p not in _PLATFORM_SET),
     "case_manager": tuple(
         p
         for p in Permission
@@ -73,6 +85,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # still revoke it via the matrix (data, no deploy).
             Permission.NOTE_VIEW_CONFIDENTIAL,
             *_EXTERNAL_SET,
+            # agency.create is platform-only — case_manager never creates
+            # agencies (see _PLATFORM_SET; mirrors the admin exclusion).
+            *_PLATFORM_SET,
         }
     ),
     "member": (
@@ -86,6 +101,16 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     ),
     # viewer reads the dossier (and comment threads) but cannot post.
     "viewer": (Permission.CASE_VIEW,),
+    # superadmin is a PLATFORM operator, not an agency actor: it holds
+    # EXACTLY agency.create and nothing else — no case.view, no agency-data
+    # permission at all. Login / profile / logout need NO permission (those
+    # routes are AGENT-audience with permission=None), so this single grant
+    # suffices. BLOC 1 guarantee: it has NO cross-agency access — enforce()
+    # still ignores agency_id and the repositories' WHERE agency_id filters
+    # are untouched (cross-agency read is the separate Phase 2). agency_id
+    # stays NOT NULL, so a superadmin agent still belongs to a home agency;
+    # assign it a dedicated empty one (see scripts/seed.py docstring).
+    "superadmin": (Permission.AGENCY_CREATE,),
 }
 
 # The 6 fixed EXTERNAL system roles (providers). Wave B: they hold the
