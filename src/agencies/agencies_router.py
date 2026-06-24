@@ -1,22 +1,26 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from src.agencies.agencies_manager import AgenciesManager
 from src.agencies.agencies_schema import (
     AcceptInvitationRequest,
+    AgencyCreateRequest,
+    AgencyCreateResponse,
     AgencyMemberResponse,
     AgencyResponse,
     AgencyUpdateRequest,
     AgentInvitationCreateRequest,
     AgentInvitationResponse,
+    CreatedAdminResponse,
     RoleResponse,
 )
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
 from src.core.dependencies import get_current_agent, get_db
+from src.core.email import send_email
 from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
@@ -24,6 +28,9 @@ from src.core.rbac.permissions import Permission
 router = APIRouter(prefix="/agencies", tags=["agencies"])
 
 BINDINGS = [
+    # Platform operation: only the superadmin role holds agency.create, so an
+    # agency admin gets 403 here (by design). No cross-agency access is opened.
+    RouteBinding("POST", "/agencies", Audience.AGENT, Permission.AGENCY_CREATE),
     # /me without permission: every authenticated agent sees their own
     # agency (tenant identity endpoint).
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
@@ -54,6 +61,33 @@ BINDINGS = [
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 AgentDep = Annotated[Agent, Depends(get_current_agent)]
+
+
+@router.post("", response_model=AgencyCreateResponse, status_code=201)
+async def create_agency(
+    body: AgencyCreateRequest, agent: AgentDep, db: DbDep, background: BackgroundTasks
+) -> AgencyCreateResponse:
+    """Superadmin-only (agency.create). Creates the agency + its first admin
+    atomically; the activation email is dispatched OUT of the request via
+    BackgroundTasks (never blocks the response)."""
+    result = await AgenciesManager(db).create_agency(agent, body)
+    background.add_task(
+        send_email,
+        result.email.to,
+        result.email.subject,
+        result.email.text,
+        result.email.html,
+    )
+    return AgencyCreateResponse(
+        agency=AgencyResponse.model_validate(result.agency),
+        admin=CreatedAdminResponse(
+            id=result.admin.id,
+            email=result.admin.email,
+            first_name=result.admin.first_name,
+            last_name=result.admin.last_name,
+            role=result.admin_role_name,
+        ),
+    )
 
 
 @router.get("/me", response_model=AgencyResponse)

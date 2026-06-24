@@ -19,6 +19,33 @@ class AgencyResponse(BaseModel):
     default_language: Language
 
 
+class AgencyCreateRequest(BaseModel):
+    """Superadmin-only (gated agency.create). Creates the agency + its first
+    admin atomically; the admin is onboarded via a set-password email."""
+
+    name: str = Field(min_length=1, max_length=200)
+    # Optional: slugified from `name` when omitted. Immutable afterwards
+    # (same rule as AgencyUpdateRequest — public identifier).
+    slug: str | None = Field(default=None, min_length=1, max_length=100)
+    default_language: Language = "fr"
+    admin_email: EmailStr
+    admin_first_name: str = Field(min_length=1, max_length=100)
+    admin_last_name: str = Field(min_length=1, max_length=100)
+
+
+class CreatedAdminResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    first_name: str
+    last_name: str
+    role: str
+
+
+class AgencyCreateResponse(BaseModel):
+    agency: AgencyResponse
+    admin: CreatedAdminResponse
+
+
 class AgencyUpdateRequest(BaseModel):
     """`slug` is deliberately absent: immutable at MVP (public
     identifier — changing it would break links and logs)."""

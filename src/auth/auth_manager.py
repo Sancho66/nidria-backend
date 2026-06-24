@@ -50,6 +50,24 @@ class AuthManager:
             refresh_token=create_refresh_token(str(actor_id), audience, jti),
         )
 
+    def create_reset_link(self, actor_id: uuid.UUID, audience: Audience) -> str:
+        """Stage a password-reset token for an actor and return its link.
+
+        Caller commits (mirrors issue_token_pair — no commit here). Reused
+        by forgot-password AND by agency onboarding: the first admin of a
+        freshly created agency sets their password through this exact link.
+        """
+        settings = get_settings()
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(UTC) + timedelta(
+            minutes=settings.password_reset_token_expires_minutes
+        )
+        self.repo.add_reset_token(audience.value, actor_id, token, expires_at)
+        # Frontend route map: agent flows live at the root, the expat space
+        # under /space; tokens are PATH params.
+        prefix = "" if audience is Audience.AGENT else "/space"
+        return f"{settings.frontend_url}{prefix}/reset-password/{token}"
+
     # --- login -------------------------------------------------------------------
 
     async def login_agent(self, email: str, password: str) -> TokenPairResponse:
@@ -175,17 +193,9 @@ class AuthManager:
                 actor = None
 
         if actor is not None:
-            settings = get_settings()
-            token = secrets.token_urlsafe(32)
-            expires_at = datetime.now(UTC) + timedelta(
-                minutes=settings.password_reset_token_expires_minutes
-            )
-            self.repo.add_reset_token(audience.value, actor.id, token, expires_at)
+            reset_link = self.create_reset_link(actor.id, audience)
             await self.db.commit()
-            # Frontend route map: agent flows live at the root,
-            # the expat space under /space; tokens are PATH params.
-            prefix = "" if audience is Audience.AGENT else "/space"
-            reset_link = f"{settings.frontend_url}{prefix}/reset-password/{token}"
+            settings = get_settings()
             content = password_reset_email(
                 reset_link, settings.password_reset_token_expires_minutes
             )

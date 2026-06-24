@@ -19,8 +19,23 @@ class AgenciesRepository:
     async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
         return await self.db.get(Agency, agency_id)
 
+    async def get_agency_by_slug(self, slug: str) -> Agency | None:
+        stmt = select(Agency).where(Agency.slug == slug)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_agency(self, *, name: str, slug: str, default_language: str) -> Agency:
+        agency = Agency(name=name, slug=slug, default_language=default_language, settings={})
+        self.db.add(agency)
+        return agency
+
     async def get_role(self, role_id: uuid.UUID) -> Role | None:
         return await self.db.get(Role, role_id)
+
+    async def get_system_role(self, name: str) -> Role | None:
+        """A shared platform role by name (agency_id NULL, is_system) — e.g.
+        'admin' for a new agency's first admin. Never an agency clone."""
+        stmt = select(Role).where(Role.is_system, Role.agency_id.is_(None), Role.name == name)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def list_agents_with_roles(self, agency_id: uuid.UUID) -> list[Agent]:
         # INTERNAL agents only — externals must never appear as candidate
