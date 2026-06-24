@@ -24,7 +24,7 @@ from collections.abc import AsyncGenerator, Generator  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import Engine, create_engine  # noqa: E402
+from sqlalchemy import Engine, create_engine, text  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncEngine,
     AsyncSession,
@@ -84,6 +84,15 @@ async def async_engine(
     engine = create_async_engine(async_url, poolclass=NullPool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Mirror production's RLS posture in the test DB: RLS ENABLED with
+        # NO policy (deny-all) on every table — exactly what the
+        # a103249eb0a1_enable_rls_all_public_tables migration sets in prod.
+        # The testcontainer role owns the tables (and is a superuser), so it
+        # is EXEMPT from RLS (no FORCE) — the whole suite runs unchanged,
+        # proving the app is intact under RLS. (test_rls.py adds the
+        # deny-all proof for a non-bypass role.)
+        for table in Base.metadata.sorted_tables:
+            await conn.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))
     try:
         yield engine
     finally:
