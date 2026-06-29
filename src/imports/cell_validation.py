@@ -29,6 +29,7 @@ from src.custom_fields.custom_fields_validation import (
     _coerce_country,
     _coerce_date,
     _coerce_one,
+    coerce_address_subfield,
 )
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
 
@@ -78,7 +79,18 @@ class CustomFieldTarget:
     definition: CustomFieldDefinition
 
 
-CellTarget = BaseFieldTarget | CaseFieldTarget | CustomFieldTarget
+@dataclass(frozen=True)
+class AddressSubfieldTarget:
+    """ONE sub-component (street/city/postal_code/country) of an ADDRESS custom
+    field, fed by its OWN CSV column (composite mapping: N columns → one address
+    object). The cell carries a sub-field string; the engine assembles the
+    object and stores it under the field's key."""
+
+    definition: CustomFieldDefinition
+    subfield: str
+
+
+CellTarget = BaseFieldTarget | CaseFieldTarget | CustomFieldTarget | AddressSubfieldTarget
 
 
 @dataclass(frozen=True)
@@ -143,6 +155,8 @@ def validate_cell(column: str, target: CellTarget, raw: str) -> CellResult:
             value = _validate_base(target.reference, raw)
         elif isinstance(target, CaseFieldTarget):
             value = _validate_case(target.reference, raw)
+        elif isinstance(target, AddressSubfieldTarget):
+            value = coerce_address_subfield(target.subfield, raw)  # one sub-field, shared rule
         else:
             value = _coerce_one(target.definition, raw)  # full custom-field reuse
     except Exception as exc:  # a single bad cell is reported, never fatal

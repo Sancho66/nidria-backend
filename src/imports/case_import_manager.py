@@ -41,6 +41,7 @@ from src.imports.case_import_schema import (
     PreviewRow,
 )
 from src.imports.cell_validation import (
+    AddressSubfieldTarget,
     BaseFieldTarget,
     CaseFieldTarget,
     CellTarget,
@@ -315,6 +316,8 @@ class CaseImportManager:
             return BaseFieldTarget(target.reference)
         if target.family == "case_field":
             return CaseFieldTarget(target.reference)
+        if target.subpath is not None:  # one column → one ADDRESS sub-component
+            return AddressSubfieldTarget(defs_by_key[target.reference], target.subpath)
         return CustomFieldTarget(defs_by_key[target.reference])
 
     @staticmethod
@@ -343,6 +346,10 @@ class CaseImportManager:
         write); an invalid cell is reported, never fatal."""
         field_values: dict[str, object] = {}
         custom: dict[str, object] = {}
+        # Composite ADDRESS fields, assembled from their N mapped columns:
+        # custom_field key → {subfield: coerced value}. Partial is fine — only
+        # the provided sub-fields land in the object.
+        addresses: dict[str, dict[str, object]] = {}
         field_errors: list[ImportFieldError] = []
         provided: set[tuple[str, str]] = set()
         cells: list[PreviewCell] = []
@@ -376,10 +383,18 @@ class CaseImportManager:
             if result.value is None:
                 continue  # empty cell, not provided
             provided.add((target.family, target.reference))
-            if target.family == "custom_field":
+            if target.subpath is not None:
+                # One CSV column → one sub-component of the ADDRESS object. Each
+                # sub-field is already validated (coerce_address_subfield, the
+                # SAME primitive _coerce_address uses), so the assembled dict IS
+                # the validated object — no second pass, no duplicated rule.
+                addresses.setdefault(target.reference, {})[target.subpath] = result.value
+            elif target.family == "custom_field":
                 custom[target.reference] = result.value
             else:
                 field_values[target.reference] = result.value
+
+        custom.update(addresses)
 
         return _CellValidation(
             field_values=field_values,
