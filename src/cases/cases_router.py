@@ -129,6 +129,7 @@ async def bulk_delete(body: BulkDeleteRequest, agent: AgentDep, db: DbDep) -> Bu
 async def list_cases(
     agent: AgentDep,
     db: DbDep,
+    lang: RequestLang,
     status: Annotated[list[CaseStatus] | None, Query()] = None,
     origin_country: Annotated[str | None, Query(pattern=r"^[A-Z]{2}$")] = None,
     dest_country: Annotated[str | None, Query(pattern=r"^[A-Z]{2}$")] = None,
@@ -180,7 +181,9 @@ async def list_cases(
         q=q,
         advanced=_parse_advanced_filters(filters),
     )
-    return await CasesManager(db).list_cases(agent, case_filters, page, page_size, sorts=sorts)
+    return await CasesManager(db).list_cases(
+        agent, case_filters, page, page_size, sorts=sorts, lang=lang
+    )
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)

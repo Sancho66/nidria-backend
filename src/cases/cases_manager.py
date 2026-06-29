@@ -40,11 +40,12 @@ from src.core.email import PendingEmail, send_email
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
-from src.core.i18n import DEFAULT_LANG
+from src.core.i18n import DEFAULT_LANG, resolve_i18n
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
+from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
 
 
@@ -202,6 +203,27 @@ class CasesManager:
 
     # --- read ---------------------------------------------------------------------
 
+    async def _resolve_journey_names(
+        self, agent: Agent, cases: list[ClientCase], lang: str
+    ) -> dict[uuid.UUID, str]:
+        """Resolved journey name per case id (display only). Batched: ONE
+        template query for the whole page + ONE agency query — no N+1. Cases
+        without a journey are simply absent (callers default to None)."""
+        template_ids = {c.journey_template_id for c in cases if c.journey_template_id is not None}
+        if not template_ids:
+            return {}
+        templates = await JourneysRepository(self.db).get_templates_by_ids(template_ids)
+        agency = await self.repo.get_agency(agent.agency_id)
+        agency_default = agency.default_language if agency else DEFAULT_LANG
+        names: dict[uuid.UUID, str] = {}
+        for case in cases:
+            template = templates.get(case.journey_template_id) if case.journey_template_id else None
+            if template is not None:
+                resolved = resolve_i18n(template.name_i18n, lang, agency_default, template.name)
+                if resolved is not None:
+                    names[case.id] = resolved
+        return names
+
     async def list_cases(
         self,
         agent: Agent,
@@ -209,12 +231,19 @@ class CasesManager:
         page: int,
         page_size: int,
         sorts: list[tuple[str, str]] | None = None,
+        lang: str = DEFAULT_LANG,
     ) -> CaseListResponse:
         cases, total = await self.repo.list_cases(
             agent.agency_id, filters.as_dict(), page, page_size, sorts=sorts
         )
+        journey_names = await self._resolve_journey_names(agent, cases, lang)
         return CaseListResponse(
-            items=[CaseListItemResponse.model_validate(case) for case in cases],
+            items=[
+                CaseListItemResponse.model_validate(case).model_copy(
+                    update={"journey_name": journey_names.get(case.id)}
+                )
+                for case in cases
+            ],
             total=total,
             page=page,
             page_size=page_size,
@@ -230,8 +259,10 @@ class CasesManager:
         persons = await self.repo.list_persons(case_id)
         principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
+        journey_names = await self._resolve_journey_names(agent, [case], lang)
         return CaseDetailResponse(
             **CaseResponse.model_validate(case).model_dump(),
+            journey_name=journey_names.get(case.id),
             persons=[self._person_response(p, definitions) for p in persons],
             principal_person_id=principal_person.id,
             custom_field_definitions=[
