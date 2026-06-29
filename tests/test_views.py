@@ -55,6 +55,10 @@ async def test_columns_catalog(
     assert by_key["principal"]["locked"] is True
     assert by_key["status"]["default"] is True
     assert by_key["source"]["default"] is False
+    # Journey column: selectable (hideable) and visible by default.
+    assert by_key["journey"]["label"] == "Parcours"
+    assert by_key["journey"]["locked"] is False
+    assert by_key["journey"]["default"] is True
     assert all({"key", "label", "type", "default", "locked"} <= set(c) for c in columns)
 
 
