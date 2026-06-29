@@ -15629,6 +15629,14 @@
               }
             ],
             "title": "Canvas Layout"
+          },
+          "active_cases_count": {
+            "type": "integer",
+            "title": "Active Cases Count"
+          },
+          "archived_cases_count": {
+            "type": "integer",
+            "title": "Archived Cases Count"
           }
         },
         "type": "object",
@@ -15641,7 +15649,9 @@
           "case_fields",
           "sections",
           "unsectioned",
-          "canvas_layout"
+          "canvas_layout",
+          "active_cases_count",
+          "archived_cases_count"
         ],
         "title": "JourneyTemplateDetailResponse"
       },

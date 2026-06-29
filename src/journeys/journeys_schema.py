@@ -391,3 +391,8 @@ class JourneyTemplateDetailResponse(BaseModel):
     # Visual canvas editor (MVP-1): pure-presentation node positions
     # keyed by step id. None = never opened in canvas (front auto-lays-out).
     canvas_layout: dict[str, CanvasNodePosition] | None
+    # Usage counters (delete UX): ACTIVE cases block deletion; ARCHIVED cases
+    # are auto-detached on delete (their journey history is purged). The front
+    # uses these to disable / warn before deleting.
+    active_cases_count: int
+    archived_cases_count: int

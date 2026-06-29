@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from fastapi import UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -161,6 +162,10 @@ class JourneysManager:
         self, agent: Agent, template_id: uuid.UUID, lang: str = DEFAULT_LANG
     ) -> JourneyTemplateDetailResponse:
         template = await self._get_template(agent, template_id)
+        # Usage counters for the delete UX: active cases block deletion;
+        # archived ones are auto-detached (the UI warns before deleting).
+        active_cases_count = await self.repo.count_active_cases_using_template(template_id)
+        archived_cases_count = await self.repo.count_archived_cases_using_template(template_id)
         # i18n: own template → resolve step/section labels for `lang`, falling
         # back to the agency default. (template.name has no i18n blob — BLOC 1
         # excluded it — so it stays the scalar.)
@@ -248,6 +253,8 @@ class JourneysManager:
                 case_fields=case_by_section.get(None, []),
             ),
             canvas_layout=template.canvas_layout,
+            active_cases_count=active_cases_count,
+            archived_cases_count=archived_cases_count,
         )
 
     async def set_canvas_layout(
@@ -447,15 +454,30 @@ class JourneysManager:
         return template
 
     async def delete_template(self, agent: Agent, template_id: uuid.UUID) -> None:
+        # _get_template enforces agency scope: only this agency's template,
+        # and the detach below is scoped to template_id → never another
+        # agency's / another template's data.
         template = await self._get_template(agent, template_id)
-        assigned = await self.repo.count_cases_using_template(template_id)
-        if assigned:
-            # Clear 409, never the bare RESTRICT 500.
+        # Only ACTIVE cases block: a journey in live use is never deleted.
+        active = await self.repo.count_active_cases_using_template(template_id)
+        if active:
             raise ConflictError(
-                f"Template is assigned to {assigned} case(s) and cannot be deleted."
+                f"Template is assigned to {active} active case(s) and cannot be deleted."
             )
+        # ARCHIVED (soft-deleted) cases must NOT block (they're invisible in
+        # the UI): detach them — null the link + purge their step instances of
+        # THIS template — then delete the template, ALL in one transaction.
+        await self.repo.detach_archived_cases_from_template(template_id)
         await self.repo.delete_template(template)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError as exc:
+            # Safety net for any FK violation we did not anticipate (e.g.
+            # orphan case_step_progress of a since-reassigned case): a clean
+            # 409, never a bare RESTRICT 500. Nothing is half-detached — the
+            # whole transaction rolls back.
+            await self.db.rollback()
+            raise ConflictError("This journey is still in use and cannot be deleted.") from exc
 
     # --- steps -------------------------------------------------------------------
 
