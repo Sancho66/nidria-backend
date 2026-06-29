@@ -158,7 +158,7 @@ async def test_delete_assigned_template_409_clear_error(
         f"/journeys/{template.id}", headers=agent_headers(configurer)
     )
     assert response.status_code == 409
-    assert "assigned to 1 case(s)" in response.json()["detail"]
+    assert "assigned to 1 active case(s)" in response.json()["detail"]
 
 
 # --- Steps: append, edit, delete, reorder ---------------------------------------------

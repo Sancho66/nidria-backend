@@ -4,6 +4,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.journey import (
     JourneySection,
@@ -85,6 +86,66 @@ class JourneysRepository:
     async def count_cases_using_template(self, template_id: uuid.UUID) -> int:
         stmt = select(func.count()).where(ClientCase.journey_template_id == template_id)
         return (await self.db.execute(stmt)).scalar_one()
+
+    async def count_active_cases_using_template(self, template_id: uuid.UUID) -> int:
+        """Cases ACTIVELY linked to this template (deleted_at IS NULL) — the
+        only ones that block a template deletion."""
+        stmt = select(func.count()).where(
+            ClientCase.journey_template_id == template_id,
+            ClientCase.deleted_at.is_(None),
+        )
+        return (await self.db.execute(stmt)).scalar_one()
+
+    async def count_archived_cases_using_template(self, template_id: uuid.UUID) -> int:
+        """Soft-deleted cases still linked to this template — auto-detached on
+        delete; surfaced to the UI so the user is warned beforehand."""
+        stmt = select(func.count()).where(
+            ClientCase.journey_template_id == template_id,
+            ClientCase.deleted_at.is_not(None),
+        )
+        return (await self.db.execute(stmt)).scalar_one()
+
+    async def detach_archived_cases_from_template(self, template_id: uuid.UUID) -> None:
+        """Free the RESTRICT FKs held by ARCHIVED cases of THIS template so it
+        can be deleted. STRICTLY scoped to this template: purges only the
+        case_step_progress that (a) belong to a soft-deleted case linked to
+        this template AND (b) reference one of THIS template's steps; then
+        nulls those cases' journey_template_id. Never touches an active case,
+        another template's instances, or another agency (a case linked to this
+        template shares its agency). Caller commits — one atomic tx with the
+        delete; a failure rolls the whole thing back."""
+        archived_case_ids = (
+            select(ClientCase.id)
+            .where(
+                ClientCase.journey_template_id == template_id,
+                ClientCase.deleted_at.is_not(None),
+            )
+            .scalar_subquery()
+        )
+        template_step_ids = (
+            select(JourneyTemplateStep.id)
+            .where(JourneyTemplateStep.template_id == template_id)
+            .scalar_subquery()
+        )
+        # 1) Purge the step instances (CASCADE clears their comments /
+        #    participants / requirements; documents & reminders SET NULL) —
+        #    these hold the case_step_progress.template_step_id RESTRICT that
+        #    would otherwise block the delete.
+        await self.db.execute(
+            delete(CaseStepProgress).where(
+                CaseStepProgress.case_id.in_(archived_case_ids),
+                CaseStepProgress.template_step_id.in_(template_step_ids),
+            )
+        )
+        # 2) Drop the client_case.journey_template_id RESTRICT link.
+        await self.db.execute(
+            update(ClientCase)
+            .where(
+                ClientCase.journey_template_id == template_id,
+                ClientCase.deleted_at.is_not(None),
+            )
+            .values(journey_template_id=None)
+        )
 
     # --- steps -------------------------------------------------------------------
 
