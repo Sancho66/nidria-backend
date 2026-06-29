@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Collection
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +43,18 @@ class JourneysRepository:
             JourneyTemplate.agency_id == agency_id,
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_templates_by_ids(
+        self, template_ids: Collection[uuid.UUID]
+    ) -> dict[uuid.UUID, JourneyTemplate]:
+        """Batch-load templates by id, keyed by id. Display-only (resolving
+        journey names for a page of cases without an N+1); the ids come from
+        already agency-scoped cases, so no agency filter is needed."""
+        ids = {tid for tid in template_ids if tid is not None}
+        if not ids:
+            return {}
+        stmt = select(JourneyTemplate).where(JourneyTemplate.id.in_(ids))
+        return {t.id: t for t in (await self.db.execute(stmt)).scalars()}
 
     async def list_sample_templates(self) -> list[JourneyTemplate]:
         """The shared LIBRARY samples (agency_id IS NULL + is_sample). Global,

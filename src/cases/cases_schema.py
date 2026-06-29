@@ -116,6 +116,10 @@ class PrincipalSummaryResponse(BaseModel):
 
 class CaseListItemResponse(CaseResponse):
     principal: PrincipalSummaryResponse
+    # Resolved journey name (resolve_i18n of the template's name for the
+    # request language) — NULL when the case has no journey (e.g. archived &
+    # detached). journey_template_id stays above for a possible link.
+    journey_name: str | None = None
 
 
 class CaseListResponse(BaseModel):
@@ -231,6 +235,8 @@ class CustomFieldDefinitionInline(BaseModel):
 
 
 class CaseDetailResponse(CaseResponse):
+    # Resolved journey name (same rule as the list); NULL when no journey.
+    journey_name: str | None = None
     # Unified list: principal (kind=principal) + family, one shape. The
     # principal is findable in O(1) via principal_person_id (invariant:
     # exactly one kind=principal person per case).

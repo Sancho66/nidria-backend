@@ -11651,6 +11651,17 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
+          },
           "persons": {
             "items": {
               "$ref": "#/components/schemas/PersonResponse"
@@ -12015,6 +12026,17 @@
           },
           "principal": {
             "$ref": "#/components/schemas/PrincipalSummaryResponse"
+          },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
           }
         },
         "type": "object",
