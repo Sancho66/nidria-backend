@@ -8,8 +8,8 @@ from src.imports import crm_catalog
 
 def test_list_serves_only_usable_crms() -> None:
     crms = crm_catalog.list_crms()
-    # 29 in the source; only those with >= MIN_USABLE_FIELDS headers served.
-    assert len(crms) == 18
+    # 30 in the source; only those with >= MIN_USABLE_FIELDS headers served.
+    assert len(crms) == 19
     assert all(len(c.headers) >= crm_catalog.MIN_USABLE_FIELDS for c in crms)
     # sorted by display name, stable order
     names = [c.name for c in crms]

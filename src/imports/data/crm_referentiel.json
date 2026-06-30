@@ -3279,6 +3279,173 @@
           "dedup": false
         }
       ]
+    },
+    {
+      "id": "Teamleader",
+      "category": "crm-smb",
+      "contact_fields": [
+        {
+          "csv": "Prénom",
+          "source": "first_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Nom de famille",
+          "source": "last_name",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Adresse e-mail",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Teamleader ID",
+          "source": "teamleader_id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
+          "csv": "Date de naissance",
+          "source": "date_of_birth",
+          "type": "datetime",
+          "format": "YYYY-MM-DD",
+          "dedup": false
+        },
+        {
+          "csv": "Genre",
+          "source": "gender",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Téléphone",
+          "source": "telephone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Fonction",
+          "source": "job_title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Société",
+          "source": "company",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Langue",
+          "source": "language",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Rue",
+          "source": "street",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Numéro de la rue",
+          "source": "street_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Code postal",
+          "source": "postal_code",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Ville",
+          "source": "city",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Pays",
+          "source": "country",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Liste des prix",
+          "source": "price_list",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "IBAN",
+          "source": "iban",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "BIC",
+          "source": "bic",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Crédits prépayés",
+          "source": "prepaid_credits",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Total à facturer",
+          "source": "total_to_invoice",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Taux horaire",
+          "source": "hourly_rate",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Traçage prospects",
+          "source": "lead_tracking",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        }
+      ]
     }
   ]
 }
