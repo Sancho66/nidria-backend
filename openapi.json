@@ -11814,8 +11814,37 @@
             "title": "Journey Template Id"
           },
           "csv_text": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Csv Text"
+          },
+          "file_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File B64"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
           },
           "mapping": {
             "anyOf": [
@@ -11857,8 +11886,7 @@
         },
         "type": "object",
         "required": [
-          "journey_template_id",
-          "csv_text"
+          "journey_template_id"
         ],
         "title": "CaseImportRequest",
         "description": "Exactly ONE mapping source is used, resolved in this order:\n`mapping` (inline, BLOC 2) → `mapping_id` (a saved mapping) →\n`crm_slug` (the saved mapping for this parcours + CRM). The inline\nfield keeps the BLOC 2 signature working unchanged."

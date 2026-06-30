@@ -12,6 +12,8 @@ reported); required parcours fields missing/invalid → row rejected; mapping
 targets must be declared in the parcours' Informations tab (validated upfront).
 """
 
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -47,7 +49,7 @@ from src.imports.cell_validation import (
     CustomFieldTarget,
     validate_cell,
 )
-from src.imports.csv_reader import parse_csv
+from src.imports.csv_reader import ParsedCsv, parse_upload
 from src.imports.mapping_repository import MappingRepository
 from src.imports.mapping_validation import (
     IDENTITY_TARGETS,
@@ -76,10 +78,25 @@ class CaseImportManager:
         self.repo = CaseImportRepository(db)
         self.mappings = MappingRepository(db)
 
+    @staticmethod
+    def _parse_upload(request: CaseImportRequest) -> ParsedCsv:
+        """Resolve the request's content (base64 file OR legacy csv_text) and
+        route it through the unified reader → {headers, rows}. Same output for
+        CSV and XLSX, so the rest of the engine is unchanged."""
+        if request.file_b64 is not None:
+            try:
+                content: bytes | str = base64.b64decode(request.file_b64, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValidationError("File payload is not valid base64.") from exc
+            return parse_upload(request.filename, content)
+        if request.csv_text is not None:
+            return parse_upload(request.filename, request.csv_text)
+        raise ValidationError("No file content provided (csv_text or file_b64).")
+
     async def run_import(
         self, agent: Agent, request: CaseImportRequest
     ) -> tuple[ImportReport, list[PendingEmail]]:
-        parsed_csv = parse_csv(request.csv_text)
+        parsed_csv = self._parse_upload(request)
 
         template = await self.repo.get_agency_template(agent.agency_id, request.journey_template_id)
         if template is None:
@@ -145,7 +162,7 @@ class CaseImportManager:
         THIS agency. The cross-agency name fallback the creator uses is
         deliberately NOT consulted here — so the preview can never hint that an
         email exists at another agency, neither via a value nor via a status."""
-        parsed_csv = parse_csv(request.csv_text)
+        parsed_csv = self._parse_upload(request)
 
         template = await self.repo.get_agency_template(agent.agency_id, request.journey_template_id)
         if template is None:

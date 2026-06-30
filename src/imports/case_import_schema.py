@@ -21,7 +21,15 @@ class CaseImportRequest(BaseModel):
     field keeps the BLOC 2 signature working unchanged."""
 
     journey_template_id: uuid.UUID
-    csv_text: str
+    # Source content — exactly one of:
+    #   csv_text  : the CSV as text (legacy path, unchanged);
+    #   file_b64  : base64 of the raw file bytes (REQUIRED for .xlsx, also
+    #               accepts a CSV) — paired with `filename` to route the parser.
+    # `filename` selects the parser by extension (.csv / .xlsx); when absent it
+    # is sniffed (an .xlsx is a ZIP). Output is identical either way.
+    csv_text: str | None = None
+    file_b64: str | None = None
+    filename: str | None = None
     mapping: dict[str, str] | None = None
     mapping_id: uuid.UUID | None = None
     crm_slug: str | None = None
