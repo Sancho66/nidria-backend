@@ -29,10 +29,10 @@ async def test_list_crms_ok_for_admin(
     response = await imports_client.get("/imports/crms", headers=agent_headers(admin))
     assert response.status_code == 200
     body = response.json()
-    # 29 in the source, 18 served (>= MIN_USABLE_FIELDS headers)
-    assert len(body["crms"]) == 18
+    # 30 in the source, 19 served (>= MIN_USABLE_FIELDS headers)
+    assert len(body["crms"]) == 19
     slugs = {c["slug"] for c in body["crms"]}
-    assert {"hubspot-crm", "pipedrive"} <= slugs
+    assert {"hubspot-crm", "pipedrive", "teamleader"} <= slugs
     assert "actionstep" not in slugs  # hidden, below threshold
     hubspot = next(c for c in body["crms"] if c["slug"] == "hubspot-crm")
     assert hubspot["field_count"] == 15
@@ -48,6 +48,25 @@ async def test_get_crm_detail_ok(
     headers_by_csv = {h["csv"]: h for h in body["headers"]}
     assert headers_by_csv["Email"]["format"] == "email"
     assert headers_by_csv["Email"]["dedup"] is True
+    assert all(h["csv"] != "" for h in body["headers"])
+
+
+async def test_get_teamleader_detail(
+    imports_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    response = await imports_client.get("/imports/crms/teamleader", headers=agent_headers(admin))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["slug"] == "teamleader"
+    by_csv = {h["csv"]: h for h in body["headers"]}
+    # Identity pivot + civil + composite address columns are present (FR headers).
+    assert {"Prénom", "Nom de famille", "Adresse e-mail", "Date de naissance"} <= set(by_csv)
+    assert {"Rue", "Numéro de la rue", "Code postal", "Ville", "Pays"} <= set(by_csv)
+    assert by_csv["Adresse e-mail"]["format"] == "email"
+    assert by_csv["Adresse e-mail"]["dedup"] is True
+    assert by_csv["Teamleader ID"]["dedup"] is True
+    # Excel/CRM date column carries the date format hint.
+    assert by_csv["Date de naissance"]["type"] == "datetime"
     assert all(h["csv"] != "" for h in body["headers"])
 
 
