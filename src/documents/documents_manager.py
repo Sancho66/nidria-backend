@@ -30,6 +30,7 @@ from src.documents.documents_schema import (
 from src.external.external_schema import ExternalDocumentResponse
 from src.external.scoping import get_case_for_external
 from src.progress.progress_manager import ProgressManager
+from src.usage.usage_manager import UsageManager
 
 
 class DocumentsManager:
@@ -129,6 +130,9 @@ class DocumentsManager:
                 "filename": original_filename,
                 "step_progress_id": str(step_progress_id) if step_progress_id else None,
             },
+        )
+        await UsageManager(self.db).emit_for_case(
+            case, "document.added", actor_type=actor_type, actor_id=actor_id
         )
         await self.db.commit()
         await self.db.refresh(document)

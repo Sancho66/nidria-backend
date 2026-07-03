@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +53,13 @@ class ClientCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     source: Mapped[str | None] = mapped_column(String(100))
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # Demo flag (usage trackers bloc 1, sample-case bloc 2): a seeded
+    # example dossier. Excluded from EVERY usage signal (events,
+    # milestones, backfill, counters) so the nurture never mistakes the
+    # demo for real adoption.
+    is_demo: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )
     # Soft delete: NULL = live. Every read path filters `deleted_at IS
     # NULL` (listing, detail, expat space, reminders, the scheduler,
     # dashboard) — a deleted case must surface NOWHERE. Bulk-delete

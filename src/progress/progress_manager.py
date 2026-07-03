@@ -59,6 +59,7 @@ from src.progress.requirements_eval import (
     current_value,
     is_provided,
 )
+from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +280,13 @@ class ProgressManager:
             await self._seed_participants(
                 case, progress, participants_by_step.get(step.id, []), resolved_agents, agent
             )
+        await UsageManager(self.db).emit_for_case(
+            case,
+            "case.assigned",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"journey_template_id": str(template.id)},
+        )
         self._log(
             case.id,
             agent,
@@ -785,6 +793,9 @@ class ProgressManager:
             action_type="step.completed",
             details={"step_progress_id": str(row.id), "via": "validation"},
         )
+        await UsageManager(self.db).emit_for_case(
+            case, "case.step_validated", actor_type=actor_type, actor_id=actor_id
+        )
 
     async def _apply_responsible_change(
         self,
@@ -880,6 +891,9 @@ class ProgressManager:
             row.completed_at = now
             row.completed_by_agent_id = agent.id
             self._log(case.id, agent, "step.completed", {"step_progress_id": str(row.id)})
+            await UsageManager(self.db).emit_for_case(
+                case, "case.step_validated", actor_type=ActorType.AGENT, actor_id=agent.id
+            )
         elif is_reopen:
             details = {
                 "step_progress_id": str(row.id),
@@ -1077,6 +1091,9 @@ class ProgressManager:
                         actor_id=None,
                         action_type="step.completed",
                         details={"step_progress_id": str(row.id), "auto": True},
+                    )
+                    await UsageManager(self.db).emit_for_case(
+                        case, "case.step_validated", actor_type=ActorType.SYSTEM
                     )
             elif row.validated_by_type == StepValidatorType.AGENT.value and not before.get(
                 row.id, False

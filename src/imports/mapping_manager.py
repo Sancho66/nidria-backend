@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from src.core.enums import ActorType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.imports import crm_catalog
@@ -19,6 +20,7 @@ from src.imports.case_import_repository import CaseImportRepository
 from src.imports.mapping_repository import MappingRepository
 from src.imports.mapping_schema import MappingListResponse, MappingResponse, MappingUpsertRequest
 from src.imports.mapping_validation import validate_mapping_targets
+from src.usage.usage_manager import UsageManager
 
 
 class MappingManager:
@@ -131,6 +133,13 @@ class MappingManager:
                 mapping=payload.mapping,
             )
 
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="journey.crm_mapping_set",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"crm_slug": payload.crm_slug},
+        )
         try:
             await self.db.commit()
         except IntegrityError as exc:

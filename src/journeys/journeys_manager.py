@@ -25,6 +25,7 @@ from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
 from src.core import storage
 from src.core.config import get_settings
 from src.core.enums import (
+    ActorType,
     CompletionMode,
     ResponsibleType,
     StepRequirementKind,
@@ -71,6 +72,7 @@ from src.journeys.journeys_schema import (
     UnsectionedFields,
 )
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
+from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +290,12 @@ class JourneysManager:
         scalar, blob = apply_i18n_write(name_i18n, name, agency_default, None, {})
         template = self.repo.add_template(agent.agency_id, scalar or name)
         template.name_i18n = blob
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="journey.created",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+        )
         await self.db.commit()
         await self.db.refresh(template)
         return template
@@ -441,6 +449,13 @@ class JourneysManager:
                     remapped[str(new)] = pos
             new_template.canvas_layout = remapped or None
 
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="journey.created",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"cloned_from": str(template_id)},
+        )
         await self.db.commit()
         await self.db.refresh(new_template)
         return new_template
@@ -555,6 +570,13 @@ class JourneysManager:
         # step creation — atomic).
         from src.progress.progress_manager import ProgressManager
 
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="journey.step_added",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"template_id": str(template_id)},
+        )
         await ProgressManager(self.db).backfill_step(agent, step)
         await self.db.commit()
         await self.db.refresh(step)

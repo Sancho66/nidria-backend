@@ -8,6 +8,7 @@ import pyotp
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.mfa import MfaTotp
 from src.auth.auth_repository import AuthRepository
@@ -22,7 +23,7 @@ from src.auth.auth_schema import (
 from src.core.config import get_settings
 from src.core.email import normalize_email, send_email
 from src.core.email_templates import password_reset_email
-from src.core.enums import Audience, InvitationStatus
+from src.core.enums import ActorType, Audience, InvitationStatus
 from src.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -40,6 +41,7 @@ from src.core.security import (
     token_subject,
     verify_password,
 )
+from src.usage.usage_manager import UsageManager
 
 # One generic message for every login failure (unknown email, wrong
 # password, not-activated expat): the response must not reveal which.
@@ -235,6 +237,17 @@ class AuthManager:
 
         expat.password_hash = hash_password(password)
         expat.activated_at = now
+        # Usage tracker: THE key adoption signal (the client now follows
+        # their dossier). Agency resolved through the invitation's case.
+        case = await self.db.get(ClientCase, invitation.case_id)
+        if case is not None:
+            await UsageManager(self.db).emit_for_case(
+                case,
+                "case.client_account_activated",
+                actor_type=ActorType.EXPAT,
+                actor_id=expat.id,
+                details={"via": "activation"},
+            )
         pair = self.issue_token_pair(expat.id, Audience.EXPAT)
         await self.db.commit()
         return ActivateResponse(access_token=pair.access_token, refresh_token=pair.refresh_token)

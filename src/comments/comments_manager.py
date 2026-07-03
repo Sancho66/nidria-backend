@@ -22,6 +22,7 @@ from src.core.i18n import (
     resolve_step_name_for_notif,
 )
 from src.external.scoping import get_case_for_external
+from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,9 @@ class CommentsManager:
             author_id=agent.id,
             body=body,
         )
+        await UsageManager(self.db).emit_for_case(
+            case, "message.sent", actor_type=ActorType.AGENT, actor_id=agent.id
+        )
         await self.db.commit()
         await self.db.refresh(comment)
         await self._notify_after_commit(
@@ -160,11 +164,18 @@ class CommentsManager:
         self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID, body: str
     ) -> CommentResponse:
         await self._resolve_external(external, case_id, progress_id)
+        # Usage tracker needs the case (demo exclusion); the border above
+        # already guaranteed assignment-scoped access.
+        case = await get_case_for_external(self.db, external, case_id)
+        assert case is not None  # _resolve_external just resolved it
         comment = self.repo.add_comment(
             case_step_progress_id=progress_id,
             author_type=ActorType.AGENT.value,
             author_id=external.id,
             body=body,
+        )
+        await UsageManager(self.db).emit_for_case(
+            case, "message.sent", actor_type=ActorType.AGENT, actor_id=external.id
         )
         await self.db.commit()
         await self.db.refresh(comment)
@@ -223,6 +234,9 @@ class CommentsManager:
             author_type=ActorType.EXPAT.value,
             author_id=expat.id,
             body=body,
+        )
+        await UsageManager(self.db).emit_for_case(
+            case, "message.sent", actor_type=ActorType.EXPAT, actor_id=expat.id
         )
         await self.db.commit()
         await self.db.refresh(comment)

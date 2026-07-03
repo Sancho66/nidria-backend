@@ -37,6 +37,7 @@ from shared.models.saved_view import SavedView
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment, StepCommentNotification
 from shared.models.step_requirement import StepRequirement
+from shared.models.usage import AgencyUsageMilestone, UsageEvent
 
 __all__ = [
     "ActivityLog",
@@ -86,4 +87,6 @@ __all__ = [
     "StepPrerequisite",
     "StepCaseRequirement",
     "StepRequirement",
+    "AgencyUsageMilestone",
+    "UsageEvent",
 ]

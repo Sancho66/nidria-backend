@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, String, text
+from sqlalchemy import CheckConstraint, DateTime, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +25,10 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Trial model (usage trackers bloc 1): NULL = no trial running (or
+    # converted). Set by the superadmin wizard at creation (now()+30d);
+    # extension is a manual script operation, no endpoint by design.
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Agency branding: private-bucket path of the logo, served by the
     # backend (authenticated, scoped) plus ONE assumed public exception
     # (/public/agencies/{slug}/logo for the client-space login page).

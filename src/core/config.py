@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # machinery but are INVITATIONS: 24h, not the 60-minute reset window
     # (Sidney locked out at H+1, demande Eric).
     onboarding_link_expires_minutes: int = 24 * 60
+    # Usage trackers bloc 1: free-trial length set by the agency wizard.
+    trial_days: int = 30
     agent_invitation_expires_days: int = 7
     # Expats are clients, not staff — longer runway than agent invites.
     case_invitation_expires_days: int = 14

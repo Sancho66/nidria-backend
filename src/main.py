@@ -45,6 +45,7 @@ from src.profile.profile_router import router as profile_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
+from src.usage.usage_backfill import backfill_usage_milestones
 from src.views.views_router import router as views_router
 
 # Configure logging so our INFO records actually print. uvicorn only
@@ -91,6 +92,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         # texts (consents_texts.py = source of truth): a text edited in
         # code publishes a NEW version at boot and re-gates everyone.
         await seed_consent_documents(session)
+        # Usage trackers (bloc 1) — one-shot idempotent backfill: agencies
+        # predating the event layer get their milestones from REAL data
+        # (existing rows are never touched, no fake event is fabricated).
+        await backfill_usage_milestones(session)
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()
     scheduler = None

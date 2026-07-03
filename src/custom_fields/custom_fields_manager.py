@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.custom_field import CustomFieldDefinition
+from src.core.enums import ActorType
 from src.core.exceptions import ConflictError, NotFoundError
 from src.core.i18n import DEFAULT_LANG, apply_i18n_write
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
@@ -14,6 +15,7 @@ from src.custom_fields.custom_fields_schema import (
     CustomFieldDefinitionCreate,
     CustomFieldDefinitionUpdate,
 )
+from src.usage.usage_manager import UsageManager
 
 
 class CustomFieldsManager:
@@ -51,6 +53,13 @@ class CustomFieldsManager:
             options=payload.options,
             required=payload.required,
             position=payload.position,
+        )
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="agency.custom_fields_set",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"key": payload.key},
         )
         definition.label_i18n = label_blob
         await self.db.commit()

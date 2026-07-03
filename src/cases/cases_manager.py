@@ -47,6 +47,7 @@ from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
 from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
+from src.usage.usage_manager import UsageManager
 
 
 class CasesManager:
@@ -173,6 +174,24 @@ class CasesManager:
             token=secrets.token_urlsafe(24),
             expires_at=datetime.now(UTC) + timedelta(days=settings.case_invitation_expires_days),
         )
+        usage = UsageManager(self.db)
+        await usage.emit_for_case(
+            case, "case.created", actor_type=ActorType.AGENT, actor_id=agent.id
+        )
+        await usage.emit_for_case(
+            case, "case.client_invited", actor_type=ActorType.AGENT, actor_id=agent.id
+        )
+        if expat.activated_at is not None:
+            # A client whose account is ALREADY active can follow this new
+            # dossier immediately: the adoption signal holds for THIS
+            # agency from case creation (flagged, never a fake activation).
+            await usage.emit_for_case(
+                case,
+                "case.client_account_activated",
+                actor_type=ActorType.AGENT,
+                actor_id=agent.id,
+                details={"via": "existing_account"},
+            )
         self._log(case.id, agent, "case.created")
         self._log(case.id, agent, "case.invitation_sent", {"email": payload.email})
         await self.db.commit()
@@ -311,6 +330,12 @@ class CasesManager:
                     "case.status_changed",
                     {"old": case.status, "new": new_status},
                 )
+                await UsageManager(self.db).emit_for_case(
+                    case,
+                    "case.status_changed",
+                    actor_type=ActorType.AGENT,
+                    actor_id=agent.id,
+                )
                 case.status = new_status
 
         if "owner_agent_id" in data:
@@ -355,6 +380,9 @@ class CasesManager:
             if case.status == status:
                 continue  # idempotent no-op
             self._log(case.id, agent, "case.status_changed", {"old": case.status, "new": status})
+            await UsageManager(self.db).emit_for_case(
+                case, "case.status_changed", actor_type=ActorType.AGENT, actor_id=agent.id
+            )
             case.status = status
             affected.append(case.id)
         await self.db.commit()
@@ -740,6 +768,12 @@ class CasesManager:
         activity_rows = await self.repo.list_activity_chronological(case.id)
         agency = await self.repo.get_agency(agent.agency_id)
         agency_default = agency.default_language if agency else DEFAULT_LANG
+        # Usage tracker: the export is a read — the event is the only
+        # write, committed here on purpose.
+        await UsageManager(self.db).emit_for_case(
+            case, "case.exported_pdf", actor_type=ActorType.AGENT, actor_id=agent.id
+        )
+        await self.db.commit()
         return build_case_pdf(
             case=case,
             principal=principal,

@@ -27,6 +27,7 @@ from src.cases.cases_manager import CasesManager
 from src.cases.cases_repository import CasesRepository
 from src.cases.cases_schema import CaseCreateRequest
 from src.core.email import PendingEmail, normalize_email
+from src.core.enums import ActorType
 from src.core.exceptions import NidriaError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.imports.case_import_repository import CaseImportRepository, DeclaredField
@@ -56,6 +57,7 @@ from src.imports.mapping_validation import (
     MappingTarget,
     validate_mapping_targets,
 )
+from src.usage.usage_manager import UsageManager
 
 
 @dataclass
@@ -536,6 +538,13 @@ class CaseImportManager:
             )
             return
 
+        # Usage tracker: the row's own transaction just committed; the
+        # import marker gets its own commit (create_case already emitted
+        # case.created inside the row transaction).
+        await UsageManager(self.db).emit_for_case(
+            case, "case.imported_from_crm", actor_type=ActorType.AGENT, actor_id=agent.id
+        )
+        await self.db.commit()
         seen_emails.add(email)
         report.created.append(
             ImportCreated(

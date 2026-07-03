@@ -24,6 +24,7 @@ from src.reminders.reminders_schema import (
     ReminderCreateRequest,
     ReminderUpdateRequest,
 )
+from src.usage.usage_manager import UsageManager
 
 _VARIABLE_PATTERN = re.compile(r"\{(client_name|step_name|days_left)\}")
 
@@ -202,6 +203,9 @@ class RemindersManager:
             agent,
             "reminder.created",
             {"reminder_id": str(reminder.id), "channel": reminder.channel},
+        )
+        await UsageManager(self.db).emit_for_case(
+            case, "reminder.scheduled", actor_type=ActorType.AGENT, actor_id=agent.id
         )
         await self.db.commit()
         await self.db.refresh(reminder)

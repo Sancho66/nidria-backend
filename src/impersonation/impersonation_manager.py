@@ -10,6 +10,7 @@ from src.core.exceptions import NotFoundError, ValidationError
 from src.core.security import create_access_token
 from src.impersonation.impersonation_repository import ImpersonationRepository
 from src.impersonation.impersonation_schema import ImpersonationTokenResponse
+from src.usage.usage_manager import UsageManager
 
 
 class ImpersonationManager:
@@ -60,6 +61,13 @@ class ImpersonationManager:
             expat_user_id, actor.agency_id
         ):
             raise NotFoundError("Expat user not found.")
+        await UsageManager(self.db).emit(
+            agency_id=actor.agency_id,
+            event_type="case.viewed_as_client",
+            actor_type=ActorType.AGENT,
+            actor_id=actor.id,
+            details={"expat_user_id": str(expat_user_id)},
+        )
         return await self._issue(actor, Audience.EXPAT, ActorType.EXPAT, expat_user_id)
 
     async def _issue(

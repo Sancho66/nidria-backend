@@ -20,7 +20,7 @@ from src.core import storage
 from src.core.config import get_settings
 from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
-from src.core.enums import Audience, InvitationStatus
+from src.core.enums import ActorType, Audience, InvitationStatus
 from src.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -30,6 +30,7 @@ from src.core.exceptions import (
 from src.core.images import process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
+from src.usage.usage_manager import UsageManager
 
 _EMAIL_TAKEN = "This email already has an agent account."
 
@@ -103,6 +104,15 @@ class AgenciesManager:
         reset_link = AuthManager(self.db).create_reset_link(
             admin.id, Audience.AGENT, expires_minutes=settings.onboarding_link_expires_minutes
         )
+        # Usage trackers: the wizard starts the trial clock and emits
+        # the adoption anchor event.
+        agency.trial_ends_at = datetime.now(UTC) + timedelta(days=settings.trial_days)
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.activated",
+            actor_type=ActorType.AGENT,
+            actor_id=superadmin.id,
+        )
         await self.db.commit()
         await self.db.refresh(agency)
         await self.db.refresh(admin)
@@ -131,6 +141,12 @@ class AgenciesManager:
         if agency.logo_path is not None and agency.logo_path != path:
             storage.delete(agency.logo_path)
         storage.upload(path, processed, media_type)
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.branding_updated",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+        )
         agency.logo_path = path
         await self.db.commit()
         await self.db.refresh(agency)
@@ -259,6 +275,13 @@ class AgenciesManager:
             expires_at=now + timedelta(days=settings.agent_invitation_expires_days),
             invited_by_agent_id=agent.id,
         )
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="provider.invited" if external else "member.invited",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"email": email},
+        )
         await self.db.commit()
         await self.db.refresh(invitation)
 
@@ -315,6 +338,13 @@ class AgenciesManager:
         invitation.status = InvitationStatus.ACCEPTED
         invitation.accepted_at = now
 
+        if not (role and role.is_external):
+            await UsageManager(self.db).emit(
+                agency_id=invitation.agency_id,
+                event_type="member.activated",
+                actor_type=ActorType.AGENT,
+                actor_id=agent.id,
+            )
         pair = AuthManager(self.db).issue_token_pair(agent.id, Audience.AGENT)
         await self.db.commit()
         return pair
