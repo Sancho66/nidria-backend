@@ -1,4 +1,5 @@
 import logging
+import re
 from dataclasses import dataclass
 from typing import Annotated
 from urllib.parse import quote
@@ -53,6 +54,22 @@ class PendingEmail:
 # fixture). Real mode never touches it.
 outbox: list[OutboxEmail] = []
 
+# The seeded demo client (sample-case bloc 2): demo+<slug>@nidria.app.
+# NOT a mailbox — nothing must EVER be sent to it (no activation, no
+# reset, no thread notification, no reminder). Enforced at THE sink
+# below, so every present and future send path is covered at once.
+_DEMO_RECIPIENT_RE = re.compile(r"^demo\+[a-z0-9-]+@nidria\.app$")
+
+
+def demo_expat_email(agency_slug: str) -> str:
+    """Deterministic per-agency demo-client address (globally unique
+    because the slug is). Must stay matched by `is_demo_recipient`."""
+    return f"demo+{agency_slug}@nidria.app"
+
+
+def is_demo_recipient(to: str) -> bool:
+    return _DEMO_RECIPIENT_RE.match(normalize_email(to)) is not None
+
 
 def _is_mocked() -> bool:
     settings = get_settings()
@@ -77,6 +94,9 @@ def send_email(to: str, subject: str, body: str, html: str | None = None) -> Non
     the fallback). Mocked by default (MOCK_SERVICES / MOCK_EMAIL): logs +
     appends to `outbox` instead of calling Resend. Blocking — call via
     asyncio.to_thread from async code."""
+    if is_demo_recipient(to):
+        logger.info("demo recipient, email suppressed to=%s subject=%r", to, subject)
+        return
     if _is_mocked():
         logger.info("MOCK email to=%s subject=%r", to, subject)
         outbox.append(OutboxEmail(to=to, subject=subject, body=body, html=html))

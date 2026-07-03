@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import secrets
 import unicodedata
@@ -14,6 +15,7 @@ from shared.models.invitation import AgentInvitation
 from shared.models.rbac import Role
 from src.agencies.agencies_repository import AgenciesRepository
 from src.agencies.agencies_schema import AgencyCreateRequest, AgencyUpdateRequest
+from src.agencies.demo_case_seed import seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.core import storage
@@ -31,6 +33,8 @@ from src.core.images import process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
 from src.usage.usage_manager import UsageManager
+
+logger = logging.getLogger(__name__)
 
 _EMAIL_TAKEN = "This email already has an agent account."
 
@@ -116,6 +120,19 @@ class AgenciesManager:
         await self.db.commit()
         await self.db.refresh(agency)
         await self.db.refresh(admin)
+
+        # The example dossier (nurture bloc 2): a best-effort GIFT in its
+        # own transaction, AFTER the atomic wizard commit — a seed failure
+        # (storage down, whatever) must never cost an agency creation.
+        try:
+            await seed_demo_case(self.db, agency, admin)
+        except Exception:
+            await self.db.rollback()
+            # Rollback expires the loaded rows — re-fetch before the
+            # response serialization touches their attributes.
+            await self.db.refresh(agency)
+            await self.db.refresh(admin)
+            logger.exception("demo case seed failed for agency %s", agency.slug)
 
         content = password_reset_email(reset_link, settings.onboarding_link_expires_minutes)
         email = PendingEmail(

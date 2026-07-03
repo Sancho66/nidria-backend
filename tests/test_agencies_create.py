@@ -57,15 +57,15 @@ async def test_superadmin_creates_agency(
     body = resp.json()
     assert body["agency"]["slug"] == "reside-paraguay"
     assert body["agency"]["default_language"] == "es"
-    assert body["agency"]["settings"] == {}
+    # Settings hold ONLY the demo-case seed marker (nurture bloc 2).
+    assert set(body["agency"]["settings"]) == {"demo_case_seeded_at"}
     assert body["admin"]["email"] == "admin@reside-paraguay.com"
     assert body["admin"]["role"] == "admin"
 
-    # Agency persisted with empty settings.
     agency = (
         await db_session.execute(select(Agency).where(Agency.slug == "reside-paraguay"))
     ).scalar_one()
-    assert agency.settings == {}
+    assert set(agency.settings) == {"demo_case_seeded_at"}
     assert agency.default_language == "es"
 
     # First admin persisted in the NEW agency, pointing at the SHARED admin role.
