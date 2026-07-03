@@ -82,7 +82,11 @@ async def test_jobs_require_job_manage(
     assert (await jobs_client.get("/jobs", headers=agent_headers(member))).status_code == 403
     response = await jobs_client.get("/jobs", headers=agent_headers(admin))
     assert response.status_code == 200
-    assert {j["job_id"] for j in response.json()} == {"dispatch_reminders", "auto_reminders"}
+    assert {j["job_id"] for j in response.json()} == {
+        "dispatch_reminders",
+        "auto_reminders",
+        "trial_nurture",
+    }
 
 
 # --- hot reload --------------------------------------------------------------------
@@ -265,4 +269,4 @@ async def test_seed_never_overwrites_runtime_edits(db_session: AsyncSession) -> 
     await db_session.refresh(config)
     assert config.cron_expression == "5 5 * * *"
     total = len((await db_session.execute(select(JobConfig))).scalars().all())
-    assert total == 2
+    assert total == 3

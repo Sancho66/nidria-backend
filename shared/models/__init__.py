@@ -31,6 +31,7 @@ from shared.models.journey import (
 )
 from shared.models.message_template import MessageTemplate
 from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
+from shared.models.nurture import NurtureSend
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
@@ -88,5 +89,6 @@ __all__ = [
     "StepCaseRequirement",
     "StepRequirement",
     "AgencyUsageMilestone",
+    "NurtureSend",
     "UsageEvent",
 ]

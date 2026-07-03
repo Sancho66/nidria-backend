@@ -35,6 +35,8 @@ class OutboxEmail:
     subject: str
     body: str  # plain-text part (multipart fallback)
     html: str | None = None
+    sender: str | None = None  # None = the transactional email_from
+    reply_to: str | None = None
 
 
 @dataclass
@@ -89,26 +91,44 @@ def space_link(frontend_url: str, path: str, agency_slug: str | None) -> str:
     return url
 
 
-def send_email(to: str, subject: str, body: str, html: str | None = None) -> None:
+def send_email(
+    to: str,
+    subject: str,
+    body: str,
+    html: str | None = None,
+    *,
+    sender: str | None = None,
+    reply_to: str | None = None,
+) -> None:
     """Transactional email, multipart when `html` is given (text part is
     the fallback). Mocked by default (MOCK_SERVICES / MOCK_EMAIL): logs +
     appends to `outbox` instead of calling Resend. Blocking — call via
-    asyncio.to_thread from async code."""
+    asyncio.to_thread from async code.
+
+    `sender`/`reply_to` override the transactional From for BRAND mails
+    (nurture: eric@nidria.com, same verified Resend domain — Cloudflare
+    routes the replies to Eric's real inbox)."""
     if is_demo_recipient(to):
         logger.info("demo recipient, email suppressed to=%s subject=%r", to, subject)
         return
     if _is_mocked():
         logger.info("MOCK email to=%s subject=%r", to, subject)
-        outbox.append(OutboxEmail(to=to, subject=subject, body=body, html=html))
+        outbox.append(
+            OutboxEmail(
+                to=to, subject=subject, body=body, html=html, sender=sender, reply_to=reply_to
+            )
+        )
         return
     settings = get_settings()
     resend.api_key = settings.resend_api_key
     payload: dict[str, object] = {
-        "from": settings.email_from,
+        "from": sender or settings.email_from,
         "to": [to],
         "subject": subject,
         "text": body,
     }
+    if reply_to is not None:
+        payload["reply_to"] = [reply_to]
     if html is not None:
         payload["html"] = html
     response = resend.Emails.send(payload)  # type: ignore[arg-type]

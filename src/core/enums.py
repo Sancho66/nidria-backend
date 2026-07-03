@@ -86,6 +86,14 @@ class ExternalContactType(StrEnum):
     OTHER = "other"
 
 
+class NurtureSendStatus(StrEnum):
+    """Outcome of a trial-nurture calendar slot (nurture bloc 3)."""
+
+    SENT = "sent"
+    SKIPPED = "skipped"  # slot burned without a send (overtaken / stale)
+    PENDING_CONFIG = "pending_config"  # J+28 held: booking URL unset (retried)
+
+
 class JobRunStatus(StrEnum):
     RUNNING = "running"
     SUCCESS = "success"
