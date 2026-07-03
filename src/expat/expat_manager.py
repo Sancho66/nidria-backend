@@ -11,6 +11,7 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.step_case_requirement import StepCaseRequirement
+from src.agencies.agencies_manager import AgenciesManager
 from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
 from src.cases.cases_schema import (
     CaseUpdateRequest,
@@ -102,7 +103,12 @@ class ExpatPortalManager:
         done, total = counts.get(case.id, (0, 0))
         return ExpatCaseSummaryResponse(
             id=case.id,
-            agency=ExpatAgencyResponse(name=agency.name),
+            agency=ExpatAgencyResponse(
+                name=agency.name,
+                id=agency.id,
+                slug=agency.slug,
+                has_logo=agency.logo_path is not None,
+            ),
             origin_country=case.origin_country,
             dest_country=case.dest_country,
             status=case.status,
@@ -392,6 +398,16 @@ class ExpatPortalManager:
         )
         await self.db.commit()
         return await self.get_my_case(expat, case_id)
+
+    async def agency_logo(self, expat: ExpatUser, agency_id: uuid.UUID) -> tuple[bytes, str]:
+        """The logo of an agency holding at least one of MY live cases —
+        same visibility rule as its name on my dossiers (404 otherwise,
+        never revealing other agencies)."""
+        rows = await self.repo.list_cases_for_expat(expat.id)
+        agency = next((a for _case, a in rows if a.id == agency_id), None)
+        if agency is None:
+            raise NotFoundError("Logo not found.")
+        return AgenciesManager(self.db).logo_bytes(agency)
 
     async def list_notifications(
         self, expat: ExpatUser, case_id: uuid.UUID

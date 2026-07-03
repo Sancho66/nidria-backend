@@ -1166,6 +1166,98 @@
         ]
       }
     },
+    "/agencies/me/logo": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Get My Agency Logo",
+        "operationId": "get_my_agency_logo_agencies_me_logo_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Upload Agency Logo",
+        "operationId": "upload_agency_logo_agencies_me_logo_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_agency_logo_agencies_me_logo_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Delete Agency Logo",
+        "operationId": "delete_agency_logo_agencies_me_logo_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me": {
       "get": {
         "tags": [
@@ -1593,6 +1685,46 @@
                 "schema": {
                   "$ref": "#/components/schemas/TokenPairResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/agencies/{slug}/logo": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Public Agency Logo",
+        "operationId": "public_agency_logo_public_agencies__slug__logo_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -5614,6 +5746,52 @@
                 "schema": {
                   "$ref": "#/components/schemas/MessageResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/agencies/{agency_id}/logo": {
+      "get": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "Expat Agency Logo",
+        "operationId": "expat_agency_logo_expat_agencies__agency_id__logo_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -11545,6 +11723,11 @@
               "it"
             ],
             "title": "Default Language"
+          },
+          "has_logo": {
+            "type": "boolean",
+            "title": "Has Logo",
+            "default": false
           }
         },
         "type": "object",
@@ -11889,6 +12072,20 @@
           "file"
         ],
         "title": "Body_fulfill_requirement_document_external_cases__case_id__requirements__requirement_id__document_post"
+      },
+      "Body_upload_agency_logo_agencies_me_logo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_agency_logo_agencies_me_logo_post"
       },
       "Body_upload_agent_avatar_profile_agent_avatar_post": {
         "properties": {
@@ -14590,11 +14787,27 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "has_logo": {
+            "type": "boolean",
+            "title": "Has Logo",
+            "default": false
           }
         },
         "type": "object",
         "required": [
-          "name"
+          "name",
+          "id",
+          "slug"
         ],
         "title": "ExpatAgencyResponse"
       },

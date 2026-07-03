@@ -22,6 +22,9 @@ router = APIRouter(prefix="/expat", tags=["expat-portal"])
 
 BINDINGS = [
     RouteBinding("GET", "/expat/cases", Audience.EXPAT),
+    # Branding: the logo of an agency holding one of MY cases (scoped in
+    # the manager, like every expat read).
+    RouteBinding("GET", "/expat/agencies/{agency_id}/logo", Audience.EXPAT),
     RouteBinding("GET", "/expat/cases/{case_id}", Audience.EXPAT),
     RouteBinding("GET", "/expat/cases/{case_id}/notifications", Audience.EXPAT),
     RouteBinding("PUT", "/expat/cases/{case_id}/requirements/{requirement_id}", Audience.EXPAT),
@@ -53,6 +56,16 @@ BINDINGS = [
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 ExpatDep = Annotated[ExpatUser, Depends(get_current_expat)]
+
+
+@router.get("/agencies/{agency_id}/logo")
+async def expat_agency_logo(agency_id: uuid.UUID, expat: ExpatDep, db: DbDep) -> Response:
+    content, media_type = await ExpatPortalManager(db).agency_logo(expat, agency_id)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.get("/cases", response_model=list[ExpatCaseSummaryResponse])

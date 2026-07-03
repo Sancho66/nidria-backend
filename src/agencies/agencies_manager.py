@@ -16,6 +16,7 @@ from src.agencies.agencies_repository import AgenciesRepository
 from src.agencies.agencies_schema import AgencyCreateRequest, AgencyUpdateRequest
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
+from src.core import storage
 from src.core.config import get_settings
 from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
@@ -26,6 +27,7 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from src.core.images import process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
 
@@ -115,6 +117,51 @@ class AgenciesManager:
         return AgencyCreated(
             agency=agency, admin=admin, admin_role_name=admin_role.name, email=email
         )
+
+    # --- logo (branding) --------------------------------------------------------------
+
+    async def upload_logo(self, agent: Agent, content_type: str | None, raw: bytes) -> Agency:
+        """Shared image pipeline, logo flavor: bounded 1024px wide, ratio
+        kept, PNG preserved on alpha. The extension follows the encode, so
+        a PNG→JPEG swap deletes the previous blob (no orphans)."""
+        agency = await self.get_my_agency(agent)
+        processed, media_type = process_logo(content_type, raw)
+        extension = "png" if media_type == "image/png" else "jpg"
+        path = f"logos/agency/{agency.id}.{extension}"
+        if agency.logo_path is not None and agency.logo_path != path:
+            storage.delete(agency.logo_path)
+        storage.upload(path, processed, media_type)
+        agency.logo_path = path
+        await self.db.commit()
+        await self.db.refresh(agency)
+        return agency
+
+    async def delete_logo(self, agent: Agent) -> Agency:
+        agency = await self.get_my_agency(agent)
+        if agency.logo_path is not None:
+            storage.delete(agency.logo_path)
+            agency.logo_path = None
+            await self.db.commit()
+            await self.db.refresh(agency)
+        return agency
+
+    @staticmethod
+    def logo_bytes(agency: Agency) -> tuple[bytes, str]:
+        """(content, media_type) of the stored logo — 404 when absent.
+        Callers OWN the scoping (own agency / live case / public slug)."""
+        if agency.logo_path is None:
+            raise NotFoundError("Logo not found.")
+        media_type = "image/png" if agency.logo_path.endswith(".png") else "image/jpeg"
+        return storage.download(agency.logo_path), media_type
+
+    async def public_logo_by_slug(self, slug: str) -> tuple[bytes, str]:
+        """THE assumed public exception (client login page): image bytes
+        only — an unknown slug and a logo-less agency answer the SAME 404,
+        and no metadata ever leaves."""
+        agency = await self.repo.get_agency_by_slug(slug)
+        if agency is None:
+            raise NotFoundError("Logo not found.")
+        return self.logo_bytes(agency)
 
     # --- agency (tenant scoping: always from the token, never from the URL) ----
 

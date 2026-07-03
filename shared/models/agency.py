@@ -24,6 +24,15 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Agency branding: private-bucket path of the logo, served by the
+    # backend (authenticated, scoped) plus ONE assumed public exception
+    # (/public/agencies/{slug}/logo for the client-space login page).
+    logo_path: Mapped[str | None] = mapped_column(String(500))
     default_language: Mapped[str] = mapped_column(
         String(2), nullable=False, server_default=text("'fr'")
     )
+
+    @property
+    def has_logo(self) -> bool:
+        """Derived flag for the responses (model_validate picks it up)."""
+        return self.logo_path is not None

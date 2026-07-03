@@ -23,6 +23,12 @@ from src.progress.progress_schema import DeadlineCounter, StepContentAttachment
 
 class ExpatAgencyResponse(BaseModel):
     name: str
+    # Branding (logo feature): the client space fetches the logo via
+    # GET /expat/agencies/{id}/logo when has_logo is true; slug feeds the
+    # public login-page variant.
+    id: uuid.UUID
+    slug: str
+    has_logo: bool = False
 
 
 class ExpatCaseSummaryResponse(BaseModel):

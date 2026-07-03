@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -38,6 +38,17 @@ BINDINGS = [
     # agency (tenant identity endpoint).
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
     RouteBinding("PATCH", "/agencies/me", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # Logo: any agent of the agency reads it (the app shell shows it);
+    # only agency.manage uploads/removes it.
+    RouteBinding("GET", "/agencies/me/logo", Audience.AGENT),
+    RouteBinding("POST", "/agencies/me/logo", Audience.AGENT, Permission.AGENCY_MANAGE),
+    RouteBinding("DELETE", "/agencies/me/logo", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # THE assumed public exception to "everything authenticated": the
+    # client-space LOGIN page shows the agency logo before any token
+    # exists. Strictly this one route, image bytes only, no metadata
+    # (unknown slug == logo-less agency == same 404). PUBLIC binding,
+    # exactly like the auth routes.
+    RouteBinding("GET", "/public/agencies/{slug}/logo", Audience.PUBLIC),
     # Tenant reference lists, no permission (same logic as GET /journeys):
     # any agent must see colleagues (owner/responsible assignment) and role
     # names (invitation role_id). Inviting itself stays gated agent.manage.
@@ -99,6 +110,40 @@ async def list_agencies(agent: AgentDep, db: DbDep) -> list[AgencyResponse]:
     The one read that deliberately crosses the tenant boundary."""
     agencies = await AgenciesManager(db).list_all_agencies()
     return [AgencyResponse.model_validate(a) for a in agencies]
+
+
+def _logo_response(content: bytes, media_type: str, *, public: bool) -> Response:
+    cache = "public, max-age=3600" if public else "private, max-age=300"
+    return Response(content=content, media_type=media_type, headers={"Cache-Control": cache})
+
+
+@router.get("/me/logo")
+async def get_my_agency_logo(agent: AgentDep, db: DbDep) -> Response:
+    manager = AgenciesManager(db)
+    content, media_type = manager.logo_bytes(await manager.get_my_agency(agent))
+    return _logo_response(content, media_type, public=False)
+
+
+@router.post("/me/logo", response_model=AgencyResponse)
+async def upload_agency_logo(file: UploadFile, agent: AgentDep, db: DbDep) -> AgencyResponse:
+    agency = await AgenciesManager(db).upload_logo(agent, file.content_type, await file.read())
+    return AgencyResponse.model_validate(agency)
+
+
+@router.delete("/me/logo", response_model=AgencyResponse)
+async def delete_agency_logo(agent: AgentDep, db: DbDep) -> AgencyResponse:
+    return AgencyResponse.model_validate(await AgenciesManager(db).delete_logo(agent))
+
+
+# THE assumed public exception (see BINDINGS comment): its own router so
+# the /public prefix never mixes with the authenticated /agencies surface.
+public_router = APIRouter(prefix="/public", tags=["public"])
+
+
+@public_router.get("/agencies/{slug}/logo")
+async def public_agency_logo(slug: str, db: DbDep) -> Response:
+    content, media_type = await AgenciesManager(db).public_logo_by_slug(slug)
+    return _logo_response(content, media_type, public=True)
 
 
 @router.get("/me", response_model=AgencyResponse)

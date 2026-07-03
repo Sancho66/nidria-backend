@@ -1,28 +1,22 @@
 """User profile (bloc 1): own names + profile picture, both faces.
 
-Avatar pipeline: strict content-type allowlist → 2 MiB cap on the RAW
-upload → Pillow decode (corrupt file = 422) → EXIF-orientation fix →
-center-crop square → 512px → JPEG (RGB, alpha flattened on white). One
-storage path per actor (re-upload overwrites), private bucket, ALWAYS
-served by the backend (never a direct Supabase URL) — same rule as the
-case documents."""
+The image pipeline lives in core.images (shared with the agency logo):
+allowlist, 2 MiB cap, Pillow decode, EXIF fix, then the avatar-specific
+square 512px JPEG. One storage path per actor (re-upload overwrites),
+private bucket, ALWAYS served by the backend (never a direct Supabase
+URL) — same rule as the case documents."""
 
 import uuid
-from io import BytesIO
 
-from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.expat_user import ExpatUser
 from src.core import storage
-from src.core.exceptions import NotFoundError, PayloadTooLargeError, ValidationError
+from src.core.exceptions import NotFoundError
+from src.core.images import process_avatar
 from src.profile.profile_repository import ProfileRepository
 from src.profile.profile_schema import ProfileResponse, ProfileUpdateRequest
-
-_ALLOWED_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
-_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB raw upload cap
-_SIZE = 512  # stored square edge — plenty for any UI slot
 
 
 def _profile_response(actor: Agent | ExpatUser) -> ProfileResponse:
@@ -32,26 +26,6 @@ def _profile_response(actor: Agent | ExpatUser) -> ProfileResponse:
         last_name=actor.last_name,
         has_avatar=actor.avatar_path is not None,
     )
-
-
-def _process_avatar(raw: bytes) -> bytes:
-    """Decode + normalize to a 512px JPEG square (never store 4K)."""
-    image: Image.Image
-    try:
-        image = Image.open(BytesIO(raw))
-        image = ImageOps.exif_transpose(image) or image
-        image = ImageOps.fit(image, (_SIZE, _SIZE))
-    except UnidentifiedImageError as exc:
-        raise ValidationError(
-            "The file is not a readable image.", code="profile.avatar_invalid"
-        ) from exc
-    if image.mode != "RGB":  # flatten alpha on white for the JPEG encode
-        background = Image.new("RGB", image.size, (255, 255, 255))
-        background.paste(image, mask=image.getchannel("A") if "A" in image.getbands() else None)
-        image = background
-    out = BytesIO()
-    image.save(out, format="JPEG", quality=85)
-    return out.getvalue()
 
 
 class ProfileManager:
@@ -76,19 +50,7 @@ class ProfileManager:
     async def upload_avatar(
         self, actor: Agent | ExpatUser, content_type: str | None, raw: bytes
     ) -> ProfileResponse:
-        if content_type not in _ALLOWED_TYPES:
-            raise ValidationError(
-                "Avatar must be a JPEG, PNG or WebP image.",
-                code="profile.avatar_bad_type",
-                params={"allowed": sorted(_ALLOWED_TYPES)},
-            )
-        if len(raw) > _MAX_BYTES:
-            raise PayloadTooLargeError(
-                "Avatar exceeds the 2 MiB limit.",
-                code="profile.avatar_too_large",
-                params={"max_bytes": _MAX_BYTES},
-            )
-        processed = _process_avatar(raw)
+        processed = process_avatar(content_type, raw)
         face = "agent" if isinstance(actor, Agent) else "expat"
         path = f"avatars/{face}/{actor.id}.jpg"  # stable path: re-upload overwrites
         storage.upload(path, processed, "image/jpeg")
