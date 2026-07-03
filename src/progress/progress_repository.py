@@ -352,9 +352,10 @@ class ProgressRepository:
 
     async def get_principal_email_and_agency_name(
         self, case: ClientCase
-    ) -> tuple[str | None, str, str | None]:
-        """(principal email, agency name, principal preferred_lang). The lang
-        feeds the notification-language resolution (BLOC NOTIF-1)."""
+    ) -> tuple[str | None, str, str | None, str | None]:
+        """(principal email, agency name, principal preferred_lang, agency
+        slug). The lang feeds the notification-language resolution (BLOC
+        NOTIF-1); the slug brands the client links (?agency=<slug>)."""
         row = (
             await self.db.execute(
                 select(ExpatUser.email, ExpatUser.preferred_lang).where(
@@ -362,8 +363,11 @@ class ProgressRepository:
                 )
             )
         ).first()
-        name = (
-            await self.db.execute(select(Agency.name).where(Agency.id == case.agency_id))
-        ).scalar_one_or_none()
+        agency_row = (
+            await self.db.execute(
+                select(Agency.name, Agency.slug).where(Agency.id == case.agency_id)
+            )
+        ).first()
         email, lang = (row[0], row[1]) if row is not None else (None, None)
-        return email, (name or "Votre agence"), lang
+        name, slug = (agency_row[0], agency_row[1]) if agency_row is not None else (None, None)
+        return email, (name or "Votre agence"), lang, slug

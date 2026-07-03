@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Annotated
+from urllib.parse import quote
 
 import resend
 from pydantic import AfterValidator, EmailStr
@@ -58,6 +59,17 @@ def _is_mocked() -> bool:
     if settings.mock_email is not None:
         return settings.mock_email
     return settings.mock_services
+
+
+def space_link(frontend_url: str, path: str, agency_slug: str | None) -> str:
+    """Client-space URL carrying the white-label context: every client
+    email lands on the BRANDED login/activation (?agency=<slug>), never
+    the naked /space pages. Slugs are [a-z0-9-] by construction; quoted
+    anyway (clean encoding whatever a future slug holds)."""
+    url = f"{frontend_url}{path}"
+    if agency_slug:
+        url = f"{url}?agency={quote(agency_slug, safe='')}"
+    return url
 
 
 def send_email(to: str, subject: str, body: str, html: str | None = None) -> None:

@@ -15,7 +15,7 @@ from shared.models.journey import JourneyStepParticipant, JourneyTemplateStep
 from shared.models.step_requirement import StepRequirement
 from src.activity.activity_manager import ActivityManager
 from src.core.config import get_settings
-from src.core.email import send_email
+from src.core.email import send_email, space_link
 from src.core.email_templates import (
     EmailContent,
     ready_to_validate_email,
@@ -1135,15 +1135,18 @@ class ProgressManager:
         templates. Only when the step has concrete requirements."""
         if not await self._notifications_enabled(case):
             return None
-        email, agency_name, preferred_lang = await self.repo.get_principal_email_and_agency_name(
-            case
-        )
+        (
+            email,
+            agency_name,
+            preferred_lang,
+            agency_slug,
+        ) = await self.repo.get_principal_email_and_agency_name(case)
         if not email:
             return None
         # Recipient = the CLIENT → preferred_lang, else EN (never agency fr).
         lang = resolve_notification_lang_client(preferred_lang)
         step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang)
-        link = f"{get_settings().frontend_url}/space"
+        link = space_link(get_settings().frontend_url, "/space", agency_slug)
         content = (
             step_reopened_email(agency_name, step_name, link, lang)
             if reopened

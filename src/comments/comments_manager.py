@@ -12,7 +12,7 @@ from shared.models.step_comment import StepComment
 from src.comments.comments_repository import CommentsRepository
 from src.comments.comments_schema import CommentResponse
 from src.core.config import get_settings
-from src.core.email import send_email
+from src.core.email import send_email, space_link
 from src.core.email_templates import new_comment_to_agent, new_comment_to_client
 from src.core.enums import ActorType
 from src.core.exceptions import ForbiddenError, NotFoundError
@@ -312,7 +312,7 @@ class CommentsManager:
                 agency_name,
                 author_first_name or "",
                 step_name,
-                f"{settings.frontend_url}/space",
+                space_link(settings.frontend_url, "/space", agency.slug if agency else None),
                 lang,
             )
         else:

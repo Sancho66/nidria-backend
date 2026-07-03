@@ -36,7 +36,7 @@ from src.cases.cases_schema import (
     PersonUpdateRequest,
 )
 from src.core.config import get_settings
-from src.core.email import PendingEmail, send_email
+from src.core.email import PendingEmail, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
@@ -180,13 +180,20 @@ class CasesManager:
 
         agency = await self.repo.get_agency(agent.agency_id)
         agency_name = agency.name if agency else "Votre agence"
+        agency_slug = agency.slug if agency else None
         if expat.activated_at is None:
-            link = f"{settings.frontend_url}/space/activate/{invitation.token}"
+            # The activation screen is the FIRST thing a client ever sees:
+            # it must land branded (?agency=<slug>).
+            link = space_link(
+                settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
+            )
             content = expat_activation_email(
                 agency_name, link, settings.case_invitation_expires_days
             )
         else:
-            content = new_case_email(agency_name, f"{settings.frontend_url}/space/login")
+            content = new_case_email(
+                agency_name, space_link(settings.frontend_url, "/space/login", agency_slug)
+            )
         if email_sink is not None:
             # Deferred: the import collects, the router dispatches later.
             email_sink.append(
