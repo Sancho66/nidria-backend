@@ -85,9 +85,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         # Library samples (shared, read-only) — idempotent, like the system
         # roles. Agencies consume them by cloning.
         await seed_sample_journeys(session)
-        # Consent placeholders (point 16) — version 1 per type, only where
-        # the type has no document yet (a script-published version is
-        # never overwritten).
+        # Consent documents (point 16) — reconcile with the canonical
+        # texts (consents_texts.py = source of truth): a text edited in
+        # code publishes a NEW version at boot and re-gates everyone.
         await seed_consent_documents(session)
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()

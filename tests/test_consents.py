@@ -22,11 +22,8 @@ from shared.models.agent import Agent
 from shared.models.consent import ConsentAcceptance, ConsentDocument
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import Role
-from src.consents.consents_seed import (
-    PLACEHOLDER_DOCUMENTS,
-    content_sha256,
-    seed_consent_documents,
-)
+from src.consents.consents_seed import content_sha256, seed_consent_documents
+from src.consents.consents_texts import CANONICAL_DOCUMENTS
 from src.core.enums import Audience
 from src.core.security import create_access_token
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -130,7 +127,9 @@ async def test_admin_gated_until_both_documents_accepted(
     assert pending.status_code == 200
     docs = pending.json()
     assert {d["type"] for d in docs} == set(AGENCY_TYPES)
-    assert all("[TEXTE PROVISOIRE" in d["content"] for d in docs)
+    # Definitive texts (passation 2026-07-02): the provisional marker is gone.
+    assert all("BETTERSOFT LLC" in d["content"] for d in docs)
+    assert all("[TEXTE PROVISOIRE" not in d["content"] for d in docs)
 
     # One of two accepted: still gated, on the remaining one only.
     first = await cs_client.post(
@@ -404,7 +403,7 @@ async def test_acceptance_trace_ip_hash_timestamp_immutable(
         )
     ).scalar_one()
     assert row.ip == "203.0.113.9"
-    assert row.content_hash == content_sha256(PLACEHOLDER_DOCUMENTS["client_terms"])
+    assert row.content_hash == content_sha256(CANONICAL_DOCUMENTS["client_terms"])
     assert row.accepted_at is not None and row.accepted_at.tzinfo is not None
     original_accepted_at = row.accepted_at
     original_ip = row.ip
@@ -439,3 +438,62 @@ async def test_acceptance_trace_ip_hash_timestamp_immutable(
     await db_session.refresh(rows[0])
     assert rows[0].accepted_at == original_accepted_at
     assert rows[0].ip == original_ip
+
+
+# --- canonical reconcile (passation: definitive texts replace accepted v1) --------------
+
+
+async def test_seed_publishes_new_version_when_canonical_text_changes(
+    cs_client: AsyncClient,
+    db_session: AsyncSession,
+    consent_docs: None,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Prod scenario: v1 (old placeholder) was ACCEPTED, then the
+    canonical texts changed in code. The reconcile publishes v2 for the
+    DRIFTED type only, never touches the accepted v1 row (evidentiary
+    trace), re-gates the admin on that document alone, and a second run
+    is a strict no-op."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    assert (await cs_client.get("/cases", headers=headers)).status_code == 200
+
+    # Simulate the legacy state: v1 of agency_terms held a different text.
+    v1 = (
+        await db_session.execute(
+            select(ConsentDocument).where(
+                ConsentDocument.type == "agency_terms", ConsentDocument.version == 1
+            )
+        )
+    ).scalar_one()
+    v1.content_md = "# Ancien texte provisoire\n"
+    v1.content_hash = content_sha256(v1.content_md)
+    await db_session.commit()
+
+    await seed_consent_documents(db_session)
+
+    rows = (
+        (
+            await db_session.execute(
+                select(ConsentDocument)
+                .where(ConsentDocument.type == "agency_terms")
+                .order_by(ConsentDocument.version)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [(r.version, r.is_active) for r in rows] == [(1, False), (2, True)]
+    assert rows[0].content_md == "# Ancien texte provisoire\n"  # accepted v1 untouched
+    assert rows[1].content_hash == content_sha256(CANONICAL_DOCUMENTS["agency_terms"])
+
+    # Re-gated on the republished document alone.
+    regated = await cs_client.get("/cases", headers=headers)
+    assert regated.status_code == 403
+    assert regated.json()["params"]["missing"] == [{"type": "agency_terms", "version": 2}]
+
+    # Strict idempotence: a second reconcile writes nothing.
+    await seed_consent_documents(db_session)
+    count = len((await db_session.execute(select(ConsentDocument))).scalars().all())
+    assert count == 5  # 4 types + the one republished version
