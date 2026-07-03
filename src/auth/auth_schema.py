@@ -49,6 +49,7 @@ class AgentMeResponse(BaseModel):
     # routes the audience on THIS fact, not on a permission proxy.
     is_external: bool
     effective_permissions: list[str]
+    has_avatar: bool = False
     impersonator: ImpersonatorInfo | None = None
 
 
@@ -58,7 +59,63 @@ class ExpatMeResponse(BaseModel):
     last_name: str
     email: str
     preferred_lang: str
+    has_avatar: bool = False
     impersonator: ImpersonatorInfo | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    """Logged-in password change (bloc 1). The CURRENT password check is
+    what distinguishes this flow from the email reset; the new password
+    follows the same strength policy as the reset."""
+
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+class MfaRequiredResponse(BaseModel):
+    """Login step 1 outcome when 2FA is active: NO tokens — an ephemeral
+    challenge token only, consumable by /2fa/verify and rejected
+    everywhere else (its `type` claim is not "access")."""
+
+    mfa_required: bool = True
+    mfa_token: str
+
+
+class MfaSetupResponse(BaseModel):
+    """The ONLY time the secret ever leaves the server (QR provisioning);
+    every later response carries state booleans, never the secret."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class MfaCodeRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=32)
+
+
+class MfaEnableResponse(BaseModel):
+    """The 8 one-time backup codes, IN CLEAR exactly once (bcrypt-hashed
+    at rest). They ARE the phone-lost recovery path."""
+
+    enabled: bool = True
+    backup_codes: list[str]
+
+
+class MfaVerifyRequest(BaseModel):
+    mfa_token: str
+    code: str = Field(min_length=6, max_length=32)
+
+
+class MfaDisableRequest(BaseModel):
+    """BOTH factors required: a stolen session alone cannot disarm 2FA."""
+
+    current_password: str
+    code: str = Field(min_length=6, max_length=32)
+
+
+class MfaStatusResponse(BaseModel):
+    enabled: bool
+    backup_codes_left: int
 
 
 class ActivateRequest(BaseModel):

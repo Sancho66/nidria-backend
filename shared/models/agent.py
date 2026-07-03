@@ -25,6 +25,9 @@ class Agent(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
         ForeignKey("role.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Profile picture (bloc 1) — private-bucket storage path, served by the
+    # backend only (never a direct Supabase URL). NULL = initials fallback.
+    avatar_path: Mapped[str | None] = mapped_column(String(500))
     # Denormalized from the role's kind at creation (an external agent =
     # a provider, lawyer/notary/…): the CHEAP filter read by enforce() on
     # every request and by every "agents of the agency" listing to keep

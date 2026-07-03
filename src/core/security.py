@@ -106,6 +106,29 @@ def _check_claims(payload: dict[str, Any], expected_type: str, expected: Audienc
         raise UnauthorizedError("Wrong token audience.")
 
 
+def create_mfa_token(subject: str, audience: Audience, jti: uuid.UUID) -> str:
+    """Ephemeral login step-2 token (2FA): type "mfa_pending" makes it
+    unusable on every access-authenticated route (the decoders check the
+    type claim), `jti` keys the server-side attempts counter."""
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=settings.mfa_token_expires_minutes)).timestamp()),
+        "type": "mfa_pending",
+        "audience": audience.value,
+        "jti": str(jti),
+    }
+    return jwt.encode(payload, _access_secret(audience), algorithm=settings.jwt_algorithm)
+
+
+def decode_mfa_token(token: str, expected_audience: Audience) -> dict[str, Any]:
+    payload = _decode(token, _access_secret(expected_audience))
+    _check_claims(payload, "mfa_pending", expected_audience)
+    return payload
+
+
 def decode_access_token(token: str, expected_audience: Audience) -> dict[str, Any]:
     """Decode with the expected audience's OWN secret, then double-check
     the `audience` claim (defense in depth — a cross-audience token

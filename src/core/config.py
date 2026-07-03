@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Impersonation: short-lived access token, NO refresh — expiry IS the exit.
     impersonation_token_expires_minutes: int = 30
     password_reset_token_expires_minutes: int = 60
+    # 2FA (bloc 2): lifetime of the ephemeral login step-2 token, and the
+    # server-side attempts cap per challenge (then back to step 1).
+    mfa_token_expires_minutes: int = 5
+    mfa_max_attempts: int = 5
     # Onboarding links (first admin of a created agency) reuse the reset
     # machinery but are INVITATIONS: 24h, not the 60-minute reset window
     # (Sidney locked out at H+1, demande Eric).

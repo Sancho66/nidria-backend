@@ -55,8 +55,13 @@ IMPERSONATION_WRITE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
 # target's permissions.
 IMPERSONATION_AGENT_DENIED: frozenset[tuple[str, str]] = frozenset(
     {
-        # target session lifecycle
+        # target session lifecycle (changing the TARGET's password under a
+        # mask would seize the account — same family as logout)
         ("POST", "/auth/agent/logout"),
+        ("POST", "/auth/agent/change-password"),
+        ("POST", "/auth/agent/2fa/setup"),
+        ("POST", "/auth/agent/2fa/enable"),
+        ("POST", "/auth/agent/2fa/disable"),
         # chaining
         ("POST", "/agencies/me/members/{agent_id}/impersonate"),
         ("POST", "/expat-users/{expat_user_id}/impersonate"),

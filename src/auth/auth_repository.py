@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,6 +9,7 @@ from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.expat_user import ExpatUser
 from shared.models.invitation import CaseInvitation
+from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
 from shared.models.rbac import Role
 
 
@@ -88,6 +89,48 @@ class AuthRepository:
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     # --- invitations ---------------------------------------------------------------
+
+    # --- 2FA (bloc 2) ---------------------------------------------------------------
+
+    async def get_mfa(self, actor_type: str, actor_id: uuid.UUID) -> MfaTotp | None:
+        stmt = select(MfaTotp).where(MfaTotp.actor_type == actor_type, MfaTotp.actor_id == actor_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    def add_mfa(self, actor_type: str, actor_id: uuid.UUID, secret: str) -> MfaTotp:
+        row = MfaTotp(actor_type=actor_type, actor_id=actor_id, secret=secret)
+        self.db.add(row)
+        return row
+
+    async def delete_mfa(self, row: MfaTotp) -> None:
+        await self.db.delete(row)  # backup codes follow (FK CASCADE)
+
+    def add_backup_code(self, mfa_id: uuid.UUID, code_hash: str) -> MfaBackupCode:
+        row = MfaBackupCode(mfa_id=mfa_id, code_hash=code_hash)
+        self.db.add(row)
+        return row
+
+    async def unused_backup_codes(self, mfa_id: uuid.UUID) -> list[MfaBackupCode]:
+        stmt = select(MfaBackupCode).where(
+            MfaBackupCode.mfa_id == mfa_id, MfaBackupCode.used_at.is_(None)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    def add_mfa_challenge(
+        self, jti: uuid.UUID, actor_type: str, actor_id: uuid.UUID, expires_at: datetime
+    ) -> MfaChallenge:
+        row = MfaChallenge(jti=jti, actor_type=actor_type, actor_id=actor_id, expires_at=expires_at)
+        self.db.add(row)
+        return row
+
+    async def get_mfa_challenge(self, jti: uuid.UUID) -> MfaChallenge | None:
+        return await self.db.get(MfaChallenge, jti)
+
+    async def delete_mfa_challenge(self, row: MfaChallenge) -> None:
+        await self.db.delete(row)
+
+    async def sweep_expired_mfa_challenges(self, now: datetime) -> None:
+        """Opportunistic hygiene at challenge creation — no scheduler job."""
+        await self.db.execute(delete(MfaChallenge).where(MfaChallenge.expires_at <= now))
 
     async def get_case_invitation_by_token(self, token: str) -> CaseInvitation | None:
         stmt = select(CaseInvitation).where(CaseInvitation.token == token)

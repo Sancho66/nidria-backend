@@ -40,6 +40,7 @@ from src.imports.imports_router import router as imports_router
 from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
 from src.journeys.sample_seed import seed_sample_journeys
+from src.profile.profile_router import router as profile_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
@@ -133,6 +134,7 @@ app.include_router(impersonation_router)
 app.include_router(imports_router)
 app.include_router(jobs_router)
 app.include_router(journeys_router)
+app.include_router(profile_router)
 app.include_router(progress_router)
 app.include_router(reminders_router)
 app.include_router(roles_router)

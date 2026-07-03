@@ -4,20 +4,37 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pyotp
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.expat_user import ExpatUser
+from shared.models.mfa import MfaTotp
 from src.auth.auth_repository import AuthRepository
-from src.auth.auth_schema import ActivateResponse, TokenPairResponse
+from src.auth.auth_schema import (
+    ActivateResponse,
+    MfaEnableResponse,
+    MfaRequiredResponse,
+    MfaSetupResponse,
+    MfaStatusResponse,
+    TokenPairResponse,
+)
 from src.core.config import get_settings
 from src.core.email import normalize_email, send_email
 from src.core.email_templates import password_reset_email
 from src.core.enums import Audience, InvitationStatus
-from src.core.exceptions import BadRequestError, UnauthorizedError
+from src.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    UnauthorizedError,
+    ValidationError,
+)
 from src.core.security import (
     create_access_token,
+    create_mfa_token,
     create_refresh_token,
+    decode_mfa_token,
     decode_refresh_token,
     hash_password,
     token_subject,
@@ -80,17 +97,24 @@ class AuthManager:
 
     # --- login -------------------------------------------------------------------
 
-    async def login_agent(self, email: str, password: str) -> TokenPairResponse:
+    async def login_agent(
+        self, email: str, password: str
+    ) -> TokenPairResponse | MfaRequiredResponse:
         # Belt under the schema-level NormalizedEmailStr: identity lookups
         # are always lowercase, whatever the caller.
         agent = await self.repo.get_agent_by_email(normalize_email(email))
         if agent is None or not verify_password(password, agent.password_hash):
             raise UnauthorizedError(_INVALID_CREDENTIALS)
+        challenge = await self._mfa_challenge_if_enabled(Audience.AGENT, agent.id)
+        if challenge is not None:
+            return challenge
         pair = self.issue_token_pair(agent.id, Audience.AGENT)
         await self.db.commit()
         return pair
 
-    async def login_expat(self, email: str, password: str) -> TokenPairResponse:
+    async def login_expat(
+        self, email: str, password: str
+    ) -> TokenPairResponse | MfaRequiredResponse:
         expat = await self.repo.get_expat_by_email(normalize_email(email))
         if (
             expat is None
@@ -99,9 +123,34 @@ class AuthManager:
             or not verify_password(password, expat.password_hash)
         ):
             raise UnauthorizedError(_INVALID_CREDENTIALS)
+        challenge = await self._mfa_challenge_if_enabled(Audience.EXPAT, expat.id)
+        if challenge is not None:
+            return challenge
         pair = self.issue_token_pair(expat.id, Audience.EXPAT)
         await self.db.commit()
         return pair
+
+    async def _mfa_challenge_if_enabled(
+        self, audience: Audience, actor_id: uuid.UUID
+    ) -> MfaRequiredResponse | None:
+        """Step 1 of a 2FA login: correct password → NO tokens, an
+        ephemeral challenge instead (jti-keyed row = the attempts counter
+        a stateless JWT cannot carry)."""
+        mfa = await self.repo.get_mfa(audience.value, actor_id)
+        if mfa is None or mfa.enabled_at is None:
+            return None
+        now = datetime.now(UTC)
+        await self.repo.sweep_expired_mfa_challenges(now)
+        jti = uuid.uuid4()
+        settings = get_settings()
+        self.repo.add_mfa_challenge(
+            jti,
+            audience.value,
+            actor_id,
+            now + timedelta(minutes=settings.mfa_token_expires_minutes),
+        )
+        await self.db.commit()
+        return MfaRequiredResponse(mfa_token=create_mfa_token(str(actor_id), audience, jti))
 
     # --- refresh rotation -----------------------------------------------------------
 
@@ -223,6 +272,151 @@ class AuthManager:
                 email,
             )
         return _FORGOT_PASSWORD_DETAIL
+
+    async def change_password(
+        self, actor: Agent | ExpatUser, audience: Audience, current: str, new: str
+    ) -> None:
+        """Logged-in change (bloc 1): the CURRENT password is verified
+        (403 otherwise), then same semantics as a reset — every active
+        refresh token dies (other sessions fall), the current ACCESS
+        token stays valid until its natural expiry (stateless)."""
+        if actor.password_hash is None or not verify_password(current, actor.password_hash):
+            raise ForbiddenError("Current password is incorrect.", code="auth.wrong_password")
+        actor.password_hash = hash_password(new)
+        await self.repo.revoke_all_active_refresh_tokens(
+            audience.value, actor.id, datetime.now(UTC)
+        )
+        await self.db.commit()
+
+    # --- 2FA TOTP (bloc 2) -------------------------------------------------------------
+
+    async def mfa_status(self, audience: Audience, actor_id: uuid.UUID) -> MfaStatusResponse:
+        mfa = await self.repo.get_mfa(audience.value, actor_id)
+        if mfa is None or mfa.enabled_at is None:
+            return MfaStatusResponse(enabled=False, backup_codes_left=0)
+        return MfaStatusResponse(
+            enabled=True, backup_codes_left=len(await self.repo.unused_backup_codes(mfa.id))
+        )
+
+    async def mfa_setup(
+        self, audience: Audience, actor_id: uuid.UUID, account_label: str
+    ) -> MfaSetupResponse:
+        """Generate (or regenerate) the PENDING secret. The one and only
+        response ever carrying the secret (QR provisioning). 409 when 2FA
+        is already active: disable first (password + code), no silent
+        re-enrollment on a stolen session."""
+        mfa = await self.repo.get_mfa(audience.value, actor_id)
+        if mfa is not None and mfa.enabled_at is not None:
+            raise ConflictError(
+                "Two-factor authentication is already enabled.",
+                code="auth.mfa_already_enabled",
+            )
+        secret = pyotp.random_base32()
+        if mfa is None:
+            self.repo.add_mfa(audience.value, actor_id, secret)
+        else:  # pending re-setup: fresh secret replaces the unconfirmed one
+            mfa.secret = secret
+        await self.db.commit()
+        uri = pyotp.totp.TOTP(secret).provisioning_uri(name=account_label, issuer_name="Nidria")
+        return MfaSetupResponse(secret=secret, otpauth_uri=uri)
+
+    async def mfa_enable(
+        self, audience: Audience, actor_id: uuid.UUID, code: str
+    ) -> MfaEnableResponse:
+        """A first valid code proves possession → activate + mint the 8
+        one-time backup codes (clear ONCE, bcrypt at rest)."""
+        mfa = await self.repo.get_mfa(audience.value, actor_id)
+        if mfa is None:
+            raise ValidationError(
+                "No pending 2FA setup. Call setup first.", code="auth.mfa_not_pending"
+            )
+        if mfa.enabled_at is not None:
+            raise ConflictError(
+                "Two-factor authentication is already enabled.",
+                code="auth.mfa_already_enabled",
+            )
+        if not pyotp.TOTP(mfa.secret).verify(code, valid_window=1):
+            raise ValidationError("Invalid authentication code.", code="auth.mfa_invalid_code")
+        mfa.enabled_at = datetime.now(UTC)
+        plain_codes = [f"{secrets.token_hex(2)}-{secrets.token_hex(2)}" for _ in range(8)]
+        for plain in plain_codes:
+            self.repo.add_backup_code(mfa.id, hash_password(plain))
+        await self.db.commit()
+        return MfaEnableResponse(backup_codes=plain_codes)
+
+    async def mfa_verify(self, audience: Audience, mfa_token: str, code: str) -> TokenPairResponse:
+        """Login step 2: TOTP code OR an unused backup code (consumed).
+        The challenge row carries the attempts counter — cap reached or
+        expired token → back to step 1."""
+        payload = decode_mfa_token(mfa_token, audience)  # 401 on bad/expired/foreign
+        actor_id = token_subject(payload)
+        raw_jti = payload.get("jti")
+        if not raw_jti:
+            raise UnauthorizedError("Invalid MFA token.", code="auth.mfa_token_expired")
+        challenge = await self.repo.get_mfa_challenge(uuid.UUID(str(raw_jti)))
+        now = datetime.now(UTC)
+        if challenge is None or challenge.expires_at <= now:
+            raise UnauthorizedError(
+                "The MFA challenge has expired. Log in again.",
+                code="auth.mfa_token_expired",
+            )
+        mfa = await self.repo.get_mfa(audience.value, actor_id)
+        if mfa is None or mfa.enabled_at is None:  # disabled between the two steps
+            await self.repo.delete_mfa_challenge(challenge)
+            await self.db.commit()
+            raise UnauthorizedError(
+                "The MFA challenge has expired. Log in again.",
+                code="auth.mfa_token_expired",
+            )
+        if not await self._mfa_code_ok(mfa, code):
+            challenge.attempts += 1
+            if challenge.attempts >= get_settings().mfa_max_attempts:
+                await self.repo.delete_mfa_challenge(challenge)
+                await self.db.commit()
+                raise UnauthorizedError(
+                    "Too many invalid codes. Log in again.",
+                    code="auth.mfa_too_many_attempts",
+                )
+            await self.db.commit()
+            raise ValidationError("Invalid authentication code.", code="auth.mfa_invalid_code")
+        await self.repo.delete_mfa_challenge(challenge)
+        pair = self.issue_token_pair(actor_id, audience)
+        await self.db.commit()
+        return pair
+
+    async def mfa_disable(
+        self,
+        actor: Agent | ExpatUser,
+        audience: Audience,
+        current_password: str,
+        code: str,
+    ) -> None:
+        """BOTH factors demanded — a stolen session alone cannot disarm
+        2FA. Purges the secret and every backup code (FK CASCADE)."""
+        if actor.password_hash is None or not verify_password(
+            current_password, actor.password_hash
+        ):
+            raise ForbiddenError("Current password is incorrect.", code="auth.wrong_password")
+        mfa = await self.repo.get_mfa(audience.value, actor.id)
+        if mfa is None or mfa.enabled_at is None:
+            raise ValidationError(
+                "Two-factor authentication is not enabled.", code="auth.mfa_not_enabled"
+            )
+        if not await self._mfa_code_ok(mfa, code):
+            raise ValidationError("Invalid authentication code.", code="auth.mfa_invalid_code")
+        await self.repo.delete_mfa(mfa)
+        await self.db.commit()
+
+    async def _mfa_code_ok(self, mfa: MfaTotp, code: str) -> bool:
+        """TOTP first (standard ±1 step tolerance), then the unused
+        backup codes — a match consumes the code permanently."""
+        if pyotp.TOTP(mfa.secret).verify(code, valid_window=1):
+            return True
+        for backup in await self.repo.unused_backup_codes(mfa.id):
+            if verify_password(code, backup.code_hash):
+                backup.used_at = datetime.now(UTC)
+                return True
+        return False
 
     async def reset_password(self, token: str, password: str, audience: Audience) -> None:
         row = await self.repo.get_reset_token(token)

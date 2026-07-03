@@ -156,6 +156,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.imports.imports_router import BINDINGS as imports_bindings
     from src.jobs.jobs_router import BINDINGS as jobs_bindings
     from src.journeys.journeys_router import BINDINGS as journeys_bindings
+    from src.profile.profile_router import BINDINGS as profile_bindings
     from src.progress.progress_router import BINDINGS as progress_bindings
     from src.reminders.reminders_router import BINDINGS as reminders_bindings
     from src.roles.roles_router import BINDINGS as roles_bindings
@@ -181,6 +182,7 @@ def collect_bindings() -> list[RouteBinding]:
         *external_bindings,
         *dashboard_bindings,
         *consents_bindings,
+        *profile_bindings,
     ]
 
 

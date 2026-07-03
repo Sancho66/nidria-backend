@@ -19,4 +19,9 @@ class ExpatUser(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
 
     preferred_lang: Mapped[str] = mapped_column(String(5), default="fr", nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255))
+    # Profile picture (bloc 1) — same serving rule as the agent's. Like
+    # first/last_name, the avatar belongs to the GLOBAL expat identity:
+    # visible to every agency holding a live case (deliberate, the client
+    # manages their own identity across agencies).
+    avatar_path: Mapped[str | None] = mapped_column(String(500))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -30,6 +30,7 @@ from shared.models.journey import (
     StepPrerequisite,
 )
 from shared.models.message_template import MessageTemplate
+from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
@@ -69,6 +70,9 @@ __all__ = [
     "JourneyTemplateField",
     "JourneyTemplateStep",
     "MessageTemplate",
+    "MfaBackupCode",
+    "MfaChallenge",
+    "MfaTotp",
     "PasswordResetToken",
     "Permission",
     "ProtectedResource",
