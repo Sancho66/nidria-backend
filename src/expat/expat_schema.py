@@ -29,6 +29,7 @@ class ExpatAgencyResponse(BaseModel):
     id: uuid.UUID
     slug: str
     has_logo: bool = False
+    has_cover: bool = False
 
 
 class ExpatCaseSummaryResponse(BaseModel):

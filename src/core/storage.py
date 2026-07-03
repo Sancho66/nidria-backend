@@ -53,6 +53,11 @@ def _client() -> Client:
 
 def upload(path: str, content: bytes, content_type: str) -> None:
     if _is_mocked():
+        # Faithful to Supabase: a same-path upload is refused (409
+        # Duplicate) — writers must delete the previous blob first. The
+        # mock mirrors it so tests catch the 500 this causes in prod.
+        if path in mock_store:
+            raise FileExistsError(f"Storage object already exists: {path}")
         logger.info("MOCK storage upload path=%s size=%d", path, len(content))
         mock_store[path] = content
         return

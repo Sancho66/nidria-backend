@@ -29,7 +29,7 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from src.core.images import process_logo
+from src.core.images import process_cover, process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
 from src.usage.usage_manager import UsageManager
@@ -149,13 +149,14 @@ class AgenciesManager:
 
     async def upload_logo(self, agent: Agent, content_type: str | None, raw: bytes) -> Agency:
         """Shared image pipeline, logo flavor: bounded 1024px wide, ratio
-        kept, PNG preserved on alpha. The extension follows the encode, so
-        a PNG→JPEG swap deletes the previous blob (no orphans)."""
+        kept, PNG preserved on alpha. The previous blob is ALWAYS deleted
+        first: Supabase refuses a same-path overwrite (409 Duplicate), so
+        a PNG→PNG replacement would 500 without it (prod bug, 2026-07-03)."""
         agency = await self.get_my_agency(agent)
         processed, media_type = process_logo(content_type, raw)
         extension = "png" if media_type == "image/png" else "jpg"
         path = f"logos/agency/{agency.id}.{extension}"
-        if agency.logo_path is not None and agency.logo_path != path:
+        if agency.logo_path is not None:
             storage.delete(agency.logo_path)
         storage.upload(path, processed, media_type)
         await UsageManager(self.db).emit(
@@ -186,6 +187,46 @@ class AgenciesManager:
             raise NotFoundError("Logo not found.")
         media_type = "image/png" if agency.logo_path.endswith(".png") else "image/jpeg"
         return storage.download(agency.logo_path), media_type
+
+    # --- cover (branding, same family as the logo) ---------------------------------
+
+    async def upload_cover(self, agent: Agent, content_type: str | None, raw: bytes) -> Agency:
+        """Shared image pipeline, cover flavor: center-cropped 4:1 banner,
+        2560px wide max, always JPEG. The path is constant per agency, so
+        the previous blob is deleted first (re-upload = clean overwrite)."""
+        agency = await self.get_my_agency(agent)
+        processed = process_cover(content_type, raw)
+        path = f"covers/agency/{agency.id}.jpg"
+        if agency.cover_path is not None:
+            storage.delete(agency.cover_path)
+        storage.upload(path, processed, "image/jpeg")
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.branding_updated",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+        )
+        agency.cover_path = path
+        await self.db.commit()
+        await self.db.refresh(agency)
+        return agency
+
+    async def delete_cover(self, agent: Agent) -> Agency:
+        agency = await self.get_my_agency(agent)
+        if agency.cover_path is not None:
+            storage.delete(agency.cover_path)
+            agency.cover_path = None
+            await self.db.commit()
+            await self.db.refresh(agency)
+        return agency
+
+    @staticmethod
+    def cover_bytes(agency: Agency) -> tuple[bytes, str]:
+        """(content, media_type) of the stored cover — 404 when absent.
+        Callers OWN the scoping, exactly like logo_bytes."""
+        if agency.cover_path is None:
+            raise NotFoundError("Cover not found.")
+        return storage.download(agency.cover_path), "image/jpeg"
 
     async def public_logo_by_slug(self, slug: str) -> tuple[bytes, str]:
         """THE assumed public exception (client login page): image bytes

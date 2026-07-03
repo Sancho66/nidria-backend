@@ -108,6 +108,7 @@ class ExpatPortalManager:
                 id=agency.id,
                 slug=agency.slug,
                 has_logo=agency.logo_path is not None,
+                has_cover=agency.cover_path is not None,
             ),
             origin_country=case.origin_country,
             dest_country=case.dest_country,
@@ -408,6 +409,15 @@ class ExpatPortalManager:
         if agency is None:
             raise NotFoundError("Logo not found.")
         return AgenciesManager(self.db).logo_bytes(agency)
+
+    async def agency_cover(self, expat: ExpatUser, agency_id: uuid.UUID) -> tuple[bytes, str]:
+        """Same visibility rule as the logo: only an agency holding at
+        least one of MY live cases (404 otherwise)."""
+        rows = await self.repo.list_cases_for_expat(expat.id)
+        agency = next((a for _case, a in rows if a.id == agency_id), None)
+        if agency is None:
+            raise NotFoundError("Cover not found.")
+        return AgenciesManager(self.db).cover_bytes(agency)
 
     async def list_notifications(
         self, expat: ExpatUser, case_id: uuid.UUID

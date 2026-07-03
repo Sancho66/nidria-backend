@@ -110,14 +110,17 @@ class ExternalPortalManager:
     def _summary(
         self,
         case: ClientCase,
-        agency_name: str,
+        agency: Agency | None,
         counts: dict[uuid.UUID, tuple[int, int]],
         principal: tuple[str, str],
     ) -> ExternalCaseSummaryResponse:
         done, total = counts.get(case.id, (0, 0))
         return ExternalCaseSummaryResponse(
             id=case.id,
-            agency=ExternalAgencyResponse(name=agency_name),
+            agency=ExternalAgencyResponse(
+                name=agency.name if agency else "",
+                has_cover=agency.cover_path is not None if agency else False,
+            ),
             principal=ExternalPrincipalResponse(first_name=principal[0], last_name=principal[1]),
             origin_country=case.origin_country,
             dest_country=case.dest_country,
@@ -133,11 +136,8 @@ class ExternalPortalManager:
         counts = await self.repo.step_counts([c.id for c in cases])
         principals = await self.repo.principal_names([c.principal_expat_user_id for c in cases])
         agency = await self.db.get(Agency, external.agency_id)
-        agency_name = agency.name if agency else ""
         return [
-            self._summary(
-                c, agency_name, counts, principals.get(c.principal_expat_user_id, ("", ""))
-            )
+            self._summary(c, agency, counts, principals.get(c.principal_expat_user_id, ("", "")))
             for c in cases
         ]
 
@@ -199,7 +199,7 @@ class ExternalPortalManager:
         ]
         summary = self._summary(
             case,
-            agency.name if agency else "",
+            agency,
             counts,
             principals.get(case.principal_expat_user_id, ("", "")),
         )

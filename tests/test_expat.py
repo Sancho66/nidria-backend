@@ -149,8 +149,8 @@ async def test_exact_field_contract(
     [summary] = listing.json()
     assert set(summary.keys()) == SUMMARY_KEYS
     # Branding context added with the agency-logo feature (id/slug feed
-    # the logo endpoints, has_logo drives the display fallback).
-    assert set(summary["agency"].keys()) == {"name", "id", "slug", "has_logo"}
+    # the logo/cover endpoints, has_logo/has_cover drive the display).
+    assert set(summary["agency"].keys()) == {"name", "id", "slug", "has_logo", "has_cover"}
 
     detail = (
         await portal_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))

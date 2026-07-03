@@ -19,9 +19,10 @@ class AgencyResponse(BaseModel):
     slug: str
     settings: dict[str, Any]
     default_language: Language
-    # Branding: derived from logo_path (model property); the image itself
-    # is served by the logo endpoints, never a raw storage URL.
+    # Branding: derived from logo_path / cover_path (model properties);
+    # the images are served by their endpoints, never a raw storage URL.
     has_logo: bool = False
+    has_cover: bool = False
 
 
 class AgencyCreateRequest(BaseModel):

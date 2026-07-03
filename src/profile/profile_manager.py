@@ -52,7 +52,12 @@ class ProfileManager:
     ) -> ProfileResponse:
         processed = process_avatar(content_type, raw)
         face = "agent" if isinstance(actor, Agent) else "expat"
-        path = f"avatars/{face}/{actor.id}.jpg"  # stable path: re-upload overwrites
+        path = f"avatars/{face}/{actor.id}.jpg"
+        # Stable path — but Supabase refuses a same-path overwrite (409
+        # Duplicate), so the previous blob is deleted first (same fix as
+        # the agency logo/cover).
+        if actor.avatar_path is not None:
+            storage.delete(actor.avatar_path)
         storage.upload(path, processed, "image/jpeg")
         actor.avatar_path = path
         await self.db.commit()

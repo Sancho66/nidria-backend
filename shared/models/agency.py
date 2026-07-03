@@ -33,6 +33,9 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # backend (authenticated, scoped) plus ONE assumed public exception
     # (/public/agencies/{slug}/logo for the client-space login page).
     logo_path: Mapped[str | None] = mapped_column(String(500))
+    # Client-space cover banner (same family as the logo): private-bucket
+    # path, served authenticated-only — no public route for now.
+    cover_path: Mapped[str | None] = mapped_column(String(500))
     default_language: Mapped[str] = mapped_column(
         String(2), nullable=False, server_default=text("'fr'")
     )
@@ -41,3 +44,7 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     def has_logo(self) -> bool:
         """Derived flag for the responses (model_validate picks it up)."""
         return self.logo_path is not None
+
+    @property
+    def has_cover(self) -> bool:
+        return self.cover_path is not None

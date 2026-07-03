@@ -25,6 +25,7 @@ BINDINGS = [
     # Branding: the logo of an agency holding one of MY cases (scoped in
     # the manager, like every expat read).
     RouteBinding("GET", "/expat/agencies/{agency_id}/logo", Audience.EXPAT),
+    RouteBinding("GET", "/expat/agencies/{agency_id}/cover", Audience.EXPAT),
     RouteBinding("GET", "/expat/cases/{case_id}", Audience.EXPAT),
     RouteBinding("GET", "/expat/cases/{case_id}/notifications", Audience.EXPAT),
     RouteBinding("PUT", "/expat/cases/{case_id}/requirements/{requirement_id}", Audience.EXPAT),
@@ -61,6 +62,16 @@ ExpatDep = Annotated[ExpatUser, Depends(get_current_expat)]
 @router.get("/agencies/{agency_id}/logo")
 async def expat_agency_logo(agency_id: uuid.UUID, expat: ExpatDep, db: DbDep) -> Response:
     content, media_type = await ExpatPortalManager(db).agency_logo(expat, agency_id)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.get("/agencies/{agency_id}/cover")
+async def expat_agency_cover(agency_id: uuid.UUID, expat: ExpatDep, db: DbDep) -> Response:
+    content, media_type = await ExpatPortalManager(db).agency_cover(expat, agency_id)
     return Response(
         content=content,
         media_type=media_type,

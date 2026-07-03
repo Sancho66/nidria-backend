@@ -18,6 +18,9 @@ from src.progress.progress_schema import DeadlineCounter, StepContentAttachment
 
 class ExternalAgencyResponse(BaseModel):
     name: str
+    # Branding: the portal fetches GET /agencies/me/cover when true (the
+    # provider's own agency — the same allowlisted read as the logo).
+    has_cover: bool = False
 
 
 class ExternalReferentResponse(BaseModel):

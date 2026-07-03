@@ -121,8 +121,10 @@ EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         # identity
         ("GET", "/auth/agent/me"),
         ("POST", "/auth/agent/logout"),
-        # branding: the provider portal shows the agency logo (read-only)
+        # branding: the provider portal shows the agency logo + cover
+        # (read-only)
         ("GET", "/agencies/me/logo"),
+        ("GET", "/agencies/me/cover"),
         # provider portal (wave B) — each scoped by get_case_for_external
         ("GET", "/external/cases"),
         ("GET", "/external/cases/{case_id}"),

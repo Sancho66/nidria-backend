@@ -70,6 +70,17 @@ async def test_admin_upload_read_delete_logo(
     assert image.format == "PNG" and image.mode == "RGBA"
     assert image.size == (1024, 256)
 
+    # Same-format re-upload (PNG→PNG): SAME storage path — must replace,
+    # not 500 (Supabase refuses same-path overwrites; delete-first fix).
+    replaced = await client.post(
+        "/agencies/me/logo",
+        headers=headers,
+        files={"file": ("logo2.png", _rect_alpha_png(1200, 300), "image/png")},
+    )
+    assert replaced.status_code == 200, replaced.text
+    read = await client.get("/agencies/me/logo", headers=headers)
+    assert Image.open(BytesIO(read.content)).size == (1024, 256)
+
     # Opaque re-upload lands as JPEG and replaces the PNG blob.
     swapped = await client.post(
         "/agencies/me/logo",

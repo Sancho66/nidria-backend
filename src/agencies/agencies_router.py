@@ -43,6 +43,10 @@ BINDINGS = [
     RouteBinding("GET", "/agencies/me/logo", Audience.AGENT),
     RouteBinding("POST", "/agencies/me/logo", Audience.AGENT, Permission.AGENCY_MANAGE),
     RouteBinding("DELETE", "/agencies/me/logo", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # Cover banner (same family): authenticated reads only, NO public route.
+    RouteBinding("GET", "/agencies/me/cover", Audience.AGENT),
+    RouteBinding("POST", "/agencies/me/cover", Audience.AGENT, Permission.AGENCY_MANAGE),
+    RouteBinding("DELETE", "/agencies/me/cover", Audience.AGENT, Permission.AGENCY_MANAGE),
     # THE assumed public exception to "everything authenticated": the
     # client-space LOGIN page shows the agency logo before any token
     # exists. Strictly this one route, image bytes only, no metadata
@@ -133,6 +137,24 @@ async def upload_agency_logo(file: UploadFile, agent: AgentDep, db: DbDep) -> Ag
 @router.delete("/me/logo", response_model=AgencyResponse)
 async def delete_agency_logo(agent: AgentDep, db: DbDep) -> AgencyResponse:
     return AgencyResponse.model_validate(await AgenciesManager(db).delete_logo(agent))
+
+
+@router.get("/me/cover")
+async def get_my_agency_cover(agent: AgentDep, db: DbDep) -> Response:
+    manager = AgenciesManager(db)
+    content, media_type = manager.cover_bytes(await manager.get_my_agency(agent))
+    return _logo_response(content, media_type, public=False)
+
+
+@router.post("/me/cover", response_model=AgencyResponse)
+async def upload_agency_cover(file: UploadFile, agent: AgentDep, db: DbDep) -> AgencyResponse:
+    agency = await AgenciesManager(db).upload_cover(agent, file.content_type, await file.read())
+    return AgencyResponse.model_validate(agency)
+
+
+@router.delete("/me/cover", response_model=AgencyResponse)
+async def delete_agency_cover(agent: AgentDep, db: DbDep) -> AgencyResponse:
+    return AgencyResponse.model_validate(await AgenciesManager(db).delete_cover(agent))
 
 
 # THE assumed public exception (see BINDINGS comment): its own router so
