@@ -11,9 +11,12 @@ from httpx import AsyncClient
 
 from shared.models.agent import Agent
 from shared.models.rbac import Role
+from src.core.enums import Audience
+from src.core.security import create_access_token
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase
+from tests.plugins.expat_plugin import MakeExpatUser
 from tests.plugins.journey_plugin import MakeJourneyTemplate
 
 
@@ -381,3 +384,90 @@ async def test_editing_prerequisites_of_assigned_template_allowed(
         f"/journeys/{template_id}/steps", headers=headers, json={"name": "C"}
     )
     assert add.status_code == 201
+
+
+# --- editing language (point 6c: editor preference, zero resolution impact) ------------
+
+
+async def test_patch_editing_language_persisted_and_exposed(
+    journeys_client: AsyncClient,
+    configurer: Agent,
+    make_journey_template: MakeJourneyTemplate,
+    agent_headers: AuthHeaders,
+) -> None:
+    """(a) valid language persisted + on the detail; (c) explicit null
+    resets to the no-preference state."""
+    headers = agent_headers(configurer)
+    template = await make_journey_template(agency_id=configurer.agency_id)
+
+    patched = await journeys_client.patch(
+        f"/journeys/{template.id}", headers=headers, json={"editing_language": "es"}
+    )
+    assert patched.status_code == 200, patched.text
+    detail = await journeys_client.get(f"/journeys/{template.id}", headers=headers)
+    assert detail.json()["editing_language"] == "es"
+
+    reset = await journeys_client.patch(
+        f"/journeys/{template.id}", headers=headers, json={"editing_language": None}
+    )
+    assert reset.status_code == 200
+    detail = await journeys_client.get(f"/journeys/{template.id}", headers=headers)
+    assert detail.json()["editing_language"] is None
+
+
+async def test_patch_editing_language_unsupported_422(
+    journeys_client: AsyncClient,
+    configurer: Agent,
+    make_journey_template: MakeJourneyTemplate,
+    agent_headers: AuthHeaders,
+) -> None:
+    template = await make_journey_template(agency_id=configurer.agency_id)
+    response = await journeys_client.patch(
+        f"/journeys/{template.id}",
+        headers=agent_headers(configurer),
+        json={"editing_language": "de"},
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "journey.language_unsupported"
+    assert body["params"]["language"] == "de"
+
+
+async def test_editing_language_never_touches_client_resolution(
+    journeys_client: AsyncClient,
+    configurer: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """(d) the setting is an editor preference ONLY: with the template set
+    to ES, a FRENCH client still reads the FR content on their timeline
+    (resolution stays client language → agency default → fr)."""
+    headers = agent_headers(configurer)
+    template = (await journeys_client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    created = await journeys_client.post(
+        f"/journeys/{template['id']}/steps",
+        headers=headers,
+        json={"name": "Étape FR", "name_i18n": {"fr": "Étape FR", "es": "Paso ES"}},
+    )
+    assert created.status_code == 201
+    patched = await journeys_client.patch(
+        f"/journeys/{template['id']}", headers=headers, json={"editing_language": "es"}
+    )
+    assert patched.status_code == 200
+
+    expat = await make_expat_user(preferred_lang="fr")  # activated by default
+    case = await make_client_case(agency_id=configurer.agency_id, principal_expat_user_id=expat.id)
+    assigned = await journeys_client.post(
+        f"/cases/{case.id}/journey",
+        headers=headers,
+        json={"journey_template_id": template["id"]},
+    )
+    assert assigned.status_code == 201, assigned.text
+
+    expat_headers = {
+        "Authorization": f"Bearer {create_access_token(str(expat.id), Audience.EXPAT)}"
+    }
+    detail = await journeys_client.get(f"/expat/cases/{case.id}?lang=fr", headers=expat_headers)
+    assert detail.status_code == 200, detail.text
+    assert [s["name"] for s in detail.json()["timeline"]] == ["Étape FR"]  # never "Paso ES"

@@ -19,6 +19,13 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     Its instantiation on a case is `case_step_progress`."""
 
     __tablename__ = "journey_template"
+    __table_args__ = (
+        # Point 6c — same referential as agency.default_language (NULL passes).
+        CheckConstraint(
+            "editing_language IN ('fr', 'en', 'es', 'ru', 'pt', 'it')",
+            name="journey_template_editing_language_check",
+        ),
+    )
 
     # NULL ⟺ library sample (is_sample=true); otherwise the owning agency.
     agency_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -45,6 +52,12 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # canvas (the front auto-lays-out with dagre). Never affects journey
     # logic — droppable without consequence. A separate presentation layer.
     canvas_layout: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Point 6c — the EDITOR's default language for THIS template: a pure
+    # editing convenience consumed by the FRONT (pre-selects the language
+    # tab in the step/section/field editors). Read by NO backend
+    # resolution path: client-facing resolution stays client language →
+    # agency default → fr, notifications untouched. NULL = no preference.
+    editing_language: Mapped[str | None] = mapped_column(String(5))
 
 
 class JourneySection(UUIDPrimaryKeyMixin, TimestampMixin, Base):

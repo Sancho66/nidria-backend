@@ -25,6 +25,10 @@ class JourneyTemplateCreateRequest(BaseModel):
 class JourneyTemplateUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     name_i18n: I18nBlob | None = None
+    # Point 6c — editor preference only (no resolution impact). Validated
+    # against SUPPORTED_LANGUAGES in the manager (catalogue error code);
+    # exclude_unset distinguishes "untouched" from an explicit null reset.
+    editing_language: str | None = Field(default=None, max_length=5)
 
 
 class TemplateStepCreateRequest(BaseModel):
@@ -168,12 +172,15 @@ class StepPrerequisitesRequest(BaseModel):
 class TemplateFieldCreateRequest(BaseModel):
     """Attach a field to a template's creation form. `kind` is base_field
     or custom_field (document is a requirement, not a creation field —
-    rejected in the manager)."""
+    rejected in the manager). `section_id` lets the field be BORN ranged
+    (point 5: the CRM-import modal used to mass-create unsectioned
+    fields); None keeps the legitimate unsectioned bucket."""
 
     kind: StepRequirementKind
     reference: str = Field(min_length=1, max_length=100)
     required_at_creation: bool = False
     position: int = 0
+    section_id: uuid.UUID | None = None
 
 
 class TemplateFieldUpdateRequest(BaseModel):
@@ -229,6 +236,8 @@ class CaseFieldCreateRequest(BaseModel):
     case_field: str = Field(min_length=1, max_length=30)
     required_at_creation: bool = False
     position: int = 0
+    # Born-ranged creation (point 5), mirroring TemplateFieldCreateRequest.
+    section_id: uuid.UUID | None = None
 
 
 class CaseFieldUpdateRequest(BaseModel):
@@ -396,3 +405,5 @@ class JourneyTemplateDetailResponse(BaseModel):
     # uses these to disable / warn before deleting.
     active_cases_count: int
     archived_cases_count: int
+    # Point 6c — editor preference (front-only consumption), NULL = none.
+    editing_language: str | None

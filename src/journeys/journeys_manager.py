@@ -36,7 +36,13 @@ from src.core.exceptions import (
     PayloadTooLargeError,
     ValidationError,
 )
-from src.core.i18n import DEFAULT_LANG, apply_i18n_write, normalize_i18n_input, resolve_i18n
+from src.core.i18n import (
+    DEFAULT_LANG,
+    SUPPORTED_LANGUAGES,
+    apply_i18n_write,
+    normalize_i18n_input,
+    resolve_i18n,
+)
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
@@ -255,6 +261,7 @@ class JourneysManager:
             canvas_layout=template.canvas_layout,
             active_cases_count=active_cases_count,
             archived_cases_count=archived_cases_count,
+            editing_language=template.editing_language,
         )
 
     async def set_canvas_layout(
@@ -449,6 +456,18 @@ class JourneysManager:
             )
             template.name = scalar or template.name
             template.name_i18n = blob
+        # Point 6c — editor preference only, read by no resolution path.
+        # exclude_unset: absent = untouched, explicit null = reset.
+        if "editing_language" in payload.model_fields_set:
+            language = payload.editing_language
+            if language is not None and language not in SUPPORTED_LANGUAGES:
+                raise ValidationError(
+                    f"Unsupported editing language {language!r}. "
+                    f"Allowed: {sorted(SUPPORTED_LANGUAGES)}.",
+                    code="journey.language_unsupported",
+                    params={"language": language, "allowed": sorted(SUPPORTED_LANGUAGES)},
+                )
+            template.editing_language = language
         await self.db.commit()
         await self.db.refresh(template)
         return template
@@ -1161,12 +1180,16 @@ class JourneysManager:
                 code="journey.field_duplicate",
                 params={"reference": payload.reference},
             )
+        # Born-ranged creation (point 5): same-template validation as the
+        # PATCH move; None stays the legitimate unsectioned bucket.
+        await self._validate_section(template_id, payload.section_id)
         field = self.repo.add_field(
             template_id=template_id,
             kind=payload.kind.value,
             reference=payload.reference,
             position=payload.position,
             required_at_creation=payload.required_at_creation,
+            section_id=payload.section_id,
         )
         await self.db.commit()
         await self.db.refresh(field)
@@ -1269,11 +1292,14 @@ class JourneysManager:
                 code="journey.case_field_duplicate",
                 params={"case_field": payload.case_field},
             )
+        # Born-ranged creation (point 5), mirroring add_field.
+        await self._validate_section(template_id, payload.section_id)
         case_field = self.repo.add_case_field(
             template_id=template_id,
             case_field=payload.case_field,
             position=payload.position,
             required_at_creation=payload.required_at_creation,
+            section_id=payload.section_id,
         )
         await self.db.commit()
         await self.db.refresh(case_field)

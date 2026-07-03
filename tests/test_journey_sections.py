@@ -288,3 +288,91 @@ async def test_legacy_flat_template_has_empty_sections_and_full_bucket(
     # Flat keys (what the existing front reads) untouched.
     assert [x["id"] for x in detail["fields"]] == [f["id"]]
     assert [x["id"] for x in detail["case_fields"]] == [c["id"]]
+
+
+# --- born-ranged creation (point 5) ----------------------------------------------------
+
+
+async def test_field_created_directly_in_section(
+    sec_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """(a) + (d): a field created WITH section_id is born ranged (both
+    planes), and the grouped view reflects it — empty bucket."""
+    headers = agent_headers(admin)
+    tid = await _template(sec_client, headers)
+    section = await _section(sec_client, headers, tid, name="Création de société")
+
+    field = await _add_field(
+        sec_client,
+        headers,
+        tid,
+        kind="base_field",
+        reference="passport_number",
+        section_id=section["id"],
+    )
+    assert field["section_id"] == section["id"]
+    case_field = await _add_case_field(
+        sec_client, headers, tid, case_field="dest_country", section_id=section["id"]
+    )
+    assert case_field["section_id"] == section["id"]
+
+    detail = (await sec_client.get(f"/journeys/{tid}", headers=headers)).json()
+    grouped = next(s for s in detail["sections"] if s["id"] == section["id"])
+    assert [f["reference"] for f in grouped["fields"]] == ["passport_number"]
+    assert [c["case_field"] for c in grouped["case_fields"]] == ["dest_country"]
+    assert detail["unsectioned"]["fields"] == []
+    assert detail["unsectioned"]["case_fields"] == []
+
+
+async def test_field_creation_rejects_foreign_section(
+    sec_client: AsyncClient,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """(b): a section of ANOTHER template (same agency) or of another
+    AGENCY is refused on both creation endpoints — same 422 as the
+    PATCH move, no cross-attachment."""
+    headers = agent_headers(admin)
+    tid = await _template(sec_client, headers)
+    other_tid = await _template(sec_client, headers, name="Other")
+    sibling = await _section(sec_client, headers, other_tid, name="S")
+    stranger = await make_agent(role=system_roles["admin"])  # its own agency
+    stranger_tid = await _template(sec_client, agent_headers(stranger), name="X")
+    foreign = await _section(sec_client, agent_headers(stranger), stranger_tid, name="FX")
+
+    for section_id in (sibling["id"], foreign["id"]):
+        r = await sec_client.post(
+            f"/journeys/{tid}/fields",
+            headers=headers,
+            json={"kind": "base_field", "reference": "passport_number", "section_id": section_id},
+        )
+        assert r.status_code == 422, r.text
+        assert r.json()["code"] == "journey.section_foreign"
+        r = await sec_client.post(
+            f"/journeys/{tid}/case-fields",
+            headers=headers,
+            json={"case_field": "dest_country", "section_id": section_id},
+        )
+        assert r.status_code == 422, r.text
+        assert r.json()["code"] == "journey.section_foreign"
+
+    # Nothing was attached by the refused calls.
+    detail = (await sec_client.get(f"/journeys/{tid}", headers=headers)).json()
+    assert detail["fields"] == [] and detail["case_fields"] == []
+
+
+async def test_field_without_section_still_lands_in_bucket(
+    sec_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """(c) compat: no section_id → the unsectioned bucket, exactly as
+    before (the CRM-import modal path keeps working unchanged)."""
+    headers = agent_headers(admin)
+    tid = await _template(sec_client, headers)
+    field = await _add_field(
+        sec_client, headers, tid, kind="base_field", reference="passport_number"
+    )
+    assert field["section_id"] is None
+    detail = (await sec_client.get(f"/journeys/{tid}", headers=headers)).json()
+    assert [f["reference"] for f in detail["unsectioned"]["fields"]] == ["passport_number"]

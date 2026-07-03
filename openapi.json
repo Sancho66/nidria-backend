@@ -11903,6 +11903,18 @@
             "type": "integer",
             "title": "Position",
             "default": 0
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
           }
         },
         "type": "object",
@@ -15938,6 +15950,17 @@
           "archived_cases_count": {
             "type": "integer",
             "title": "Archived Cases Count"
+          },
+          "editing_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Editing Language"
           }
         },
         "type": "object",
@@ -15952,7 +15975,8 @@
           "unsectioned",
           "canvas_layout",
           "active_cases_count",
-          "archived_cases_count"
+          "archived_cases_count",
+          "editing_language"
         ],
         "title": "JourneyTemplateDetailResponse"
       },
@@ -16014,6 +16038,18 @@
               }
             ],
             "title": "Name I18N"
+          },
+          "editing_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Editing Language"
           }
         },
         "type": "object",
@@ -18920,6 +18956,18 @@
             "type": "integer",
             "title": "Position",
             "default": 0
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
           }
         },
         "type": "object",
@@ -18928,7 +18976,7 @@
           "reference"
         ],
         "title": "TemplateFieldCreateRequest",
-        "description": "Attach a field to a template's creation form. `kind` is base_field\nor custom_field (document is a requirement, not a creation field —\nrejected in the manager)."
+        "description": "Attach a field to a template's creation form. `kind` is base_field\nor custom_field (document is a requirement, not a creation field —\nrejected in the manager). `section_id` lets the field be BORN ranged\n(point 5: the CRM-import modal used to mass-create unsectioned\nfields); None keeps the legitimate unsectioned bucket."
       },
       "TemplateFieldOrderRequest": {
         "properties": {
