@@ -104,7 +104,9 @@ def _cast_value(field: str, value: Any, op: str) -> Any:
         return caster(value)
     except (TypeError, ValueError) as exc:
         raise ValidationError(
-            f"Cannot coerce filter value for {field!r} ({value!r}): {exc}"
+            f"Cannot coerce filter value for {field!r} ({value!r}): {exc}",
+            code="case.filter_value_invalid",
+            params={"field": field, "value": str(value)},
         ) from exc
 
 
@@ -138,8 +140,12 @@ def _apply_operator(column: Any, op: str, value: Any) -> Any:
     if op == "between":
         if isinstance(value, list) and len(value) == 2:
             return and_(column >= value[0], column <= value[1])
-        raise ValidationError("`between` requires a list of exactly 2 values")
-    raise ValidationError(f"Unknown operator: {op}")
+        raise ValidationError(
+            "`between` requires a list of exactly 2 values", code="case.filter_between_arity"
+        )
+    raise ValidationError(
+        f"Unknown operator: {op}", code="case.filter_operator_unknown", params={"op": op}
+    )
 
 
 def _build_tag_clause(op: str, value: Any) -> ColumnElement[bool]:
@@ -149,13 +155,19 @@ def _build_tag_clause(op: str, value: Any) -> ColumnElement[bool]:
     if op in ("contains", "not_contains"):
         labels = value if isinstance(value, list) else [value]
         if not labels:
-            raise ValidationError("tags filter requires at least one label")
+            raise ValidationError(
+                "tags filter requires at least one label", code="case.filter_tags_empty"
+            )
         any_of = or_(*[ClientCase.tags.contains([label]) for label in labels])
         return any_of if op == "contains" else ~any_of
     if op in ("is_empty", "is_not_empty"):
         empty = func.jsonb_array_length(ClientCase.tags) == 0
         return empty if op == "is_empty" else ~empty
-    raise ValidationError(f"Unsupported tag operator: {op}")
+    raise ValidationError(
+        f"Unsupported tag operator: {op}",
+        code="case.filter_tag_operator_unknown",
+        params={"op": op},
+    )
 
 
 def _build_principal_clause(field_name: str, op: str, value: Any) -> ColumnElement[bool]:
@@ -165,7 +177,11 @@ def _build_principal_clause(field_name: str, op: str, value: Any) -> ColumnEleme
     suffix = field_name.removeprefix("principal_")
     column = _PRINCIPAL_FIELDS.get(suffix)
     if column is None:
-        raise ValidationError(f"Unknown principal field: {field_name}")
+        raise ValidationError(
+            f"Unknown principal field: {field_name}",
+            code="case.filter_principal_field_unknown",
+            params={"field": field_name},
+        )
     inner = _apply_operator(column, op, value)
     subquery = select(ExpatUser.id).where(inner)
     return ClientCase.principal_expat_user_id.in_(subquery)
@@ -182,7 +198,11 @@ def build_filter_clause(condition: FilterCondition) -> Any:
         return _build_principal_clause(field, op, condition.value)
     column = FIELD_MAP.get(field)
     if column is None:
-        raise ValidationError(f"Unknown filter field: {field!r}")
+        raise ValidationError(
+            f"Unknown filter field: {field!r}",
+            code="case.filter_field_unknown",
+            params={"field": field},
+        )
     value = _cast_value(field, condition.value, op)
     return _apply_operator(column, op, value)
 

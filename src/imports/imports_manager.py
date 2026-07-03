@@ -28,7 +28,9 @@ class ImportsManager:
     def get_crm(self, slug: str) -> CrmDetailResponse:
         crm = crm_catalog.get_crm(slug)
         if crm is None:
-            raise NotFoundError(f"Unknown CRM {slug!r}.")
+            raise NotFoundError(
+                f"Unknown CRM {slug!r}.", code="import.crm_unknown", params={"slug": slug}
+            )
         return CrmDetailResponse(
             slug=crm.slug,
             name=crm.name,

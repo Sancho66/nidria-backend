@@ -26,7 +26,7 @@ from shared.models.custom_field import CustomFieldDefinition
 from src.cases.cases_manager import CasesManager
 from src.cases.cases_repository import CasesRepository
 from src.cases.cases_schema import CaseCreateRequest
-from src.core.email import PendingEmail
+from src.core.email import PendingEmail, normalize_email
 from src.core.exceptions import NidriaError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.imports.case_import_repository import CaseImportRepository, DeclaredField
@@ -87,11 +87,15 @@ class CaseImportManager:
             try:
                 content: bytes | str = base64.b64decode(request.file_b64, validate=True)
             except (binascii.Error, ValueError) as exc:
-                raise ValidationError("File payload is not valid base64.") from exc
+                raise ValidationError(
+                    "File payload is not valid base64.", code="import.file_not_base64"
+                ) from exc
             return parse_upload(request.filename, content)
         if request.csv_text is not None:
             return parse_upload(request.filename, request.csv_text)
-        raise ValidationError("No file content provided (csv_text or file_b64).")
+        raise ValidationError(
+            "No file content provided (csv_text or file_b64).", code="import.file_missing"
+        )
 
     async def run_import(
         self, agent: Agent, request: CaseImportRequest
@@ -100,7 +104,7 @@ class CaseImportManager:
 
         template = await self.repo.get_agency_template(agent.agency_id, request.journey_template_id)
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
         declared = await self.repo.declared_fields(template.id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         defs_by_key = {d.key: d for d in definitions}
@@ -166,7 +170,7 @@ class CaseImportManager:
 
         template = await self.repo.get_agency_template(agent.agency_id, request.journey_template_id)
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
         declared = await self.repo.declared_fields(template.id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         defs_by_key = {d.key: d for d in definitions}
@@ -186,7 +190,9 @@ class CaseImportManager:
             return PreviewCell(column=col, target=mapping[col], value=val or None)
 
         for index, raw_row in enumerate(parsed_csv.rows, start=1):
-            email = (raw_row.get(email_col) or "").strip()
+            # Identity pivot: canonical lowercase, like every account email
+            # (so a CSV 'Contact@X' dedups against a client 'contact@x').
+            email = normalize_email(raw_row.get(email_col) or "")
             first = (raw_row.get(first_col) or "").strip()
             last = (raw_row.get(last_col) or "").strip()
             cv = self._validate_cells(
@@ -280,18 +286,26 @@ class CaseImportManager:
         if request.mapping_id is not None:
             saved = await self.mappings.get(agent.agency_id, request.mapping_id)
             if saved is None:
-                raise NotFoundError("Saved mapping not found.")
+                raise NotFoundError("Saved mapping not found.", code="import.mapping_not_found")
             if saved.journey_template_id != request.journey_template_id:
-                raise ValidationError("Saved mapping belongs to a different parcours.")
+                raise ValidationError(
+                    "Saved mapping belongs to a different parcours.",
+                    code="import.mapping_wrong_journey",
+                )
             return dict(saved.mapping)
         if request.crm_slug is not None:
             saved = await self.mappings.get_first_for_crm(
                 agent.agency_id, request.journey_template_id, request.crm_slug
             )
             if saved is None:
-                raise NotFoundError("No saved mapping for this parcours and CRM.")
+                raise NotFoundError(
+                    "No saved mapping for this parcours and CRM.",
+                    code="import.mapping_not_found_for_crm",
+                )
             return dict(saved.mapping)
-        raise ValidationError("Provide a mapping, a mapping_id, or a crm_slug.")
+        raise ValidationError(
+            "Provide a mapping, a mapping_id, or a crm_slug.", code="import.mapping_source_missing"
+        )
 
     def _validate_mapping(
         self,
@@ -314,7 +328,16 @@ class CaseImportManager:
         if missing_identity:
             errors.append(f"identity targets not mapped: {missing_identity}")
         if errors:
-            raise ValidationError("Invalid mapping — " + "; ".join(errors) + ".")
+            # Same code as the shared save-path stage (import.mapping_invalid),
+            # import-time keys: both always present, possibly empty.
+            raise ValidationError(
+                "Invalid mapping — " + "; ".join(errors) + ".",
+                code="import.mapping_invalid",
+                params={
+                    "missing_columns": sorted(missing_columns),
+                    "missing_identity": missing_identity,
+                },
+            )
         return targets
 
     @staticmethod
@@ -322,7 +345,11 @@ class CaseImportManager:
         for column, target in targets.items():
             if target.family == "identity" and target.reference == identity:
                 return column
-        raise ValidationError(f"identity target {identity!r} not mapped.")  # pragma: no cover
+        raise ValidationError(
+            f"identity target {identity!r} not mapped.",
+            code="import.identity_target_not_mapped",
+            params={"target": identity},
+        )  # pragma: no cover
 
     @staticmethod
     def _cell_target(
@@ -426,7 +453,7 @@ class CaseImportManager:
         report: ImportReport,
         pending: list[PendingEmail],
     ) -> None:
-        email = (row.get(email_col) or "").strip()
+        email = normalize_email(row.get(email_col) or "")
         if not email:
             report.rejected.append(ImportRejected(row=index, reason="missing_email"))
             return

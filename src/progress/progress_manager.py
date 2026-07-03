@@ -12,6 +12,7 @@ from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyStepParticipant, JourneyTemplateStep
+from shared.models.step_requirement import StepRequirement
 from src.activity.activity_manager import ActivityManager
 from src.core.config import get_settings
 from src.core.email import send_email
@@ -338,6 +339,39 @@ class ProgressManager:
             await self._seed_participants(case, progress, participants, resolved_agents, agent)
             self._log(case.id, agent, "step.added", {"template_step_id": str(step.id)})
         return len(cases)
+
+    async def backfill_requirements(
+        self, agent: Agent, requirement: StepRequirement
+    ) -> list[PendingMail]:
+        """Point 8 contract (mirror of backfill_step, one level down): a
+        requirement added to a step of an ASSIGNED template gains its
+        missing concrete instances on every LIVE case whose instance of
+        THIS step is currently IN_PROGRESS. TODO steps need nothing (they
+        materialize at activation); DONE steps are never made incomplete
+        (they catch up at reopen). NO commit — runs inside
+        journeys.add_requirement's transaction. Returns the client mails
+        (the same requirement_request mechanism as activation, one per
+        affected case) for the caller to send AFTER commit."""
+        pending: list[PendingMail] = []
+        for row, case in await self.repo.list_in_progress_for_step(requirement.step_id):
+            created = await self._sync_missing_requirements(row)
+            if created == 0:
+                continue
+            self._log(
+                case.id,
+                agent,
+                "step.requirement_added",
+                {
+                    "step_progress_id": str(row.id),
+                    "kind": requirement.kind,
+                    "reference": requirement.reference,
+                    "created": created,
+                },
+            )
+            mail = await self._client_step_mail_for_row(case, row, reopened=False)
+            if mail is not None:
+                pending.append(mail)
+        return pending
 
     async def _seed_participants(
         self,
@@ -860,6 +894,10 @@ class ProgressManager:
             row.completed_at = None
             row.completed_by_agent_id = None
             self._log(case.id, agent, "step.reopened", details)
+            # Re-sync (point 8): definitions added to the template since
+            # materialization gain their missing instances now; answers
+            # already provided on existing rows stay untouched.
+            await self._sync_missing_requirements(row)
             # Notif (c): a reopened step with concrete requirements means
             # the agency wants the client to revisit — distinct tone.
             mail = await self._client_step_mail_for_row(case, row, reopened=True)
@@ -870,7 +908,7 @@ class ProgressManager:
             self._log(case.id, agent, "step.started", {"step_progress_id": str(row.id)})
             # MATERIALIZATION (NEW WAVE): the step becomes active → freeze
             # its concrete requirements against the case composition NOW.
-            await self._materialize_requirements(row)
+            await self._sync_missing_requirements(row)
             # Notif (a): the step is live with ≥1 pending requirement →
             # invite the client to fill their space.
             mail = await self._client_step_mail_for_row(case, row, reopened=False)
@@ -878,26 +916,38 @@ class ProgressManager:
                 pending.append(mail)
         return pending
 
-    async def _materialize_requirements(self, row: CaseStepProgress) -> None:
-        """Read the step's requirement definitions and the case persons
-        AT THIS INSTANT; create one concrete row per (requirement,
-        targeted person). FROZEN + idempotent: if any concrete
-        requirement already exists for this progress (e.g. on reopen, or
-        a second activation), it's a no-op — a later-added person never
-        gets a requirement on an already-materialized step."""
-        if await self.repo.count_case_requirements(row.id) > 0:
-            return
+    async def _sync_missing_requirements(self, row: CaseStepProgress) -> int:
+        """Diff-materialization (point 8): each definition WITHOUT a
+        concrete row on this progress materializes against the case
+        composition NOW; a definition that already has one is FROZEN —
+        the composition freeze stands, a later-added person never gains
+        a row on an already-materialized definition. Row-level guard on
+        the instance unique key → idempotent, never a duplicate, never
+        a touched answer. Serves the activation (everything missing →
+        full materialization, unchanged behaviour), the reopen re-sync
+        and the add_requirement backfill. Returns the rows created."""
         definitions = await self.repo.list_step_requirements(row.template_step_id)
         if not definitions:
-            return
+            return 0
+        existing = await self.repo.list_case_requirements_for_progress_ids([row.id])
+        frozen = {(r.kind, r.reference, r.scope) for r in existing}
+        missing = [d for d in definitions if (d.kind, d.reference, d.scope) not in frozen]
+        if not missing:
+            return 0
         persons = await self.repo.list_persons_for_case(row.case_id)
         principal = next((p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value), None)
-        for definition in definitions:
+        taken = {(r.person_id, r.kind, r.reference) for r in existing}
+        created = 0
+        for definition in missing:
             if definition.scope == StepRequirementScope.PRINCIPAL.value:
                 targets = [principal] if principal is not None else []
             else:  # each_person
                 targets = list(persons)
             for person in targets:
+                key = (person.id, definition.kind, definition.reference)
+                if key in taken:  # uq_case_step_requirement — skip, never collide
+                    continue
+                taken.add(key)
                 self.repo.add_case_requirement(
                     case_step_progress_id=row.id,
                     step_requirement_id=definition.id,
@@ -907,6 +957,8 @@ class ProgressManager:
                     scope=definition.scope,
                     status=RequirementStatus.PENDING.value,
                 )
+                created += 1
+        return created
 
     # --- requirement completion + notifications (WAVE 2) -----------------------------
 

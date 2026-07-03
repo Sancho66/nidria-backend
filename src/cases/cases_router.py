@@ -48,13 +48,15 @@ def _parse_advanced_filters(raw: str | None) -> AdvancedFilters | None:
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValidationError(f"`filters` is not valid JSON: {exc}") from exc
+        raise ValidationError(
+            f"`filters` is not valid JSON: {exc}", code="case.filters_invalid_json"
+        ) from exc
     if not isinstance(payload, dict):
-        raise ValidationError("`filters` must be a JSON object")
+        raise ValidationError("`filters` must be a JSON object", code="case.filters_not_object")
     try:
         return AdvancedFilters(**payload)
     except PydanticValidationError as exc:
-        raise ValidationError(f"Invalid filter tree: {exc}") from exc
+        raise ValidationError(f"Invalid filter tree: {exc}", code="case.filters_invalid") from exc
 
 
 _VIEW = Permission.CASE_VIEW
@@ -169,7 +171,9 @@ async def list_cases(
     try:
         sorts = parse_sorts(sort_by, order)
     except ValueError as exc:
-        raise ValidationError(str(exc)) from exc
+        # detail = the specific english reason (debug); the code covers
+        # the whole family (unknown field/direction, arity mismatch).
+        raise ValidationError(str(exc), code="case.sort_invalid") from exc
 
     case_filters = CaseFilters(
         status=status,

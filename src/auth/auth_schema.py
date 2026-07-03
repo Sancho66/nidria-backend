@@ -1,10 +1,12 @@
 import uuid
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
+
+from src.core.email import NormalizedEmailStr
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmailStr
     password: str
 
 
@@ -76,7 +78,7 @@ class ActivateResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmailStr
 
 
 class ResetPasswordRequest(BaseModel):

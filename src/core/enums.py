@@ -218,3 +218,25 @@ class StepRequirementScope(StrEnum):
 class RequirementStatus(StrEnum):
     PENDING = "pending"
     PROVIDED = "provided"
+
+
+class ConsentDocumentType(StrEnum):
+    """Legal documents subject to BLOCKING consent (point 16). The two
+    agency documents bind the AGENCY and are accepted once per agency
+    admin; the two client documents bind the client PER AGENCY (the
+    agency is the data controller, Nidria the processor)."""
+
+    AGENCY_TERMS = "agency_terms"  # CGV Nidria (agency face)
+    AGENCY_DPA = "agency_dpa"  # data processing agreement (agency face)
+    CLIENT_TERMS = "client_terms"  # CGU of the client space
+    CLIENT_PRIVACY = "client_privacy"  # privacy notice of the client space
+
+
+# Required set per audience: what the consent gate demands (the latest
+# ACTIVE version of each type) before opening the rest of the API.
+AGENT_CONSENT_TYPES: frozenset[str] = frozenset(
+    {ConsentDocumentType.AGENCY_TERMS.value, ConsentDocumentType.AGENCY_DPA.value}
+)
+EXPAT_CONSENT_TYPES: frozenset[str] = frozenset(
+    {ConsentDocumentType.CLIENT_TERMS.value, ConsentDocumentType.CLIENT_PRIVACY.value}
+)

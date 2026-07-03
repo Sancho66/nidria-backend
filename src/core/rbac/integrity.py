@@ -62,14 +62,22 @@ def _declared_routes(app: FastAPI) -> set[tuple[str, str]]:
 
 
 def assert_impersonation_denylist_declared(app: FastAPI) -> None:
-    """The impersonation denylist is a security boundary: a typo'd
-    entry protects nothing, silently. Every entry must match a declared
-    route of the REAL app — separate from assert_all_routes_bound so
-    synthetic test apps can keep exercising the binding check alone."""
-    from src.core.rbac.enforcement import IMPERSONATION_DENIED
+    """The enforcement route constants are security boundaries: a typo'd
+    denylist entry protects nothing (silently), a typo'd allowlist or
+    consent-exempt entry breaks its flow (silently). Every entry of the
+    three constants must match a declared route of the REAL app —
+    separate from assert_all_routes_bound so synthetic test apps can
+    keep exercising the binding check alone."""
+    from src.core.rbac.enforcement import (
+        CONSENT_EXEMPT,
+        IMPERSONATION_AGENT_DENIED,
+        IMPERSONATION_WRITE_ALLOWLIST,
+    )
 
-    unknown = IMPERSONATION_DENIED - _declared_routes(app)
+    unknown = (
+        IMPERSONATION_AGENT_DENIED | IMPERSONATION_WRITE_ALLOWLIST | CONSENT_EXEMPT
+    ) - _declared_routes(app)
     if unknown:
         raise StartupError(
-            f"IMPERSONATION_DENIED entries matching no declared route: {sorted(unknown)}"
+            f"Enforcement route entries matching no declared route: {sorted(unknown)}"
         )

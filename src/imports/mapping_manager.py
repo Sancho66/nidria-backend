@@ -45,7 +45,10 @@ class MappingManager:
         """The applicable mapping for (parcours, crm) — to pre-fill an import."""
         row = await self.repo.get_first_for_crm(agent.agency_id, journey_template_id, crm_slug)
         if row is None:
-            raise NotFoundError("No saved mapping for this parcours and CRM.")
+            raise NotFoundError(
+                "No saved mapping for this parcours and CRM.",
+                code="import.mapping_not_found_for_crm",
+            )
         return MappingResponse.model_validate(row)
 
     async def upsert(self, agent: Agent, payload: MappingUpsertRequest) -> MappingResponse:
@@ -54,16 +57,23 @@ class MappingManager:
             agent.agency_id, payload.journey_template_id
         )
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
         # CRM identity: either the "custom" sentinel (Autre / CRM générique,
         # which needs a free label) OR a known referential slug. Custom skips
         # the referential check — its CSV headers come from the uploaded file.
         if payload.crm_slug == crm_catalog.CUSTOM_CRM_SLUG:
             custom_crm_name = (payload.custom_crm_name or "").strip()
             if not custom_crm_name:
-                raise ValidationError("custom_crm_name is required for a custom CRM import.")
+                raise ValidationError(
+                    "custom_crm_name is required for a custom CRM import.",
+                    code="import.custom_crm_name_required",
+                )
         elif crm_catalog.get_crm(payload.crm_slug) is None:
-            raise ValidationError(f"Unknown CRM slug {payload.crm_slug!r}.")
+            raise ValidationError(
+                f"Unknown CRM slug {payload.crm_slug!r}.",
+                code="import.crm_unknown",
+                params={"slug": payload.crm_slug},
+            )
         else:
             custom_crm_name = None  # referenced CRM carries no free label
         # Targets must belong to this parcours (reused import check, 422 if not).
@@ -76,12 +86,15 @@ class MappingManager:
             # EDIT: update THIS config by id (agency-scoped).
             row = await self.repo.get(agent.agency_id, payload.id)
             if row is None:
-                raise NotFoundError("Mapping not found.")
+                raise NotFoundError("Mapping not found.", code="import.mapping_not_found")
             if (
                 row.journey_template_id != payload.journey_template_id
                 or row.crm_slug != payload.crm_slug
             ):
-                raise ValidationError("Mapping belongs to a different parcours or CRM.")
+                raise ValidationError(
+                    "Mapping belongs to a different parcours or CRM.",
+                    code="import.mapping_mismatch",
+                )
             # A rename onto ANOTHER config's name is the only edit-time conflict.
             if payload.name != row.name:
                 clash = await self.repo.get_by_name(
@@ -89,7 +102,9 @@ class MappingManager:
                 )
                 if clash is not None and clash.id != row.id:
                     raise ConflictError(
-                        f"A mapping named {payload.name!r} already exists for this CRM."
+                        f"A mapping named {payload.name!r} already exists for this CRM.",
+                        code="import.mapping_name_taken",
+                        params={"name": payload.name},
                     )
             row.name = payload.name
             row.custom_crm_name = custom_crm_name
@@ -103,7 +118,9 @@ class MappingManager:
             )
             if clash is not None:
                 raise ConflictError(
-                    f"A mapping named {payload.name!r} already exists for this CRM."
+                    f"A mapping named {payload.name!r} already exists for this CRM.",
+                    code="import.mapping_name_taken",
+                    params={"name": payload.name},
                 )
             row = self.repo.add(
                 agency_id=agent.agency_id,
@@ -124,7 +141,8 @@ class MappingManager:
             raise ConflictError(
                 "Could not save this mapping — a conflicting mapping already exists for "
                 "this CRM. If you just enabled multiple configs per CRM, apply the latest "
-                "database migration (alembic upgrade head)."
+                "database migration (alembic upgrade head).",
+                code="import.mapping_conflict",
             ) from exc
         await self.db.refresh(row)
         return MappingResponse.model_validate(row)
@@ -132,6 +150,6 @@ class MappingManager:
     async def delete(self, agent: Agent, mapping_id: uuid.UUID) -> None:
         row = await self.repo.get(agent.agency_id, mapping_id)
         if row is None:
-            raise NotFoundError("Mapping not found.")
+            raise NotFoundError("Mapping not found.", code="import.mapping_not_found")
         await self.repo.delete(row)
         await self.db.commit()

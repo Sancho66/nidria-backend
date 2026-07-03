@@ -44,7 +44,7 @@ def validate_mapping_targets(
     the parcours (or an inactive custom field), or a duplicate target.
     Returns the parsed {column: target}."""
     if not mapping:
-        raise ValidationError("Mapping is empty.")
+        raise ValidationError("Mapping is empty.", code="import.mapping_empty")
 
     declared_set = {(d.family, d.reference) for d in declared}
     targets: dict[str, MappingTarget] = {}
@@ -83,5 +83,18 @@ def validate_mapping_targets(
         errors.append(f"targets mapped more than once: {sorted(dupes)}")
 
     if errors:
-        raise ValidationError("Invalid mapping — " + "; ".join(errors) + ".")
+        # ONE code for the whole aggregate: `detail` keeps the readable
+        # english aggregation (logs / fallback), the i18n surface is the
+        # token lists — always all three keys, possibly empty (the front
+        # renders the non-empty ones). The import-time stage layers its
+        # own keys onto the SAME code (case_import_manager._validate_mapping).
+        raise ValidationError(
+            "Invalid mapping — " + "; ".join(errors) + ".",
+            code="import.mapping_invalid",
+            params={
+                "unparseable": sorted(bad_tokens),
+                "undeclared": sorted(unknown_targets),
+                "duplicated": sorted(dupes),
+            },
+        )
     return targets

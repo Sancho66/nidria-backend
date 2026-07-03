@@ -15,6 +15,8 @@ from src.auth.auth_router import router as auth_router
 from src.cases.cases_router import router as cases_router
 from src.comments.comments_router import agent_router as comments_agent_router
 from src.comments.comments_router import expat_router as comments_expat_router
+from src.consents.consents_router import router as consents_router
+from src.consents.consents_seed import seed_consent_documents
 from src.core.config import get_settings
 from src.core.database import async_session_maker, get_db
 from src.core.exceptions import register_exception_handlers
@@ -83,6 +85,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         # Library samples (shared, read-only) — idempotent, like the system
         # roles. Agencies consume them by cloning.
         await seed_sample_journeys(session)
+        # Consent placeholders (point 16) — version 1 per type, only where
+        # the type has no document yet (a script-published version is
+        # never overwritten).
+        await seed_consent_documents(session)
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()
     scheduler = None
@@ -119,6 +125,7 @@ app.include_router(documents_agent_router)
 app.include_router(documents_expat_router)
 app.include_router(comments_agent_router)
 app.include_router(comments_expat_router)
+app.include_router(consents_router)
 app.include_router(external_router)
 app.include_router(external_agency_router)
 app.include_router(expat_portal_router)

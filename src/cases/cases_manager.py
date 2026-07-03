@@ -60,13 +60,15 @@ class CasesManager:
     async def _get_case(self, agent: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     async def _validate_owner(self, agent: Agent, owner_agent_id: uuid.UUID) -> None:
         owner = await self.repo.get_agent_in_agency(agent.agency_id, owner_agent_id)
         if owner is None:
-            raise ValidationError("Owner must be an agent of this agency.")
+            raise ValidationError(
+                "Owner must be an agent of this agency.", code="case.owner_not_in_agency"
+            )
 
     def _log(
         self,
@@ -537,7 +539,7 @@ class CasesManager:
         case = await self._get_case(agent, case_id)
         person = await self.repo.get_person(case.id, person_id)
         if person is None:
-            raise NotFoundError("Person not found.")
+            raise NotFoundError("Person not found.", code="case.person_not_found")
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         # Snapshot active-step completion BEFORE the write so the
         # recompute fires the ready-to-validate mail only on the
@@ -573,10 +575,12 @@ class CasesManager:
         case = await self._get_case(agent, case_id)
         person = await self.repo.get_person(case.id, person_id)
         if person is None:
-            raise NotFoundError("Person not found.")
+            raise NotFoundError("Person not found.", code="case.person_not_found")
         if person.kind == CasePersonKind.PRINCIPAL.value:
             # The principal is the file holder — never deletable.
-            raise ValidationError("The principal cannot be removed from a case.")
+            raise ValidationError(
+                "The principal cannot be removed from a case.", code="case.principal_not_removable"
+            )
         await self.repo.delete_row(person)
         self._log(case.id, agent, "person.removed", {"person_id": str(person_id)})
         await self.db.commit()
@@ -612,7 +616,9 @@ class CasesManager:
         case = await self._get_case(agent, case_id)
         contact = await self.repo.get_external_contact(case.id, contact_id)
         if contact is None:
-            raise NotFoundError("External contact not found.")
+            raise NotFoundError(
+                "External contact not found.", code="case.external_contact_not_found"
+            )
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(contact, field, value.value if hasattr(value, "value") else value)
         self._log(
@@ -628,7 +634,9 @@ class CasesManager:
         case = await self._get_case(agent, case_id)
         contact = await self.repo.get_external_contact(case.id, contact_id)
         if contact is None:
-            raise NotFoundError("External contact not found.")
+            raise NotFoundError(
+                "External contact not found.", code="case.external_contact_not_found"
+            )
         await self.repo.delete_row(contact)
         self._log(
             case.id, agent, "external_contact.removed", {"external_contact_id": str(contact_id)}
@@ -653,7 +661,10 @@ class CasesManager:
         ):
             # Create-confidential requires read-confidential: otherwise
             # the author's own note would vanish from their view.
-            raise ForbiddenError("Creating a confidential note requires the dedicated permission.")
+            raise ForbiddenError(
+                "Creating a confidential note requires the dedicated permission.",
+                code="case.note_confidential_forbidden",
+            )
         note = self.repo.add_note(
             case_id=case.id,
             author_agent_id=agent.id,
@@ -677,9 +688,9 @@ class CasesManager:
         case = await self._get_case(agent, case_id)
         note = await self.repo.get_note(case.id, note_id)
         if note is None:
-            raise NotFoundError("Note not found.")
+            raise NotFoundError("Note not found.", code="case.note_not_found")
         if note.author_agent_id != agent.id:
-            raise ForbiddenError("Only the author can modify a note.")
+            raise ForbiddenError("Only the author can modify a note.", code="case.note_not_author")
         return note
 
     async def update_note(

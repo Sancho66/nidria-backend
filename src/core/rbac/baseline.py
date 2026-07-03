@@ -146,6 +146,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.auth.auth_router import BINDINGS as auth_bindings
     from src.cases.cases_router import BINDINGS as cases_bindings
     from src.comments.comments_router import BINDINGS as comments_bindings
+    from src.consents.consents_router import BINDINGS as consents_bindings
     from src.custom_fields.custom_fields_router import BINDINGS as custom_fields_bindings
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
     from src.documents.documents_router import BINDINGS as documents_bindings
@@ -179,6 +180,7 @@ def collect_bindings() -> list[RouteBinding]:
         *expat_bindings,
         *external_bindings,
         *dashboard_bindings,
+        *consents_bindings,
     ]
 
 

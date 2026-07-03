@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.core.email import NormalizedEmailStr
 
 # The agency's default content language — the fallback for its i18n blobs.
 # Single source of truth: src.core.i18n (SUPPORTED_LANGUAGES / Language).
@@ -28,7 +30,7 @@ class AgencyCreateRequest(BaseModel):
     # (same rule as AgencyUpdateRequest — public identifier).
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     default_language: Language = "fr"
-    admin_email: EmailStr
+    admin_email: NormalizedEmailStr
     admin_first_name: str = Field(min_length=1, max_length=100)
     admin_last_name: str = Field(min_length=1, max_length=100)
 
@@ -78,7 +80,7 @@ class RoleResponse(BaseModel):
 
 
 class AgentInvitationCreateRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmailStr
     role_id: uuid.UUID
 
 

@@ -1,11 +1,30 @@
 import logging
 from dataclasses import dataclass
+from typing import Annotated
 
 import resend
+from pydantic import AfterValidator, EmailStr
 
 from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_email(email: str) -> str:
+    """Canonical identity form: trimmed + lowercased. Applied at EVERY
+    boundary that writes or looks up an ACCOUNT email (request schemas
+    via NormalizedEmailStr, the CSV import pivot, the auth lookups) —
+    combined with the lowercase data migration, the DB only ever holds
+    and compares lowercase, so `Agent.email == input` stays an exact
+    match. Prod incident: an account created 'Contact@x' was silently
+    unreachable by forgot-password typed 'contact@x'."""
+    return email.strip().lower()
+
+
+# Drop-in replacement for EmailStr on IDENTITY emails (login, reset,
+# admin/invitation/principal creation). NOT used for contact-card emails
+# (external_contact): those are display/notification data, kept as typed.
+NormalizedEmailStr = Annotated[EmailStr, AfterValidator(normalize_email)]
 
 
 @dataclass
@@ -60,4 +79,9 @@ def send_email(to: str, subject: str, body: str, html: str | None = None) -> Non
     }
     if html is not None:
         payload["html"] = html
-    resend.Emails.send(payload)  # type: ignore[arg-type]
+    response = resend.Emails.send(payload)  # type: ignore[arg-type]
+    # The Resend message id is the correlation handle with their
+    # dashboard (delivered / bounced / suppressed) — without it a
+    # "mail never arrived" report is undiagnosable server-side.
+    message_id = response.get("id") if isinstance(response, dict) else response
+    logger.info("email sent via resend id=%s to=%s subject=%r", message_id, to, subject)

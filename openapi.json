@@ -4178,6 +4178,160 @@
         }
       }
     },
+    "/consents/agent/pending": {
+      "get": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Agent Pending",
+        "description": "Active documents the agent still has to accept (empty for any\nagent that is not the agency admin).",
+        "operationId": "agent_pending_consents_agent_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PendingDocumentResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Agent Pending Consents Agent Pending Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/consents/agent/accept": {
+      "post": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Agent Accept",
+        "operationId": "agent_accept_consents_agent_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentAcceptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/consents/expat/pending": {
+      "get": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Expat Pending",
+        "description": "Documents still to accept, grouped PER AGENCY holding a live case\nof this client (the agency is the data controller).",
+        "operationId": "expat_pending_consents_expat_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatAgencyPendingResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Expat Pending Consents Expat Pending Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/consents/expat/accept": {
+      "post": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Expat Accept",
+        "operationId": "expat_accept_consents_expat_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentAcceptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/external/cases": {
       "get": {
         "tags": [
@@ -12655,6 +12809,75 @@
         "title": "CompletionMode",
         "description": "How a journey step closes. `agency_validation` (default) = the\ncurrent flow: the agency closes the step. `auto` = capability to\nself-complete when all concrete requirements are met — the active\ntrigger lands in a later wave; wave 1 only exposes the state.\n\nSUPERSEDED by `StepValidatorType` (the \"Action validée par\" refonte):\n`auto` ⇄ `none`, `agency_validation` ⇄ `agent`. KEPT during the\ntransition as a rollback-safe fallback (the migration backfills the\nvalidator FROM it, never the reverse-loses); a later wave drops it."
       },
+      "ConsentAcceptRequest": {
+        "properties": {
+          "document_type": {
+            "$ref": "#/components/schemas/ConsentDocumentType"
+          },
+          "document_version": {
+            "type": "integer",
+            "title": "Document Version"
+          },
+          "agency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agency Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_type",
+          "document_version"
+        ],
+        "title": "ConsentAcceptRequest"
+      },
+      "ConsentAcceptResponse": {
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "document_version": {
+            "type": "integer",
+            "title": "Document Version"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Accepted At"
+          },
+          "already_accepted": {
+            "type": "boolean",
+            "title": "Already Accepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_type",
+          "document_version",
+          "accepted_at",
+          "already_accepted"
+        ],
+        "title": "ConsentAcceptResponse"
+      },
+      "ConsentDocumentType": {
+        "type": "string",
+        "enum": [
+          "agency_terms",
+          "agency_dpa",
+          "client_terms",
+          "client_privacy"
+        ],
+        "title": "ConsentDocumentType",
+        "description": "Legal documents subject to BLOCKING consent (point 16). The two\nagency documents bind the AGENCY and are accepted once per agency\nadmin; the two client documents bind the client PER AGENCY (the\nagency is the data controller, Nidria the processor)."
+      },
       "CreatedAdminResponse": {
         "properties": {
           "id": {
@@ -13438,6 +13661,34 @@
           "validation_status"
         ],
         "title": "DocumentValidationRequest"
+      },
+      "ExpatAgencyPendingResponse": {
+        "properties": {
+          "agency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agency Id"
+          },
+          "agency_name": {
+            "type": "string",
+            "title": "Agency Name"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/PendingDocumentResponse"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency_id",
+          "agency_name",
+          "documents"
+        ],
+        "title": "ExpatAgencyPendingResponse",
+        "description": "Pending documents of ONE agency (the expat accepts per agency)."
       },
       "ExpatAgencyResponse": {
         "properties": {
@@ -16039,6 +16290,35 @@
         },
         "type": "object",
         "title": "MessageTemplateUpdateRequest"
+      },
+      "PendingDocumentResponse": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "version",
+          "content",
+          "content_hash"
+        ],
+        "title": "PendingDocumentResponse",
+        "description": "An active document awaiting acceptance. `content` is content_md\nwith the {agency_name} token resolved; `content_hash` covers the RAW\ntext (what the acceptance will carry)."
       },
       "PermissionResponse": {
         "properties": {

@@ -290,6 +290,33 @@ async def test_denied_surface_under_impersonation(
     assert (await imp_client.get("/cases", headers=headers)).status_code == 200
 
 
+# Every EXPAT write family, with placeholder ids — the read-only gate
+# fires in enforce(), BEFORE ownership/validation, so bogus ids still
+# prove the block. One entry per binding (documents, requirements, case
+# requirements, step validation, comments). There is no expat profile
+# write endpoint (nothing to cover there).
+_U = "00000000-0000-0000-0000-000000000001"
+EXPAT_WRITE_ATTEMPTS: list[tuple[str, str]] = [
+    ("POST", f"/expat/cases/{_U}/documents"),
+    ("DELETE", f"/expat/cases/{_U}/documents/{_U}"),
+    ("PUT", f"/expat/cases/{_U}/requirements/{_U}"),
+    ("POST", f"/expat/cases/{_U}/requirements/{_U}/document"),
+    ("PUT", f"/expat/cases/{_U}/case-requirements/{_U}"),
+    ("POST", f"/expat/cases/{_U}/steps/{_U}/validate"),
+    ("POST", f"/expat/cases/{_U}/steps/{_U}/comments"),
+    ("PATCH", f"/expat/cases/{_U}/steps/{_U}/comments/{_U}"),
+    ("DELETE", f"/expat/cases/{_U}/steps/{_U}/comments/{_U}"),
+]
+
+
+async def _impersonate_expat_token(
+    client: AsyncClient, admin_headers: dict[str, str], expat_id: uuid.UUID
+) -> str:
+    response = await client.post(f"/expat-users/{expat_id}/impersonate", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    return str(response.json()["access_token"])
+
+
 async def test_expat_portal_read_only_under_impersonation(
     imp_client: AsyncClient,
     admin: Agent,
@@ -297,26 +324,154 @@ async def test_expat_portal_read_only_under_impersonation(
     make_client_case: MakeClientCase,
     agent_headers: AuthHeaders,
 ) -> None:
-    """uploaded_by=EXPAT means 'the client provided this piece' in the
-    validation flow — never forged under the mask. Reads stay open."""
+    """(a) + (c): EVERY expat write family is 403 impersonation.read_only
+    under the mask (method rule, not a route list); reads stay open —
+    that is the point of the mode."""
     expat = await make_expat_user()
     case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
-    response = await imp_client.post(
-        f"/expat-users/{expat.id}/impersonate", headers=agent_headers(admin)
-    )
-    token = response.json()["access_token"]
-    headers = _bearer(token)
+    headers = _bearer(await _impersonate_expat_token(imp_client, agent_headers(admin), expat.id))
 
+    for method, url in EXPAT_WRITE_ATTEMPTS:
+        response = await imp_client.request(method, url, headers=headers, json={})
+        assert response.status_code == 403, (method, url, response.text)
+        assert response.json()["code"] == "impersonation.read_only", (method, url)
+
+    # (c) reads pass: the mode exists to SEE what the client sees.
     assert (await imp_client.get("/expat/cases", headers=headers)).status_code == 200
+    assert (await imp_client.get(f"/expat/cases/{case.id}", headers=headers)).status_code == 200
     assert (
         await imp_client.get(f"/expat/cases/{case.id}/documents", headers=headers)
     ).status_code == 200
-    upload = await imp_client.post(f"/expat/cases/{case.id}/documents", headers=headers)
-    assert upload.status_code == 403
-    delete_doc = await imp_client.delete(
-        f"/expat/cases/{case.id}/documents/{uuid.uuid4()}", headers=headers
+    assert (await imp_client.get("/auth/expat/me", headers=headers)).status_code == 200
+
+
+async def test_expat_writes_pass_with_real_token(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """(b) non-regression: the SAME requests with a real expat token are
+    never stopped by the impersonation gate (they fail later on
+    ownership/validation, or succeed), and a genuine fulfillment write
+    still lands — while the same write under the mask is refused and
+    changes nothing."""
+    expat = await make_expat_user()
+    case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    real_headers = _bearer(create_access_token(str(expat.id), Audience.EXPAT))
+
+    for method, url in EXPAT_WRITE_ATTEMPTS:
+        response = await imp_client.request(method, url, headers=real_headers, json={})
+        assert response.status_code != 403, (method, url, response.text)
+
+    # Full happy path: a materialized requirement, fulfilled by the REAL
+    # client (200) — then the impersonator tries to overwrite it (403,
+    # value untouched).
+    h = agent_headers(admin)
+    tid = (await imp_client.post("/journeys", headers=h, json={"name": "T"})).json()["id"]
+    sid = (await imp_client.post(f"/journeys/{tid}/steps", headers=h, json={"name": "S"})).json()[
+        "id"
+    ]
+    await imp_client.post(
+        f"/journeys/{tid}/fields",
+        headers=h,
+        json={"kind": "base_field", "reference": "passport_number"},
     )
-    assert delete_doc.status_code == 403
+    await imp_client.post(
+        f"/journeys/{tid}/steps/{sid}/requirements",
+        headers=h,
+        json={"kind": "base_field", "reference": "passport_number", "scope": "principal"},
+    )
+    steps = (
+        await imp_client.post(
+            f"/cases/{case.id}/journey", headers=h, json={"journey_template_id": tid}
+        )
+    ).json()
+    started = await imp_client.patch(
+        f"/cases/{case.id}/steps/{steps[0]['id']}", headers=h, json={"status": "in_progress"}
+    )
+    requirement_id = started.json()["requirements"][0]["id"]
+
+    fulfilled = await imp_client.put(
+        f"/expat/cases/{case.id}/requirements/{requirement_id}",
+        headers=real_headers,
+        json={"value": "AB12345"},
+    )
+    assert fulfilled.status_code == 200, fulfilled.text
+
+    mask = _bearer(await _impersonate_expat_token(imp_client, agent_headers(admin), expat.id))
+    forged = await imp_client.put(
+        f"/expat/cases/{case.id}/requirements/{requirement_id}",
+        headers=mask,
+        json={"value": "FORGED"},
+    )
+    assert forged.status_code == 403
+    assert forged.json()["code"] == "impersonation.read_only"
+    detail = (await imp_client.get(f"/expat/cases/{case.id}", headers=mask)).json()
+    values = [req["value"] for step in detail["timeline"] for req in step["requirements"]]
+    assert values == ["AB12345"]  # nothing was written under the mask
+
+
+async def test_expat_logout_allowed_under_impersonation(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """(d) the write allowlist: logout passes the impersonation gate (the
+    client-space session flow must terminate cleanly). It then fails on
+    the refresh token itself (401: the mask holds none) — proving the
+    403 read-only wall is NOT what answered."""
+    expat = await make_expat_user()
+    await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    headers = _bearer(await _impersonate_expat_token(imp_client, agent_headers(admin), expat.id))
+
+    response = await imp_client.post(
+        "/auth/expat/logout", headers=headers, json={"refresh_token": "not-a-refresh-token"}
+    )
+    assert response.status_code == 401  # past the gate; no refresh to revoke
+    assert response.json()["code"] != "impersonation.read_only"
+
+
+async def test_future_expat_write_endpoint_locked_by_default(
+    imp_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """(e) structural guarantee: a BRAND NEW expat write endpoint —
+    registered at test time, unknown to any list — is born locked under
+    impersonation (method rule) while staying reachable with a real
+    expat token. No developer action required."""
+    from shared.models.rbac import ProtectedResource
+    from src.main import app
+
+    path = "/expat/cases/{case_id}/fictive-write"
+
+    async def fictive_write(case_id: uuid.UUID) -> dict[str, bool]:
+        return {"ok": True}
+
+    db_session.add(ProtectedResource(method="POST", route=path, audience="expat"))
+    await db_session.commit()
+    app.post(path)(fictive_write)
+    try:
+        expat = await make_expat_user()
+        await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+        mask = _bearer(await _impersonate_expat_token(imp_client, agent_headers(admin), expat.id))
+        blocked = await imp_client.post(f"/expat/cases/{uuid.uuid4()}/fictive-write", headers=mask)
+        assert blocked.status_code == 403
+        assert blocked.json()["code"] == "impersonation.read_only"
+
+        real = _bearer(create_access_token(str(expat.id), Audience.EXPAT))
+        allowed = await imp_client.post(f"/expat/cases/{uuid.uuid4()}/fictive-write", headers=real)
+        assert allowed.status_code == 200
+        assert allowed.json() == {"ok": True}
+    finally:
+        app.router.routes[:] = [r for r in app.router.routes if getattr(r, "path", None) != path]
 
 
 async def test_no_elevation_target_permissions_apply(
@@ -394,5 +549,5 @@ def test_impersonation_denylist_boot_check() -> None:
 
     assert_impersonation_denylist_declared(app)  # must not raise
 
-    with pytest.raises(StartupError, match="IMPERSONATION_DENIED"):
+    with pytest.raises(StartupError, match="Enforcement route entries"):
         assert_impersonation_denylist_declared(FastAPI())

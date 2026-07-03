@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -12,23 +13,50 @@ from src.core.database import get_db
 from src.core.dependencies import agent_oauth2_scheme, expat_oauth2_scheme
 from src.core.enums import Audience
 from src.core.exceptions import ForbiddenError, UnauthorizedError
+from src.core.rbac.consent_gate import missing_for_agent, missing_for_expat
 from src.core.rbac.integrity import INFRA_WHITELIST
 from src.core.security import decode_access_token, token_subject
 
-# Routes an IMPERSONATED token (claim `impersonator_id` present) may
-# never reach, whatever the target's permissions. Security boundary in
-# code — same status as the infra whitelist, not product config. Three
-# families: session lifecycle of the target, impersonation chaining,
-# and structure mutations (administering identities/permissions under
-# someone else's name poisons attribution), plus expat-side document
-# writes (uploaded_by=EXPAT means "the client provided this" in the
-# validation flow — the agent has their own correctly-attributed path).
-# Boot check: integrity.assert_impersonation_denied_routes_declared.
-IMPERSONATION_DENIED: frozenset[tuple[str, str]] = frozenset(
+logger = logging.getLogger(__name__)
+
+# The impersonation mask (claim `impersonator_id` present) follows one
+# policy PER FACE, both enforced centrally here on the matched route
+# template. Security boundary in code — same status as the infra
+# whitelist, not product config. Boot check:
+# integrity.assert_impersonation_denylist_declared (both constants).
+#
+# EXPAT face ("Voir comme le client"): STRICT READ-ONLY, a legal
+# requirement (point 12). The rule is on the HTTP METHOD, not on a route
+# list: any non-GET request is denied by default, so every FUTURE expat
+# write endpoint is born locked without developer action. The ONLY
+# exceptions live in IMPERSONATION_WRITE_ALLOWLIST.
+#
+# AGENT face (member debugging, superadmin agency switcher): read-write
+# by design ("enter agency" administers the target agency), with
+# targeted denials where acting under someone else's name poisons
+# attribution: session lifecycle of the target, impersonation chaining,
+# and identity/permission structure mutations.
+
+# EXPAT-face write exceptions under impersonation. Keep this to what the
+# mode cannot function without; justify every entry.
+IMPERSONATION_WRITE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        # Logout: lets the client-space session flow terminate cleanly
+        # instead of dying on a 403. Harmless under the mask: the endpoint
+        # only revokes a PRESENTED refresh jti bound to its own subject,
+        # and an impersonation session holds no refresh token at all
+        # (short-lived access token only), so nothing of the client's
+        # real session is reachable.
+        ("POST", "/auth/expat/logout"),
+    }
+)
+
+# AGENT-face routes an impersonated token may never reach, whatever the
+# target's permissions.
+IMPERSONATION_AGENT_DENIED: frozenset[tuple[str, str]] = frozenset(
     {
         # target session lifecycle
         ("POST", "/auth/agent/logout"),
-        ("POST", "/auth/expat/logout"),
         # chaining
         ("POST", "/agencies/me/members/{agent_id}/impersonate"),
         ("POST", "/expat-users/{expat_user_id}/impersonate"),
@@ -42,9 +70,33 @@ IMPERSONATION_DENIED: frozenset[tuple[str, str]] = frozenset(
         ("DELETE", "/agencies/me/roles/{role_id}"),
         ("POST", "/agencies/me/roles/{role_id}/duplicate"),
         ("PUT", "/agencies/me/members/{agent_id}/role"),
-        # expat portal is read-only under impersonation
-        ("POST", "/expat/cases/{case_id}/documents"),
-        ("DELETE", "/expat/cases/{case_id}/documents/{document_id}"),
+        # consent (point 16): accepting a legal document binds the AGENCY
+        # under the accepting agent's name; forged under a mask it would
+        # poison the clickwrap trace (the expat face needs no entry: its
+        # read-only rule already blocks every write).
+        ("POST", "/consents/agent/accept"),
+    }
+)
+
+# Routes reachable WITHOUT consent (point 16). Everything else on an
+# authenticated face is refused until the actor has accepted the latest
+# active version of each required document, so any FUTURE endpoint is
+# born gated. PUBLIC routes (login, refresh, activate, forgot/reset
+# password...) never reach the gate: they resolve no actor. What remains
+# open per face: the identity pair (me, logout: know who you are, leave)
+# and the consent flow itself (read the documents, accept them).
+CONSENT_EXEMPT: frozenset[tuple[str, str]] = frozenset(
+    {
+        # agent face
+        ("GET", "/auth/agent/me"),
+        ("POST", "/auth/agent/logout"),
+        ("GET", "/consents/agent/pending"),
+        ("POST", "/consents/agent/accept"),
+        # expat face
+        ("GET", "/auth/expat/me"),
+        ("POST", "/auth/expat/logout"),
+        ("GET", "/consents/expat/pending"),
+        ("POST", "/consents/expat/accept"),
     }
 )
 
@@ -131,13 +183,76 @@ async def _resolve_expat(request: Request, db: AsyncSession) -> tuple[ExpatUser,
     return expat, payload
 
 
-def _deny_if_impersonated(
-    request: Request, payload: dict[str, object], method: str, path: str
+def _enforce_impersonation(
+    request: Request, payload: dict[str, object], audience: Audience, method: str, path: str
 ) -> None:
+    """Apply the per-face impersonation policy (see the constants above).
+
+    `method` is already HEAD→GET normalized by enforce(), so the expat
+    read-only rule reduces to method == "GET"."""
     impersonator_id = payload.get("impersonator_id")
     request.state.impersonator_id = impersonator_id
-    if impersonator_id is not None and (method, path) in IMPERSONATION_DENIED:
-        raise ForbiddenError("This action is not allowed under impersonation.")
+    if impersonator_id is None:
+        return
+    if audience is Audience.EXPAT:
+        if method == "GET" or (method, path) in IMPERSONATION_WRITE_ALLOWLIST:
+            return
+        # Blocked-attempt trace in the applicative log (the DB
+        # impersonation_log stays an issuance journal).
+        logger.warning(
+            "impersonation write blocked: agent=%s expat=%s %s %s",
+            impersonator_id,
+            payload.get("sub"),
+            method,
+            path,
+        )
+        raise ForbiddenError(
+            "Impersonation is read-only: write operations are not allowed.",
+            code="impersonation.read_only",
+        )
+    if (method, path) in IMPERSONATION_AGENT_DENIED:
+        raise ForbiddenError(
+            "This action is not allowed under impersonation.",
+            code="impersonation.denied",
+        )
+
+
+async def _enforce_consent(
+    request: Request,
+    db: AsyncSession,
+    audience: Audience,
+    actor: Agent | ExpatUser,
+    method: str,
+    path: str,
+) -> None:
+    """Blocking clickwrap (point 16): the actor must have accepted the
+    latest ACTIVE version of each document required for their audience
+    before anything outside CONSENT_EXEMPT opens up.
+
+    Skipped under impersonation: the agent CONSULTS, they are not the
+    client (and acceptance under the mask is impossible anyway: expat
+    face read-only, agent accept route in the denylist)."""
+    if (method, path) in CONSENT_EXEMPT:
+        return
+    if request.state.impersonator_id is not None:
+        return
+    missing: list[dict[str, object]]
+    if audience is Audience.AGENT:
+        assert isinstance(actor, Agent)
+        missing = [
+            {"type": doc.type, "version": doc.version} for doc in await missing_for_agent(db, actor)
+        ]
+    else:
+        missing = [
+            {"type": doc.type, "version": doc.version, "agency_id": str(agency_id)}
+            for agency_id, doc in await missing_for_expat(db, actor.id)
+        ]
+    if missing:
+        raise ForbiddenError(
+            "Consent to the current legal documents is required.",
+            code="consent.required",
+            params={"missing": missing},
+        )
 
 
 async def enforce(
@@ -184,7 +299,8 @@ async def enforce(
         # journeys, roles, …) that zero permissions alone would not.
         if agent.is_external and (method, path) not in EXTERNAL_AGENT_ALLOWLIST:
             raise ForbiddenError("External providers have no access to this resource yet.")
-        _deny_if_impersonated(request, payload, method, path)
+        _enforce_impersonation(request, payload, Audience.AGENT, method, path)
+        await _enforce_consent(request, db, Audience.AGENT, agent, method, path)
         # NULL permission on an AGENT binding = any authenticated agent
         # (identity endpoints: /me, /logout) — symmetric with EXPAT.
         if binding.permission is not None and binding.permission.key not in effective_permissions(
@@ -195,5 +311,6 @@ async def enforce(
         return
 
     expat, payload = await _resolve_expat(request, db)
-    _deny_if_impersonated(request, payload, method, path)
+    _enforce_impersonation(request, payload, Audience.EXPAT, method, path)
+    await _enforce_consent(request, db, Audience.EXPAT, expat, method, path)
     request.state.actor = expat

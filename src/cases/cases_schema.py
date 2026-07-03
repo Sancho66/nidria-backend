@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.cases.filter_schema import AdvancedFilters
+from src.core.email import NormalizedEmailStr
 from src.core.enums import CaseStatus, ExternalContactType, MaritalStatus, Sex
 from src.progress.progress_schema import StepProgressResponse
 
@@ -40,7 +41,7 @@ class CaseCreateRequest(_CivilStatusFields):
     # identity is never overwritten by this payload).
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
-    email: EmailStr
+    email: NormalizedEmailStr
     preferred_lang: str = Field(default="fr", min_length=2, max_length=5)
     # Case — origin/destination addresses (flat columns on client_case).
     # country stays separate (its query ecosystem); street/city/postal are

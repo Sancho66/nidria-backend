@@ -27,6 +27,7 @@ from shared.models.journey import (
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
+from src.core.enums import StepStatus
 
 
 class ProgressRepository:
@@ -159,6 +160,25 @@ class ProgressRepository:
         )
         return list((await self.db.execute(stmt)).scalars())
 
+    async def list_in_progress_for_step(
+        self, template_step_id: uuid.UUID
+    ) -> list[tuple[CaseStepProgress, ClientCase]]:
+        """The ACTIVE instances of a template step across LIVE cases — the
+        propagation perimeter of a requirement added to that step (point 8).
+        Same liveness filter as list_cases_using_template; agency scoping is
+        structural (a case only ever references a template of its own
+        agency, enforced at assignment)."""
+        stmt = (
+            select(CaseStepProgress, ClientCase)
+            .join(ClientCase, CaseStepProgress.case_id == ClientCase.id)
+            .where(
+                CaseStepProgress.template_step_id == template_step_id,
+                CaseStepProgress.status == StepStatus.IN_PROGRESS.value,
+                ClientCase.deleted_at.is_(None),
+            )
+        )
+        return [(row, case) for row, case in (await self.db.execute(stmt)).all()]
+
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
         # INTERNAL only: responsible_type=agent must resolve to an internal
         # agent (external providers are assigned via external_contact / B).
@@ -263,14 +283,6 @@ class ProgressRepository:
             .options(selectinload(CasePerson.expat_user))
         )
         return list((await self.db.execute(stmt)).scalars())
-
-    async def count_case_requirements(self, case_step_progress_id: uuid.UUID) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(CaseStepRequirement)
-            .where(CaseStepRequirement.case_step_progress_id == case_step_progress_id)
-        )
-        return (await self.db.execute(stmt)).scalar_one()
 
     def add_case_requirement(self, **kwargs: Any) -> CaseStepRequirement:
         row = CaseStepRequirement(**kwargs)

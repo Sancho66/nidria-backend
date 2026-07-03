@@ -143,13 +143,13 @@ class JourneysManager:
         sample. Read-only (the deep clone is a later block). 404 if neither."""
         template = await self.repo.get_template_for_clone(agent.agency_id, template_id)
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
         return template
 
     async def _get_template(self, agent: Agent, template_id: uuid.UUID) -> JourneyTemplate:
         template = await self.repo.get_template_in_agency(agent.agency_id, template_id)
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
         return template
 
     async def agency_default(self, agency_id: uuid.UUID) -> str:
@@ -462,7 +462,9 @@ class JourneysManager:
         active = await self.repo.count_active_cases_using_template(template_id)
         if active:
             raise ConflictError(
-                f"Template is assigned to {active} active case(s) and cannot be deleted."
+                f"Template is assigned to {active} active case(s) and cannot be deleted.",
+                code="journey.template_in_use",
+                params={"count": active},
             )
         # ARCHIVED (soft-deleted) cases must NOT block (they're invisible in
         # the UI): detach them — null the link + purge their step instances of
@@ -477,7 +479,10 @@ class JourneysManager:
             # 409, never a bare RESTRICT 500. Nothing is half-detached — the
             # whole transaction rolls back.
             await self.db.rollback()
-            raise ConflictError("This journey is still in use and cannot be deleted.") from exc
+            raise ConflictError(
+                "This journey is still in use and cannot be deleted.",
+                code="journey.template_still_referenced",
+            ) from exc
 
     # --- steps -------------------------------------------------------------------
 
@@ -492,7 +497,10 @@ class JourneysManager:
             return
         target = await self.repo.get_agent_in_agency(agent.agency_id, agent_id)
         if target is None:
-            raise ValidationError("Default responsible must belong to this agency.")
+            raise ValidationError(
+                "Default responsible must belong to this agency.",
+                code="journey.responsible_not_in_agency",
+            )
 
     async def add_step(
         self, agent: Agent, template_id: uuid.UUID, payload: TemplateStepCreateRequest
@@ -536,7 +544,7 @@ class JourneysManager:
     async def _get_step(self, template_id: uuid.UUID, step_id: uuid.UUID) -> JourneyTemplateStep:
         step = await self.repo.get_step_in_template(template_id, step_id)
         if step is None:
-            raise NotFoundError("Template step not found.")
+            raise NotFoundError("Template step not found.", code="journey.step_not_found")
         return step
 
     async def update_step(
@@ -615,7 +623,9 @@ class JourneysManager:
             # RESTRICT would block it anyway once instantiated — make
             # it a clean, systematic 409 instead.
             raise ConflictError(
-                f"Template is assigned to {assigned} case(s); its steps cannot be deleted."
+                f"Template is assigned to {assigned} case(s); its steps cannot be deleted.",
+                code="journey.step_in_use",
+                params={"count": assigned},
             )
         await self.repo.delete_step(step)
         await self.db.flush()
@@ -649,11 +659,16 @@ class JourneysManager:
         await self._get_step(template_id, step_id)
         if payload.type is ResponsibleType.EXTERNAL:
             raise ValidationError(
-                "A template participant is 'expat' or 'agent' (name a durable external as 'agent')."
+                "A template participant is 'expat' or 'agent' "
+                "(name a durable external as 'agent').",
+                code="journey.participant_type_invalid",
             )
         if payload.type is ResponsibleType.EXPAT:
             if payload.agent_id is not None:
-                raise ValidationError("An 'expat' participant carries no agent.")
+                raise ValidationError(
+                    "An 'expat' participant carries no agent.",
+                    code="journey.participant_expat_no_agent",
+                )
             agent_id = None
         else:  # AGENT — a named member, OR agent_id NULL = "the agency in general"
             if payload.agent_id is not None:
@@ -673,7 +688,7 @@ class JourneysManager:
         await self._get_step(template_id, step_id)
         row = await self.repo.get_step_participant_in_step(step_id, participant_id)
         if row is None:
-            raise NotFoundError("Participant not found.")
+            raise NotFoundError("Participant not found.", code="journey.participant_not_found")
         await self.repo.delete_step_participant(row)
         await self.db.commit()
 
@@ -698,15 +713,23 @@ class JourneysManager:
         settings = get_settings()
         original = file.filename
         if not original:
-            raise ValidationError("A filename is required.")
+            raise ValidationError(
+                "A filename is required.", code="journey.attachment_filename_required"
+            )
         ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
         if ext not in settings.allowed_document_extensions:
             allowed = ", ".join(settings.allowed_document_extensions)
-            raise ValidationError(f"File type not allowed (accepted: {allowed}).")
+            raise ValidationError(
+                f"File type not allowed (accepted: {allowed}).",
+                code="journey.attachment_type_not_allowed",
+                params={"accepted": sorted(settings.allowed_document_extensions)},
+            )
         content = await file.read()
         if len(content) > settings.max_document_size_mb * 1024 * 1024:
             raise PayloadTooLargeError(
-                f"File exceeds the {settings.max_document_size_mb} MB limit."
+                f"File exceeds the {settings.max_document_size_mb} MB limit.",
+                code="journey.attachment_too_large",
+                params={"max_mb": settings.max_document_size_mb},
             )
 
         attachment_id = uuid.uuid4()
@@ -743,7 +766,7 @@ class JourneysManager:
         await self._get_step(template_id, step_id)
         row = await self.repo.get_step_attachment_in_step(step_id, attachment_id)
         if row is None:
-            raise NotFoundError("Attachment not found.")
+            raise NotFoundError("Attachment not found.", code="journey.attachment_not_found")
         content = await asyncio.to_thread(storage.download, row.storage_path)
         return row.filename, content
 
@@ -754,7 +777,7 @@ class JourneysManager:
         await self._get_step(template_id, step_id)
         row = await self.repo.get_step_attachment_in_step(step_id, attachment_id)
         if row is None:
-            raise NotFoundError("Attachment not found.")
+            raise NotFoundError("Attachment not found.", code="journey.attachment_not_found")
         path = row.storage_path
         await self.repo.delete_step_attachment(row)
         await self.db.commit()
@@ -784,7 +807,10 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         steps = await self.repo.list_steps(template_id)
         if len(step_ids) != len(set(step_ids)) or set(step_ids) != {s.id for s in steps}:
-            raise ValidationError("step_ids must contain exactly the template's steps, once each.")
+            raise ValidationError(
+                "step_ids must contain exactly the template's steps, once each.",
+                code="journey.step_order_mismatch",
+            )
         offset = max(step.position for step in steps) + len(steps) + 1
         await self.repo.shift_positions(template_id, offset)
         for index, step_id in enumerate(step_ids):
@@ -812,10 +838,15 @@ class JourneysManager:
         proposed = set(prerequisite_step_ids)
 
         if step_id in proposed:
-            raise ValidationError("A step cannot be its own prerequisite.")
+            raise ValidationError(
+                "A step cannot be its own prerequisite.", code="journey.prerequisite_self"
+            )
         template_step_ids = {step.id for step in await self.repo.list_steps(template_id)}
         if not proposed <= template_step_ids:
-            raise ValidationError("Prerequisites must belong to the same template.")
+            raise ValidationError(
+                "Prerequisites must belong to the same template.",
+                code="journey.prerequisite_foreign",
+            )
 
         # Full graph = existing edges of the other steps + the proposed
         # set for this one.
@@ -825,7 +856,9 @@ class JourneysManager:
                 graph[row.step_id].add(row.prerequisite_step_id)
         graph[step_id] = proposed
         if _has_cycle(graph):
-            raise ValidationError("This prerequisite change would create a cycle.")
+            raise ValidationError(
+                "This prerequisite change would create a cycle.", code="journey.prerequisite_cycle"
+            )
 
         await self.repo.delete_prerequisites_of_step(step_id)
         for prerequisite_id in proposed:
@@ -863,7 +896,9 @@ class JourneysManager:
             if declared is None:
                 raise ValidationError(
                     f"The field {payload.reference!r} must first be added to the journey's "
-                    "Informations tab before it can be requested at a step."
+                    "Informations tab before it can be requested at a step.",
+                    code="journey.requirement_field_not_declared",
+                    params={"reference": payload.reference},
                 )
         requirement = self.repo.add_requirement(
             step_id=step_id,
@@ -872,8 +907,18 @@ class JourneysManager:
             scope=payload.scope.value,
             position=payload.position,
         )
+        await self.db.flush()
+        # Point-8 backfill (mirror of add_step's Option-A contract, one level
+        # down): live cases whose instance of THIS step is currently active
+        # gain the missing concrete instances — same transaction. TODO steps
+        # materialize at activation; DONE steps catch up at reopen.
+        from src.progress.progress_manager import ProgressManager
+
+        progress_manager = ProgressManager(self.db)
+        pending = await progress_manager.backfill_requirements(agent, requirement)
         await self.db.commit()
         await self.db.refresh(requirement)
+        await progress_manager.send_pending(pending)
         return requirement
 
     async def _validate_reference(
@@ -889,7 +934,10 @@ class JourneysManager:
         if kind is StepRequirementKind.BASE_FIELD:
             if reference not in COLLECTABLE_BASE_FIELDS:
                 raise ValidationError(
-                    f"Unknown base field {reference!r}. Allowed: {sorted(COLLECTABLE_BASE_FIELDS)}."
+                    f"Unknown base field {reference!r}. "
+                    f"Allowed: {sorted(COLLECTABLE_BASE_FIELDS)}.",
+                    code="journey.base_field_unknown",
+                    params={"reference": reference, "allowed": sorted(COLLECTABLE_BASE_FIELDS)},
                 )
         elif kind is StepRequirementKind.CUSTOM_FIELD:
             definition = await CustomFieldsRepository(self.db).get_by_key(
@@ -897,7 +945,9 @@ class JourneysManager:
             )
             if definition is None or definition.archived_at is not None:
                 raise ValidationError(
-                    f"No active custom field with key {reference!r} for this agency."
+                    f"No active custom field with key {reference!r} for this agency.",
+                    code="journey.custom_field_unknown",
+                    params={"reference": reference},
                 )
 
     async def reorder_requirements(
@@ -918,7 +968,8 @@ class JourneysManager:
             r.id for r in requirements
         }:
             raise ValidationError(
-                "requirement_ids must contain exactly the step's requirements, once each."
+                "requirement_ids must contain exactly the step's requirements, once each.",
+                code="journey.requirement_order_mismatch",
             )
         offset = max((r.position for r in requirements), default=-1) + len(requirements) + 1
         await self.repo.shift_requirement_positions(step_id, offset)
@@ -934,7 +985,7 @@ class JourneysManager:
         await self._get_step(template_id, step_id)
         requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
         if requirement is None:
-            raise NotFoundError("Step requirement not found.")
+            raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
         await self.repo.delete_requirement(requirement)
         await self.db.commit()
 
@@ -962,7 +1013,12 @@ class JourneysManager:
         if payload.case_field not in COLLECTABLE_CASE_FIELDS:
             raise ValidationError(
                 f"Unknown case field {payload.case_field!r}. "
-                f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}."
+                f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}.",
+                code="journey.case_field_unknown",
+                params={
+                    "case_field": payload.case_field,
+                    "allowed": sorted(COLLECTABLE_CASE_FIELDS),
+                },
             )
         # Strict membership: the case field must be DECLARED in this template's
         # Informations tab (a journey_template_case_field of the SAME template).
@@ -971,12 +1027,16 @@ class JourneysManager:
         if declared is None:
             raise ValidationError(
                 f"The case field {payload.case_field!r} must first be added to the "
-                "journey's Informations tab before it can be requested at a step."
+                "journey's Informations tab before it can be requested at a step.",
+                code="journey.case_field_not_declared",
+                params={"case_field": payload.case_field},
             )
         existing = await self.repo.get_step_case_requirement_by_ref(step_id, payload.case_field)
         if existing is not None:
             raise ConflictError(
-                f"Case field {payload.case_field!r} is already required by this step."
+                f"Case field {payload.case_field!r} is already required by this step.",
+                code="journey.case_requirement_duplicate",
+                params={"case_field": payload.case_field},
             )
         row = self.repo.add_step_case_requirement(
             step_id=step_id, case_field=payload.case_field, position=payload.position
@@ -1002,7 +1062,9 @@ class JourneysManager:
             case_requirement_ids
         ) != {r.id for r in rows}:
             raise ValidationError(
-                "case_requirement_ids must contain exactly the step's case requirements, once each."
+                "case_requirement_ids must contain exactly the step's case requirements, "
+                "once each.",
+                code="journey.case_requirement_order_mismatch",
             )
         offset = max((r.position for r in rows), default=-1) + len(rows) + 1
         await self.repo.shift_step_case_requirement_positions(step_id, offset)
@@ -1022,7 +1084,9 @@ class JourneysManager:
         await self._get_step(template_id, step_id)
         row = await self.repo.get_step_case_requirement_in_step(step_id, case_requirement_id)
         if row is None:
-            raise NotFoundError("Step case requirement not found.")
+            raise NotFoundError(
+                "Step case requirement not found.", code="journey.case_requirement_not_found"
+            )
         await self.repo.delete_step_case_requirement(row)
         await self.db.commit()
 
@@ -1080,7 +1144,8 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         if payload.kind is StepRequirementKind.DOCUMENT:
             raise ValidationError(
-                "A creation field is a base_field or custom_field (documents are requirements)."
+                "A creation field is a base_field or custom_field (documents are requirements).",
+                code="journey.field_kind_invalid",
             )
         # Same validation as requirements: base → whitelist, custom →
         # active definition of the agency.
@@ -1092,7 +1157,9 @@ class JourneysManager:
         )
         if existing is not None:
             raise ConflictError(
-                f"Field {payload.reference!r} is already collected by this template."
+                f"Field {payload.reference!r} is already collected by this template.",
+                code="journey.field_duplicate",
+                params={"reference": payload.reference},
             )
         field = self.repo.add_field(
             template_id=template_id,
@@ -1115,7 +1182,8 @@ class JourneysManager:
         fields = await self.repo.list_fields(template_id)
         if len(field_ids) != len(set(field_ids)) or set(field_ids) != {f.id for f in fields}:
             raise ValidationError(
-                "field_ids must contain exactly the template's fields, once each."
+                "field_ids must contain exactly the template's fields, once each.",
+                code="journey.field_order_mismatch",
             )
         offset = max((f.position for f in fields), default=-1) + len(fields) + 1
         await self.repo.shift_field_positions(template_id, offset)
@@ -1130,7 +1198,9 @@ class JourneysManager:
         if section_id is None:
             return
         if await self.repo.get_section_in_template(template_id, section_id) is None:
-            raise ValidationError("Section must belong to this template.")
+            raise ValidationError(
+                "Section must belong to this template.", code="journey.section_foreign"
+            )
 
     async def update_field(
         self,
@@ -1142,7 +1212,7 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         field = await self.repo.get_field_in_template(template_id, field_id)
         if field is None:
-            raise NotFoundError("Template field not found.")
+            raise NotFoundError("Template field not found.", code="journey.field_not_found")
         # Partial PATCH: required toggle and/or section move (exclude_unset
         # distinguishes "untouched" from "set to null").
         changes = payload.model_dump(exclude_unset=True)
@@ -1159,7 +1229,7 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         field = await self.repo.get_field_in_template(template_id, field_id)
         if field is None:
-            raise NotFoundError("Template field not found.")
+            raise NotFoundError("Template field not found.", code="journey.field_not_found")
         await self.repo.delete_field(field)
         await self.db.commit()
 
@@ -1183,14 +1253,21 @@ class JourneysManager:
         if payload.case_field not in COLLECTABLE_CASE_FIELDS:
             raise ValidationError(
                 f"Unknown case field {payload.case_field!r}. "
-                f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}."
+                f"Allowed: {sorted(COLLECTABLE_CASE_FIELDS)}.",
+                code="journey.case_field_unknown",
+                params={
+                    "case_field": payload.case_field,
+                    "allowed": sorted(COLLECTABLE_CASE_FIELDS),
+                },
             )
         # Dedup pre-check → clean 409 (UNIQUE(template_id, case_field) is
         # the floor; this gives a friendly error).
         existing = await self.repo.get_case_field_by_ref(template_id, payload.case_field)
         if existing is not None:
             raise ConflictError(
-                f"Case field {payload.case_field!r} is already collected by this template."
+                f"Case field {payload.case_field!r} is already collected by this template.",
+                code="journey.case_field_duplicate",
+                params={"case_field": payload.case_field},
             )
         case_field = self.repo.add_case_field(
             template_id=template_id,
@@ -1214,7 +1291,8 @@ class JourneysManager:
             c.id for c in rows
         }:
             raise ValidationError(
-                "case_field_ids must contain exactly the template's case fields, once each."
+                "case_field_ids must contain exactly the template's case fields, once each.",
+                code="journey.case_field_order_mismatch",
             )
         offset = max((c.position for c in rows), default=-1) + len(rows) + 1
         await self.repo.shift_case_field_positions(template_id, offset)
@@ -1234,7 +1312,9 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         case_field = await self.repo.get_case_field_in_template(template_id, case_field_id)
         if case_field is None:
-            raise NotFoundError("Template case field not found.")
+            raise NotFoundError(
+                "Template case field not found.", code="journey.case_field_not_found"
+            )
         changes = payload.model_dump(exclude_unset=True)
         if changes.get("required_at_creation") is not None:
             case_field.required_at_creation = changes["required_at_creation"]
@@ -1251,7 +1331,9 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         case_field = await self.repo.get_case_field_in_template(template_id, case_field_id)
         if case_field is None:
-            raise NotFoundError("Template case field not found.")
+            raise NotFoundError(
+                "Template case field not found.", code="journey.case_field_not_found"
+            )
         await self.repo.delete_case_field(case_field)
         await self.db.commit()
 
@@ -1298,7 +1380,7 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         section = await self.repo.get_section_in_template(template_id, section_id)
         if section is None:
-            raise NotFoundError("Section not found.")
+            raise NotFoundError("Section not found.", code="journey.section_not_found")
         changes = payload.model_dump(exclude_unset=True)
         agency_default = await self.agency_default(agent.agency_id)
         if "name" in changes or "name_i18n" in changes:
@@ -1341,7 +1423,8 @@ class JourneysManager:
             s.id for s in sections
         }:
             raise ValidationError(
-                "section_ids must contain exactly the template's sections, once each."
+                "section_ids must contain exactly the template's sections, once each.",
+                code="journey.section_order_mismatch",
             )
         offset = max((s.position for s in sections), default=-1) + len(sections) + 1
         await self.repo.shift_section_positions(template_id, offset)
@@ -1359,6 +1442,6 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         section = await self.repo.get_section_in_template(template_id, section_id)
         if section is None:
-            raise NotFoundError("Section not found.")
+            raise NotFoundError("Section not found.", code="journey.section_not_found")
         await self.repo.delete_section(section)
         await self.db.commit()

@@ -17,7 +17,10 @@ except (ImportError, AttributeError):
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Never disable the app's already-created loggers: fileConfig's
+    # default would silence every `src.*` logger created before a
+    # migration runs (in-process runs: tests, start.sh boot upgrade).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)

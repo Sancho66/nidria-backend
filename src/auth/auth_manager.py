@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -10,7 +11,7 @@ from shared.models.expat_user import ExpatUser
 from src.auth.auth_repository import AuthRepository
 from src.auth.auth_schema import ActivateResponse, TokenPairResponse
 from src.core.config import get_settings
-from src.core.email import send_email
+from src.core.email import normalize_email, send_email
 from src.core.email_templates import password_reset_email
 from src.core.enums import Audience, InvitationStatus
 from src.core.exceptions import BadRequestError, UnauthorizedError
@@ -28,6 +29,8 @@ from src.core.security import (
 _INVALID_CREDENTIALS = "Invalid credentials."
 _INVALID_RESET_TOKEN = "Invalid or expired reset token."
 _FORGOT_PASSWORD_DETAIL = "If this email exists, a reset link has been sent."
+
+logger = logging.getLogger(__name__)
 
 
 class AuthManager:
@@ -71,7 +74,9 @@ class AuthManager:
     # --- login -------------------------------------------------------------------
 
     async def login_agent(self, email: str, password: str) -> TokenPairResponse:
-        agent = await self.repo.get_agent_by_email(email)
+        # Belt under the schema-level NormalizedEmailStr: identity lookups
+        # are always lowercase, whatever the caller.
+        agent = await self.repo.get_agent_by_email(normalize_email(email))
         if agent is None or not verify_password(password, agent.password_hash):
             raise UnauthorizedError(_INVALID_CREDENTIALS)
         pair = self.issue_token_pair(agent.id, Audience.AGENT)
@@ -79,7 +84,7 @@ class AuthManager:
         return pair
 
     async def login_expat(self, email: str, password: str) -> TokenPairResponse:
-        expat = await self.repo.get_expat_by_email(email)
+        expat = await self.repo.get_expat_by_email(normalize_email(email))
         if (
             expat is None
             or expat.activated_at is None
@@ -183,7 +188,10 @@ class AuthManager:
     async def forgot_password(self, email: str, audience: Audience) -> str:
         """Always the same 200 — the response must not reveal whether
         the email exists. A non-activated expat gets the silent 200 and
-        NO mail: their path is activation."""
+        NO mail: their path is activation. The non-revealing rule is for
+        the HTTP response ONLY: both branches log server-side, or a
+        'mail never arrived' report is undiagnosable (prod incident)."""
+        email = normalize_email(email)
         actor: Agent | ExpatUser | None
         if audience is Audience.AGENT:
             actor = await self.repo.get_agent_by_email(email)
@@ -200,6 +208,13 @@ class AuthManager:
                 reset_link, settings.password_reset_token_expires_minutes
             )
             await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
+            logger.info("forgot-password: reset mail sent audience=%s to=%s", audience.value, email)
+        else:
+            logger.info(
+                "forgot-password: no matching %s account for %s (silent 200)",
+                audience.value,
+                email,
+            )
         return _FORGOT_PASSWORD_DETAIL
 
     async def reset_password(self, token: str, password: str, audience: Audience) -> None:

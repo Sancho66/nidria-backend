@@ -44,7 +44,7 @@ def _decode(content: bytes | str) -> str:
     try:
         return content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise ValidationError("File is not valid UTF-8 text.") from exc
+        raise ValidationError("File is not valid UTF-8 text.", code="import.file_not_utf8") from exc
 
 
 def _detect_delimiter(first_line: str) -> str:
@@ -56,7 +56,11 @@ def _detect_delimiter(first_line: str) -> str:
 def parse_csv(content: bytes | str, *, max_bytes: int = MAX_CSV_BYTES) -> ParsedCsv:
     size = len(content if isinstance(content, bytes) else content.encode("utf-8"))
     if size > max_bytes:
-        raise PayloadTooLargeError(f"CSV exceeds the {max_bytes}-byte limit.")
+        raise PayloadTooLargeError(
+            f"CSV exceeds the {max_bytes}-byte limit.",
+            code="import.file_too_large",
+            params={"max_bytes": max_bytes, "format": "csv"},
+        )
 
     text = _decode(content)
     if text.strip() == "":
@@ -120,17 +124,25 @@ def _xlsx_cell_to_str(value: object) -> str:
 
 def parse_xlsx(content: bytes, *, max_bytes: int = MAX_XLSX_BYTES) -> ParsedCsv:
     if len(content) > max_bytes:
-        raise PayloadTooLargeError(f"XLSX exceeds the {max_bytes}-byte limit.")
+        raise PayloadTooLargeError(
+            f"XLSX exceeds the {max_bytes}-byte limit.",
+            code="import.file_too_large",
+            params={"max_bytes": max_bytes, "format": "xlsx"},
+        )
     try:
         # read_only: stream rows without loading the whole sheet into memory;
         # data_only: cached values, not formulas.
         workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except (InvalidFileException, zipfile.BadZipFile, KeyError, ValueError) as exc:
-        raise ValidationError("File is not a valid .xlsx workbook.") from exc
+        raise ValidationError(
+            "File is not a valid .xlsx workbook.", code="import.xlsx_invalid"
+        ) from exc
     try:
         sheet = workbook.active  # first / active sheet only
         if sheet is None:
-            raise ValidationError("The .xlsx file has no readable sheet.")
+            raise ValidationError(
+                "The .xlsx file has no readable sheet.", code="import.xlsx_no_sheet"
+            )
         records = [
             [_xlsx_cell_to_str(cell) for cell in row] for row in sheet.iter_rows(values_only=True)
         ]
@@ -143,7 +155,9 @@ def parse_xlsx(content: bytes, *, max_bytes: int = MAX_XLSX_BYTES) -> ParsedCsv:
         None,
     )
     if header_index is None:
-        raise ValidationError("The .xlsx file is empty or has no header row.")
+        raise ValidationError(
+            "The .xlsx file is empty or has no header row.", code="import.xlsx_empty"
+        )
     headers = [cell.strip() for cell in records[header_index]]
     rows: list[dict[str, str]] = []
     for record in records[header_index + 1 :]:
@@ -180,6 +194,8 @@ def parse_upload(
     parse_csv; both return the same ParsedCsv, so nothing downstream changes."""
     if _looks_xlsx(filename, content):
         if not isinstance(content, bytes | bytearray):
-            raise ValidationError("An .xlsx upload must be provided as file bytes.")
+            raise ValidationError(
+                "An .xlsx upload must be provided as file bytes.", code="import.xlsx_requires_file"
+            )
         return parse_xlsx(bytes(content), max_bytes=max_bytes)
     return parse_csv(content, max_bytes=max_bytes)
