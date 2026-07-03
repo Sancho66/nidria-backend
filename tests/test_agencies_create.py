@@ -5,6 +5,7 @@ agency + its first admin ATOMICALLY and stages ONE activation email. No
 cross-agency access is introduced — the superadmin still reads no dossier.
 """
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -275,3 +276,54 @@ async def test_enter_agency_without_admin_is_404(
         f"/agencies/{empty.id}/enter", headers=agent_headers(superadmin)
     )
     assert resp.status_code == 404
+
+
+# --- onboarding link lifetime (demande Eric: invitation = 24h) ------------------
+
+
+async def test_onboarding_link_lives_24_hours_and_is_single_use(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+    db_session: AsyncSession,
+) -> None:
+    """The first-admin activation link is an INVITATION: 24h window
+    (valid at H+2, already expired at H+25), stated in hours in the
+    mail — while staying strictly single-use like any reset token."""
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post("/agencies", json=_body(), headers=agent_headers(superadmin))
+    assert resp.status_code == 201, resp.text
+
+    admin = (
+        await db_session.execute(select(Agent).where(Agent.email == "admin@reside-paraguay.com"))
+    ).scalar_one()
+    token = (
+        await db_session.execute(
+            select(PasswordResetToken).where(PasswordResetToken.actor_id == admin.id)
+        )
+    ).scalar_one()
+
+    # (a) the 24h window: still valid at H+2, gone by H+25.
+    lifetime = token.expires_at - token.created_at
+    assert timedelta(hours=23) < lifetime < timedelta(hours=25)
+    sent = next(m for m in email.outbox if m.to == "admin@reside-paraguay.com")
+    assert "24 heures" in sent.body
+
+    # (c) single use: the link works once...
+    ok = await agencies_client.post(
+        "/auth/agent/reset-password",
+        json={"token": token.token, "password": "brand-new-pass-1"},
+    )
+    assert ok.status_code == 200, ok.text
+    login = await agencies_client.post(
+        "/auth/agent/login",
+        json={"email": "admin@reside-paraguay.com", "password": "brand-new-pass-1"},
+    )
+    assert login.status_code == 200
+    # ...and never twice.
+    again = await agencies_client.post(
+        "/auth/agent/reset-password",
+        json={"token": token.token, "password": "another-pass-12"},
+    )
+    assert again.status_code == 400

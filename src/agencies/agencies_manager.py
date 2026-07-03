@@ -95,14 +95,17 @@ class AgenciesManager:
         await self.db.flush()  # need admin.id for the reset token
         # Reuse the password-reset machinery: create_reset_link only STAGES
         # the token (no commit), so agency + admin + token land in ONE
-        # transaction — rollback if anything above failed.
-        reset_link = AuthManager(self.db).create_reset_link(admin.id, Audience.AGENT)
+        # transaction — rollback if anything above failed. Onboarding is an
+        # INVITATION: 24h window, not the 60-minute forgot-password one.
+        settings = get_settings()
+        reset_link = AuthManager(self.db).create_reset_link(
+            admin.id, Audience.AGENT, expires_minutes=settings.onboarding_link_expires_minutes
+        )
         await self.db.commit()
         await self.db.refresh(agency)
         await self.db.refresh(admin)
 
-        settings = get_settings()
-        content = password_reset_email(reset_link, settings.password_reset_token_expires_minutes)
+        content = password_reset_email(reset_link, settings.onboarding_link_expires_minutes)
         email = PendingEmail(
             to=payload.admin_email,
             subject=content.subject,

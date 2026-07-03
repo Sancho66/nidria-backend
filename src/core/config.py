@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Impersonation: short-lived access token, NO refresh — expiry IS the exit.
     impersonation_token_expires_minutes: int = 30
     password_reset_token_expires_minutes: int = 60
+    # Onboarding links (first admin of a created agency) reuse the reset
+    # machinery but are INVITATIONS: 24h, not the 60-minute reset window
+    # (Sidney locked out at H+1, demande Eric).
+    onboarding_link_expires_minutes: int = 24 * 60
     agent_invitation_expires_days: int = 7
     # Expats are clients, not staff — longer runway than agent invites.
     case_invitation_expires_days: int = 14

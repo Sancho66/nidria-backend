@@ -372,6 +372,22 @@ async def test_forgot_password_non_activated_expat_is_silent(
     assert email.outbox == []
 
 
+async def test_forgot_password_window_stays_60_minutes(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    make_agent: MakeAgent,
+) -> None:
+    """The onboarding 24h window must NOT leak into the classic reset:
+    a forgot-password token is gone by H+2, and the mail still speaks
+    in minutes."""
+    await make_agent(email="window@example.com")
+    await auth_client.post("/auth/agent/forgot-password", json={"email": "window@example.com"})
+    row = (await db_session.execute(select(PasswordResetToken))).scalar_one()
+    lifetime = row.expires_at - row.created_at
+    assert timedelta(minutes=55) < lifetime < timedelta(minutes=65)
+    assert "60 minutes" in email.outbox[0].body
+
+
 async def test_reset_password_full_flow(
     auth_client: AsyncClient,
     db_session: AsyncSession,

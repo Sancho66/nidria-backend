@@ -155,6 +155,12 @@ def _render(
 
 
 def password_reset_email(reset_link: str, expires_minutes: int) -> EmailContent:
+    # Long invitation windows read in hours ("24 heures", onboarding);
+    # the classic 60-minute reset keeps its historical wording.
+    if expires_minutes >= 120 and expires_minutes % 60 == 0:
+        validity = f"Ce lien expire dans {expires_minutes // 60} heures."
+    else:
+        validity = f"Ce lien expire dans {expires_minutes} minutes."
     return _render(
         subject="Nidria — Réinitialisez votre mot de passe",
         title="Réinitialisez votre mot de passe",
@@ -163,7 +169,7 @@ def password_reset_email(reset_link: str, expires_minutes: int) -> EmailContent:
         ),
         button_label="Choisir un nouveau mot de passe",
         button_url=reset_link,
-        validity=f"Ce lien expire dans {expires_minutes} minutes.",
+        validity=validity,
     )
 
 

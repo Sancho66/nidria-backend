@@ -53,18 +53,25 @@ class AuthManager:
             refresh_token=create_refresh_token(str(actor_id), audience, jti),
         )
 
-    def create_reset_link(self, actor_id: uuid.UUID, audience: Audience) -> str:
+    def create_reset_link(
+        self, actor_id: uuid.UUID, audience: Audience, expires_minutes: int | None = None
+    ) -> str:
         """Stage a password-reset token for an actor and return its link.
 
         Caller commits (mirrors issue_token_pair — no commit here). Reused
         by forgot-password AND by agency onboarding: the first admin of a
         freshly created agency sets their password through this exact link.
+        `expires_minutes` defaults to the forgot-password window (60 min);
+        the onboarding caller passes its own 24h invitation window.
         """
         settings = get_settings()
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(UTC) + timedelta(
-            minutes=settings.password_reset_token_expires_minutes
+        minutes = (
+            expires_minutes
+            if expires_minutes is not None
+            else settings.password_reset_token_expires_minutes
         )
+        expires_at = datetime.now(UTC) + timedelta(minutes=minutes)
         self.repo.add_reset_token(audience.value, actor_id, token, expires_at)
         # Frontend route map: agent flows live at the root, the expat space
         # under /space; tokens are PATH params.
