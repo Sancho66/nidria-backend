@@ -60,6 +60,21 @@ async def test_columns_catalog(
     assert by_key["journey"]["locked"] is False
     assert by_key["journey"]["default"] is True
     assert all({"key", "label", "type", "default", "locked"} <= set(c) for c in columns)
+    # The DEFAULT SET, in catalog order (the front's no-view display):
+    # décision 2026-07-05. Origin/destination/tags stay selectable only.
+    defaults = [c["key"] for c in columns if c["default"] or c["locked"]]
+    assert defaults == [
+        "principal",
+        "journey",
+        "current_step",
+        "owner",
+        "status",
+        "created_at",
+        "updated_at",
+    ]
+    assert by_key["origin_country"]["default"] is False
+    assert by_key["dest_country"]["default"] is False
+    assert by_key["tags"]["default"] is False
 
 
 async def test_columns_catalog_requires_token(views_client: AsyncClient) -> None:

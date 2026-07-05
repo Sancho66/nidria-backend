@@ -102,17 +102,22 @@ class AvailableColumnsResponse(BaseModel):
 # The cases-list column catalog. Prism reads this from
 # project_type.features (data-driven, multi-vertical); Nidria has ONE
 # list → the catalog is code, same response shape.
+# Catalog order = the frontend's no-view display order (it filters
+# `default or locked` in this order). The DEFAULT SET (décision 2026-07-05):
+# client, parcours, étape en cours, responsable, statut, créé le, mis à
+# jour le — origin/destination/tags stay selectable, no longer default.
+# Saved views are untouched (they carry their own ordered selection).
 CASE_COLUMNS: Final[tuple[AvailableColumn, ...]] = (
     AvailableColumn(key="principal", label="Client", type="text", locked=True),
-    AvailableColumn(key="status", label="Statut", type="badge"),
-    AvailableColumn(key="origin_country", label="Origine", type="country"),
-    AvailableColumn(key="dest_country", label="Destination", type="country"),
-    AvailableColumn(key="owner", label="Responsable", type="agent"),
     AvailableColumn(key="journey", label="Parcours", type="text"),
     AvailableColumn(key="current_step", label="Étape en cours", type="text"),
-    AvailableColumn(key="tags", label="Tags", type="tags"),
+    AvailableColumn(key="owner", label="Responsable", type="agent"),
+    AvailableColumn(key="status", label="Statut", type="badge"),
+    AvailableColumn(key="created_at", label="Créé le", type="datetime"),
+    AvailableColumn(key="updated_at", label="Mis à jour", type="datetime"),
+    AvailableColumn(key="origin_country", label="Origine", type="country", default=False),
+    AvailableColumn(key="dest_country", label="Destination", type="country", default=False),
+    AvailableColumn(key="tags", label="Tags", type="tags", default=False),
     AvailableColumn(key="source", label="Source", type="text", default=False),
     AvailableColumn(key="preferred_lang", label="Langue", type="text", default=False),
-    AvailableColumn(key="created_at", label="Créé le", type="datetime"),
-    AvailableColumn(key="updated_at", label="Mis à jour", type="datetime", default=False),
 )
