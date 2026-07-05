@@ -214,12 +214,65 @@ def new_case_email(agency_name: str, login_link: str) -> EmailContent:
     )
 
 
-def reminder_email(message_body: str) -> EmailContent:
+# Reminder dispatch — the AGENCY's reminder to its client (or an external
+# contact). Subject AND intro carry the agency (multi-agency inspection §6:
+# a client with dossiers at two agencies must see WHO is reminding them).
+# The agency-written message body is passed through untouched.
+_REMINDER = {
+    "fr": {
+        "subject": "Nidria : Rappel de {agency}",
+        "title": "Rappel",
+        "intro": "{agency} vous envoie un rappel concernant votre dossier :",
+        "button": "Accéder à mon espace",
+    },
+    "en": {
+        "subject": "Nidria: Reminder from {agency}",
+        "title": "Reminder",
+        "intro": "{agency} sends you a reminder about your case:",
+        "button": "Open my space",
+    },
+    "es": {
+        "subject": "Nidria: Recordatorio de {agency}",
+        "title": "Recordatorio",
+        "intro": "{agency} le envía un recordatorio sobre su expediente:",
+        "button": "Acceder a mi espacio",
+    },
+    "ru": {
+        "subject": "Nidria: Напоминание от {agency}",
+        "title": "Напоминание",
+        "intro": "{agency} отправляет вам напоминание по вашему делу:",
+        "button": "Открыть мой кабинет",
+    },
+    "pt": {
+        "subject": "Nidria: Lembrete de {agency}",
+        "title": "Lembrete",
+        "intro": "{agency} envia-lhe um lembrete sobre o seu processo:",
+        "button": "Aceder ao meu espaço",
+    },
+    "it": {
+        "subject": "Nidria: Promemoria da {agency}",
+        "title": "Promemoria",
+        "intro": "{agency} ti invia un promemoria sulla tua pratica:",
+        "button": "Accedere al mio spazio",
+    },
+}
+
+
+def reminder_email(
+    agency_name: str, message_body: str, space_link: str | None, lang: str = "fr"
+) -> EmailContent:
+    """Rendered in the recipient language. `space_link` is the BRANDED
+    client-space URL for an EXPAT recipient; None for an external
+    contact (no client space to open)."""
+    s = _pick(_REMINDER, lang)
     return _render(
-        subject="Nidria : Rappel",
-        title="Rappel",
-        intro="Un rappel concernant votre dossier d'expatriation :",
+        subject=s["subject"].format(agency=agency_name),
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name),
         body_text=message_body,
+        button_label=s["button"] if space_link else None,
+        button_url=space_link,
+        lang=lang,
     )
 
 

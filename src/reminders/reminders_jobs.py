@@ -24,7 +24,7 @@ from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplateStep
 from shared.models.reminder import Reminder
 from src.core.config import get_settings
-from src.core.email import send_email
+from src.core.email import send_email, space_link
 from src.core.email_templates import reminder_email
 from src.core.enums import (
     ActorType,
@@ -33,22 +33,30 @@ from src.core.enums import (
     ReminderStatus,
     StepStatus,
 )
+from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
 
 logger = logging.getLogger(__name__)
 
 LogFn = Callable[[str], None]
 
 
-def _recipient_email(db: Session, reminder: Reminder) -> str | None:
+def _recipient(db: Session, reminder: Reminder, agency: Agency) -> tuple[str, str] | None:
+    """(email, resolved language) of the reminder's recipient. EXPAT → their
+    stored preference (client rule); EXTERNAL contact → the agency default
+    (no stored language on a no-login contact)."""
     if reminder.recipient_type == RecipientType.EXPAT.value:
-        stmt = (
-            select(ExpatUser.email)
+        row = db.execute(
+            select(ExpatUser.email, ExpatUser.preferred_lang)
             .join(ClientCase, ClientCase.principal_expat_user_id == ExpatUser.id)
             .where(ClientCase.id == reminder.case_id)
-        )
-        return db.execute(stmt).scalar_one_or_none()
+        ).first()
+        if row is None or row[0] is None:
+            return None
+        return str(row[0]), resolve_notification_lang_client(row[1])
     contact = db.get(ExternalContact, reminder.recipient_external_id)
-    return contact.email if contact is not None else None
+    if contact is None or contact.email is None:
+        return None
+    return contact.email, resolve_notification_lang_agent(agency.default_language)
 
 
 def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
@@ -63,8 +71,9 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     # the scheduler neither mails nor counts them (the most dangerous
     # leak: a deleted case must not keep sending).
     base = (
-        select(Reminder)
+        select(Reminder, Agency)
         .join(ClientCase, ClientCase.id == Reminder.case_id)
+        .join(Agency, Agency.id == ClientCase.agency_id)
         .where(
             Reminder.status == ReminderStatus.APPROVED.value,
             Reminder.scheduled_at <= now,
@@ -73,20 +82,29 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
         )
     )
     if dry_run:
-        due = len(db.execute(base).scalars().all())
+        due = len(db.execute(base).all())
         log(f"dry-run: {due} reminder(s) due, nothing sent")
         return {"due": due, "sent": 0, "dry_run": True}
 
-    rows = db.execute(base.with_for_update(skip_locked=True)).scalars().all()
+    rows = db.execute(base.with_for_update(skip_locked=True, of=Reminder)).all()
+    settings = get_settings()
     sent = 0
-    for reminder in rows:
+    for reminder, agency in rows:
         if reminder.channel == ReminderChannel.MAIL.value:
-            to = _recipient_email(db, reminder)
-            if to is None:
+            recipient = _recipient(db, reminder, agency)
+            if recipient is None:
                 # Creation-time validation prevents this; defensive skip.
                 log(f"reminder {reminder.id}: no recipient email, left approved")
                 continue
-            content = reminder_email(reminder.message_body)
+            to, lang = recipient
+            # The BRANDED client-space link — expat recipients only (an
+            # external contact has no client space to open).
+            link = (
+                space_link(settings.frontend_url, "/space", agency.slug)
+                if reminder.recipient_type == RecipientType.EXPAT.value
+                else None
+            )
+            content = reminder_email(agency.name, reminder.message_body, link, lang)
             send_email(to, content.subject, content.text, content.html)
         # IN_APP: the SENT reminder itself IS the notification read by
         # the expat space (no notifications table).
