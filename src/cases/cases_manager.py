@@ -34,9 +34,10 @@ from src.cases.cases_schema import (
     PersonCreateRequest,
     PersonResponse,
     PersonUpdateRequest,
+    PrefillSourceResponse,
 )
 from src.core.config import get_settings
-from src.core.email import PendingEmail, send_email, space_link
+from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
@@ -88,6 +89,19 @@ class CasesManager:
 
     # --- create -------------------------------------------------------------------
 
+    async def prefill_sources(self, agent: Agent, email: str) -> list[PrefillSourceResponse]:
+        """The client's dossiers in MY agency (wizard prefill picker).
+        RGPD: an email known only in ANOTHER agency answers the SAME
+        empty list as an unknown one — zero existence leak (import rule)."""
+        expat = await self.repo.get_expat_by_email(normalize_email(email))
+        if expat is None:
+            return []
+        rows = await self.repo.list_prefill_sources(agent.agency_id, expat.id)
+        return [
+            PrefillSourceResponse(id=case.id, journey_name=name, created_at=case.created_at)
+            for case, name in rows
+        ]
+
     async def create_case(
         self,
         agent: Agent,
@@ -118,6 +132,21 @@ class CasesManager:
             )
             await self.db.flush()
 
+        # Opt-in prefill: the source must be a live dossier of THIS agency
+        # for THIS client (422 otherwise; demo excluded). Person data only.
+        source_persons: list[CasePerson] = []
+        if payload.prefill_from_case_id is not None:
+            source = await self.repo.get_case_in_agency(
+                agent.agency_id, payload.prefill_from_case_id
+            )
+            if source is None or source.is_demo or source.principal_expat_user_id != expat.id:
+                raise ValidationError(
+                    "prefill_from_case_id must reference a dossier of this agency "
+                    "for the same client.",
+                    code="case.prefill_source_invalid",
+                )
+            source_persons = await self.repo.list_persons(source.id)
+
         case = self.repo.add_case(
             agency_id=agent.agency_id,
             principal_expat_user_id=expat.id,
@@ -143,13 +172,35 @@ class CasesManager:
         # validation as PATCH person (an invalid custom value → 422 with
         # NOTHING committed yet, so no orphan case).
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
+        source_principal = next(
+            (p for p in source_persons if p.kind == CasePersonKind.PRINCIPAL.value), None
+        )
+        # Prefill: the source's values seed the sack (archived keys ride
+        # along untouched, the orphan-keys rule), then the wizard's own
+        # values are validated and WIN over the copy.
+        base_custom = dict(source_principal.custom_fields or {}) if source_principal else {}
         principal = self.repo.add_person(
             case_id=case.id,
             kind=CasePersonKind.PRINCIPAL.value,
             expat_user_id=expat.id,
-            custom_fields=validate_and_merge(definitions, {}, payload.custom_fields),
+            custom_fields=validate_and_merge(definitions, base_custom, payload.custom_fields),
         )
-        self._apply_civil_fields(principal, payload)
+        if source_principal is not None:
+            self._copy_civil_fields(source_principal, principal)
+        self._apply_civil_fields(principal, payload)  # wizard fields WIN over the copy
+        # FAMILY members ride along with their data (they belong to the
+        # client, not to the dossier's lifecycle).
+        for member in source_persons:
+            if member.kind != CasePersonKind.FAMILY.value:
+                continue
+            family = self.repo.add_person(
+                case_id=case.id,
+                kind=CasePersonKind.FAMILY.value,
+                full_name=member.full_name,
+                relationship=member.relationship,
+                custom_fields=dict(member.custom_fields or {}),
+            )
+            self._copy_civil_fields(member, family)
         await self.db.flush()
 
         # Transactional journey assignment, INSIDE this single transaction
@@ -530,6 +581,12 @@ class CasesManager:
             employer=person.employer,
             custom_fields=visible_values(active_definitions, person.custom_fields or {}),
         )
+
+    def _copy_civil_fields(self, source: CasePerson, target: CasePerson) -> None:
+        """Prefill copy: the person's DATA only, never the row's case/
+        identity anchors."""
+        for field in self._CIVIL_FIELDS:
+            setattr(target, field, getattr(source, field))
 
     def _apply_civil_fields(
         self,

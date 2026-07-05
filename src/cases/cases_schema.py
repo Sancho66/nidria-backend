@@ -61,6 +61,20 @@ class CaseCreateRequest(_CivilStatusFields):
     # Wave 2 additions — all optional (strict retrocompat).
     journey_template_id: uuid.UUID | None = None
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    # Opt-in prefill: copy the PERSON data (principal + family, civil +
+    # custom fields) from a previous dossier of the SAME client in the
+    # SAME agency. The new case itself starts fresh (no journey/steps/
+    # documents/tags/status/notes), and wizard-provided fields WIN.
+    prefill_from_case_id: uuid.UUID | None = None
+
+
+class PrefillSourceResponse(BaseModel):
+    """A prefill candidate: one of the client's dossiers in MY agency
+    (creation wizard picker). Demo and deleted cases never appear."""
+
+    id: uuid.UUID
+    journey_name: str | None
+    created_at: datetime
 
 
 class CaseUpdateRequest(BaseModel):

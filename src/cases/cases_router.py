@@ -28,6 +28,7 @@ from src.cases.cases_schema import (
     PersonCreateRequest,
     PersonResponse,
     PersonUpdateRequest,
+    PrefillSourceResponse,
 )
 from src.cases.filter_schema import AdvancedFilters
 from src.core.dependencies import get_current_agent, get_db
@@ -65,6 +66,8 @@ _DELETE = Permission.CASE_DELETE
 
 BINDINGS = [
     RouteBinding("POST", "/cases", Audience.AGENT, _EDIT),
+    # Wizard prefill picker: creation surface, same gate as POST /cases.
+    RouteBinding("GET", "/cases/prefill-source", Audience.AGENT, _EDIT),
     RouteBinding("GET", "/cases", Audience.AGENT, _VIEW),
     # Bulk: edit-actions gate case.edit, soft delete gates case.delete —
     # one binding per route, the engine does the gating (Prism splits
@@ -188,6 +191,16 @@ async def list_cases(
     return await CasesManager(db).list_cases(
         agent, case_filters, page, page_size, sorts=sorts, lang=lang
     )
+
+
+@router.get("/prefill-source", response_model=list[PrefillSourceResponse])
+async def prefill_source(
+    email: Annotated[str, Query(min_length=3, max_length=255)], agent: AgentDep, db: DbDep
+) -> list[PrefillSourceResponse]:
+    """Existing dossiers of this email in MY agency (creation wizard,
+    opt-in copy). Declared BEFORE /{case_id} so the literal path wins.
+    Unknown email and email known only elsewhere answer the SAME []."""
+    return await CasesManager(db).prefill_sources(agent, email)
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)

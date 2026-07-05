@@ -2706,6 +2706,60 @@
         ]
       }
     },
+    "/cases/prefill-source": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Prefill Source",
+        "description": "Existing dossiers of this email in MY agency (creation wizard,\nopt-in copy). Declared BEFORE /{case_id} so the literal path wins.\nUnknown email and email known only elsewhere answer the SAME [].",
+        "operationId": "prefill_source_cases_prefill_source_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 255,
+              "title": "Email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PrefillSourceResponse"
+                  },
+                  "title": "Response Prefill Source Cases Prefill Source Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}": {
       "get": {
         "tags": [
@@ -12850,6 +12904,18 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Custom Fields"
+          },
+          "prefill_from_case_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefill From Case Id"
           }
         },
         "type": "object",
@@ -18344,6 +18410,39 @@
         "type": "object",
         "title": "PersonUpdateRequest",
         "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key."
+      },
+      "PrefillSourceResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "journey_name",
+          "created_at"
+        ],
+        "title": "PrefillSourceResponse",
+        "description": "A prefill candidate: one of the client's dossiers in MY agency\n(creation wizard picker). Demo and deleted cases never appear."
       },
       "PreviewCell": {
         "properties": {

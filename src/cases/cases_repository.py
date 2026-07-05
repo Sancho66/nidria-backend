@@ -14,6 +14,7 @@ from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.invitation import CaseInvitation
+from shared.models.journey import JourneyTemplate
 from src.cases.filter_builder import build_advanced_clauses
 
 # Field → column resolution for ?sort_by= (Prism convention: single
@@ -159,6 +160,28 @@ class CasesRepository:
         return list((await self.db.execute(stmt)).scalars())
 
     # --- people -------------------------------------------------------------------
+
+    async def list_prefill_sources(
+        self, agency_id: uuid.UUID, expat_user_id: uuid.UUID
+    ) -> list[tuple[ClientCase, str | None]]:
+        """The client's live NON-DEMO dossiers in THIS agency, with the
+        resolved journey name — the prefill picker of the wizard."""
+        stmt = (
+            select(ClientCase, JourneyTemplate.name)
+            .join(
+                JourneyTemplate,
+                JourneyTemplate.id == ClientCase.journey_template_id,
+                isouter=True,
+            )
+            .where(
+                ClientCase.agency_id == agency_id,
+                ClientCase.principal_expat_user_id == expat_user_id,
+                ClientCase.is_demo.is_(False),
+                ClientCase.deleted_at.is_(None),
+            )
+            .order_by(ClientCase.created_at.desc())
+        )
+        return [(case, name) for case, name in (await self.db.execute(stmt)).all()]
 
     async def get_expat_by_email(self, email: str) -> ExpatUser | None:
         stmt = select(ExpatUser).where(ExpatUser.email == email)
