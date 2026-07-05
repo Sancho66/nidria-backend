@@ -21,13 +21,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.journey import (
+    JourneySection,
     JourneyStepParticipant,
     JourneyTemplate,
+    JourneyTemplateField,
     JourneyTemplateStep,
     StepPrerequisite,
 )
 from shared.models.step_requirement import StepRequirement
 from src.core.enums import StepParticipantRole
+from src.journeys.field_catalog import SECTION_TYPES, field_kind
 
 # A step: (name, estimated_days | None, content_note, role | None, [doc labels]).
 # estimated_days None ⇒ open-ended (e.g. a multi-year backlog wait). role is the
@@ -14241,7 +14244,560 @@ async def _reconcile_existing(
             _add_participant(db, db_step.id, None)
     # EN/ES variants — added to the i18n blobs (FR untouched). Idempotent.
     _apply_sample_i18n(tpl, db_steps, tpl.name)
+    await _sync_information_sections(db, tpl)
     await db.commit()
+
+
+# Sections d'Informations per sample — docs/samples-sections-mapping.md
+# (validated 2026-07-05, two amendments folded in). Keyed by the FR
+# sample name; a name drift breaks the coverage test, not the seed.
+_SAMPLE_SECTIONS: dict[str, tuple[str, ...]] = {
+    "Paraguay : Résidence temporaire + Cédula": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Paraguay : Création de société (RUC)": ("identity", "company", "tax", "contact"),
+    "Chypre : Enregistrement de résidence UE (Yellow Slip, MEU1)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "housing",
+        "contact",
+    ),
+    "Paraguay : Résidence permanente (changement de catégorie)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Chypre : Résidence hors-UE revenus passifs (Pink Slip + Catégorie F)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Chypre : Digital Nomad Visa (hors-UE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Chypre : Création de société (LTD)": ("identity", "company", "tax", "contact"),
+    "Chypre : Société LTD + permis dirigeant hors-UE (FIC/BFU)": (
+        "identity",
+        "immigration",
+        "company",
+        "professional",
+        "contact",
+    ),
+    "Panama : Résidence Nations Amies (Friendly Nations)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Panama : Visa Pensionado (retraité)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Panama : Investisseur Qualifié (Golden Visa)": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Panama : Visa nomade numérique (Trabajador Remoto)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Panama : Création de société (S.A. / SRL)": ("identity", "company", "tax", "contact"),
+    "Bulgarie : Enregistrement de résidence UE": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "housing",
+        "contact",
+    ),
+    "Bulgarie : Résidence retraité hors-UE": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Bulgarie : Visa nomade digital (hors-UE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Bulgarie : Freelance / profession libérale (hors-UE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Bulgarie : Création de société (EOOD / OOD)": ("identity", "company", "tax", "contact"),
+    "Hongrie : Enregistrement de séjour UE": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "housing",
+        "contact",
+    ),
+    "Hongrie : White Card (nomade digital, hors-UE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Hongrie : Guest Investor (golden visa, hors-UE)": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Hongrie : Autorisation unique (salarié hors-UE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Hongrie : Création de société (Kft.)": ("identity", "company", "tax", "contact"),
+    "Dubaï (EAU) : Golden Visa (10 ans)": ("identity", "immigration", "company", "tax", "contact"),
+    "Dubaï (EAU) : Résidence par société free zone": (
+        "identity",
+        "immigration",
+        "company",
+        "professional",
+        "contact",
+    ),
+    "Dubaï (EAU) : Visa immobilier (2 ans)": (
+        "identity",
+        "immigration",
+        "housing",
+        "tax",
+        "contact",
+    ),
+    "Dubaï (EAU) : Visa remote work (1 an)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Dubaï (EAU) : Visa retraité (5 ans, 55 ans et +)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Dubaï (EAU) : Création de société (free zone / mainland)": (
+        "identity",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Maurice : Occupation Permit Investor (entrepreneur)": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Maurice : Occupation Permit Professional (salarié)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Maurice : Occupation Permit Self-Employed (consultant solo)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Maurice : Premium Visa (nomade / revenu passif étranger)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Maurice : Résidence par investissement immobilier (≥ 375k USD)": (
+        "identity",
+        "immigration",
+        "housing",
+        "tax",
+        "contact",
+    ),
+    "Maurice : Création de société (Domestic / GBC / Authorised)": (
+        "identity",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Thaïlande : Destination Thailand Visa (DTV, nomade)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Thaïlande : Long-Term Resident (LTR, 10 ans)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Thaïlande : Visa retraité (O-A, 50 ans et +)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Thaïlande : Thailand Privilege (carte de séjour payante)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Thaïlande : Non-B + Work Permit (salarié)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Thaïlande : Création de société (FBA : 100 % / BOI / Amity / FBL)": (
+        "identity",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Indonésie : Remote Worker KITAS (E33G, nomade)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Indonésie : Second Home Visa (rentier)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Indonésie : Retirement KITAS (E33F, 55 ans et +)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Indonésie : Work KITAS (E23, salarié)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Indonésie : Investor KITAS (E28A) + PT PMA": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Indonésie : Création de société (PT PMA)": ("identity", "company", "tax", "contact"),
+    "Philippines : SRRV (résidence par dépôt, via PRA)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Philippines : SIRV (visa investisseur, via BOI)": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Philippines : Visa 13(a) (conjoint de ressortissant·e philippin·e)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "housing",
+        "contact",
+    ),
+    "Philippines : Création de société (60/40 / FINL / export / DME)": (
+        "identity",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "Portugal : Enregistrement de résidence UE (CRUE)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "housing",
+        "contact",
+    ),
+    "Portugal : Visa D7 (revenu passif / retraité, hors-UE)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Portugal : Visa D8 (nomade digital, hors-UE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Portugal : Golden Visa / ARI (investisseur passif, post-2023)": (
+        "identity",
+        "immigration",
+        "housing",
+        "tax",
+        "contact",
+    ),
+    "Vietnam : Work Permit + TRC (salarié)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Vietnam : Investor TRC (DT1-DT4)": ("identity", "immigration", "company", "tax", "contact"),
+    "Vietnam : TRC familiale (TT, conjoint de Vietnamien·ne)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "housing",
+        "contact",
+    ),
+    "Vietnam : Representative Office (bureau de représentation)": (
+        "identity",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "États-Unis : Visa E-2 (investisseur de traité)": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "États-Unis : Visa L-1 (transfert intra-entreprise)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "États-Unis : Visa O-1 (capacités extraordinaires)": (
+        "identity",
+        "immigration",
+        "professional",
+        "education",
+        "language",
+        "contact",
+    ),
+    "États-Unis : Visa H-1B (specialty occupation)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "États-Unis : Green card EB-5 (investisseur immigrant)": (
+        "identity",
+        "immigration",
+        "company",
+        "tax",
+        "contact",
+    ),
+    "États-Unis : Green card EB-2 NIW / EB-1A (par le mérite)": (
+        "identity",
+        "immigration",
+        "professional",
+        "education",
+        "language",
+        "contact",
+    ),
+    "États-Unis : Création de société (LLC / C-Corp)": ("identity", "company", "tax", "contact"),
+    "Suisse : Permis B non-actif (rentier/retraité UE/AELE)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Suisse : Permis L/B salarié (UE/AELE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Suisse : Indépendant / entrepreneur (UE/AELE)": (
+        "identity",
+        "immigration",
+        "professional",
+        "tax",
+        "contact",
+    ),
+    "Suisse : Rentier hors-UE (55 ans et +, art. 28 LEI)": (
+        "identity",
+        "immigration",
+        "family_situation",
+        "tax",
+        "contact",
+    ),
+    "Suisse : Salarié hors-UE (art. 18-23 LEI)": (
+        "identity",
+        "immigration",
+        "professional",
+        "family_situation",
+        "contact",
+    ),
+    "Suisse : Création de société (Sàrl / SA)": ("identity", "company", "tax", "contact"),
+    "Canada : Express Entry (résidence permanente fédérale)": (
+        "identity",
+        "immigration",
+        "professional",
+        "education",
+        "language",
+        "contact",
+    ),
+    "Canada : Provincial Nominee Program (PNP)": (
+        "identity",
+        "immigration",
+        "professional",
+        "education",
+        "language",
+        "contact",
+    ),
+    "Québec : PSTQ / Arrima (sélection québécoise, puis RP)": (
+        "identity",
+        "immigration",
+        "professional",
+        "education",
+        "language",
+        "contact",
+    ),
+    "Canada : Permis de travail → expérience canadienne → RP": (
+        "identity",
+        "immigration",
+        "professional",
+        "education",
+        "language",
+        "contact",
+    ),
+    "Canada : Start-up Visa (SUV, entrepreneur)": (
+        "identity",
+        "immigration",
+        "company",
+        "education",
+        "contact",
+    ),
+}
+
+
+async def _sync_information_sections(db: AsyncSession, tpl: JourneyTemplate) -> None:
+    """Sections d'Informations of a sample (phase B): instantiate the mapped
+    section types and their fields from the back catalog. Idempotent, anchored
+    by seed_key (sections) and (kind, reference) (fields) — never by name; a
+    re-seed refreshes labels/positions in place and never duplicates. Agency
+    templates never reach this path (samples only)."""
+    section_keys = _SAMPLE_SECTIONS.get(tpl.name)
+    if not section_keys:
+        return
+    existing_sections = {
+        s.seed_key: s
+        for s in (
+            await db.execute(
+                select(JourneySection).where(
+                    JourneySection.template_id == tpl.id, JourneySection.seed_key.is_not(None)
+                )
+            )
+        ).scalars()
+    }
+    existing_fields = {
+        (f.kind, f.reference): f
+        for f in (
+            await db.execute(
+                select(JourneyTemplateField).where(JourneyTemplateField.template_id == tpl.id)
+            )
+        ).scalars()
+    }
+    field_position = 0  # global dense order across sections
+    for position, key in enumerate(section_keys):
+        section_type = SECTION_TYPES[key]
+        section = existing_sections.get(key)
+        if section is None:
+            section = JourneySection(
+                template_id=tpl.id,
+                name=section_type.labels["fr"],
+                name_i18n=dict(section_type.labels),
+                seed_key=key,
+                position=position,
+            )
+            db.add(section)
+            await db.flush()  # fields FK the section below
+        else:
+            if section.name != section_type.labels["fr"]:
+                section.name = section_type.labels["fr"]
+            section.name_i18n = dict(section_type.labels)
+            section.position = position
+        for field_key in section_type.field_keys:
+            kind = field_kind(field_key)
+            row = existing_fields.get((kind, field_key))
+            if row is None:
+                row = JourneyTemplateField(
+                    template_id=tpl.id,
+                    kind=kind,
+                    reference=field_key,
+                    position=field_position,
+                    section_id=section.id,
+                )
+                db.add(row)
+                existing_fields[(kind, field_key)] = row
+            else:
+                row.section_id = section.id
+                row.position = field_position
+            field_position += 1
 
 
 async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step]) -> None:
@@ -14322,6 +14878,7 @@ async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step
                     position=position,
                 )
             )
+    await _sync_information_sections(db, tpl)
     await db.commit()
 
 

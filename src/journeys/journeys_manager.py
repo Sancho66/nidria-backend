@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.custom_field import CustomFieldDefinition
 from shared.models.journey import (
     JourneySection,
     JourneyStepParticipant,
@@ -45,6 +46,7 @@ from src.core.i18n import (
     resolve_i18n,
 )
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
+from src.journeys.field_catalog import FIELD_PRESETS
 from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
     CanvasLayoutRequest,
@@ -145,6 +147,43 @@ class JourneysManager:
         """The shared library samples — global, read-only (any agent reads
         them; agency scoping does not apply, samples are agency-less)."""
         return await self.repo.list_sample_templates()
+
+    async def _materialize_catalog_definitions(
+        self, agent: Agent, fields: list[JourneyTemplateField]
+    ) -> None:
+        """Create the agency's custom_field_definition rows for catalogue
+        keys referenced by the cloned fields and absent from the agency
+        (any state, archived included). Non-catalogue keys are skipped —
+        an own-template clone already has its definitions."""
+        wanted = {
+            f.reference
+            for f in fields
+            if f.kind == StepRequirementKind.CUSTOM_FIELD.value and f.reference in FIELD_PRESETS
+        }
+        if not wanted:
+            return
+        existing = {
+            d.key
+            for d in await CustomFieldsRepository(self.db).list_for_agency(
+                agent.agency_id, include_archived=True
+            )
+        }
+        lang = await self.agency_default(agent.agency_id)
+        for key in sorted(wanted - existing):
+            preset = FIELD_PRESETS[key]
+            options = None
+            if preset.options is not None:
+                options = preset.options.get(lang) or preset.options["fr"]
+            self.db.add(
+                CustomFieldDefinition(
+                    agency_id=agent.agency_id,
+                    key=key,
+                    label=preset.labels.get(lang) or preset.labels["fr"],
+                    label_i18n=dict(preset.labels),
+                    field_type=preset.field_type,
+                    options=options,
+                )
+            )
 
     async def get_clone_source(self, agent: Agent, template_id: uuid.UUID) -> JourneyTemplate:
         """Resolve a clone SOURCE: the agency's own template OR a library
@@ -425,6 +464,13 @@ class JourneysManager:
                     section_id=section_map.get(f.section_id) if f.section_id else None,
                 )
             )
+        # Samples phase B: a sample's catalogue fields reference custom keys
+        # that have NO definition in the cloning agency (samples are
+        # agency-less). Materialize the missing definitions from the back
+        # catalog (label in the agency language + full label_i18n; options in
+        # the agency language) so the clone renders resolved, never orphaned.
+        # Existing definitions — active OR archived — are never touched.
+        await self._materialize_catalog_definitions(agent, src_fields)
         for cf in src_case_fields:
             self.db.add(
                 JourneyTemplateCaseField(

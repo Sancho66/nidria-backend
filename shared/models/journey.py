@@ -69,15 +69,22 @@ class JourneySection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     Fields reference a section via a NULLABLE section_id (SET NULL on
     delete: removing a section never destroys a field declaration; its
     fields fall back to the NULL bucket). `name` is free; no uniqueness
-    (a label, not an identifier)."""
+    (a label, not an identifier).
+
+    `seed_key` (samples phase B): the STABLE anchor of a seeded section
+    on a library sample — one of the 11 section-type keys. NULL on every
+    agency-made section; the seed reconciles by this key, never by name
+    (the dash-purge lesson)."""
 
     __tablename__ = "journey_section"
+    __table_args__ = (UniqueConstraint("template_id", "seed_key", name="uq_section_seed_key"),)
 
     template_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
+    seed_key: Mapped[str | None] = mapped_column(String(60))
     # BLOC 1 i18n — parallel {lang: text} blobs. The scalar columns above stay
     # the read source until BLOC 2 switches resolution. Absent language = absent
     # key (never an empty string). NOT NULL with a '{}' default.

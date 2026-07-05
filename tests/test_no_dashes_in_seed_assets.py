@@ -15,6 +15,7 @@ import pathlib
 # asset appears — never shrink.
 GUARDED_FILES = (
     "src/journeys/sample_seed.py",
+    "src/journeys/field_catalog.py",
     "scripts/seed.py",
     "src/agencies/demo_case_seed.py",
     "src/nurture/nurture_texts.py",
