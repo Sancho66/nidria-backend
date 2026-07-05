@@ -37,91 +37,91 @@ from src.core.enums import StepParticipantRole
 # validator is the agency on every step.
 type _Step = tuple[str, int | None, str, str | None, list[str]]
 
-PY1_NAME = "Paraguay — Résidence temporaire + Cédula"
+PY1_NAME = "Paraguay : Résidence temporaire + Cédula"
 PY1_COUNTRY = "PY"
-RUC_NAME = "Paraguay — Création de société (RUC)"
+RUC_NAME = "Paraguay : Création de société (RUC)"
 RUC_COUNTRY = "PY"
-CY_NAME = "Chypre — Enregistrement de résidence UE (Yellow Slip, MEU1)"
+CY_NAME = "Chypre : Enregistrement de résidence UE (Yellow Slip, MEU1)"
 CY_COUNTRY = "CY"
-PERM_NAME = "Paraguay — Résidence permanente (changement de catégorie)"
+PERM_NAME = "Paraguay : Résidence permanente (changement de catégorie)"
 PERM_COUNTRY = "PY"
-CYF_NAME = "Chypre — Résidence hors-UE revenus passifs (Pink Slip + Catégorie F)"
+CYF_NAME = "Chypre : Résidence hors-UE revenus passifs (Pink Slip + Catégorie F)"
 CYF_COUNTRY = "CY"
-DNV_NAME = "Chypre — Digital Nomad Visa (hors-UE)"
+DNV_NAME = "Chypre : Digital Nomad Visa (hors-UE)"
 DNV_COUNTRY = "CY"
-LTD_NAME = "Chypre — Création de société (LTD)"
+LTD_NAME = "Chypre : Création de société (LTD)"
 LTD_COUNTRY = "CY"
-FIC_NAME = "Chypre — Société LTD + permis dirigeant hors-UE (FIC/BFU)"
+FIC_NAME = "Chypre : Société LTD + permis dirigeant hors-UE (FIC/BFU)"
 FIC_COUNTRY = "CY"
-PA_FN_NAME = "Panama — Résidence Nations Amies (Friendly Nations)"
-PA_PEN_NAME = "Panama — Visa Pensionado (retraité)"
-PA_GV_NAME = "Panama — Investisseur Qualifié (Golden Visa)"
-PA_DN_NAME = "Panama — Visa nomade numérique (Trabajador Remoto)"
-PA_CO_NAME = "Panama — Création de société (S.A. / SRL)"
-BG_EU_NAME = "Bulgarie — Enregistrement de résidence UE"
-BG_RET_NAME = "Bulgarie — Résidence retraité hors-UE"
-BG_DN_NAME = "Bulgarie — Visa nomade digital (hors-UE)"
-BG_FL_NAME = "Bulgarie — Freelance / profession libérale (hors-UE)"
-BG_CO_NAME = "Bulgarie — Création de société (EOOD / OOD)"
-HU_EU_NAME = "Hongrie — Enregistrement de séjour UE"
-HU_WC_NAME = "Hongrie — White Card (nomade digital, hors-UE)"
-HU_GI_NAME = "Hongrie — Guest Investor (golden visa, hors-UE)"
-HU_SP_NAME = "Hongrie — Autorisation unique (salarié hors-UE)"
-HU_CO_NAME = "Hongrie — Création de société (Kft.)"
-AE_GV_NAME = "Dubaï (EAU) — Golden Visa (10 ans)"
-AE_FZ_NAME = "Dubaï (EAU) — Résidence par société free zone"
-AE_RE_NAME = "Dubaï (EAU) — Visa immobilier (2 ans)"
-AE_RW_NAME = "Dubaï (EAU) — Visa remote work (1 an)"
-AE_RET_NAME = "Dubaï (EAU) — Visa retraité (5 ans, 55 ans et +)"
-AE_CO_NAME = "Dubaï (EAU) — Création de société (free zone / mainland)"
-MU_OPI_NAME = "Maurice — Occupation Permit Investor (entrepreneur)"
-MU_OPP_NAME = "Maurice — Occupation Permit Professional (salarié)"
-MU_OPS_NAME = "Maurice — Occupation Permit Self-Employed (consultant solo)"
-MU_PV_NAME = "Maurice — Premium Visa (nomade / revenu passif étranger)"
-MU_RE_NAME = "Maurice — Résidence par investissement immobilier (≥ 375k USD)"
-MU_CO_NAME = "Maurice — Création de société (Domestic / GBC / Authorised)"
-TH_DTV_NAME = "Thaïlande — Destination Thailand Visa (DTV, nomade)"
-TH_LTR_NAME = "Thaïlande — Long-Term Resident (LTR, 10 ans)"
-TH_OA_NAME = "Thaïlande — Visa retraité (O-A, 50 ans et +)"
-TH_PRIV_NAME = "Thaïlande — Thailand Privilege (carte de séjour payante)"
-TH_NONB_NAME = "Thaïlande — Non-B + Work Permit (salarié)"
-TH_CO_NAME = "Thaïlande — Création de société (FBA : 100 % / BOI / Amity / FBL)"
-ID_RW_NAME = "Indonésie — Remote Worker KITAS (E33G, nomade)"
-ID_SH_NAME = "Indonésie — Second Home Visa (rentier)"
-ID_RET_NAME = "Indonésie — Retirement KITAS (E33F, 55 ans et +)"
-ID_WORK_NAME = "Indonésie — Work KITAS (E23, salarié)"
-ID_INV_NAME = "Indonésie — Investor KITAS (E28A) + PT PMA"
-ID_CO_NAME = "Indonésie — Création de société (PT PMA)"
-PT_CRUE_NAME = "Portugal — Enregistrement de résidence UE (CRUE)"
-PT_D7_NAME = "Portugal — Visa D7 (revenu passif / retraité, hors-UE)"
-PT_D8_NAME = "Portugal — Visa D8 (nomade digital, hors-UE)"
-PT_GV_NAME = "Portugal — Golden Visa / ARI (investisseur passif, post-2023)"
-PH_SRRV_NAME = "Philippines — SRRV (résidence par dépôt, via PRA)"
-PH_SIRV_NAME = "Philippines — SIRV (visa investisseur, via BOI)"
-PH_13A_NAME = "Philippines — Visa 13(a) (conjoint de ressortissant·e philippin·e)"
-PH_CO_NAME = "Philippines — Création de société (60/40 / FINL / export / DME)"
-VN_WP_NAME = "Vietnam — Work Permit + TRC (salarié)"
-VN_INV_NAME = "Vietnam — Investor TRC (DT1-DT4)"
-VN_TT_NAME = "Vietnam — TRC familiale (TT, conjoint de Vietnamien·ne)"
-VN_RO_NAME = "Vietnam — Representative Office (bureau de représentation)"
-US_E2_NAME = "États-Unis — Visa E-2 (investisseur de traité)"
-US_L1_NAME = "États-Unis — Visa L-1 (transfert intra-entreprise)"
-US_O1_NAME = "États-Unis — Visa O-1 (capacités extraordinaires)"
-US_H1B_NAME = "États-Unis — Visa H-1B (specialty occupation)"
-US_EB5_NAME = "États-Unis — Green card EB-5 (investisseur immigrant)"
-US_NIW_NAME = "États-Unis — Green card EB-2 NIW / EB-1A (par le mérite)"
-US_CO_NAME = "États-Unis — Création de société (LLC / C-Corp)"
-CH_BNA_NAME = "Suisse — Permis B non-actif (rentier/retraité UE/AELE)"
-CH_EMP_NAME = "Suisse — Permis L/B salarié (UE/AELE)"
-CH_IND_NAME = "Suisse — Indépendant / entrepreneur (UE/AELE)"
-CH_RET_NAME = "Suisse — Rentier hors-UE (55 ans et +, art. 28 LEI)"
-CH_TCN_NAME = "Suisse — Salarié hors-UE (art. 18-23 LEI)"
-CH_CO_NAME = "Suisse — Création de société (Sàrl / SA)"
-CA_EE_NAME = "Canada — Express Entry (résidence permanente fédérale)"
-CA_PNP_NAME = "Canada — Provincial Nominee Program (PNP)"
-CA_QC_NAME = "Québec — PSTQ / Arrima (sélection québécoise, puis RP)"
-CA_WP_NAME = "Canada — Permis de travail → expérience canadienne → RP"
-CA_SUV_NAME = "Canada — Start-up Visa (SUV, entrepreneur)"
+PA_FN_NAME = "Panama : Résidence Nations Amies (Friendly Nations)"
+PA_PEN_NAME = "Panama : Visa Pensionado (retraité)"
+PA_GV_NAME = "Panama : Investisseur Qualifié (Golden Visa)"
+PA_DN_NAME = "Panama : Visa nomade numérique (Trabajador Remoto)"
+PA_CO_NAME = "Panama : Création de société (S.A. / SRL)"
+BG_EU_NAME = "Bulgarie : Enregistrement de résidence UE"
+BG_RET_NAME = "Bulgarie : Résidence retraité hors-UE"
+BG_DN_NAME = "Bulgarie : Visa nomade digital (hors-UE)"
+BG_FL_NAME = "Bulgarie : Freelance / profession libérale (hors-UE)"
+BG_CO_NAME = "Bulgarie : Création de société (EOOD / OOD)"
+HU_EU_NAME = "Hongrie : Enregistrement de séjour UE"
+HU_WC_NAME = "Hongrie : White Card (nomade digital, hors-UE)"
+HU_GI_NAME = "Hongrie : Guest Investor (golden visa, hors-UE)"
+HU_SP_NAME = "Hongrie : Autorisation unique (salarié hors-UE)"
+HU_CO_NAME = "Hongrie : Création de société (Kft.)"
+AE_GV_NAME = "Dubaï (EAU) : Golden Visa (10 ans)"
+AE_FZ_NAME = "Dubaï (EAU) : Résidence par société free zone"
+AE_RE_NAME = "Dubaï (EAU) : Visa immobilier (2 ans)"
+AE_RW_NAME = "Dubaï (EAU) : Visa remote work (1 an)"
+AE_RET_NAME = "Dubaï (EAU) : Visa retraité (5 ans, 55 ans et +)"
+AE_CO_NAME = "Dubaï (EAU) : Création de société (free zone / mainland)"
+MU_OPI_NAME = "Maurice : Occupation Permit Investor (entrepreneur)"
+MU_OPP_NAME = "Maurice : Occupation Permit Professional (salarié)"
+MU_OPS_NAME = "Maurice : Occupation Permit Self-Employed (consultant solo)"
+MU_PV_NAME = "Maurice : Premium Visa (nomade / revenu passif étranger)"
+MU_RE_NAME = "Maurice : Résidence par investissement immobilier (≥ 375k USD)"
+MU_CO_NAME = "Maurice : Création de société (Domestic / GBC / Authorised)"
+TH_DTV_NAME = "Thaïlande : Destination Thailand Visa (DTV, nomade)"
+TH_LTR_NAME = "Thaïlande : Long-Term Resident (LTR, 10 ans)"
+TH_OA_NAME = "Thaïlande : Visa retraité (O-A, 50 ans et +)"
+TH_PRIV_NAME = "Thaïlande : Thailand Privilege (carte de séjour payante)"
+TH_NONB_NAME = "Thaïlande : Non-B + Work Permit (salarié)"
+TH_CO_NAME = "Thaïlande : Création de société (FBA : 100 % / BOI / Amity / FBL)"
+ID_RW_NAME = "Indonésie : Remote Worker KITAS (E33G, nomade)"
+ID_SH_NAME = "Indonésie : Second Home Visa (rentier)"
+ID_RET_NAME = "Indonésie : Retirement KITAS (E33F, 55 ans et +)"
+ID_WORK_NAME = "Indonésie : Work KITAS (E23, salarié)"
+ID_INV_NAME = "Indonésie : Investor KITAS (E28A) + PT PMA"
+ID_CO_NAME = "Indonésie : Création de société (PT PMA)"
+PT_CRUE_NAME = "Portugal : Enregistrement de résidence UE (CRUE)"
+PT_D7_NAME = "Portugal : Visa D7 (revenu passif / retraité, hors-UE)"
+PT_D8_NAME = "Portugal : Visa D8 (nomade digital, hors-UE)"
+PT_GV_NAME = "Portugal : Golden Visa / ARI (investisseur passif, post-2023)"
+PH_SRRV_NAME = "Philippines : SRRV (résidence par dépôt, via PRA)"
+PH_SIRV_NAME = "Philippines : SIRV (visa investisseur, via BOI)"
+PH_13A_NAME = "Philippines : Visa 13(a) (conjoint de ressortissant·e philippin·e)"
+PH_CO_NAME = "Philippines : Création de société (60/40 / FINL / export / DME)"
+VN_WP_NAME = "Vietnam : Work Permit + TRC (salarié)"
+VN_INV_NAME = "Vietnam : Investor TRC (DT1-DT4)"
+VN_TT_NAME = "Vietnam : TRC familiale (TT, conjoint de Vietnamien·ne)"
+VN_RO_NAME = "Vietnam : Representative Office (bureau de représentation)"
+US_E2_NAME = "États-Unis : Visa E-2 (investisseur de traité)"
+US_L1_NAME = "États-Unis : Visa L-1 (transfert intra-entreprise)"
+US_O1_NAME = "États-Unis : Visa O-1 (capacités extraordinaires)"
+US_H1B_NAME = "États-Unis : Visa H-1B (specialty occupation)"
+US_EB5_NAME = "États-Unis : Green card EB-5 (investisseur immigrant)"
+US_NIW_NAME = "États-Unis : Green card EB-2 NIW / EB-1A (par le mérite)"
+US_CO_NAME = "États-Unis : Création de société (LLC / C-Corp)"
+CH_BNA_NAME = "Suisse : Permis B non-actif (rentier/retraité UE/AELE)"
+CH_EMP_NAME = "Suisse : Permis L/B salarié (UE/AELE)"
+CH_IND_NAME = "Suisse : Indépendant / entrepreneur (UE/AELE)"
+CH_RET_NAME = "Suisse : Rentier hors-UE (55 ans et +, art. 28 LEI)"
+CH_TCN_NAME = "Suisse : Salarié hors-UE (art. 18-23 LEI)"
+CH_CO_NAME = "Suisse : Création de société (Sàrl / SA)"
+CA_EE_NAME = "Canada : Express Entry (résidence permanente fédérale)"
+CA_PNP_NAME = "Canada : Provincial Nominee Program (PNP)"
+CA_QC_NAME = "Québec : PSTQ / Arrima (sélection québécoise, puis RP)"
+CA_WP_NAME = "Canada : Permis de travail → expérience canadienne → RP"
+CA_SUV_NAME = "Canada : Start-up Visa (SUV, entrepreneur)"
 
 _PY1_STEPS: list[_Step] = [
     (
@@ -191,8 +191,8 @@ _RUC_STEPS: list[_Step] = [
     (
         "Constitution en ligne via SUACE (eas.mic.gov.py)",
         3,
-        "Constitution en 72 h (souvent 24–48 h) avec statut proforma ; ≈ 8 jours "
-        "ouvrables avec statut personnalisé. L'escribano peut réaliser l'étape — "
+        "Constitution en 72 h (souvent 24-48 h) avec statut proforma ; ≈ 8 jours "
+        "ouvrables avec statut personnalisé. L'escribano peut réaliser l'étape : "
         "à assigner au dossier.",
         "executant",
         [
@@ -351,13 +351,13 @@ _CYF_STEPS: list[_Step] = [
             "Casier traduit / apostillé",
             ("Preuves de revenus étrangers (≥ 9 568,17 € + 4 613,22 €/dépendant, indicatif)"),
             "Preuve de logement",
-            "Dépôt bancaire non gagé (15–20 000 €, indicatif)",
+            "Dépôt bancaire non gagé (15-20 000 €, indicatif)",
         ],
     ),
     (
         "Attente & renouvellement annuel du Pink Slip (backlog Catégorie F)",
         None,
-        "🔴 Backlog Catégorie F estimé 5–7 ans (dossiers de 2020 encore en cours). "
+        "🔴 Backlog Catégorie F estimé 5-7 ans (dossiers de 2020 encore en cours). "
         "Renouveler le Pink Slip CHAQUE année jusqu'à délivrance de la PR. Ne "
         "jamais promettre une PR rapide par cette voie.",
         "executant",
@@ -451,7 +451,7 @@ _LTD_STEPS: list[_Step] = [
         60,
         "TIN sous 60 j, TVA si applicable, registre UBO, ouverture de compte. "
         "IS 15 % (depuis 1/1/2026) ; dividendes ≈ 2,65 % effectif en non-dom. Coûts "
-        "récurrents ≈ 2 800–4 500 €/an (audit obligatoire). Chiffres indicatifs.",
+        "récurrents ≈ 2 800-4 500 €/an (audit obligatoire). Chiffres indicatifs.",
         "executant",
         [],
     ),
@@ -511,7 +511,7 @@ _PA_FN_STEPS: list[_Step] = [
     (
         "Vérifier l'éligibilité (nationalité amie) & préparer le dossier",
         14,
-        "🟠 La liste des ~50 pays amis est modifiable par décret — revérifier sur "
+        "🟠 La liste des ~50 pays amis est modifiable par décret : revérifier sur "
         "migracion.gob.pa avant le dossier. Avocat panaméen obligatoire.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
         [
@@ -632,7 +632,7 @@ _PA_GV_STEPS: list[_Step] = [
         "Cédula E (Tribunal Electoral)",
         15,
         "⚠️ Le Golden Visa n'impose aucune présence pour garder la résidence, mais la "
-        "naturalisation exige une résidence effective — à arbitrer avec l'avocat.",
+        "naturalisation exige une résidence effective : à arbitrer avec l'avocat.",
         "executant",
         ["Passeport", "Résolution SNM", "Nota de cédula", "Paiement 100 USD"],
     ),
@@ -763,7 +763,7 @@ _BG_RET_STEPS: list[_Step] = [
         "Demande de visa D au consulat bulgare",
         30,
         "🔴 Moyens de subsistance ≥ pension/salaire minimum (≈ 620 €/mois en 2026, "
-        "indexé SMIC, post-euro) — montant indicatif, revérifier la source "
+        "indexé SMIC, post-euro) : montant indicatif, revérifier la source "
         "officielle. Les pensions privées (ex. 401k) peuvent être refusées sans "
         "document officiel de pension d'État. Frais visa ≈ 100 €.",
         "provides_documents",
@@ -803,7 +803,7 @@ _BG_DN_STEPS: list[_Step] = [
     (
         "Vérifier le régime (récent) & réunir le dossier",
         5,
-        "🔴 RÉGIME TRÈS RÉCENT — base légale art. 24p ЗЧРБ, demandes ouvertes le "
+        "🔴 RÉGIME TRÈS RÉCENT : base légale art. 24p ЗЧРБ, demandes ouvertes le "
         "20/12/2025. Détails d'application encore évolutifs : revérifier auprès du "
         "consulat / de la Direction Migration avant toute promesse.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
@@ -812,7 +812,7 @@ _BG_DN_STEPS: list[_Step] = [
     (
         "Demande de visa D au consulat",
         45,
-        "🔴 Seuil ≈ 31 000 €/an indexé SMIC, post-euro — indicatif, revérifier. "
+        "🔴 Seuil ≈ 31 000 €/an indexé SMIC, post-euro : indicatif, revérifier. "
         "Interdiction de travailler pour des clients/employeurs bulgares.",
         "provides_documents",
         [
@@ -838,7 +838,7 @@ _BG_FL_STEPS: list[_Step] = [
         "Obtenir le permis d'activité freelance (Agence pour l'emploi)",
         30,
         "🟠 Le permis est délivré par l'AGENCE POUR L'EMPLOI (relevant du MTSP), PAS "
-        "par la Direction Migration — erreur de nommage fréquente. Bulgare B1 requis.",
+        "par la Direction Migration : erreur de nommage fréquente. Bulgare B1 requis.",
         "provides_documents",
         [
             "Plan d'activité détaillé",
@@ -901,7 +901,7 @@ _BG_CO_STEPS: list[_Step] = [
     (
         "TVA, compte bancaire & mise en route",
         14,
-        "🔴 IS 10 % (le plus bas de l'UE), dividendes 5 % — taux indicatifs, "
+        "🔴 IS 10 % (le plus bas de l'UE), dividendes 5 % : taux indicatifs, "
         "revérifier (post-euro 2026). TVA si CA > ≈ 51 000 €. Goulot connu : "
         "ouverture de compte bancaire (KYC, parfois présence requise). ⚠️ Détenir à "
         "distance ≠ s'installer : le 10 % d'IS ne tient que si la société est "
@@ -935,7 +935,7 @@ _HU_EU_STEPS: list[_Step] = [
         "Identifiants d'installation (carte d'adresse, n° fiscal, TAJ santé)",
         None,
         "lakcímkártya (carte d'adresse) · adóazonosító jel (n° fiscal NAV) · TAJ "
-        "(sécurité sociale NEAK). Blocages pratiques fréquents — à prévoir dès "
+        "(sécurité sociale NEAK). Blocages pratiques fréquents : à prévoir dès "
         "l'arrivée.",
         "executant",
         [],
@@ -949,7 +949,7 @@ _HU_WC_STEPS: list[_Step] = [
         "Avertissement préalable & vérification du seuil",
         3,
         "🔴 FICHE NON VÉRIFIÉE EN SOURCE PRIMAIRE. ⚠️ IMPASSE : la White Card ne "
-        "compte NI pour la résidence permanente NI pour la naturalisation — "
+        "compte NI pour la résidence permanente NI pour la naturalisation : "
         "solution d'essai 1-2 ans. Pour s'installer durablement, basculer vers une "
         "autre voie. Interdit de travailler pour le marché hongrois. Revenu mensuel "
         "minimum 🔴 volatil, revérifier sur oif.gov.hu.",
@@ -987,7 +987,7 @@ _HU_GI_STEPS: list[_Step] = [
         5,
         "🔴 FICHE NON VÉRIFIÉE EN SOURCE PRIMAIRE. Options (montants indicatifs, "
         "revérifier) : fonds agréés MNB ≈ 250 000 € (voie la moins chère) ; "
-        "immobilier résidentiel direct ≈ 500 000 € (option possiblement REPORTÉE — "
+        "immobilier résidentiel direct ≈ 500 000 € (option possiblement REPORTÉE : "
         "vérifier si réellement ouverte) ; donation enseignement supérieur "
         "≈ 1 000 000 €. Vérifier la liste des fonds MNB réellement souscriptibles.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
@@ -1067,7 +1067,7 @@ _HU_CO_STEPS: list[_Step] = [
     (
         "Numéro fiscal, TVA & registres",
         7,
-        "🟠 IS 9 % (le plus bas de l'UE), 0 % de retenue sur dividendes sortants — "
+        "🟠 IS 9 % (le plus bas de l'UE), 0 % de retenue sur dividendes sortants : "
         "taux indicatifs à revérifier (NAV). Franchise TVA (ÁFA) sous ~18 M HUF/an "
         "(~45 000 €), sinon 27 %. Taxe locale (HIPA). KIVA possible si forte masse "
         "salariale.",
@@ -1077,7 +1077,7 @@ _HU_CO_STEPS: list[_Step] = [
     (
         "Compte bancaire professionnel",
         14,
-        "🟠 GOULOT : ouverture de compte pour gérant/UBO étranger — présence "
+        "🟠 GOULOT : ouverture de compte pour gérant/UBO étranger, présence "
         "physique souvent exigée, poste le plus lent.",
         "provides_documents",
         [],
@@ -1122,7 +1122,7 @@ _AE_GV_STEPS: list[_Step] = [
         "Émission du visa Golden 10 ans",
         None,
         "10 ans renouvelable, autonome (pas de sponsor), exempté de la règle "
-        "d'absence de 6 mois — adapté aux profils très mobiles. Peut sponsoriser "
+        "d'absence de 6 mois : adapté aux profils très mobiles. Peut sponsoriser "
         "la famille.",
         "provides_documents",
         [],
@@ -1209,7 +1209,7 @@ _AE_RW_STEPS: list[_Step] = [
         "Vérifier l'éligibilité & réunir le dossier",
         7,
         "🟠 Seuil indicatif. ⚠️ Le remote work ne mène PAS à une résidence longue "
-        "(1 an) — pour une base durable + optimisation fiscale, préférer une "
+        "(1 an) : pour une base durable + optimisation fiscale, préférer une "
         "société free zone dès le départ. Le dire avant que le client s'y enferme.",
         "provides_documents",
         [
@@ -1288,7 +1288,7 @@ _AE_CO_STEPS: list[_Step] = [
         "(international / B2B / holding / numérique / objectif résidence) → free "
         "zone : 100 % propriété + auto-sponsoring du visa. 100 % propriété "
         "étrangère désormais permis pour beaucoup d'activités mainland (liste "
-        "d'activités à impact stratégique encadrée — vérifier auprès du DET).",
+        "d'activités à impact stratégique encadrée : vérifier auprès du DET).",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
     ),
@@ -1369,7 +1369,7 @@ _MU_OPP_STEPS: list[_Step] = [
     (
         "Contrat & vérification du seuil de salaire",
         7,
-        "🔴 Salaire minimum 30 000 vs 60 000 MUR/mois selon période/secteur — LE "
+        "🔴 Salaire minimum 30 000 vs 60 000 MUR/mois selon période/secteur : LE "
         "seuil le plus instable, revérifier impérativement. Exceptions TIC/BPO "
         "possiblement plus basses (🟠).",
         "provides_documents",
@@ -1453,7 +1453,7 @@ _MU_PV_STEPS: list[_Step] = [
     (
         "Octroi du Premium Visa",
         None,
-        "1 an renouvelable. Ne donne pas accès à une résidence longue — pour la "
+        "1 an renouvelable. Ne donne pas accès à une résidence longue : pour la "
         "stabilité, envisager l'immobilier ≥ 375k USD (autre parcours).",
         "provides_documents",
         [],
@@ -1543,7 +1543,7 @@ _TH_DTV_STEPS: list[_Step] = [
         "🟠 Épargne ≥ 500 000 THB (indicatif, ~36 THB/USD). ⚠️ Le DTV N'AUTORISE "
         "PAS le travail pour un client/employeur THAÏ. ⚠️ Ne mène PAS à la "
         "résidence permanente (ni le DTV, ni la retraite, ni Privilege n'y "
-        "comptent — seul Non-B + work permit y mène).",
+        "comptent : seul Non-B + work permit y mène).",
         "provides_documents",
         [],
     ),
@@ -1551,8 +1551,8 @@ _TH_DTV_STEPS: list[_Step] = [
         "Demande via le portail e-visa (MFA)",
         14,
         "🟠 Pratique hétérogène selon consulats (historique bancaire sur plusieurs "
-        "mois parfois exigé). Tarif d'extension 180 j ≈ 10 000 THB (et NON ~1 900 "
-        "— erreur fréquente des sources commerciales).",
+        "mois parfois exigé). Tarif d'extension 180 j ≈ 10 000 THB (et NON ~1 900, "
+        "erreur fréquente des sources commerciales).",
         "provides_documents",
         [
             "Passeport",
@@ -1615,7 +1615,7 @@ _TH_OA_STEPS: list[_Step] = [
         "🟠 ≥ 50 ans + dépôt 800 000 THB OU revenu 65 000 THB/mois + assurance "
         "santé (couverture ~3 M THB). Seuils indicatifs. NOTE : le O-X (jusqu'à "
         "10 ans) existe pour certaines nationalités éligibles (US, Canada, "
-        "Australie, UK, Japon…), seuil 3 M THB — liste à confirmer. ⚠️ Ne mène "
+        "Australie, UK, Japon…), seuil 3 M THB : liste à confirmer. ⚠️ Ne mène "
         "pas à la PR.",
         "provides_documents",
         [],
@@ -1680,7 +1680,7 @@ _TH_NONB_STEPS: list[_Step] = [
         "🟠 Côté employeur : capital 2 M THB par poste étranger (1 M si marié à "
         "un·e Thaï·e) + ratio 4 employés thaïs : 1 étranger. Secteur S-Curve + "
         "salaire élevé → SMART Visa possible (SMART-T ≥ 100 000 THB/mois, sans "
-        "work permit séparé — attention, beaucoup de sources citent encore 200k).",
+        "work permit séparé : attention, beaucoup de sources citent encore 200k).",
         "provides_documents",
         [],
     ),
@@ -1722,7 +1722,7 @@ _TH_CO_STEPS: list[_Step] = [
         "exempté du ratio 4:1) ; sinon → FBL (discrétionnaire, lent, capital 3 M "
         "THB) OU vrai associé thaï ≥ 51 %. (c) Liste 1 = interdit, Liste 2 = "
         'approbation du Cabinet (rare). 🔴 LE MONTAGE "ACTIONNAIRES THAÏS NOMINEE" '
-        "EST ILLÉGAL (art. 36 FBA — amende et prison possibles, ordre de cession). "
+        "EST ILLÉGAL (art. 36 FBA : amende et prison possibles, ordre de cession). "
         "NE JAMAIS le proposer.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
@@ -1762,7 +1762,7 @@ _ID_RW_STEPS: list[_Step] = [
         5,
         "🟠 Revenu étranger ~60 000 USD/an (indicatif, evisa.imigrasi.go.id). "
         "⚠️ Travail UNIQUEMENT pour des clients/employeurs HORS Indonésie. Pas de "
-        "tier supérieur type LTR — E33G est la voie unique du nomade.",
+        "tier supérieur type LTR : E33G est la voie unique du nomade.",
         "provides_documents",
         [],
     ),
@@ -1794,7 +1794,7 @@ _ID_SH_STEPS: list[_Step] = [
     (
         "Vérifier le dépôt / proof of funds",
         5,
-        "🟠 Dépôt ~IDR 2 mds (≈ 130 000 USD) — montant divergent selon les "
+        "🟠 Dépôt ~IDR 2 mds (≈ 130 000 USD) : montant divergent selon les "
         "sources, revérifier evisa.imigrasi.go.id. Aucune condition d'âge. ⚠️ Pas "
         "de droit de travailler.",
         "provides_documents",
@@ -1824,7 +1824,7 @@ _ID_RET_STEPS: list[_Step] = [
         "Vérifier l'âge & mandater un agent sponsor agréé",
         7,
         "🟠 ≥ 55 ans + pension minimum + assurance santé. AGENT SPONSOR AGRÉÉ "
-        "OBLIGATOIRE (parfois emploi d'un local exigé — pratique variable). ⚠️ Pas "
+        "OBLIGATOIRE (parfois emploi d'un local exigé : pratique variable). ⚠️ Pas "
         "de droit de travailler.",
         "provides_documents",
         [],
@@ -1840,7 +1840,7 @@ _ID_RET_STEPS: list[_Step] = [
         "Émission du KITAS & enregistrement",
         14,
         "1 an renouvelable, chaîne possible vers le KITAP. ⚠️ RISQUE SPONSOR : le "
-        "titre tombe si le sponsor (agent) cesse — prévoir une voie de repli. "
+        "titre tombe si le sponsor (agent) cesse : prévoir une voie de repli. "
         "Biométrie requise.",
         "provides_documents",
         [],
@@ -1869,7 +1869,7 @@ _ID_WORK_STEPS: list[_Step] = [
         "Enregistrement & permis de travail",
         14,
         "6 mois à 2 ans renouvelable. Après 3-4 ans continus → KITAP possible. "
-        "⚠️ RISQUE SPONSOR : le KITAS tombe à la fin du contrat — prévoir un "
+        "⚠️ RISQUE SPONSOR : le KITAS tombe à la fin du contrat, prévoir un "
         "repli. Biométrie requise.",
         "provides_documents",
         [],
@@ -1891,7 +1891,7 @@ _ID_INV_STEPS: list[_Step] = [
     (
         "Vérifier le rôle & le seuil d'actionnariat",
         5,
-        "🔴 Actionnariat ~IDR 1 md (parfois 1,125 md) — majoritairement source "
+        "🔴 Actionnariat ~IDR 1 md (parfois 1,125 md) : majoritairement source "
         "d'agences, revérifier. DIRECTEUR ACTIF → peut travailler (Investor "
         "KITAS) ; ACTIONNAIRE PASSIF → détention seule, pas de droit de "
         "travailler.",
@@ -1936,7 +1936,7 @@ _ID_CO_STEPS: list[_Step] = [
         7,
         "🟠 Plan d'investissement > IDR 10 mds (hors terrain/bâtiment) par KBLI/"
         "localisation + capital libéré ~IDR 10 mds. ⚠️ NE PLUS UTILISER l'ancien "
-        "seuil 2,5 mds (pré-2021) — erreur fréquente des agences. Niveau de risque "
+        "seuil 2,5 mds (pré-2021) : erreur fréquente des agences. Niveau de risque "
         "OSS : faible → NIB suffit ; élevé → NIB + izin.",
         "provides_documents",
         [],
@@ -1972,7 +1972,7 @@ _PH_SRRV_STEPS: list[_Step] = [
         "sans pension 20k · Human Touch 10k (+1 500 USD/mois). ⚠️ RÉSIDER ≠ "
         "TRAVAILLER : le SRRV ne donne PAS le droit de travailler (AEP du DOLE "
         "requis en sus). NOTE : un Digital Nomad Visa (EO 86, 2025) existe sur le "
-        "papier mais N'EST PAS opérationnel — ne pas le proposer tant que la "
+        "papier mais N'EST PAS opérationnel : ne pas le proposer tant que la "
         "délivrance n'est pas confirmée.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
@@ -2008,8 +2008,8 @@ _PH_SIRV_STEPS: list[_Step] = [
         "Vérifier l'investissement admissible",
         7,
         "🟠 ~75 000 USD investis et maintenus (le simple achat immobilier ne "
-        "qualifie généralement pas — actifs admissibles définis par le BOI). "
-        "⚠️ RÉSIDER ≠ TRAVAILLER : statut investisseur, pas salarié — diriger sa "
+        "qualifie généralement pas : actifs admissibles définis par le BOI). "
+        "⚠️ RÉSIDER ≠ TRAVAILLER : statut investisseur, pas salarié, diriger sa "
         "société comme salarié exige un 9(g) + AEP.",
         "provides_documents",
         [],
@@ -2038,13 +2038,13 @@ _PH_13A_STEPS: list[_Step] = [
         7,
         "🟠 Le 13(a) est soumis à RÉCIPROCITÉ : ouvert aux ressortissants de pays "
         "accordant un droit équivalent aux Philippins (la plupart des pays "
-        "occidentaux l'ont — à vérifier par nationalité). Mariage valide avec un·e "
+        "occidentaux l'ont : à vérifier par nationalité). Mariage valide avec un·e "
         "Philippin·e requis.",
         "provides_documents",
         [],
     ),
     (
-        "Dépôt de la demande (BI) — statut probatoire 1 an",
+        "Dépôt de la demande (BI) : statut probatoire 1 an",
         30,
         "Dépôt de la demande auprès du BI ; statut probatoire d'un an.",
         "provides_documents",
@@ -2080,7 +2080,7 @@ _PH_CO_STEPS: list[_Step] = [
         "200 000 USD (réductible à 100 000 si tech avancée/startup endossée/≥ 50 "
         "employés philippins). 🔴 ANTI-DUMMY LAW (CA 108) : le 60/40 de façade "
         "(prête-nom philippin, voting trust occulte, prêts adossés aux actions) "
-        "est ILLÉGAL — sanctions pénales pour l'étranger ET le prête-nom. Le 60/40 "
+        "est ILLÉGAL : sanctions pénales pour l'étranger ET le prête-nom. Le 60/40 "
         "doit refléter un contrôle économique philippin RÉEL. NE JAMAIS le "
         "proposer.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
@@ -2143,7 +2143,7 @@ _PT_CRUE_STEPS: list[_Step] = [
         "Résidence permanente (à 5 ans)",
         None,
         "⚠️ Naturalisation à 5 ans aujourd'hui, mais réforme 2025 en cours pouvant "
-        "allonger (7/10 ans) — risque réglementaire, pas un acquis.",
+        "allonger (7/10 ans) : risque réglementaire, pas un acquis.",
         "provides_documents",
         [],
     ),
@@ -2162,8 +2162,8 @@ _PT_D7_STEPS: list[_Step] = [
     (
         "Demande de visa D7 au consulat",
         60,
-        "🟠 Seuil indexé au SMN (~870 €/mois 2025, à confirmer ; SMN versé 14×/an "
-        "— lever l'ambiguïté ×12/×14). ⚠️ D7 = revenu PASSIF uniquement (le "
+        "🟠 Seuil indexé au SMN (~870 €/mois 2025, à confirmer ; SMN versé 14×/an, "
+        "lever l'ambiguïté ×12/×14). ⚠️ D7 = revenu PASSIF uniquement (le "
         "télétravail actif relève du D8).",
         "provides_documents",
         [
@@ -2232,7 +2232,7 @@ _PT_GV_STEPS: list[_Step] = [
         "🟠 Voies ACTUELLES (montants indicatifs) : fonds qualifiés ≥ 500 000 € · "
         "création de 10 emplois · R&D ≥ 500 000 € · soutien culturel ≥ 250 000 € · "
         "capitalisation d'entreprise ≥ 500 000 €. ⚠️ L'IMMOBILIER et le simple "
-        "transfert de capital ont été RETIRÉS en 2023 (loi Mais Habitação) — toute "
+        "transfert de capital ont été RETIRÉS en 2023 (loi Mais Habitação) : toute "
         "brochure citant l'achat immobilier (280k/350k/500k) est FAUSSE.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
@@ -2262,7 +2262,7 @@ _VN_WP_STEPS: list[_Step] = [
         "L'employeur obtient l'approbation du besoin de main-d'œuvre étrangère",
         21,
         "🔴 Autorité émettrice du work permit INCERTAINE depuis la réorganisation "
-        "administrative 2025 (DOLISA → Ministère de l'Intérieur ?) — à confirmer "
+        "administrative 2025 (DOLISA → Ministère de l'Intérieur ?) : à confirmer "
         "province par province. Quota + qualification (~3 ans d'expérience pour "
         '"expert"). Exemption de permis (LD1) si capital apporté ≥ ~3 Md VND.',
         "provides_documents",
@@ -2280,7 +2280,7 @@ _VN_WP_STEPS: list[_Step] = [
         14,
         "TRC jusqu'à 2 ans, adossée à l'employeur. Après 3 ans de TRC continue + "
         "sponsor → PRC possible (rare, discrétionnaire). ⚠️ Pour un besoin "
-        '"retraite" ou "nomade", le Vietnam n\'a pas de voie — réorienter '
+        '"retraite" ou "nomade", le Vietnam n\'a pas de voie : réorienter '
         "(Thaïlande/Indonésie/Philippines). Biométrie requise.",
         "provides_documents",
         [],
@@ -2357,7 +2357,7 @@ _VN_RO_STEPS: list[_Step] = [
         "Vérifier l'éligibilité de la maison mère",
         7,
         "Maison mère existante depuis ≥ 1 an (Décret 07/2016). Le RO ne peut PAS "
-        "générer de revenus commerciaux directs — fonction de liaison/"
+        "générer de revenus commerciaux directs : fonction de liaison/"
         "représentation uniquement.",
         "provides_documents",
         [],
@@ -2507,8 +2507,8 @@ _US_H1B_STEPS: list[_Step] = [
         "Enregistrement à la loterie (employeur)",
         14,
         "🔴 Quota annuel 65 000 + 20 000 (master US) → LOTERIE : sélection NON "
-        "garantie. ⚠️ Proclamation du 19/09/2025 imposant un droit de 100 000 USD "
-        "— portée/exemptions/statut judiciaire INCERTAINS, point n°1 à vérifier. "
+        "garantie. ⚠️ Proclamation du 19/09/2025 imposant un droit de 100 000 USD : "
+        "portée/exemptions/statut judiciaire INCERTAINS, point n°1 à vérifier. "
         "Frais d'enregistrement à confirmer (FY2027).",
         "provides_documents",
         [],
@@ -2554,7 +2554,7 @@ _US_EB5_STEPS: list[_Step] = [
         ],
     ),
     (
-        "Green card conditionnelle (2 ans) — consulat ou ajustement de statut",
+        "Green card conditionnelle (2 ans) : consulat ou ajustement de statut",
         180,
         "Green card conditionnelle de 2 ans, par voie consulaire ou ajustement de statut.",
         "provides_documents",
@@ -2658,7 +2658,7 @@ _US_CO_STEPS: list[_Step] = [
         "(échéance 15 avril, PÉNALITÉ 25 000 USD). C-Corp → 1120 ; 5472 si "
         "actionnaire étranger lié ≥ 25 % ; retenue dividendes 30 % → 15 % "
         "(convention US-France). 🔴 BOI/Corporate Transparency Act : règle FinCEN "
-        "mars 2025 recentrée sur les entités étrangères — périmètre à vérifier sur "
+        "mars 2025 recentrée sur les entités étrangères : périmètre à vérifier sur "
         "fincen.gov/boi.",
         "provides_documents",
         [],
@@ -2694,7 +2694,7 @@ _CH_BNA_STEPS: list[_Step] = [
         21,
         "Permis B (5 ans). 🟠 Forfait fiscal disponible dans la plupart des "
         "cantons (régime FISCAL distinct, à négocier séparément avec le fisc "
-        "cantonal — pas un droit de séjour). Le canton est déterminant (fiscalité).",
+        "cantonal : pas un droit de séjour). Le canton est déterminant (fiscalité).",
         "provides_documents",
         [],
     ),
@@ -2735,7 +2735,7 @@ _CH_IND_STEPS: list[_Step] = [
     (
         "Démontrer une activité indépendante réelle et viable",
         14,
-        "Business plan, comptabilité prévisionnelle, locaux/clients — l'activité "
+        "Business plan, comptabilité prévisionnelle, locaux/clients : l'activité "
         "doit être effective (pas fictive). Affiliation AVS comme indépendant.",
         "provides_documents",
         [],
@@ -2766,7 +2766,7 @@ _CH_RET_STEPS: list[_Step] = [
         "🔴 Art. 28 LEI / art. 25 OASA : ≥ 55 ans + attaches personnelles "
         "PARTICULIÈRES avec la Suisse + aucune activité lucrative + moyens "
         "suffisants + transfert effectif du centre de vie. TRÈS discrétionnaire : "
-        "certains cantons accueillants, d'autres restrictifs — le choix du canton "
+        "certains cantons accueillants, d'autres restrictifs : le choix du canton "
         "est déterminant. Un rentier non-UE de MOINS de 55 ans n'a pas de voie "
         "claire.",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
@@ -2789,7 +2789,7 @@ _CH_RET_STEPS: list[_Step] = [
         "Octroi du permis B (hors activité) & forfait fiscal",
         30,
         "🟠 Public cible du forfait fiscal (régime fiscal distinct, à négocier par "
-        "ruling cantonal AVANT installation — pas un titre en soi).",
+        "ruling cantonal AVANT installation : pas un titre en soi).",
         "provides_documents",
         [],
     ),
@@ -2838,7 +2838,7 @@ _CH_CO_STEPS: list[_Step] = [
         "Trancher dirigeant résident, canton & structure",
         7,
         "⚠️ DIRIGEANT RÉSIDENT OBLIGATOIRE : au moins une personne domiciliée en "
-        "Suisse avec pouvoir de signature (art. 814 al. 3 / 718 al. 4 CO) — "
+        "Suisse avec pouvoir de signature (art. 814 al. 3 / 718 al. 4 CO) : "
         "recrutement local, administrateur fiduciaire, ou installation du "
         "fondateur. Sans lui, pas de société. CANTON = levier fiscal n°1 : impôt "
         "bénéfice ~11,5 % (Zoug/Nidwald) à ~21 % (Berne) ; Genève ~14 % (n'est "
@@ -2870,8 +2870,8 @@ _CH_CO_STEPS: list[_Step] = [
         "étape 1). TVA 8,1 % si CA > 100 000 CHF. Impôt anticipé 35 % sur "
         "dividendes (taux résiduels par convention). Droit de timbre 1 % au-delà "
         "de 1 M CHF d'apport. NOTE forfait fiscal : régime pour rentier étranger "
-        "sans activité (plancher fédéral 400 000 CHF / 7× loyer, ruling cantonal) "
-        "— distinct, pas un titre de séjour ; aboli à "
+        "sans activité (plancher fédéral 400 000 CHF / 7× loyer, ruling cantonal) : "
+        "distinct, pas un titre de séjour ; aboli à "
         "Zurich/Bâle/Schaffhouse/Appenzell RE.",
         "provides_documents",
         [],
@@ -2923,7 +2923,7 @@ _CA_PNP_STEPS: list[_Step] = [
         14,
         "🔴 Chaque province a ses volets et critères propres (souvent liés à une "
         "profession en demande, une offre d'emploi locale, ou un lien avec la "
-        "province). Allocation PNP 2025 réduite (~55 000) — disponibilité des "
+        "province). Allocation PNP 2025 réduite (~55 000) : disponibilité des "
         "volets volatile, à confirmer par province (OINP/BC PNP/AAIP…).",
         None,  # acteur = l'agence (type=agent, agent_id NULL)
         [],
@@ -3026,7 +3026,7 @@ _CA_SUV_STEPS: list[_Step] = [
         90,
         "🟠 Organisation désignée : capital-risque ≥ 200 000 $ / investisseur "
         "providentiel ≥ 75 000 $ / incubateur (pas de fonds requis). Lettre de "
-        "soutien requise. ⚠️ Pas de visa investisseur/golden au Canada — c'est la "
+        "soutien requise. ⚠️ Pas de visa investisseur/golden au Canada : c'est la "
         "voie projet.",
         "provides_documents",
         [],
@@ -3162,11 +3162,11 @@ def _add_participant(db: AsyncSession, step_id: uuid.UUID, role: str | None) -> 
 _SAMPLE_I18N: dict[str, dict[str, object]] = {
     PY1_NAME: {
         "name": {
-            "en": "Paraguay — Temporary Residence + Cédula",
-            "es": "Paraguay — Residencia temporal + Cédula",
-            "ru": "Парагвай — Временный вид на жительство + Cédula",
-            "pt": "Paraguai — Residência temporária + Cédula",
-            "it": "Paraguay — Residenza temporanea + Cédula",
+            "en": "Paraguay: Temporary Residence + Cédula",
+            "es": "Paraguay: Residencia temporal + Cédula",
+            "ru": "Парагвай: Временный вид на жительство + Cédula",
+            "pt": "Paraguai: Residência temporária + Cédula",
+            "it": "Paraguay: Residenza temporanea + Cédula",
         },
         "steps": [
             (
@@ -3285,7 +3285,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     ),
                     "es": "Plazo administrativo de la DNM, variable (≈ 30 a 45 días, indicativo).",
                     "ru": (
-                        "Срок административной обработки DNM, переменный (≈ 30–45 дней, "
+                        "Срок административной обработки DNM, переменный (≈ 30-45 дней, "
                         "ориентировочно)."
                     ),
                     "pt": "Prazo administrativo da DNM, variável (≈ 30 a 45 dias, indicativo).",
@@ -3337,7 +3337,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "es": (
                         "Plazo de fabricación de la cédula, variable (≈ 3 a 9 meses, indicativo)."
                     ),
-                    "ru": ("Срок изготовления Cédula, переменный (≈ 3–9 месяцев, ориентировочно)."),
+                    "ru": ("Срок изготовления Cédula, переменный (≈ 3-9 месяцев, ориентировочно)."),
                     "pt": "Prazo de fabrico da cédula, variável (≈ 3 a 9 meses, indicativo).",
                     "it": "Tempo di produzione della cédula, variabile (≈ 3-9 mesi, indicativo).",
                 },
@@ -3346,11 +3346,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     TH_DTV_NAME: {
         "name": {
-            "en": "Thailand — Destination Thailand Visa (DTV, nomad)",
-            "es": "Tailandia — Destination Thailand Visa (DTV, nómada)",
-            "ru": "Таиланд — Destination Thailand Visa (DTV, кочевник)",
-            "pt": "Tailândia — Destination Thailand Visa (DTV, nómada)",
-            "it": "Thailandia — Destination Thailand Visa (DTV, nomade)",
+            "en": "Thailand: Destination Thailand Visa (DTV, nomad)",
+            "es": "Tailandia: Destination Thailand Visa (DTV, nómada)",
+            "ru": "Таиланд: Destination Thailand Visa (DTV, кочевник)",
+            "pt": "Tailândia: Destination Thailand Visa (DTV, nómada)",
+            "it": "Thailandia: Destination Thailand Visa (DTV, nomade)",
         },
         "steps": [
             (
@@ -3366,31 +3366,31 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "🟠 Savings ≥ 500 000 THB (indicative, ~36 THB/USD). ⚠️ The DTV DOES NOT "
                         "AUTHORIZE work for a THAI client/employer. ⚠️ Does NOT lead to permanent "
                         "residence (neither the DTV, nor retirement, nor Privilege count toward "
-                        "it — only Non-B + work permit does)."
+                        "it: only Non-B + work permit does)."
                     ),
                     "es": (
                         "🟠 Ahorro ≥ 500 000 THB (indicativo, ~36 THB/USD). ⚠️ El DTV NO AUTORIZA "
                         "el trabajo para un cliente/empleador TAILANDÉS. ⚠️ NO conduce a la "
                         "residencia permanente (ni el DTV, ni la jubilación, ni Privilege cuentan "
-                        "para ella — solo Non-B + work permit lo permite)."
+                        "para ella: solo Non-B + work permit lo permite)."
                     ),
                     "ru": (
                         "🟠 Накопления ≥ 500 000 THB (ориентировочно, ~36 THB/USD). ⚠️ DTV НЕ "
                         "РАЗРЕШАЕТ работу на ТАЙСКОГО клиента/работодателя. ⚠️ НЕ ведёт к "
                         "постоянному виду на жительство (ни DTV, ни пенсия, ни Privilege для "
-                        "этого не засчитываются — только Non-B + work permit)."
+                        "этого не засчитываются: только Non-B + work permit)."
                     ),
                     "pt": (
                         "🟠 Poupança ≥ 500 000 THB (indicativo, ~36 THB/USD). ⚠️ O DTV NÃO "
                         "AUTORIZA trabalho para um cliente/empregador TAILANDÊS. ⚠️ NÃO conduz à "
                         "residência permanente (nem o DTV, nem a reforma, nem o Privilege contam "
-                        "para ela — apenas Non-B + work permit)."
+                        "para ela: apenas Non-B + work permit)."
                     ),
                     "it": (
                         "🟠 Risparmi ≥ 500 000 THB (indicativo, ~36 THB/USD). ⚠️ Il DTV NON "
                         "AUTORIZZA il lavoro per un cliente/datore di lavoro TAILANDESE. ⚠️ NON "
                         "conduce alla residenza permanente (né il DTV, né la pensione, né "
-                        "Privilege contano a tal fine — solo Non-B + work permit)."
+                        "Privilege contano a tal fine: solo Non-B + work permit)."
                     ),
                 },
             ),
@@ -3405,28 +3405,28 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 Practice varies by consulate (several months of bank history sometimes "
-                        "required). 180-day extension fee ≈ 10 000 THB (and NOT ~1 900 — a "
+                        "required). 180-day extension fee ≈ 10 000 THB (and NOT ~1 900: a "
                         "frequent error in commercial sources)."
                     ),
                     "es": (
                         "🟠 Práctica heterogénea según el consulado (a veces se exige historial "
                         "bancario de varios meses). Tarifa de extensión de 180 días ≈ 10 000 THB "
-                        "(y NO ~1 900 — error frecuente de las fuentes comerciales)."
+                        "(y NO ~1 900: error frecuente de las fuentes comerciales)."
                     ),
                     "ru": (
                         "🟠 Практика различается в зависимости от консульства (иногда требуется "
                         "банковская история за несколько месяцев). Сбор за продление на 180 дней "
-                        "≈ 10 000 THB (а НЕ ~1 900 — частая ошибка в коммерческих источниках)."
+                        "≈ 10 000 THB (а НЕ ~1 900: частая ошибка в коммерческих источниках)."
                     ),
                     "pt": (
                         "🟠 A prática varia consoante o consulado (por vezes é exigido histórico "
                         "bancário de vários meses). Taxa de prorrogação de 180 dias ≈ 10 000 THB "
-                        "(e NÃO ~1 900 — erro frequente nas fontes comerciais)."
+                        "(e NÃO ~1 900: erro frequente nas fontes comerciais)."
                     ),
                     "it": (
                         "🟠 La prassi varia a seconda del consolato (a volte è richiesta una "
                         "cronologia bancaria di diversi mesi). Tassa di proroga di 180 giorni ≈ "
-                        "10 000 THB (e NON ~1 900 — errore frequente nelle fonti commerciali)."
+                        "10 000 THB (e NON ~1 900: errore frequente nelle fonti commerciali)."
                     ),
                 },
             ),
@@ -3460,8 +3460,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PT_D7_NAME: {
         "name": {
-            "en": "Portugal — D7 Visa (passive income / retiree, non-EU)",
-            "es": "Portugal — Visa D7 (renta pasiva / jubilado, fuera de la UE)",
+            "en": "Portugal: D7 Visa (passive income / retiree, non-EU)",
+            "es": "Portugal: Visa D7 (renta pasiva / jubilado, fuera de la UE)",
         },
         "steps": [
             (
@@ -3484,12 +3484,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 Threshold indexed to the SMN (~870 €/month 2025, to be confirmed; SMN "
-                        "paid 14×/year — clarify ×12/×14). ⚠️ D7 = PASSIVE income only (active "
+                        "paid 14×/year: clarify ×12/×14). ⚠️ D7 = PASSIVE income only (active "
                         "remote work falls under the D8)."
                     ),
                     "es": (
                         "🟠 Umbral indexado al SMN (~870 €/mes 2025, a confirmar; SMN pagado "
-                        "14×/año — aclarar ×12/×14). ⚠️ D7 = renta PASIVA únicamente (el "
+                        "14×/año: aclarar ×12/×14). ⚠️ D7 = renta PASIVA únicamente (el "
                         "teletrabajo activo corresponde al D8)."
                     ),
                 },
@@ -3518,8 +3518,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     RUC_NAME: {
         "name": {
-            "en": "Paraguay — Company formation (RUC)",
-            "es": "Paraguay — Creación de empresa (RUC)",
+            "en": "Paraguay: Company formation (RUC)",
+            "es": "Paraguay: Creación de empresa (RUC)",
         },
         "steps": [
             (
@@ -3545,14 +3545,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "Incorporation in 72 h (often 24–48 h) with a proforma statute; ≈ 8 "
+                        "Incorporation in 72 h (often 24-48 h) with a proforma statute; ≈ 8 "
                         "business days with a customized statute. The escribano may carry out "
-                        "this step — to assign on the dossier."
+                        "this step: to assign on the dossier."
                     ),
                     "es": (
-                        "Constitución en 72 h (a menudo 24–48 h) con estatuto proforma; ≈ 8 días "
+                        "Constitución en 72 h (a menudo 24-48 h) con estatuto proforma; ≈ 8 días "
                         "hábiles con estatuto personalizado. El escribano puede realizar este "
-                        "paso — a asignar en el expediente."
+                        "paso: a asignar en el expediente."
                     ),
                 },
             ),
@@ -3578,8 +3578,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PERM_NAME: {
         "name": {
-            "en": "Paraguay — Permanent residence (category change)",
-            "es": "Paraguay — Residencia permanente (cambio de categoría)",
+            "en": "Paraguay: Permanent residence (category change)",
+            "es": "Paraguay: Residencia permanente (cambio de categoría)",
         },
         "steps": [
             (
@@ -3651,8 +3651,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CY_NAME: {
         "name": {
-            "en": "Cyprus — EU residence registration (Yellow Slip, MEU1)",
-            "es": "Chipre — Registro de residencia UE (Yellow Slip, MEU1)",
+            "en": "Cyprus: EU residence registration (Yellow Slip, MEU1)",
+            "es": "Chipre: Registro de residencia UE (Yellow Slip, MEU1)",
         },
         "steps": [
             (
@@ -3709,8 +3709,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CYF_NAME: {
         "name": {
-            "en": "Cyprus — Non-EU passive-income residence (Pink Slip + Category F)",
-            "es": "Chipre — Residencia no-UE por renta pasiva (Pink Slip + Categoría F)",
+            "en": "Cyprus: Non-EU passive-income residence (Pink Slip + Category F)",
+            "es": "Chipre: Residencia no-UE por renta pasiva (Pink Slip + Categoría F)",
         },
         "steps": [
             (
@@ -3784,12 +3784,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🔴 Category F backlog estimated at 5–7 years (2020 files still pending). "
+                        "🔴 Category F backlog estimated at 5-7 years (2020 files still pending). "
                         "Renew the Pink Slip EVERY year until the PR is issued. Never promise a "
                         "fast PR through this route."
                     ),
                     "es": (
-                        "🔴 Atraso de la Categoría F estimado en 5–7 años (expedientes de 2020 aún "
+                        "🔴 Atraso de la Categoría F estimado en 5-7 años (expedientes de 2020 aún "
                         "en curso). Renovar el Pink Slip CADA año hasta la emisión de la PR. "
                         "Nunca prometer una PR rápida por esta vía."
                     ),
@@ -3809,8 +3809,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     DNV_NAME: {
         "name": {
-            "en": "Cyprus — Digital Nomad Visa (non-EU)",
-            "es": "Chipre — Digital Nomad Visa (no-UE)",
+            "en": "Cyprus: Digital Nomad Visa (non-EU)",
+            "es": "Chipre: Digital Nomad Visa (no-UE)",
         },
         "steps": [
             (
@@ -3867,8 +3867,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     LTD_NAME: {
         "name": {
-            "en": "Cyprus — Company formation (LTD)",
-            "es": "Chipre — Creación de empresa (LTD)",
+            "en": "Cyprus: Company formation (LTD)",
+            "es": "Chipre: Creación de empresa (LTD)",
         },
         "steps": [
             (
@@ -3920,13 +3920,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "TIN within 60 days, VAT if applicable, UBO register, account opening. IS "
                         "15 % (since 1/1/2026); dividends ≈ 2.65 % effective under non-dom. "
-                        "Recurring costs ≈ 2 800–4 500 €/year (audit mandatory). Indicative "
+                        "Recurring costs ≈ 2 800-4 500 €/year (audit mandatory). Indicative "
                         "figures."
                     ),
                     "es": (
                         "TIN en 60 días, VAT si aplica, registro UBO, apertura de cuenta. IS 15 % "
                         "(desde 1/1/2026); dividendos ≈ 2,65 % efectivo en non-dom. Costes "
-                        "recurrentes ≈ 2 800–4 500 €/año (auditoría obligatoria). Cifras "
+                        "recurrentes ≈ 2 800-4 500 €/año (auditoría obligatoria). Cifras "
                         "indicativas."
                     ),
                 },
@@ -3935,8 +3935,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     FIC_NAME: {
         "name": {
-            "en": "Cyprus — LTD company + non-EU director permit (FIC/BFU)",
-            "es": "Chipre — Empresa LTD + permiso de directivo no-UE (FIC/BFU)",
+            "en": "Cyprus: LTD company + non-EU director permit (FIC/BFU)",
+            "es": "Chipre: Empresa LTD + permiso de directivo no-UE (FIC/BFU)",
         },
         "steps": [
             (
@@ -4008,8 +4008,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PA_FN_NAME: {
         "name": {
-            "en": "Panama — Friendly Nations residence",
-            "es": "Panamá — Residencia Friendly Nations",
+            "en": "Panama: Friendly Nations residence",
+            "es": "Panamá: Residencia Friendly Nations",
         },
         "steps": [
             (
@@ -4021,11 +4021,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🟠 The list of ~50 friendly countries can be changed by decree — recheck "
+                        "🟠 The list of ~50 friendly countries can be changed by decree: recheck "
                         "on migracion.gob.pa before the file. Panamanian lawyer mandatory."
                     ),
                     "es": (
-                        "🟠 La lista de ~50 países amigos puede modificarse por decreto — "
+                        "🟠 La lista de ~50 países amigos puede modificarse por decreto: "
                         "reverificar en migracion.gob.pa antes del expediente. Abogado panameño "
                         "obligatorio."
                     ),
@@ -4079,8 +4079,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PA_PEN_NAME: {
         "name": {
-            "en": "Panama — Pensionado Visa (retiree)",
-            "es": "Panamá — Visa Pensionado (jubilado)",
+            "en": "Panama: Pensionado Visa (retiree)",
+            "es": "Panamá: Visa Pensionado (jubilado)",
         },
         "steps": [
             (
@@ -4138,8 +4138,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PA_GV_NAME: {
         "name": {
-            "en": "Panama — Qualified Investor (Golden Visa)",
-            "es": "Panamá — Inversionista Calificado (Golden Visa)",
+            "en": "Panama: Qualified Investor (Golden Visa)",
+            "es": "Panamá: Inversionista Calificado (Golden Visa)",
         },
         "steps": [
             (
@@ -4189,11 +4189,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "⚠️ The Golden Visa requires no presence to keep the residence, but "
-                        "naturalization requires effective residence — to weigh with the lawyer."
+                        "naturalization requires effective residence: to weigh with the lawyer."
                     ),
                     "es": (
                         "⚠️ El Golden Visa no exige presencia para conservar la residencia, pero "
-                        "la naturalización exige residencia efectiva — a valorar con el abogado."
+                        "la naturalización exige residencia efectiva: a valorar con el abogado."
                     ),
                 },
             ),
@@ -4201,8 +4201,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PA_DN_NAME: {
         "name": {
-            "en": "Panama — Digital nomad visa (Trabajador Remoto)",
-            "es": "Panamá — Visa de nómada digital (Trabajador Remoto)",
+            "en": "Panama: Digital nomad visa (Trabajador Remoto)",
+            "es": "Panamá: Visa de nómada digital (Trabajador Remoto)",
         },
         "steps": [
             (
@@ -4253,8 +4253,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PA_CO_NAME: {
         "name": {
-            "en": "Panama — Company formation (S.A. / SRL)",
-            "es": "Panamá — Creación de empresa (S.A. / SRL)",
+            "en": "Panama: Company formation (S.A. / SRL)",
+            "es": "Panamá: Creación de empresa (S.A. / SRL)",
         },
         "steps": [
             (
@@ -4350,8 +4350,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     BG_EU_NAME: {
         "name": {
-            "en": "Bulgaria — EU residence registration",
-            "es": "Bulgaria — Registro de residencia UE",
+            "en": "Bulgaria: EU residence registration",
+            "es": "Bulgaria: Registro de residencia UE",
         },
         "steps": [
             (
@@ -4396,8 +4396,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     BG_RET_NAME: {
         "name": {
-            "en": "Bulgaria — Non-EU retiree residence",
-            "es": "Bulgaria — Residencia de jubilado no-UE",
+            "en": "Bulgaria: Non-EU retiree residence",
+            "es": "Bulgaria: Residencia de jubilado no-UE",
         },
         "steps": [
             (
@@ -4408,13 +4408,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🔴 Means of subsistence ≥ minimum pension/wage (≈ 620 €/month in 2026, "
-                        "indexed to the minimum wage, post-euro) — indicative amount, recheck the "
+                        "indexed to the minimum wage, post-euro): indicative amount, recheck the "
                         "official source. Private pensions (e.g. 401k) may be refused without an "
                         "official State pension document. Visa fee ≈ 100 €."
                     ),
                     "es": (
                         "🔴 Medios de subsistencia ≥ pensión/salario mínimo (≈ 620 €/mes en 2026, "
-                        "indexado al salario mínimo, post-euro) — importe indicativo, reverificar "
+                        "indexado al salario mínimo, post-euro): importe indicativo, reverificar "
                         "la fuente oficial. Las pensiones privadas (ej. 401k) pueden ser "
                         "rechazadas sin documento oficial de pensión estatal. Tasa de visa ≈ 100 "
                         "€."
@@ -4452,8 +4452,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     BG_DN_NAME: {
         "name": {
-            "en": "Bulgaria — Digital nomad visa (non-EU)",
-            "es": "Bulgaria — Visa de nómada digital (no-UE)",
+            "en": "Bulgaria: Digital nomad visa (non-EU)",
+            "es": "Bulgaria: Visa de nómada digital (no-UE)",
         },
         "steps": [
             (
@@ -4463,12 +4463,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🔴 VERY RECENT REGIME — legal basis art. 24p ЗЧРБ, applications opened on "
+                        "🔴 VERY RECENT REGIME: legal basis art. 24p ЗЧРБ, applications opened on "
                         "20/12/2025. Implementation details still evolving: recheck with the "
                         "consulate / Direction Migration before any promise."
                     ),
                     "es": (
-                        "🔴 RÉGIMEN MUY RECIENTE — base legal art. 24p ЗЧРБ, solicitudes abiertas "
+                        "🔴 RÉGIMEN MUY RECIENTE: base legal art. 24p ЗЧРБ, solicitudes abiertas "
                         "el 20/12/2025. Detalles de aplicación aún en evolución: reverificar ante "
                         "el consulado / la Direction Migration antes de cualquier promesa."
                     ),
@@ -4481,12 +4481,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🔴 Threshold ≈ 31 000 €/year indexed to the minimum wage, post-euro — "
+                        "🔴 Threshold ≈ 31 000 €/year indexed to the minimum wage, post-euro: "
                         "indicative, recheck. Prohibition on working for Bulgarian "
                         "clients/employers."
                     ),
                     "es": (
-                        "🔴 Umbral ≈ 31 000 €/año indexado al salario mínimo, post-euro — "
+                        "🔴 Umbral ≈ 31 000 €/año indexado al salario mínimo, post-euro: "
                         "indicativo, reverificar. Prohibición de trabajar para "
                         "clientes/empleadores búlgaros."
                     ),
@@ -4512,8 +4512,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     BG_FL_NAME: {
         "name": {
-            "en": "Bulgaria — Freelance / liberal profession (non-EU)",
-            "es": "Bulgaria — Freelance / profesión liberal (no-UE)",
+            "en": "Bulgaria: Freelance / liberal profession (non-EU)",
+            "es": "Bulgaria: Freelance / profesión liberal (no-UE)",
         },
         "steps": [
             (
@@ -4524,11 +4524,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 The permit is issued by the EMPLOYMENT AGENCY (under the MTSP), NOT by "
-                        "Direction Migration — a frequent naming error. Bulgarian B1 required."
+                        "Direction Migration: a frequent naming error. Bulgarian B1 required."
                     ),
                     "es": (
                         "🟠 El permiso lo emite la AGENCIA DE EMPLEO (dependiente del MTSP), NO la "
-                        "Direction Migration — error de denominación frecuente. Búlgaro B1 "
+                        "Direction Migration: error de denominación frecuente. Búlgaro B1 "
                         "requerido."
                     ),
                 },
@@ -4563,8 +4563,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     BG_CO_NAME: {
         "name": {
-            "en": "Bulgaria — Company formation (EOOD / OOD)",
-            "es": "Bulgaria — Creación de empresa (EOOD / OOD)",
+            "en": "Bulgaria: Company formation (EOOD / OOD)",
+            "es": "Bulgaria: Creación de empresa (EOOD / OOD)",
         },
         "steps": [
             (
@@ -4624,14 +4624,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🔴 IS 10 % (the lowest in the EU), dividends 5 % — indicative rates, "
+                        "🔴 IS 10 % (the lowest in the EU), dividends 5 %: indicative rates, "
                         "recheck (post-euro 2026). VAT if turnover > ≈ 51 000 €. Known "
                         "bottleneck: bank account opening (KYC, presence sometimes required). ⚠️ "
                         "Holding remotely ≠ settling: the 10 % IS only holds if the company is "
                         "genuinely run FROM Bulgaria (substance)."
                     ),
                     "es": (
-                        "🔴 IS 10 % (el más bajo de la UE), dividendos 5 % — tasas indicativas, "
+                        "🔴 IS 10 % (el más bajo de la UE), dividendos 5 %: tasas indicativas, "
                         "reverificar (post-euro 2026). IVA si la facturación > ≈ 51 000 €. Cuello "
                         "de botella conocido: apertura de cuenta bancaria (KYC, a veces presencia "
                         "requerida). ⚠️ Poseer a distancia ≠ instalarse: el 10 % de IS solo se "
@@ -4643,8 +4643,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     HU_EU_NAME: {
         "name": {
-            "en": "Hungary — EU residence registration",
-            "es": "Hungría — Registro de residencia UE",
+            "en": "Hungary: EU residence registration",
+            "es": "Hungría: Registro de residencia UE",
         },
         "steps": [
             (
@@ -4687,12 +4687,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "lakcímkártya (address card) · adóazonosító jel (NAV tax number) · TAJ "
-                        "(NEAK social security). Frequent practical blockers — to anticipate on "
+                        "(NEAK social security). Frequent practical blockers: to anticipate on "
                         "arrival."
                     ),
                     "es": (
                         "lakcímkártya (tarjeta de domicilio) · adóazonosító jel (n.º fiscal NAV) "
-                        "· TAJ (seguridad social NEAK). Bloqueos prácticos frecuentes — a prever "
+                        "· TAJ (seguridad social NEAK). Bloqueos prácticos frecuentes: a prever "
                         "desde la llegada."
                     ),
                 },
@@ -4701,8 +4701,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     HU_WC_NAME: {
         "name": {
-            "en": "Hungary — White Card (digital nomad, non-EU)",
-            "es": "Hungría — White Card (nómada digital, no-UE)",
+            "en": "Hungary: White Card (digital nomad, non-EU)",
+            "es": "Hungría: White Card (nómada digital, no-UE)",
         },
         "steps": [
             (
@@ -4713,7 +4713,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🔴 FICHE NOT VERIFIED IN PRIMARY SOURCE. ⚠️ DEAD END: the White Card "
-                        "counts NEITHER toward permanent residence NOR naturalization — a 1-2 "
+                        "counts NEITHER toward permanent residence NOR naturalization: a 1-2 "
                         "year trial solution. To settle durably, switch to another route. "
                         "Forbidden to work for the Hungarian market. Minimum monthly income 🔴 "
                         "volatile, recheck on oif.gov.hu."
@@ -4721,7 +4721,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "es": (
                         "🔴 FICHA NO VERIFICADA EN FUENTE PRIMARIA. ⚠️ CALLEJÓN SIN SALIDA: la "
                         "White Card no cuenta NI para la residencia permanente NI para la "
-                        "naturalización — solución de prueba de 1-2 años. Para instalarse "
+                        "naturalización: solución de prueba de 1-2 años. Para instalarse "
                         "durablemente, cambiar a otra vía. Prohibido trabajar para el mercado "
                         "húngaro. Ingreso mensual mínimo 🔴 volátil, reverificar en oif.gov.hu."
                     ),
@@ -4757,8 +4757,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     HU_GI_NAME: {
         "name": {
-            "en": "Hungary — Guest Investor (golden visa, non-EU)",
-            "es": "Hungría — Guest Investor (golden visa, no-UE)",
+            "en": "Hungary: Guest Investor (golden visa, non-EU)",
+            "es": "Hungría: Guest Investor (golden visa, no-UE)",
         },
         "steps": [
             (
@@ -4770,7 +4770,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "🔴 FICHE NOT VERIFIED IN PRIMARY SOURCE. Options (indicative amounts, "
                         "recheck): MNB-approved funds ≈ 250 000 € (cheapest route); direct "
-                        "residential real estate ≈ 500 000 € (option possibly POSTPONED — check "
+                        "residential real estate ≈ 500 000 € (option possibly POSTPONED: check "
                         "if actually open); higher-education donation ≈ 1 000 000 €. Check the "
                         "list of MNB funds actually subscribable."
                     ),
@@ -4778,7 +4778,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "🔴 FICHA NO VERIFICADA EN FUENTE PRIMARIA. Opciones (importes "
                         "indicativos, reverificar): fondos aprobados MNB ≈ 250 000 € (vía más "
                         "barata); inmueble residencial directo ≈ 500 000 € (opción posiblemente "
-                        "APLAZADA — verificar si realmente abierta); donación a la enseñanza "
+                        "APLAZADA: verificar si realmente abierta); donación a la enseñanza "
                         "superior ≈ 1 000 000 €. Verificar la lista de fondos MNB realmente "
                         "suscribibles."
                     ),
@@ -4818,8 +4818,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     HU_SP_NAME: {
         "name": {
-            "en": "Hungary — Single permit (non-EU employee)",
-            "es": "Hungría — Autorización única (asalariado no-UE)",
+            "en": "Hungary: Single permit (non-EU employee)",
+            "es": "Hungría: Autorización única (asalariado no-UE)",
         },
         "steps": [
             (
@@ -4861,11 +4861,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     HU_CO_NAME: {
         "name": {
-            "en": "Hungary — Company formation (Kft.)",
-            "es": "Hungría — Creación de empresa (Kft.)",
-            "ru": "Венгрия — Создание компании (Kft.)",
-            "pt": "Hungria — Constituição de empresa (Kft.)",
-            "it": "Ungheria — Costituzione di società (Kft.)",
+            "en": "Hungary: Company formation (Kft.)",
+            "es": "Hungría: Creación de empresa (Kft.)",
+            "ru": "Венгрия: Создание компании (Kft.)",
+            "pt": "Hungria: Constituição de empresa (Kft.)",
+            "it": "Ungheria: Costituzione di società (Kft.)",
         },
         "steps": [
             (
@@ -4948,32 +4948,32 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🟠 IS 9 % (the lowest in the EU), 0 % withholding on outbound dividends — "
+                        "🟠 IS 9 % (the lowest in the EU), 0 % withholding on outbound dividends: "
                         "indicative rates to recheck (NAV). VAT (ÁFA) exemption under ~18 M "
                         "HUF/year (~45 000 €), otherwise 27 %. Local tax (HIPA). KIVA possible "
                         "with a high payroll."
                     ),
                     "es": (
                         "🟠 IS 9 % (el más bajo de la UE), 0 % de retención sobre dividendos "
-                        "salientes — tasas indicativas a reverificar (NAV). Franquicia de IVA "
+                        "salientes: tasas indicativas a reverificar (NAV). Franquicia de IVA "
                         "(ÁFA) bajo ~18 M HUF/año (~45 000 €), si no 27 %. Impuesto local (HIPA). "
                         "KIVA posible con una masa salarial alta."
                     ),
                     "ru": (
-                        "🟠 IS 9 % (самый низкий в ЕС), 0 % удержания с исходящих дивидендов — "
+                        "🟠 IS 9 % (самый низкий в ЕС), 0 % удержания с исходящих дивидендов: "
                         "ориентировочные ставки, требуют проверки (NAV). Освобождение от НДС "
                         "(ÁFA) при обороте ниже ~18 M HUF/год (~45 000 €), иначе 27 %. Местный "
                         "налог (HIPA). KIVA возможен при высоком фонде оплаты труда."
                     ),
                     "pt": (
                         "🟠 IS 9 % (o mais baixo da UE), 0 % de retenção sobre dividendos de "
-                        "saída — taxas indicativas a reverificar (NAV). Isenção de IVA (ÁFA) "
+                        "saída: taxas indicativas a reverificar (NAV). Isenção de IVA (ÁFA) "
                         "abaixo de ~18 M HUF/ano (~45 000 €), caso contrário 27 %. Imposto local "
                         "(HIPA). KIVA possível com uma massa salarial elevada."
                     ),
                     "it": (
                         "🟠 IS 9 % (la più bassa dell'UE), 0 % di ritenuta sui dividendi in "
-                        "uscita — aliquote indicative da riverificare (NAV). Esenzione IVA (ÁFA) "
+                        "uscita: aliquote indicative da riverificare (NAV). Esenzione IVA (ÁFA) "
                         "sotto ~18 M HUF/anno (~45 000 €), altrimenti 27 %. Imposta locale "
                         "(HIPA). KIVA possibile con un monte salari elevato."
                     ),
@@ -4989,24 +4989,24 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🟠 BOTTLENECK: account opening for a foreign manager/UBO — physical "
+                        "🟠 BOTTLENECK: account opening for a foreign manager/UBO, physical "
                         "presence often required, the slowest step."
                     ),
                     "es": (
-                        "🟠 CUELLO DE BOTELLA: apertura de cuenta para gerente/UBO extranjero — "
+                        "🟠 CUELLO DE BOTELLA: apertura de cuenta para gerente/UBO extranjero, "
                         "presencia física a menudo exigida, el paso más lento."
                     ),
                     "ru": (
-                        "🟠 УЗКОЕ МЕСТО: открытие счёта для иностранного управляющего/UBO — часто "
+                        "🟠 УЗКОЕ МЕСТО: открытие счёта для иностранного управляющего/UBO, часто "
                         "требуется физическое присутствие, самый медленный этап."
                     ),
                     "pt": (
-                        "🟠 ESTRANGULAMENTO: abertura de conta para gerente/UBO estrangeiro — "
+                        "🟠 ESTRANGULAMENTO: abertura de conta para gerente/UBO estrangeiro, "
                         "presença física frequentemente exigida, o passo mais lento."
                     ),
                     "it": (
                         "🟠 COLLO DI BOTTIGLIA: apertura del conto per amministratore/UBO "
-                        "straniero — presenza fisica spesso richiesta, la tappa più lenta."
+                        "straniero: presenza fisica spesso richiesta, la tappa più lenta."
                     ),
                 },
             ),
@@ -5014,8 +5014,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     AE_GV_NAME: {
         "name": {
-            "en": "Dubai (UAE) — Golden Visa (10 years)",
-            "es": "Dubái (EAU) — Golden Visa (10 años)",
+            "en": "Dubai (UAE): Golden Visa (10 years)",
+            "es": "Dubái (EAU): Golden Visa (10 años)",
         },
         "steps": [
             (
@@ -5071,11 +5071,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "10 years renewable, autonomous (no sponsor), exempt from the 6-month "
-                        "absence rule — suited to highly mobile profiles. Can sponsor the family."
+                        "absence rule: suited to highly mobile profiles. Can sponsor the family."
                     ),
                     "es": (
                         "10 años renovable, autónomo (sin sponsor), exento de la regla de "
-                        "ausencia de 6 meses — adecuado para perfiles muy móviles. Puede "
+                        "ausencia de 6 meses: adecuado para perfiles muy móviles. Puede "
                         "patrocinar a la familia."
                     ),
                 },
@@ -5084,8 +5084,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     AE_FZ_NAME: {
         "name": {
-            "en": "Dubai (UAE) — Residence via a free zone company",
-            "es": "Dubái (EAU) — Residencia por empresa free zone",
+            "en": "Dubai (UAE): Residence via a free zone company",
+            "es": "Dubái (EAU): Residencia por empresa free zone",
         },
         "steps": [
             (
@@ -5152,8 +5152,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     AE_RE_NAME: {
         "name": {
-            "en": "Dubai (UAE) — Real estate visa (2 years)",
-            "es": "Dubái (EAU) — Visa inmobiliaria (2 años)",
+            "en": "Dubai (UAE): Real estate visa (2 years)",
+            "es": "Dubái (EAU): Visa inmobiliaria (2 años)",
         },
         "steps": [
             (
@@ -5211,8 +5211,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     AE_RW_NAME: {
         "name": {
-            "en": "Dubai (UAE) — Remote work visa (1 year)",
-            "es": "Dubái (EAU) — Visa de remote work (1 año)",
+            "en": "Dubai (UAE): Remote work visa (1 year)",
+            "es": "Dubái (EAU): Visa de remote work (1 año)",
         },
         "steps": [
             (
@@ -5223,13 +5223,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 Indicative threshold. ⚠️ Remote work does NOT lead to long-term "
-                        "residence (1 year) — for a durable base + tax optimization, prefer a "
+                        "residence (1 year): for a durable base + tax optimization, prefer a "
                         "free zone company from the start. Say so before the client gets locked "
                         "in."
                     ),
                     "es": (
                         "🟠 Umbral indicativo. ⚠️ El remote work NO conduce a una residencia larga "
-                        "(1 año) — para una base duradera + optimización fiscal, preferir una "
+                        "(1 año): para una base duradera + optimización fiscal, preferir una "
                         "empresa free zone desde el inicio. Decirlo antes de que el cliente se "
                         "encierre en ello."
                     ),
@@ -5262,8 +5262,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     AE_RET_NAME: {
         "name": {
-            "en": "Dubai (UAE) — Retiree visa (5 years, 55+)",
-            "es": "Dubái (EAU) — Visa de jubilado (5 años, 55 y +)",
+            "en": "Dubai (UAE): Retiree visa (5 years, 55+)",
+            "es": "Dubái (EAU): Visa de jubilado (5 años, 55 y +)",
         },
         "steps": [
             (
@@ -5320,8 +5320,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     AE_CO_NAME: {
         "name": {
-            "en": "Dubai (UAE) — Company formation (free zone / mainland)",
-            "es": "Dubái (EAU) — Creación de empresa (free zone / mainland)",
+            "en": "Dubai (UAE): Company formation (free zone / mainland)",
+            "es": "Dubái (EAU): Creación de empresa (free zone / mainland)",
         },
         "steps": [
             (
@@ -5336,7 +5336,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "(international / B2B / holding / digital / residence goal) → free zone: "
                         "100 % ownership + visa self-sponsoring. 100 % foreign ownership now "
                         "allowed for many mainland activities (a regulated strategic-impact "
-                        "activities list — check with the DET)."
+                        "activities list: check with the DET)."
                     ),
                     "es": (
                         "PREGUNTA FILTRO: ¿el cliente vende directamente en el mercado interno de "
@@ -5344,7 +5344,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "(internacional / B2B / holding / digital / objetivo residencia) → free "
                         "zone: 100 % propiedad + auto-patrocinio del visa. 100 % de propiedad "
                         "extranjera ahora permitido para muchas actividades mainland (lista de "
-                        "actividades de impacto estratégico regulada — verificar ante el DET)."
+                        "actividades de impacto estratégico regulada: verificar ante el DET)."
                     ),
                 },
             ),
@@ -5413,8 +5413,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     MU_OPI_NAME: {
         "name": {
-            "en": "Mauritius — Occupation Permit Investor (entrepreneur)",
-            "es": "Mauricio — Occupation Permit Investor (emprendedor)",
+            "en": "Mauritius: Occupation Permit Investor (entrepreneur)",
+            "es": "Mauricio: Occupation Permit Investor (emprendedor)",
         },
         "steps": [
             (
@@ -5464,8 +5464,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     MU_OPP_NAME: {
         "name": {
-            "en": "Mauritius — Occupation Permit Professional (employee)",
-            "es": "Mauricio — Occupation Permit Professional (asalariado)",
+            "en": "Mauritius: Occupation Permit Professional (employee)",
+            "es": "Mauricio: Occupation Permit Professional (asalariado)",
         },
         "steps": [
             (
@@ -5475,12 +5475,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🔴 Minimum salary 30 000 vs 60 000 MUR/month depending on period/sector — "
+                        "🔴 Minimum salary 30 000 vs 60 000 MUR/month depending on period/sector: "
                         "THE most unstable threshold, recheck imperatively. ICT/BPO exceptions "
                         "possibly lower (🟠)."
                     ),
                     "es": (
-                        "🔴 Salario mínimo 30 000 vs 60 000 MUR/mes según período/sector — EL "
+                        "🔴 Salario mínimo 30 000 vs 60 000 MUR/mes según período/sector: EL "
                         "umbral más inestable, reverificar imperativamente. Excepciones TIC/BPO "
                         "posiblemente más bajas (🟠)."
                     ),
@@ -5516,8 +5516,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     MU_OPS_NAME: {
         "name": {
-            "en": "Mauritius — Occupation Permit Self-Employed (solo consultant)",
-            "es": "Mauricio — Occupation Permit Self-Employed (consultor individual)",
+            "en": "Mauritius: Occupation Permit Self-Employed (solo consultant)",
+            "es": "Mauricio: Occupation Permit Self-Employed (consultor individual)",
         },
         "steps": [
             (
@@ -5562,8 +5562,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     MU_PV_NAME: {
         "name": {
-            "en": "Mauritius — Premium Visa (nomad / foreign passive income)",
-            "es": "Mauricio — Premium Visa (nómada / renta pasiva extranjera)",
+            "en": "Mauritius: Premium Visa (nomad / foreign passive income)",
+            "es": "Mauricio: Premium Visa (nómada / renta pasiva extranjera)",
         },
         "steps": [
             (
@@ -5595,11 +5595,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {"en": "Premium Visa grant", "es": "Otorgamiento del Premium Visa"},
                 {
                     "en": (
-                        "1 year renewable. Does not give access to long-term residence — for "
+                        "1 year renewable. Does not give access to long-term residence: for "
                         "stability, consider real estate ≥ 375k USD (separate journey)."
                     ),
                     "es": (
-                        "1 año renovable. No da acceso a una residencia larga — para la "
+                        "1 año renovable. No da acceso a una residencia larga: para la "
                         "estabilidad, considerar el inmueble ≥ 375k USD (otro recorrido)."
                     ),
                 },
@@ -5608,8 +5608,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     MU_RE_NAME: {
         "name": {
-            "en": "Mauritius — Residence by real estate investment (≥ 375k USD)",
-            "es": "Mauricio — Residencia por inversión inmobiliaria (≥ 375k USD)",
+            "en": "Mauritius: Residence by real estate investment (≥ 375k USD)",
+            "es": "Mauricio: Residencia por inversión inmobiliaria (≥ 375k USD)",
         },
         "steps": [
             (
@@ -5661,8 +5661,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     MU_CO_NAME: {
         "name": {
-            "en": "Mauritius — Company formation (Domestic / GBC / Authorised)",
-            "es": "Mauricio — Creación de empresa (Domestic / GBC / Authorised)",
+            "en": "Mauritius: Company formation (Domestic / GBC / Authorised)",
+            "es": "Mauricio: Creación de empresa (Domestic / GBC / Authorised)",
         },
         "steps": [
             (
@@ -5739,8 +5739,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     TH_LTR_NAME: {
         "name": {
-            "en": "Thailand — Long-Term Resident (LTR, 10 years)",
-            "es": "Tailandia — Long-Term Resident (LTR, 10 años)",
+            "en": "Thailand: Long-Term Resident (LTR, 10 years)",
+            "es": "Tailandia: Long-Term Resident (LTR, 10 años)",
         },
         "steps": [
             (
@@ -5793,8 +5793,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     TH_OA_NAME: {
         "name": {
-            "en": "Thailand — Retiree visa (O-A, 50+)",
-            "es": "Tailandia — Visa de jubilado (O-A, 50 y +)",
+            "en": "Thailand: Retiree visa (O-A, 50+)",
+            "es": "Tailandia: Visa de jubilado (O-A, 50 y +)",
         },
         "steps": [
             (
@@ -5807,14 +5807,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "🟠 ≥ 50 years + deposit 800 000 THB OR income 65 000 THB/month + health "
                         "insurance (~3 M THB coverage). Indicative thresholds. NOTE: the O-X (up "
                         "to 10 years) exists for certain eligible nationalities (US, Canada, "
-                        "Australia, UK, Japan…), 3 M THB threshold — list to confirm. ⚠️ Does not "
+                        "Australia, UK, Japan…), 3 M THB threshold: list to confirm. ⚠️ Does not "
                         "lead to PR."
                     ),
                     "es": (
                         "🟠 ≥ 50 años + depósito 800 000 THB O ingresos 65 000 THB/mes + seguro de "
                         "salud (cobertura ~3 M THB). Umbrales indicativos. NOTA: el O-X (hasta 10 "
                         "años) existe para ciertas nacionalidades elegibles (US, Canadá, "
-                        "Australia, UK, Japón…), umbral 3 M THB — lista por confirmar. ⚠️ No "
+                        "Australia, UK, Japón…), umbral 3 M THB: lista por confirmar. ⚠️ No "
                         "conduce a la PR."
                     ),
                 },
@@ -5843,8 +5843,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     TH_PRIV_NAME: {
         "name": {
-            "en": "Thailand — Thailand Privilege (paid residence card)",
-            "es": "Tailandia — Thailand Privilege (tarjeta de residencia de pago)",
+            "en": "Thailand: Thailand Privilege (paid residence card)",
+            "es": "Tailandia: Thailand Privilege (tarjeta de residencia de pago)",
         },
         "steps": [
             (
@@ -5889,8 +5889,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     TH_NONB_NAME: {
         "name": {
-            "en": "Thailand — Non-B + Work Permit (employee)",
-            "es": "Tailandia — Non-B + Work Permit (asalariado)",
+            "en": "Thailand: Non-B + Work Permit (employee)",
+            "es": "Tailandia: Non-B + Work Permit (asalariado)",
         },
         "steps": [
             (
@@ -5903,13 +5903,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "🟠 Employer side: capital 2 M THB per foreign position (1 M if married to "
                         "a Thai) + ratio 4 Thai employees : 1 foreigner. S-Curve sector + high "
                         "salary → SMART Visa possible (SMART-T ≥ 100 000 THB/month, without a "
-                        "separate work permit — beware, many sources still cite 200k)."
+                        "separate work permit: beware, many sources still cite 200k)."
                     ),
                     "es": (
                         "🟠 Lado empleador: capital 2 M THB por puesto extranjero (1 M si está "
                         "casado con un·a tailandés·a) + ratio 4 empleados tailandeses : 1 "
                         "extranjero. Sector S-Curve + salario alto → SMART Visa posible (SMART-T "
-                        "≥ 100 000 THB/mes, sin work permit aparte — atención, muchas fuentes aún "
+                        "≥ 100 000 THB/mes, sin work permit aparte: atención, muchas fuentes aún "
                         "citan 200k)."
                     ),
                 },
@@ -5943,8 +5943,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     TH_CO_NAME: {
         "name": {
-            "en": "Thailand — Company formation (FBA: 100 % / BOI / Amity / FBL)",
-            "es": "Tailandia — Creación de empresa (FBA: 100 % / BOI / Amity / FBL)",
+            "en": "Thailand: Company formation (FBA: 100 % / BOI / Amity / FBL)",
+            "es": "Tailandia: Creación de empresa (FBA: 100 % / BOI / Amity / FBL)",
         },
         "steps": [
             (
@@ -5962,7 +5962,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "exempt from the 4:1 ratio); otherwise → FBL (discretionary, slow, "
                         "capital 3 M THB) OR a genuine Thai partner ≥ 51 %. (c) List 1 = "
                         'forbidden, List 2 = Cabinet approval (rare). 🔴 THE "THAI NOMINEE '
-                        'SHAREHOLDERS" SETUP IS ILLEGAL (art. 36 FBA — fines and possible '
+                        'SHAREHOLDERS" SETUP IS ILLEGAL (art. 36 FBA: fines and possible '
                         "prison, divestment order). NEVER propose it."
                     ),
                     "es": (
@@ -5974,7 +5974,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "la punta + work permits facilitados, exento del ratio 4:1); si no → FBL "
                         "(discrecional, lento, capital 3 M THB) O un socio tailandés real ≥ 51 %. "
                         "(c) Lista 1 = prohibido, Lista 2 = aprobación del Gabinete (raro). 🔴 EL "
-                        'MONTAJE "ACCIONISTAS TAILANDESES NOMINEE" ES ILEGAL (art. 36 FBA — '
+                        'MONTAJE "ACCIONISTAS TAILANDESES NOMINEE" ES ILEGAL (art. 36 FBA: '
                         "multas y posible prisión, orden de cesión). NUNCA proponerlo."
                     ),
                 },
@@ -6029,8 +6029,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     ID_RW_NAME: {
         "name": {
-            "en": "Indonesia — Remote Worker KITAS (E33G, nomad)",
-            "es": "Indonesia — Remote Worker KITAS (E33G, nómada)",
+            "en": "Indonesia: Remote Worker KITAS (E33G, nomad)",
+            "es": "Indonesia: Remote Worker KITAS (E33G, nómada)",
         },
         "steps": [
             (
@@ -6042,12 +6042,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "🟠 Foreign income ~60 000 USD/year (indicative, evisa.imigrasi.go.id). ⚠️ "
                         "Work ONLY for clients/employers OUTSIDE Indonesia. No higher tier like "
-                        "the LTR — E33G is the only nomad route."
+                        "the LTR: E33G is the only nomad route."
                     ),
                     "es": (
                         "🟠 Renta extranjera ~60 000 USD/año (indicativo, evisa.imigrasi.go.id). "
                         "⚠️ Trabajo ÚNICAMENTE para clientes/empleadores FUERA de Indonesia. Sin "
-                        "nivel superior tipo LTR — E33G es la única vía del nómada."
+                        "nivel superior tipo LTR: E33G es la única vía del nómada."
                     ),
                 },
             ),
@@ -6075,8 +6075,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     ID_SH_NAME: {
         "name": {
-            "en": "Indonesia — Second Home Visa (rentier)",
-            "es": "Indonesia — Second Home Visa (rentista)",
+            "en": "Indonesia: Second Home Visa (rentier)",
+            "es": "Indonesia: Second Home Visa (rentista)",
         },
         "steps": [
             (
@@ -6086,11 +6086,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🟠 Deposit ~IDR 2 bn (≈ 130 000 USD) — amount diverging across sources, "
+                        "🟠 Deposit ~IDR 2 bn (≈ 130 000 USD): amount diverging across sources, "
                         "recheck evisa.imigrasi.go.id. No age requirement. ⚠️ No right to work."
                     ),
                     "es": (
-                        "🟠 Depósito ~IDR 2 mil millones (≈ 130 000 USD) — importe divergente "
+                        "🟠 Depósito ~IDR 2 mil millones (≈ 130 000 USD): importe divergente "
                         "según las fuentes, reverificar evisa.imigrasi.go.id. Sin requisito de "
                         "edad. ⚠️ Sin derecho a trabajar."
                     ),
@@ -6123,8 +6123,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     ID_RET_NAME: {
         "name": {
-            "en": "Indonesia — Retirement KITAS (E33F, 55+)",
-            "es": "Indonesia — Retirement KITAS (E33F, 55 y +)",
+            "en": "Indonesia: Retirement KITAS (E33F, 55+)",
+            "es": "Indonesia: Retirement KITAS (E33F, 55 y +)",
         },
         "steps": [
             (
@@ -6135,12 +6135,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 ≥ 55 years + minimum pension + health insurance. LICENSED SPONSOR "
-                        "AGENT MANDATORY (sometimes employing a local is required — practice "
+                        "AGENT MANDATORY (sometimes employing a local is required: practice "
                         "varies). ⚠️ No right to work."
                     ),
                     "es": (
                         "🟠 ≥ 55 años + pensión mínima + seguro de salud. AGENTE PATROCINADOR "
-                        "AUTORIZADO OBLIGATORIO (a veces se exige emplear a un local — práctica "
+                        "AUTORIZADO OBLIGATORIO (a veces se exige emplear a un local: práctica "
                         "variable). ⚠️ Sin derecho a trabajar."
                     ),
                 },
@@ -6157,12 +6157,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "1 year renewable, a possible chain toward the KITAP. ⚠️ SPONSOR RISK: "
-                        "the permit falls if the sponsor (agent) stops — plan a fallback route. "
+                        "the permit falls if the sponsor (agent) stops: plan a fallback route. "
                         "Biometrics required."
                     ),
                     "es": (
                         "1 año renovable, posible cadena hacia el KITAP. ⚠️ RIESGO SPONSOR: el "
-                        "título decae si el sponsor (agente) cesa — prever una vía de repliegue. "
+                        "título decae si el sponsor (agente) cesa: prever una vía de repliegue. "
                         "Biometría requerida."
                     ),
                 },
@@ -6171,8 +6171,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     ID_WORK_NAME: {
         "name": {
-            "en": "Indonesia — Work KITAS (E23, employee)",
-            "es": "Indonesia — Work KITAS (E23, asalariado)",
+            "en": "Indonesia: Work KITAS (E23, employee)",
+            "es": "Indonesia: Work KITAS (E23, asalariado)",
         },
         "steps": [
             (
@@ -6203,12 +6203,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "6 months to 2 years renewable. After 3-4 continuous years → KITAP "
-                        "possible. ⚠️ SPONSOR RISK: the KITAS falls at the end of the contract — "
+                        "possible. ⚠️ SPONSOR RISK: the KITAS falls at the end of the contract, "
                         "plan a fallback. Biometrics required."
                     ),
                     "es": (
                         "6 meses a 2 años renovable. Tras 3-4 años continuos → KITAP posible. ⚠️ "
-                        "RIESGO SPONSOR: el KITAS decae al final del contrato — prever un "
+                        "RIESGO SPONSOR: el KITAS decae al final del contrato, prever un "
                         "repliegue. Biometría requerida."
                     ),
                 },
@@ -6217,8 +6217,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     ID_INV_NAME: {
         "name": {
-            "en": "Indonesia — Investor KITAS (E28A) + PT PMA",
-            "es": "Indonesia — Investor KITAS (E28A) + PT PMA",
+            "en": "Indonesia: Investor KITAS (E28A) + PT PMA",
+            "es": "Indonesia: Investor KITAS (E28A) + PT PMA",
         },
         "steps": [
             (
@@ -6246,12 +6246,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "🔴 Shareholding ~IDR 1 bn (sometimes 1.125 bn) — mostly an agency source, "
+                        "🔴 Shareholding ~IDR 1 bn (sometimes 1.125 bn): mostly an agency source, "
                         "recheck. ACTIVE DIRECTOR → may work (Investor KITAS); PASSIVE "
                         "SHAREHOLDER → holding only, no right to work."
                     ),
                     "es": (
-                        "🔴 Participación ~IDR 1 mil millones (a veces 1,125 mil millones) — "
+                        "🔴 Participación ~IDR 1 mil millones (a veces 1,125 mil millones): "
                         "mayoritariamente fuente de agencias, reverificar. DIRECTOR ACTIVO → "
                         "puede trabajar (Investor KITAS); ACCIONISTA PASIVO → solo tenencia, sin "
                         "derecho a trabajar."
@@ -6285,8 +6285,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     ID_CO_NAME: {
         "name": {
-            "en": "Indonesia — Company formation (PT PMA)",
-            "es": "Indonesia — Creación de empresa (PT PMA)",
+            "en": "Indonesia: Company formation (PT PMA)",
+            "es": "Indonesia: Creación de empresa (PT PMA)",
         },
         "steps": [
             (
@@ -6323,13 +6323,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "🟠 Investment plan > IDR 10 bn (excluding land/building) per "
                         "KBLI/location + paid-up capital ~IDR 10 bn. ⚠️ STOP USING the old 2.5 bn "
-                        "threshold (pre-2021) — a frequent agency error. OSS risk level: low → "
+                        "threshold (pre-2021): a frequent agency error. OSS risk level: low → "
                         "NIB suffices; high → NIB + izin."
                     ),
                     "es": (
                         "🟠 Plan de inversión > IDR 10 mil millones (excluyendo terreno/edificio) "
                         "por KBLI/localización + capital desembolsado ~IDR 10 mil millones. ⚠️ "
-                        "DEJAR DE USAR el antiguo umbral de 2,5 mil millones (pre-2021) — error "
+                        "DEJAR DE USAR el antiguo umbral de 2,5 mil millones (pre-2021): error "
                         "frecuente de las agencias. Nivel de riesgo OSS: bajo → NIB basta; alto → "
                         "NIB + izin."
                     ),
@@ -6367,8 +6367,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PH_SRRV_NAME: {
         "name": {
-            "en": "Philippines — SRRV (residence by deposit, via PRA)",
-            "es": "Filipinas — SRRV (residencia por depósito, vía PRA)",
+            "en": "Philippines: SRRV (residence by deposit, via PRA)",
+            "es": "Filipinas: SRRV (residencia por depósito, vía PRA)",
         },
         "steps": [
             (
@@ -6384,7 +6384,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "10k · Classic 50+ without pension 20k · Human Touch 10k (+1 500 "
                         "USD/month). ⚠️ RESIDING ≠ WORKING: the SRRV does NOT grant the right to "
                         "work (DOLE AEP required in addition). NOTE: a Digital Nomad Visa (EO 86, "
-                        "2025) exists on paper but is NOT operational — do not propose it until "
+                        "2025) exists on paper but is NOT operational: do not propose it until "
                         "issuance is confirmed."
                     ),
                     "es": (
@@ -6394,7 +6394,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "pareja) 10k · Classic 50+ sin pensión 20k · Human Touch 10k (+1 500 "
                         "USD/mes). ⚠️ RESIDIR ≠ TRABAJAR: el SRRV NO da el derecho a trabajar "
                         "(AEP del DOLE requerido además). NOTA: un Digital Nomad Visa (EO 86, "
-                        "2025) existe en el papel pero NO es operativo — no proponerlo hasta "
+                        "2025) existe en el papel pero NO es operativo: no proponerlo hasta "
                         "confirmar su emisión."
                     ),
                 },
@@ -6433,8 +6433,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PH_SIRV_NAME: {
         "name": {
-            "en": "Philippines — SIRV (investor visa, via BOI)",
-            "es": "Filipinas — SIRV (visa de inversionista, vía BOI)",
+            "en": "Philippines: SIRV (investor visa, via BOI)",
+            "es": "Filipinas: SIRV (visa de inversionista, vía BOI)",
         },
         "steps": [
             (
@@ -6442,14 +6442,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 ~75 000 USD invested and maintained (a mere real-estate purchase "
-                        "generally does not qualify — eligible assets defined by the BOI). ⚠️ "
-                        "RESIDING ≠ WORKING: investor status, not employee — running one's "
+                        "generally does not qualify: eligible assets defined by the BOI). ⚠️ "
+                        "RESIDING ≠ WORKING: investor status, not employee, running one's "
                         "company as an employee requires a 9(g) + AEP."
                     ),
                     "es": (
                         "🟠 ~75 000 USD invertidos y mantenidos (una simple compra inmobiliaria "
-                        "generalmente no califica — activos admisibles definidos por el BOI). ⚠️ "
-                        "RESIDIR ≠ TRABAJAR: estatus de inversionista, no asalariado — dirigir su "
+                        "generalmente no califica: activos admisibles definidos por el BOI). ⚠️ "
+                        "RESIDIR ≠ TRABAJAR: estatus de inversionista, no asalariado, dirigir su "
                         "empresa como asalariado exige un 9(g) + AEP."
                     ),
                 },
@@ -6478,8 +6478,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PH_13A_NAME: {
         "name": {
-            "en": "Philippines — 13(a) Visa (spouse of a Philippine national)",
-            "es": "Filipinas — Visa 13(a) (cónyuge de un·a nacional filipino·a)",
+            "en": "Philippines: 13(a) Visa (spouse of a Philippine national)",
+            "es": "Filipinas: Visa 13(a) (cónyuge de un·a nacional filipino·a)",
         },
         "steps": [
             (
@@ -6491,21 +6491,21 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "🟠 The 13(a) is subject to RECIPROCITY: open to nationals of countries "
                         "granting an equivalent right to Filipinos (most Western countries have "
-                        "it — to verify by nationality). Valid marriage to a Philippine national "
+                        "it: to verify by nationality). Valid marriage to a Philippine national "
                         "required."
                     ),
                     "es": (
                         "🟠 El 13(a) está sujeto a RECIPROCIDAD: abierto a los nacionales de "
                         "países que otorgan un derecho equivalente a los filipinos (la mayoría de "
-                        "los países occidentales lo tienen — a verificar por nacionalidad). "
+                        "los países occidentales lo tienen: a verificar por nacionalidad). "
                         "Matrimonio válido con un·a filipino·a requerido."
                     ),
                 },
             ),
             (
                 {
-                    "en": "File the application (BI) — 1-year probationary status",
-                    "es": "Presentar la solicitud (BI) — estatus probatorio de 1 año",
+                    "en": "File the application (BI): 1-year probationary status",
+                    "es": "Presentar la solicitud (BI): estatus probatorio de 1 año",
                 },
                 {
                     "en": "Application filed with the BI; one-year probationary status.",
@@ -6532,8 +6532,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PH_CO_NAME: {
         "name": {
-            "en": "Philippines — Company formation (60/40 / FINL / export / DME)",
-            "es": "Filipinas — Creación de empresa (60/40 / FINL / export / DME)",
+            "en": "Philippines: Company formation (60/40 / FINL / export / DME)",
+            "es": "Filipinas: Creación de empresa (60/40 / FINL / export / DME)",
         },
         "steps": [
             (
@@ -6550,7 +6550,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "domestic market, foreign majority → DME, capital 200 000 USD (reducible "
                         "to 100 000 if advanced tech/endorsed startup/≥ 50 Philippine employees). "
                         "🔴 ANTI-DUMMY LAW (CA 108): the façade 60/40 (Philippine frontman, hidden "
-                        "voting trust, share-backed loans) is ILLEGAL — criminal penalties for "
+                        "voting trust, share-backed loans) is ILLEGAL: criminal penalties for "
                         "the foreigner AND the frontman. The 60/40 must reflect REAL Philippine "
                         "economic control. NEVER propose it."
                     ),
@@ -6563,7 +6563,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "000 USD (reducible a 100 000 si tech avanzada/startup endosada/≥ 50 "
                         "empleados filipinos). 🔴 ANTI-DUMMY LAW (CA 108): el 60/40 de fachada "
                         "(testaferro filipino, voting trust oculto, préstamos respaldados por "
-                        "acciones) es ILEGAL — sanciones penales para el extranjero Y el "
+                        "acciones) es ILEGAL: sanciones penales para el extranjero Y el "
                         "testaferro. El 60/40 debe reflejar un control económico filipino REAL. "
                         "NUNCA proponerlo."
                     ),
@@ -6608,8 +6608,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PT_CRUE_NAME: {
         "name": {
-            "en": "Portugal — EU residence registration (CRUE)",
-            "es": "Portugal — Registro de residencia UE (CRUE)",
+            "en": "Portugal: EU residence registration (CRUE)",
+            "es": "Portugal: Registro de residencia UE (CRUE)",
         },
         "steps": [
             (
@@ -6649,11 +6649,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "⚠️ Naturalization at 5 years today, but a 2025 reform underway may "
-                        "extend it (7/10 years) — a regulatory risk, not a given."
+                        "extend it (7/10 years): a regulatory risk, not a given."
                     ),
                     "es": (
                         "⚠️ Naturalización a los 5 años hoy, pero una reforma 2025 en curso "
-                        "podría alargarla (7/10 años) — riesgo regulatorio, no un derecho "
+                        "podría alargarla (7/10 años): riesgo regulatorio, no un derecho "
                         "adquirido."
                     ),
                 },
@@ -6662,8 +6662,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PT_D8_NAME: {
         "name": {
-            "en": "Portugal — D8 Visa (digital nomad, non-EU)",
-            "es": "Portugal — Visa D8 (nómada digital, fuera de la UE)",
+            "en": "Portugal: D8 Visa (digital nomad, non-EU)",
+            "es": "Portugal: Visa D8 (nómada digital, fuera de la UE)",
         },
         "steps": [
             (
@@ -6715,8 +6715,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     PT_GV_NAME: {
         "name": {
-            "en": "Portugal — Golden Visa / ARI (passive investor, post-2023)",
-            "es": "Portugal — Golden Visa / ARI (inversionista pasivo, post-2023)",
+            "en": "Portugal: Golden Visa / ARI (passive investor, post-2023)",
+            "es": "Portugal: Golden Visa / ARI (inversionista pasivo, post-2023)",
         },
         "steps": [
             (
@@ -6729,14 +6729,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "🟠 CURRENT routes (indicative amounts): qualifying funds ≥ 500 000 € · "
                         "creation of 10 jobs · R&D ≥ 500 000 € · cultural support ≥ 250 000 € · "
                         "company capitalization ≥ 500 000 €. ⚠️ REAL ESTATE and plain capital "
-                        "transfer were REMOVED in 2023 (Mais Habitação law) — any brochure citing "
+                        "transfer were REMOVED in 2023 (Mais Habitação law): any brochure citing "
                         "a property purchase (280k/350k/500k) is FALSE."
                     ),
                     "es": (
                         "🟠 Vías ACTUALES (importes indicativos): fondos calificados ≥ 500 000 € · "
                         "creación de 10 empleos · I+D ≥ 500 000 € · apoyo cultural ≥ 250 000 € · "
                         "capitalización de empresa ≥ 500 000 €. ⚠️ El INMOBILIARIO y la simple "
-                        "transferencia de capital fueron RETIRADOS en 2023 (ley Mais Habitação) — "
+                        "transferencia de capital fueron RETIRADOS en 2023 (ley Mais Habitação): "
                         "cualquier folleto que cite la compra inmobiliaria (280k/350k/500k) es "
                         "FALSO."
                     ),
@@ -6769,8 +6769,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     VN_WP_NAME: {
         "name": {
-            "en": "Vietnam — Work Permit + TRC (employee)",
-            "es": "Vietnam — Work Permit + TRC (asalariado)",
+            "en": "Vietnam: Work Permit + TRC (employee)",
+            "es": "Vietnam: Work Permit + TRC (asalariado)",
         },
         "steps": [
             (
@@ -6784,13 +6784,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🔴 Work permit issuing authority UNCERTAIN since the 2025 administrative "
-                        "reorganization (DOLISA → Ministry of the Interior?) — to confirm "
+                        "reorganization (DOLISA → Ministry of the Interior?): to confirm "
                         "province by province. Quota + qualification (~3 years of experience for "
                         '"expert"). Permit exemption (LD1) if capital contributed ≥ ~3 bn VND.'
                     ),
                     "es": (
                         "🔴 Autoridad emisora del work permit INCIERTA desde la reorganización "
-                        "administrativa 2025 (DOLISA → Ministerio del Interior?) — a confirmar "
+                        "administrativa 2025 (DOLISA → Ministerio del Interior?): a confirmar "
                         "provincia por provincia. Cupo + cualificación (~3 años de experiencia "
                         'para "experto"). Exención de permiso (LD1) si el capital aportado ≥ ~3 '
                         "mil millones VND."
@@ -6816,13 +6816,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "TRC up to 2 years, tied to the employer. After 3 years of continuous TRC "
                         '+ sponsor → PRC possible (rare, discretionary). ⚠️ For a "retirement" or '
-                        '"nomad" need, Vietnam has no route — redirect '
+                        '"nomad" need, Vietnam has no route: redirect '
                         "(Thailand/Indonesia/Philippines). Biometrics required."
                     ),
                     "es": (
                         "TRC hasta 2 años, ligada al empleador. Tras 3 años de TRC continua + "
                         "sponsor → PRC posible (raro, discrecional). ⚠️ Para una necesidad de "
-                        '"jubilación" o "nómada", Vietnam no tiene vía — reorientar '
+                        '"jubilación" o "nómada", Vietnam no tiene vía: reorientar '
                         "(Tailandia/Indonesia/Filipinas). Biometría requerida."
                     ),
                 },
@@ -6831,8 +6831,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     VN_INV_NAME: {
         "name": {
-            "en": "Vietnam — Investor TRC (DT1-DT4)",
-            "es": "Vietnam — Investor TRC (DT1-DT4)",
+            "en": "Vietnam: Investor TRC (DT1-DT4)",
+            "es": "Vietnam: Investor TRC (DT1-DT4)",
         },
         "steps": [
             (
@@ -6887,8 +6887,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     VN_TT_NAME: {
         "name": {
-            "en": "Vietnam — Family TRC (TT, spouse of a Vietnamese national)",
-            "es": "Vietnam — TRC familiar (TT, cónyuge de un·a vietnamita)",
+            "en": "Vietnam: Family TRC (TT, spouse of a Vietnamese national)",
+            "es": "Vietnam: TRC familiar (TT, cónyuge de un·a vietnamita)",
         },
         "steps": [
             (
@@ -6939,8 +6939,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     VN_RO_NAME: {
         "name": {
-            "en": "Vietnam — Representative Office",
-            "es": "Vietnam — Representative Office (oficina de representación)",
+            "en": "Vietnam: Representative Office",
+            "es": "Vietnam: Representative Office (oficina de representación)",
         },
         "steps": [
             (
@@ -6951,12 +6951,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "Parent company existing for ≥ 1 year (Decree 07/2016). The RO CANNOT "
-                        "generate direct commercial revenue — liaison/representation function "
+                        "generate direct commercial revenue: liaison/representation function "
                         "only."
                     ),
                     "es": (
                         "Casa matriz existente desde ≥ 1 año (Decreto 07/2016). La RO NO puede "
-                        "generar ingresos comerciales directos — función de enlace/representación "
+                        "generar ingresos comerciales directos: función de enlace/representación "
                         "únicamente."
                     ),
                 },
@@ -6990,8 +6990,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_E2_NAME: {
         "name": {
-            "en": "United States — E-2 Visa (treaty investor)",
-            "es": "Estados Unidos — Visa E-2 (inversionista de tratado)",
+            "en": "United States: E-2 Visa (treaty investor)",
+            "es": "Estados Unidos: Visa E-2 (inversionista de tratado)",
         },
         "steps": [
             (
@@ -7062,8 +7062,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_L1_NAME: {
         "name": {
-            "en": "United States — L-1 Visa (intra-company transfer)",
-            "es": "Estados Unidos — Visa L-1 (transferencia intraempresa)",
+            "en": "United States: L-1 Visa (intra-company transfer)",
+            "es": "Estados Unidos: Visa L-1 (transferencia intraempresa)",
         },
         "steps": [
             (
@@ -7119,8 +7119,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_O1_NAME: {
         "name": {
-            "en": "United States — O-1 Visa (extraordinary ability)",
-            "es": "Estados Unidos — Visa O-1 (capacidades extraordinarias)",
+            "en": "United States: O-1 Visa (extraordinary ability)",
+            "es": "Estados Unidos: Visa O-1 (capacidades extraordinarias)",
         },
         "steps": [
             (
@@ -7167,8 +7167,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_H1B_NAME: {
         "name": {
-            "en": "United States — H-1B Visa (specialty occupation)",
-            "es": "Estados Unidos — Visa H-1B (specialty occupation)",
+            "en": "United States: H-1B Visa (specialty occupation)",
+            "es": "Estados Unidos: Visa H-1B (specialty occupation)",
         },
         "steps": [
             (
@@ -7179,14 +7179,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🔴 Annual quota 65 000 + 20 000 (US master's) → LOTTERY: selection NOT "
-                        "guaranteed. ⚠️ Proclamation of 19/09/2025 imposing a 100 000 USD fee — "
+                        "guaranteed. ⚠️ Proclamation of 19/09/2025 imposing a 100 000 USD fee: "
                         "scope/exemptions/judicial status UNCERTAIN, the n°1 point to verify. "
                         "Registration fee to confirm (FY2027)."
                     ),
                     "es": (
                         "🔴 Cupo anual 65 000 + 20 000 (máster US) → LOTERÍA: selección NO "
                         "garantizada. ⚠️ Proclamación del 19/09/2025 que impone una tasa de 100 "
-                        "000 USD — alcance/exenciones/estatus judicial INCIERTOS, el punto n.º 1 "
+                        "000 USD: alcance/exenciones/estatus judicial INCIERTOS, el punto n.º 1 "
                         "a verificar. Tasa de registro por confirmar (FY2027)."
                     ),
                 },
@@ -7218,8 +7218,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_EB5_NAME: {
         "name": {
-            "en": "United States — EB-5 green card (immigrant investor)",
-            "es": "Estados Unidos — Green card EB-5 (inversionista inmigrante)",
+            "en": "United States: EB-5 green card (immigrant investor)",
+            "es": "Estados Unidos: Green card EB-5 (inversionista inmigrante)",
         },
         "steps": [
             (
@@ -7252,8 +7252,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
             ),
             (
                 {
-                    "en": "Conditional green card (2 years) — consulate or adjustment of status",
-                    "es": "Green card condicional (2 años) — consulado o ajuste de estatus",
+                    "en": "Conditional green card (2 years): consulate or adjustment of status",
+                    "es": "Green card condicional (2 años): consulado o ajuste de estatus",
                 },
                 {
                     "en": (
@@ -7280,8 +7280,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_NIW_NAME: {
         "name": {
-            "en": "United States — EB-2 NIW / EB-1A green card (by merit)",
-            "es": "Estados Unidos — Green card EB-2 NIW / EB-1A (por mérito)",
+            "en": "United States: EB-2 NIW / EB-1A green card (by merit)",
+            "es": "Estados Unidos: Green card EB-2 NIW / EB-1A (por mérito)",
         },
         "steps": [
             (
@@ -7336,8 +7336,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     US_CO_NAME: {
         "name": {
-            "en": "United States — Company formation (LLC / C-Corp)",
-            "es": "Estados Unidos — Creación de empresa (LLC / C-Corp)",
+            "en": "United States: Company formation (LLC / C-Corp)",
+            "es": "Estados Unidos: Creación de empresa (LLC / C-Corp)",
         },
         "steps": [
             (
@@ -7400,7 +7400,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "(deadline April 15, PENALTY 25 000 USD). C-Corp → 1120; 5472 if a "
                         "related foreign shareholder ≥ 25 %; dividend withholding 30 % → 15 % "
                         "(US-France treaty). 🔴 BOI/Corporate Transparency Act: FinCEN rule of "
-                        "March 2025 refocused on foreign entities — scope to verify on "
+                        "March 2025 refocused on foreign entities: scope to verify on "
                         "fincen.gov/boi."
                     ),
                     "es": (
@@ -7408,7 +7408,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "forma (plazo 15 de abril, MULTA 25 000 USD). C-Corp → 1120; 5472 si un "
                         "accionista extranjero vinculado ≥ 25 %; retención de dividendos 30 % → "
                         "15 % (convenio US-Francia). 🔴 BOI/Corporate Transparency Act: regla "
-                        "FinCEN de marzo 2025 reenfocada en las entidades extranjeras — alcance a "
+                        "FinCEN de marzo 2025 reenfocada en las entidades extranjeras: alcance a "
                         "verificar en fincen.gov/boi."
                     ),
                 },
@@ -7417,8 +7417,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CH_BNA_NAME: {
         "name": {
-            "en": "Switzerland — Permit B non-active (rentier/retiree EU/EFTA)",
-            "es": "Suiza — Permiso B no activo (rentista/jubilado UE/AELC)",
+            "en": "Switzerland: Permit B non-active (rentier/retiree EU/EFTA)",
+            "es": "Suiza: Permiso B no activo (rentista/jubilado UE/AELC)",
         },
         "steps": [
             (
@@ -7458,12 +7458,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "B permit (5 years). 🟠 Lump-sum taxation available in most cantons (a "
                         "distinct TAX regime, to negotiate separately with the cantonal tax "
-                        "office — not a residence right). The canton is decisive (taxation)."
+                        "office: not a residence right). The canton is decisive (taxation)."
                     ),
                     "es": (
                         "Permiso B (5 años). 🟠 Tributación a tanto alzado disponible en la "
                         "mayoría de los cantones (un régimen FISCAL distinto, a negociar por "
-                        "separado con la oficina fiscal cantonal — no un derecho de residencia). "
+                        "separado con la oficina fiscal cantonal: no un derecho de residencia). "
                         "El cantón es determinante (fiscalidad)."
                     ),
                 },
@@ -7472,8 +7472,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CH_EMP_NAME: {
         "name": {
-            "en": "Switzerland — Permit L/B employee (EU/EFTA)",
-            "es": "Suiza — Permiso L/B asalariado (UE/AELC)",
+            "en": "Switzerland: Permit L/B employee (EU/EFTA)",
+            "es": "Suiza: Permiso L/B asalariado (UE/AELC)",
         },
         "steps": [
             (
@@ -7518,8 +7518,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CH_IND_NAME: {
         "name": {
-            "en": "Switzerland — Self-employed / entrepreneur (EU/EFTA)",
-            "es": "Suiza — Autónomo / emprendedor (UE/AELC)",
+            "en": "Switzerland: Self-employed / entrepreneur (EU/EFTA)",
+            "es": "Suiza: Autónomo / emprendedor (UE/AELC)",
         },
         "steps": [
             (
@@ -7529,11 +7529,11 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 },
                 {
                     "en": (
-                        "Business plan, forecast accounts, premises/clients — the activity must "
+                        "Business plan, forecast accounts, premises/clients: the activity must "
                         "be effective (not fictitious). AVS affiliation as self-employed."
                     ),
                     "es": (
-                        "Business plan, contabilidad previsional, locales/clientes — la actividad "
+                        "Business plan, contabilidad previsional, locales/clientes: la actividad "
                         "debe ser efectiva (no ficticia). Afiliación AVS como autónomo."
                     ),
                 },
@@ -7568,8 +7568,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CH_RET_NAME: {
         "name": {
-            "en": "Switzerland — Non-EU rentier (55+, art. 28 LEI)",
-            "es": "Suiza — Rentista no-UE (55 y +, art. 28 LEI)",
+            "en": "Switzerland: Non-EU rentier (55+, art. 28 LEI)",
+            "es": "Suiza: Rentista no-UE (55 y +, art. 28 LEI)",
         },
         "steps": [
             (
@@ -7582,14 +7582,14 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 years + PARTICULAR personal ties with "
                         "Switzerland + no gainful activity + sufficient means + effective "
                         "transfer of the center of life. VERY discretionary: some cantons "
-                        "welcoming, others restrictive — the choice of canton is decisive. A "
+                        "welcoming, others restrictive: the choice of canton is decisive. A "
                         "non-EU rentier UNDER 55 has no clear route."
                     ),
                     "es": (
                         "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 años + lazos personales PARTICULARES "
                         "con Suiza + ninguna actividad lucrativa + medios suficientes + "
                         "transferencia efectiva del centro de vida. MUY discrecional: algunos "
-                        "cantones acogedores, otros restrictivos — la elección del cantón es "
+                        "cantones acogedores, otros restrictivos: la elección del cantón es "
                         "determinante. Un rentista no-UE de MENOS de 55 años no tiene vía clara."
                     ),
                 },
@@ -7612,12 +7612,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "🟠 Target audience for lump-sum taxation (a distinct tax regime, to "
-                        "negotiate via a cantonal ruling BEFORE settling — not a permit in "
+                        "negotiate via a cantonal ruling BEFORE settling: not a permit in "
                         "itself)."
                     ),
                     "es": (
                         "🟠 Público objetivo de la tributación a tanto alzado (un régimen fiscal "
-                        "distinto, a negociar mediante un ruling cantonal ANTES de instalarse — "
+                        "distinto, a negociar mediante un ruling cantonal ANTES de instalarse: "
                         "no un título en sí mismo)."
                     ),
                 },
@@ -7626,8 +7626,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CH_TCN_NAME: {
         "name": {
-            "en": "Switzerland — Non-EU employee (art. 18-23 LEI)",
-            "es": "Suiza — Asalariado no-UE (art. 18-23 LEI)",
+            "en": "Switzerland: Non-EU employee (art. 18-23 LEI)",
+            "es": "Suiza: Asalariado no-UE (art. 18-23 LEI)",
         },
         "steps": [
             (
@@ -7680,8 +7680,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CH_CO_NAME: {
         "name": {
-            "en": "Switzerland — Company formation (Sàrl / SA)",
-            "es": "Suiza — Creación de empresa (Sàrl / SA)",
+            "en": "Switzerland: Company formation (Sàrl / SA)",
+            "es": "Suiza: Creación de empresa (Sàrl / SA)",
         },
         "steps": [
             (
@@ -7692,7 +7692,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                 {
                     "en": (
                         "⚠️ RESIDENT DIRECTOR MANDATORY: at least one person domiciled in "
-                        "Switzerland with signing authority (art. 814 para. 3 / 718 para. 4 CO) — "
+                        "Switzerland with signing authority (art. 814 para. 3 / 718 para. 4 CO): "
                         "local hire, fiduciary administrator, or the founder settling. Without "
                         "them, no company. CANTON = tax lever n°1: profit tax ~11.5 % "
                         "(Zug/Nidwalden) to ~21 % (Bern); Geneva ~14 % (NO LONGER a high-tax "
@@ -7702,7 +7702,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     ),
                     "es": (
                         "⚠️ DIRECTIVO RESIDENTE OBLIGATORIO: al menos una persona domiciliada en "
-                        "Suiza con poder de firma (art. 814 ap. 3 / 718 ap. 4 CO) — contratación "
+                        "Suiza con poder de firma (art. 814 ap. 3 / 718 ap. 4 CO): contratación "
                         "local, administrador fiduciario, o instalación del fundador. Sin él, no "
                         "hay empresa. CANTÓN = palanca fiscal n°1: impuesto sobre beneficios "
                         "~11,5 % (Zug/Nidwalden) a ~21 % (Berna); Ginebra ~14 % (YA NO es un "
@@ -7746,8 +7746,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "1). VAT 8.1 % if turnover > 100 000 CHF. Withholding tax 35 % on "
                         "dividends (residual rates by treaty). Stamp duty 1 % above 1 M CHF of "
                         "contribution. NOTE lump-sum taxation: a regime for a foreign rentier "
-                        "without activity (federal floor 400 000 CHF / 7× rent, cantonal ruling) "
-                        "— distinct, not a residence permit; abolished in "
+                        "without activity (federal floor 400 000 CHF / 7× rent, cantonal ruling): "
+                        "distinct, not a residence permit; abolished in "
                         "Zurich/Basel/Schaffhausen/Appenzell AR."
                     ),
                     "es": (
@@ -7756,7 +7756,7 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                         "sobre dividendos (tasas residuales por convenio). Derecho de timbre 1 % "
                         "por encima de 1 M CHF de aporte. NOTA tributación a tanto alzado: "
                         "régimen para un rentista extranjero sin actividad (suelo federal 400 000 "
-                        "CHF / 7× alquiler, ruling cantonal) — distinto, no un título de "
+                        "CHF / 7× alquiler, ruling cantonal): distinto, no un título de "
                         "residencia; abolido en Zúrich/Basilea/Schaffhausen/Appenzell AR."
                     ),
                 },
@@ -7765,8 +7765,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CA_EE_NAME: {
         "name": {
-            "en": "Canada — Express Entry (federal permanent residence)",
-            "es": "Canadá — Express Entry (residencia permanente federal)",
+            "en": "Canada: Express Entry (federal permanent residence)",
+            "es": "Canadá: Express Entry (residencia permanente federal)",
         },
         "steps": [
             (
@@ -7826,8 +7826,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CA_PNP_NAME: {
         "name": {
-            "en": "Canada — Provincial Nominee Program (PNP)",
-            "es": "Canadá — Provincial Nominee Program (PNP)",
+            "en": "Canada: Provincial Nominee Program (PNP)",
+            "es": "Canadá: Provincial Nominee Program (PNP)",
         },
         "steps": [
             (
@@ -7839,13 +7839,13 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "🔴 Each province has its own streams and criteria (often tied to an "
                         "in-demand occupation, a local job offer, or a tie to the province). 2025 "
-                        "PNP allocation reduced (~55 000) — stream availability volatile, to "
+                        "PNP allocation reduced (~55 000): stream availability volatile, to "
                         "confirm by province (OINP/BC PNP/AAIP…)."
                     ),
                     "es": (
                         "🔴 Cada provincia tiene sus propios componentes y criterios (a menudo "
                         "ligados a una profesión en demanda, una oferta de empleo local, o un "
-                        "vínculo con la provincia). Asignación PNP 2025 reducida (~55 000) — "
+                        "vínculo con la provincia). Asignación PNP 2025 reducida (~55 000): "
                         "disponibilidad de los componentes volátil, a confirmar por provincia "
                         "(OINP/BC PNP/AAIP…)."
                     ),
@@ -7883,8 +7883,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CA_QC_NAME: {
         "name": {
-            "en": "Quebec — PSTQ / Arrima (Quebec selection, then PR)",
-            "es": "Quebec — PSTQ / Arrima (selección quebequense, luego RP)",
+            "en": "Quebec: PSTQ / Arrima (Quebec selection, then PR)",
+            "es": "Quebec: PSTQ / Arrima (selección quebequense, luego RP)",
         },
         "steps": [
             (
@@ -7945,8 +7945,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CA_WP_NAME: {
         "name": {
-            "en": "Canada — Work permit → Canadian experience → PR",
-            "es": "Canadá — Permiso de trabajo → experiencia canadiense → RP",
+            "en": "Canada: Work permit → Canadian experience → PR",
+            "es": "Canadá: Permiso de trabajo → experiencia canadiense → RP",
         },
         "steps": [
             (
@@ -8007,8 +8007,8 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
     },
     CA_SUV_NAME: {
         "name": {
-            "en": "Canada — Start-up Visa (SUV, entrepreneur)",
-            "es": "Canadá — Start-up Visa (SUV, emprendedor)",
+            "en": "Canada: Start-up Visa (SUV, entrepreneur)",
+            "es": "Canadá: Start-up Visa (SUV, emprendedor)",
         },
         "steps": [
             (
@@ -8020,12 +8020,12 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
                     "en": (
                         "🟠 Designated organization: venture capital ≥ 200 000 $ / angel investor "
                         "≥ 75 000 $ / incubator (no funds required). Support letter required. ⚠️ "
-                        "No investor/golden visa in Canada — this is the project route."
+                        "No investor/golden visa in Canada: this is the project route."
                     ),
                     "es": (
                         "🟠 Organización designada: capital-riesgo ≥ 200 000 $ / inversionista "
                         "ángel ≥ 75 000 $ / incubadora (sin fondos requeridos). Carta de apoyo "
-                        "requerida. ⚠️ Sin visa de inversionista/golden en Canadá — esta es la "
+                        "requerida. ⚠️ Sin visa de inversionista/golden en Canadá: esta es la "
                         "vía de proyecto."
                     ),
                 },
@@ -8067,9 +8067,9 @@ _SAMPLE_I18N: dict[str, dict[str, object]] = {
 _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     PT_D7_NAME: {
         "name": {
-            "ru": "Португалия — Виза D7 (пассивный доход / пенсионер, не-ЕС)",
-            "pt": "Portugal — Visto D7 (rendimento passivo / reformado, fora da UE)",
-            "it": "Portogallo — Visto D7 (reddito passivo / pensionato, extra-UE)",
+            "ru": "Португалия: Виза D7 (пассивный доход / пенсионер, не-ЕС)",
+            "pt": "Portugal: Visto D7 (rendimento passivo / reformado, fora da UE)",
+            "it": "Portogallo: Visto D7 (reddito passivo / pensionato, extra-UE)",
         },
         "steps": [
             (
@@ -8096,17 +8096,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 Порог индексируется по SMN (~870 €/месяц 2025, требует подтверждения; "
-                        "SMN выплачивается 14×/год — уточнить ×12/×14). ⚠️ D7 = только ПАССИВНЫЙ "
+                        "SMN выплачивается 14×/год: уточнить ×12/×14). ⚠️ D7 = только ПАССИВНЫЙ "
                         "доход (активная удалённая работа относится к D8)."
                     ),
                     "pt": (
-                        "🟠 Limiar indexado ao SMN (~870 €/mês 2025, a confirmar; SMN pago 14×/ano "
-                        "— esclarecer ×12/×14). ⚠️ D7 = rendimento PASSIVO apenas (o trabalho "
-                        "remoto ativo enquadra-se no D8)."
+                        "🟠 Limiar indexado ao SMN (~870 €/mês 2025, a confirmar; SMN pago "
+                        "14×/ano, esclarecer ×12/×14). ⚠️ D7 = rendimento PASSIVO apenas "
+                        "(o trabalho remoto ativo enquadra-se no D8)."
                     ),
                     "it": (
                         "🟠 Soglia indicizzata all'SMN (~870 €/mese 2025, da confermare; SMN "
-                        "pagato 14×/anno — chiarire ×12/×14). ⚠️ D7 = solo reddito PASSIVO (il "
+                        "pagato 14×/anno: chiarire ×12/×14). ⚠️ D7 = solo reddito PASSIVO (il "
                         "lavoro da remoto attivo rientra nel D8)."
                     ),
                 },
@@ -8142,9 +8142,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     RUC_NAME: {
         "name": {
-            "ru": "Парагвай — Создание компании (RUC)",
-            "pt": "Paraguai — Constituição de sociedade (RUC)",
-            "it": "Paraguay — Costituzione di società (RUC)",
+            "ru": "Парагвай: Создание компании (RUC)",
+            "pt": "Paraguai: Constituição de sociedade (RUC)",
+            "it": "Paraguay: Costituzione di società (RUC)",
         },
         "steps": [
             (
@@ -8178,19 +8178,19 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "Учреждение за 72 ч (часто 24–48 ч) с типовым уставом; ≈ 8 рабочих дней с "
-                        "индивидуальным уставом. Этот этап может выполнить escribano — назначить в "
+                        "Учреждение за 72 ч (часто 24-48 ч) с типовым уставом; ≈ 8 рабочих дней с "
+                        "индивидуальным уставом. Этот этап может выполнить escribano: назначить в "
                         "досье."
                     ),
                     "pt": (
-                        "Constituição em 72 h (muitas vezes 24–48 h) com estatutos proforma; ≈ 8 "
+                        "Constituição em 72 h (muitas vezes 24-48 h) com estatutos proforma; ≈ 8 "
                         "dias úteis com estatutos personalizados. O escribano pode realizar esta "
-                        "etapa — a atribuir no processo."
+                        "etapa: a atribuir no processo."
                     ),
                     "it": (
-                        "Costituzione in 72 h (spesso 24–48 h) con statuto proforma; ≈ 8 giorni "
+                        "Costituzione in 72 h (spesso 24-48 h) con statuto proforma; ≈ 8 giorni "
                         "lavorativi con statuto personalizzato. L'escribano può svolgere questa "
-                        "fase — da assegnare nel fascicolo."
+                        "fase: da assegnare nel fascicolo."
                     ),
                 },
             ),
@@ -8222,9 +8222,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PERM_NAME: {
         "name": {
-            "ru": "Парагвай — Постоянное проживание (изменение категории)",
-            "pt": "Paraguai — Residência permanente (mudança de categoria)",
-            "it": "Paraguay — Residenza permanente (cambio di categoria)",
+            "ru": "Парагвай: Постоянное проживание (изменение категории)",
+            "pt": "Paraguai: Residência permanente (mudança de categoria)",
+            "it": "Paraguay: Residenza permanente (cambio di categoria)",
         },
         "steps": [
             (
@@ -8296,7 +8296,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "Окончательный постоянный carnet, подлежит обновлению каждые 10 лет. "
                         "Постоянный резидент не должен отсутствовать более 3 лет подряд без "
-                        "обоснования. Конвертация доступна после ≈ 21–24 месяцев временного "
+                        "обоснования. Конвертация доступна после ≈ 21-24 месяцев временного "
                         "проживания."
                     ),
                     "pt": (
@@ -8317,9 +8317,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CY_NAME: {
         "name": {
-            "ru": "Кипр — Регистрация резидентства ЕС (Yellow Slip, MEU1)",
-            "pt": "Chipre — Registo de residência UE (Yellow Slip, MEU1)",
-            "it": "Cipro — Registrazione di residenza UE (Yellow Slip, MEU1)",
+            "ru": "Кипр: Регистрация резидентства ЕС (Yellow Slip, MEU1)",
+            "pt": "Chipre: Registo de residência UE (Yellow Slip, MEU1)",
+            "it": "Cipro: Registrazione di residenza UE (Yellow Slip, MEU1)",
         },
         "steps": [
             (
@@ -8351,7 +8351,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "Офисы в Никосии / Лимасоле / Ларнаке / Пафосе. Бронировать за ≈ 3–4 "
+                        "Офисы в Никосии / Лимасоле / Ларнаке / Пафосе. Бронировать за ≈ 3-4 "
                         "недели."
                     ),
                     "pt": (
@@ -8392,9 +8392,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CYF_NAME: {
         "name": {
-            "ru": "Кипр — Резидентство не-ЕС по пассивному доходу (Pink Slip + Category F)",
-            "pt": "Chipre — Residência fora da UE por rendimento passivo (Pink Slip + Category F)",
-            "it": "Cipro — Residenza extra-UE per reddito passivo (Pink Slip + Category F)",
+            "ru": "Кипр: Резидентство не-ЕС по пассивному доходу (Pink Slip + Category F)",
+            "pt": "Chipre: Residência fora da UE por rendimento passivo (Pink Slip + Category F)",
+            "it": "Cipro: Residenza extra-UE per reddito passivo (Pink Slip + Category F)",
         },
         "steps": [
             (
@@ -8496,17 +8496,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🔴 Отставание по Category F оценивается в 5–7 лет (досье 2020 года ещё в "
+                        "🔴 Отставание по Category F оценивается в 5-7 лет (досье 2020 года ещё в "
                         "обработке). Продлевать Pink Slip КАЖДЫЙ год до выдачи PR. Никогда не "
                         "обещать быстрый PR по этому пути."
                     ),
                     "pt": (
-                        "🔴 Atraso da Category F estimado em 5–7 anos (processos de 2020 ainda "
+                        "🔴 Atraso da Category F estimado em 5-7 anos (processos de 2020 ainda "
                         "pendentes). Renovar o Pink Slip TODOS os anos até à emissão da PR. Nunca "
                         "prometer uma PR rápida por esta via."
                     ),
                     "it": (
-                        "🔴 Arretrato della Category F stimato in 5–7 anni (pratiche del 2020 "
+                        "🔴 Arretrato della Category F stimato in 5-7 anni (pratiche del 2020 "
                         "ancora pendenti). Rinnovare il Pink Slip OGNI anno fino al rilascio della "
                         "PR. Non promettere mai una PR rapida per questa via."
                     ),
@@ -8528,9 +8528,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     DNV_NAME: {
         "name": {
-            "ru": "Кипр — Digital Nomad Visa (не-ЕС)",
-            "pt": "Chipre — Digital Nomad Visa (fora da UE)",
-            "it": "Cipro — Digital Nomad Visa (extra-UE)",
+            "ru": "Кипр: Digital Nomad Visa (не-ЕС)",
+            "pt": "Chipre: Digital Nomad Visa (fora da UE)",
+            "it": "Cipro: Digital Nomad Visa (extra-UE)",
         },
         "steps": [
             (
@@ -8576,7 +8576,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "it": "Presentazione presso il CRMD (Nicosia) + biometria",
                 },
                 {
-                    "ru": "Обработка ≈ 5–7 недель.",
+                    "ru": "Обработка ≈ 5-7 недель.",
                     "pt": "Tramitação ≈ 5 a 7 semanas.",
                     "it": "Trattazione ≈ 5-7 settimane.",
                 },
@@ -8609,9 +8609,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     LTD_NAME: {
         "name": {
-            "ru": "Кипр — Создание компании (LTD)",
-            "pt": "Chipre — Constituição de sociedade (LTD)",
-            "it": "Cipro — Costituzione di società (LTD)",
+            "ru": "Кипр: Создание компании (LTD)",
+            "pt": "Chipre: Constituição de sociedade (LTD)",
+            "it": "Cipro: Costituzione di società (LTD)",
         },
         "steps": [
             (
@@ -8677,19 +8677,19 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "TIN в течение 60 дней, НДС при необходимости, реестр UBO, открытие счёта. "
                         "IS 15 % (с 1/1/2026); дивиденды ≈ 2,65 % эффективно при non-dom. "
-                        "Регулярные расходы ≈ 2 800–4 500 €/год (аудит обязателен). "
+                        "Регулярные расходы ≈ 2 800-4 500 €/год (аудит обязателен). "
                         "Ориентировочные данные."
                     ),
                     "pt": (
                         "TIN em 60 dias, IVA se aplicável, registo UBO, abertura de conta. IS 15 % "
                         "(desde 1/1/2026); dividendos ≈ 2,65 % efetivo em non-dom. Custos "
-                        "recorrentes ≈ 2 800–4 500 €/ano (auditoria obrigatória). Valores "
+                        "recorrentes ≈ 2 800-4 500 €/ano (auditoria obrigatória). Valores "
                         "indicativos."
                     ),
                     "it": (
                         "TIN entro 60 giorni, IVA se applicabile, registro UBO, apertura del "
                         "conto. IS 15 % (dal 1/1/2026); dividendi ≈ 2,65 % effettivo in regime "
-                        "non-dom. Costi ricorrenti ≈ 2 800–4 500 €/anno (revisione obbligatoria). "
+                        "non-dom. Costi ricorrenti ≈ 2 800-4 500 €/anno (revisione obbligatoria). "
                         "Dati indicativi."
                     ),
                 },
@@ -8698,9 +8698,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     FIC_NAME: {
         "name": {
-            "ru": "Кипр — Компания LTD + разрешение руководителя не-ЕС (FIC/BFU)",
-            "pt": "Chipre — Sociedade LTD + autorização de dirigente fora da UE (FIC/BFU)",
-            "it": "Cipro — Società LTD + permesso per dirigente extra-UE (FIC/BFU)",
+            "ru": "Кипр: Компания LTD + разрешение руководителя не-ЕС (FIC/BFU)",
+            "pt": "Chipre: Sociedade LTD + autorização de dirigente fora da UE (FIC/BFU)",
+            "it": "Cipro: Società LTD + permesso per dirigente extra-UE (FIC/BFU)",
         },
         "steps": [
             (
@@ -8800,9 +8800,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PA_FN_NAME: {
         "name": {
-            "ru": "Панама — резиденция Friendly Nations",
-            "pt": "Panamá — residência Friendly Nations",
-            "it": "Panama — residenza Friendly Nations",
+            "ru": "Панама: резиденция Friendly Nations",
+            "pt": "Panamá: residência Friendly Nations",
+            "it": "Panama: residenza Friendly Nations",
         },
         "steps": [
             (
@@ -8815,17 +8815,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🟠 Список из ~50 дружественных стран может быть изменён указом — "
+                        "🟠 Список из ~50 дружественных стран может быть изменён указом: "
                         "перепроверьте на migracion.gob.pa перед подачей досье. Панамский адвокат "
                         "обязателен."
                     ),
                     "pt": (
-                        "🟠 A lista de ~50 países amigos pode ser alterada por decreto — "
+                        "🟠 A lista de ~50 países amigos pode ser alterada por decreto: "
                         "reverificar em migracion.gob.pa antes do processo. Advogado panamiano "
                         "obrigatório."
                     ),
                     "it": (
-                        "🟠 L'elenco dei ~50 paesi amici può essere modificato con decreto — "
+                        "🟠 L'elenco dei ~50 paesi amici può essere modificato con decreto: "
                         "verificare nuovamente su migracion.gob.pa prima del fascicolo. Avvocato "
                         "panamense obbligatorio."
                     ),
@@ -8897,9 +8897,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PA_PEN_NAME: {
         "name": {
-            "ru": "Панама — Pensionado Visa (пенсионер)",
-            "pt": "Panamá — Pensionado Visa (reformado)",
-            "it": "Panama — Pensionado Visa (pensionato)",
+            "ru": "Панама: Pensionado Visa (пенсионер)",
+            "pt": "Panamá: Pensionado Visa (reformado)",
+            "it": "Panama: Pensionado Visa (pensionato)",
         },
         "steps": [
             (
@@ -8975,9 +8975,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PA_GV_NAME: {
         "name": {
-            "ru": "Панама — Qualified Investor (Golden Visa)",
-            "pt": "Panamá — Qualified Investor (Golden Visa)",
-            "it": "Panama — Qualified Investor (Golden Visa)",
+            "ru": "Панама: Qualified Investor (Golden Visa)",
+            "pt": "Panamá: Qualified Investor (Golden Visa)",
+            "it": "Panama: Qualified Investor (Golden Visa)",
         },
         "steps": [
             (
@@ -9028,7 +9028,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "it": "Presentazione della domanda al SNM",
                 },
                 {
-                    "ru": "Предоставление постоянной резиденции за 30–45 рабочих дней.",
+                    "ru": "Предоставление постоянной резиденции за 30-45 рабочих дней.",
                     "pt": "Concessão da residência permanente em 30 a 45 dias úteis.",
                     "it": "Concessione della residenza permanente in 30-45 giorni lavorativi.",
                 },
@@ -9042,15 +9042,15 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "⚠️ Golden Visa не требует присутствия для сохранения резиденции, но "
-                        "натурализация требует фактического проживания — обсудить с адвокатом."
+                        "натурализация требует фактического проживания: обсудить с адвокатом."
                     ),
                     "pt": (
                         "⚠️ O Golden Visa não exige presença para manter a residência, mas a "
-                        "naturalização exige residência efetiva — a ponderar com o advogado."
+                        "naturalização exige residência efetiva: a ponderar com o advogado."
                     ),
                     "it": (
                         "⚠️ Il Golden Visa non richiede presenza per mantenere la residenza, ma la "
-                        "naturalizzazione richiede residenza effettiva — da valutare con "
+                        "naturalizzazione richiede residenza effettiva: da valutare con "
                         "l'avvocato."
                     ),
                 },
@@ -9059,9 +9059,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PA_DN_NAME: {
         "name": {
-            "ru": "Панама — виза цифрового кочевника (Trabajador Remoto)",
-            "pt": "Panamá — visto de nómada digital (Trabajador Remoto)",
-            "it": "Panama — visto per nomadi digitali (Trabajador Remoto)",
+            "ru": "Панама: виза цифрового кочевника (Trabajador Remoto)",
+            "pt": "Panamá: visto de nómada digital (Trabajador Remoto)",
+            "it": "Panama: visto per nomadi digitali (Trabajador Remoto)",
         },
         "steps": [
             (
@@ -9126,9 +9126,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PA_CO_NAME: {
         "name": {
-            "ru": "Панама — создание компании (S.A. / SRL)",
-            "pt": "Panamá — constituição de sociedade (S.A. / SRL)",
-            "it": "Panama — costituzione di società (S.A. / SRL)",
+            "ru": "Панама: создание компании (S.A. / SRL)",
+            "pt": "Panamá: constituição de sociedade (S.A. / SRL)",
+            "it": "Panama: costituzione di società (S.A. / SRL)",
         },
         "steps": [
             (
@@ -9193,7 +9193,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "it": "Iscrizione al Registro Pubblico di Panama",
                 },
                 {
-                    "ru": "Компания учреждается за 3–7 дней.",
+                    "ru": "Компания учреждается за 3-7 дней.",
                     "pt": "Sociedade constituída em 3 a 7 dias.",
                     "it": "Società costituita in 3-7 giorni.",
                 },
@@ -9206,7 +9206,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "Инвестированный капитал < 10 000 USD → освобождение от IAO; свыше — IAO = "
+                        "Инвестированный капитал < 10 000 USD → освобождение от IAO; свыше: IAO = "
                         "2 % от чистого капитала (мин. 100 / макс. 60 000 USD/год), только при "
                         "деятельности в Панаме. Регистрация в CSS при найме персонала. "
                         "Ориентировочные суммы."
@@ -9259,9 +9259,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     BG_EU_NAME: {
         "name": {
-            "ru": "Болгария — регистрация резиденции ЕС",
-            "pt": "Bulgária — registo de residência UE",
-            "it": "Bulgaria — registrazione di residenza UE",
+            "ru": "Болгария: регистрация резиденции ЕС",
+            "pt": "Bulgária: registo de residência UE",
+            "it": "Bulgaria: registrazione di residenza UE",
         },
         "steps": [
             (
@@ -9321,9 +9321,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     BG_RET_NAME: {
         "name": {
-            "ru": "Болгария — резиденция пенсионера вне ЕС",
-            "pt": "Bulgária — residência de reformado não-UE",
-            "it": "Bulgaria — residenza per pensionati extra-UE",
+            "ru": "Болгария: резиденция пенсионера вне ЕС",
+            "pt": "Bulgária: residência de reformado não-UE",
+            "it": "Bulgaria: residenza per pensionati extra-UE",
         },
         "steps": [
             (
@@ -9336,19 +9336,19 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "🔴 Средства к существованию ≥ минимальной пенсии/заработной платы (≈ 620 "
                         "€/месяц в 2026 году, индексированы по минимальной заработной плате, после "
-                        "перехода на евро) — ориентировочная сумма, перепроверьте официальный "
+                        "перехода на евро): ориентировочная сумма, перепроверьте официальный "
                         "источник. Частные пенсии (например, 401k) могут быть отклонены без "
                         "официального документа о государственной пенсии. Сбор за визу ≈ 100 €."
                     ),
                     "pt": (
                         "🔴 Meios de subsistência ≥ pensão/salário mínimo (≈ 620 €/mês em 2026, "
-                        "indexado ao salário mínimo, pós-euro) — montante indicativo, reverificar "
+                        "indexado ao salário mínimo, pós-euro): montante indicativo, reverificar "
                         "a fonte oficial. As pensões privadas (ex. 401k) podem ser recusadas sem "
                         "documento oficial de pensão estatal. Taxa de visto ≈ 100 €."
                     ),
                     "it": (
                         "🔴 Mezzi di sussistenza ≥ pensione/salario minimo (≈ 620 €/mese nel 2026, "
-                        "indicizzato al salario minimo, post-euro) — importo indicativo, "
+                        "indicizzato al salario minimo, post-euro): importo indicativo, "
                         "verificare nuovamente la fonte ufficiale. Le pensioni private (es. 401k) "
                         "possono essere rifiutate senza un documento ufficiale di pensione "
                         "statale. Tassa di visto ≈ 100 €."
@@ -9397,9 +9397,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     BG_DN_NAME: {
         "name": {
-            "ru": "Болгария — виза цифрового кочевника (вне ЕС)",
-            "pt": "Bulgária — visto de nómada digital (não-UE)",
-            "it": "Bulgaria — visto per nomadi digitali (extra-UE)",
+            "ru": "Болгария: виза цифрового кочевника (вне ЕС)",
+            "pt": "Bulgária: visto de nómada digital (não-UE)",
+            "it": "Bulgaria: visto per nomadi digitali (extra-UE)",
         },
         "steps": [
             (
@@ -9410,17 +9410,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🔴 ОЧЕНЬ НЕДАВНИЙ РЕЖИМ — правовая основа art. 24p ЗЧРБ, приём заявлений "
+                        "🔴 ОЧЕНЬ НЕДАВНИЙ РЕЖИМ: правовая основа art. 24p ЗЧРБ, приём заявлений "
                         "открыт 20.12.2025. Детали применения всё ещё развиваются: перепроверьте в "
                         "консульстве / Direction Migration перед любым обещанием."
                     ),
                     "pt": (
-                        "🔴 REGIME MUITO RECENTE — base legal art. 24p ЗЧРБ, candidaturas abertas "
+                        "🔴 REGIME MUITO RECENTE: base legal art. 24p ЗЧРБ, candidaturas abertas "
                         "em 20/12/2025. Detalhes de aplicação ainda em evolução: reverificar junto "
                         "do consulado / da Direction Migration antes de qualquer promessa."
                     ),
                     "it": (
-                        "🔴 REGIME MOLTO RECENTE — base giuridica art. 24p ЗЧРБ, domande aperte il "
+                        "🔴 REGIME MOLTO RECENTE: base giuridica art. 24p ЗЧРБ, domande aperte il "
                         "20/12/2025. Dettagli applicativi ancora in evoluzione: verificare "
                         "nuovamente presso il consolato / la Direction Migration prima di "
                         "qualsiasi promessa."
@@ -9436,16 +9436,16 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🔴 Порог ≈ 31 000 €/год, индексированный по минимальной заработной плате, "
-                        "после перехода на евро — ориентировочно, перепроверьте. Запрет на работу "
+                        "после перехода на евро: ориентировочно, перепроверьте. Запрет на работу "
                         "для болгарских клиентов/работодателей."
                     ),
                     "pt": (
-                        "🔴 Limiar ≈ 31 000 €/ano indexado ao salário mínimo, pós-euro — "
+                        "🔴 Limiar ≈ 31 000 €/ano indexado ao salário mínimo, pós-euro: "
                         "indicativo, reverificar. Proibição de trabalhar para "
                         "clientes/empregadores búlgaros."
                     ),
                     "it": (
-                        "🔴 Soglia ≈ 31 000 €/anno indicizzata al salario minimo, post-euro — "
+                        "🔴 Soglia ≈ 31 000 €/anno indicizzata al salario minimo, post-euro: "
                         "indicativa, verificare nuovamente. Divieto di lavorare per clienti/datori "
                         "di lavoro bulgari."
                     ),
@@ -9478,9 +9478,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     BG_FL_NAME: {
         "name": {
-            "ru": "Болгария — Фриланс / свободная профессия (вне ЕС)",
-            "pt": "Bulgária — Freelance / profissão liberal (fora da UE)",
-            "it": "Bulgaria — Freelance / libera professione (extra-UE)",
+            "ru": "Болгария: Фриланс / свободная профессия (вне ЕС)",
+            "pt": "Bulgária: Freelance / profissão liberal (fora da UE)",
+            "it": "Bulgaria: Freelance / libera professione (extra-UE)",
         },
         "steps": [
             (
@@ -9492,15 +9492,15 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 Разрешение выдаёт АГЕНТСТВО ЗАНЯТОСТИ (при MTSP), а НЕ Direction "
-                        "Migration — частая ошибка в наименовании. Требуется болгарский B1."
+                        "Migration: частая ошибка в наименовании. Требуется болгарский B1."
                     ),
                     "pt": (
                         "🟠 A autorização é emitida pela AGÊNCIA DE EMPREGO (sob o MTSP), NÃO pela "
-                        "Direction Migration — erro de denominação frequente. Búlgaro B1 exigido."
+                        "Direction Migration: erro de denominação frequente. Búlgaro B1 exigido."
                     ),
                     "it": (
                         "🟠 Il permesso è rilasciato dall'AGENZIA PER L'IMPIEGO (sotto il MTSP), "
-                        "NON dalla Direction Migration — errore di denominazione frequente. "
+                        "NON dalla Direction Migration: errore di denominazione frequente. "
                         "Bulgaro B1 richiesto."
                     ),
                 },
@@ -9543,9 +9543,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     BG_CO_NAME: {
         "name": {
-            "ru": "Болгария — Создание компании (EOOD / OOD)",
-            "pt": "Bulgária — Constituição de empresa (EOOD / OOD)",
-            "it": "Bulgaria — Costituzione di società (EOOD / OOD)",
+            "ru": "Болгария: Создание компании (EOOD / OOD)",
+            "pt": "Bulgária: Constituição de empresa (EOOD / OOD)",
+            "it": "Bulgaria: Costituzione di società (EOOD / OOD)",
         },
         "steps": [
             (
@@ -9557,7 +9557,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "EOOD = 1 участник · OOD = ≥ 2 участников (нотариальный учредительный акт "
-                        "+ декларация UBO). Минимальный капитал ≈ 1 € (2 BGN). Число участников — "
+                        "+ декларация UBO). Минимальный капитал ≈ 1 € (2 BGN). Число участников: "
                         "единственный устойчивый параметр этого маршрута."
                     ),
                     "pt": (
@@ -9580,7 +9580,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "Требуется зарегистрированный офис в Болгарии; если управляющий — "
+                        "Требуется зарегистрированный офис в Болгарии; если управляющий: "
                         "нерезидент, необходимо местное контактное лицо."
                     ),
                     "pt": (
@@ -9622,7 +9622,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🔴 IS 10 % (самый низкий в ЕС), дивиденды 5 % — ставки ориентировочные, "
+                        "🔴 IS 10 % (самый низкий в ЕС), дивиденды 5 %: ставки ориентировочные, "
                         "перепроверьте (после введения евро в 2026). НДС, если оборот > ≈ 51 000 "
                         "€. Известное узкое место: открытие банковского счёта (KYC, иногда "
                         "требуется личное присутствие). ⚠️ Владеть удалённо ≠ обосноваться: ставка "
@@ -9630,7 +9630,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "(субстанция)."
                     ),
                     "pt": (
-                        "🔴 IS 10 % (o mais baixo da UE), dividendos 5 % — taxas indicativas, "
+                        "🔴 IS 10 % (o mais baixo da UE), dividendos 5 %: taxas indicativas, "
                         "reverificar (pós-euro 2026). IVA se o volume de negócios > ≈ 51 000 €. "
                         "Estrangulamento conhecido: abertura de conta bancária (KYC, presença por "
                         "vezes exigida). ⚠️ Deter à distância ≠ instalar-se: o IS de 10 % só se "
@@ -9638,7 +9638,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "(substância)."
                     ),
                     "it": (
-                        "🔴 IS 10 % (la più bassa dell'UE), dividendi 5 % — aliquote indicative, "
+                        "🔴 IS 10 % (la più bassa dell'UE), dividendi 5 %: aliquote indicative, "
                         "da riverificare (post-euro 2026). IVA se il fatturato > ≈ 51 000 €. Collo "
                         "di bottiglia noto: apertura del conto bancario (KYC, presenza talvolta "
                         "richiesta). ⚠️ Detenere a distanza ≠ stabilirsi: l'IS al 10 % regge solo "
@@ -9650,9 +9650,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     HU_EU_NAME: {
         "name": {
-            "ru": "Венгрия — Регистрация проживания ЕС",
-            "pt": "Hungria — Registo de residência UE",
-            "it": "Ungheria — Registrazione di soggiorno UE",
+            "ru": "Венгрия: Регистрация проживания ЕС",
+            "pt": "Hungria: Registo de residência UE",
+            "it": "Ungheria: Registrazione di soggiorno UE",
         },
         "steps": [
             (
@@ -9686,7 +9686,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "Постоянное проживание доступно через 5 лет, натурализация — через 8 лет."
+                        "Постоянное проживание доступно через 5 лет, натурализация: через 8 лет."
                     ),
                     "pt": "Residência permanente disponível aos 5 anos, naturalização aos 8 anos.",
                     "it": "Residenza permanente disponibile a 5 anni, naturalizzazione a 8 anni.",
@@ -9709,17 +9709,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "lakcímkártya (адресная карта) · adóazonosító jel (налоговый номер NAV) · "
-                        "TAJ (социальное страхование NEAK). Частые практические препятствия — "
+                        "TAJ (социальное страхование NEAK). Частые практические препятствия: "
                         "предусмотреть по прибытии."
                     ),
                     "pt": (
                         "lakcímkártya (cartão de morada) · adóazonosító jel (número fiscal NAV) · "
-                        "TAJ (segurança social NEAK). Bloqueios práticos frequentes — a antecipar "
+                        "TAJ (segurança social NEAK). Bloqueios práticos frequentes: a antecipar "
                         "à chegada."
                     ),
                     "it": (
                         "lakcímkártya (carta di indirizzo) · adóazonosító jel (numero fiscale NAV) "
-                        "· TAJ (previdenza sociale NEAK). Ostacoli pratici frequenti — da "
+                        "· TAJ (previdenza sociale NEAK). Ostacoli pratici frequenti: da "
                         "anticipare all'arrivo."
                     ),
                 },
@@ -9728,9 +9728,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     HU_WC_NAME: {
         "name": {
-            "ru": "Венгрия — White Card (цифровой кочевник, вне ЕС)",
-            "pt": "Hungria — White Card (nómada digital, fora da UE)",
-            "it": "Ungheria — White Card (nomade digitale, extra-UE)",
+            "ru": "Венгрия: White Card (цифровой кочевник, вне ЕС)",
+            "pt": "Hungria: White Card (nómada digital, fora da UE)",
+            "it": "Ungheria: White Card (nomade digitale, extra-UE)",
         },
         "steps": [
             (
@@ -9742,22 +9742,22 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🔴 КАРТОЧКА НЕ ПРОВЕРЕНА ПО ПЕРВИЧНОМУ ИСТОЧНИКУ. ⚠️ ТУПИК: White Card НЕ "
-                        "засчитывается НИ для постоянного проживания, НИ для натурализации — "
+                        "засчитывается НИ для постоянного проживания, НИ для натурализации: "
                         "пробное решение на 1-2 года. Для долгосрочного обоснования перейдите на "
                         "другой маршрут. Запрещено работать на венгерский рынок. Минимальный "
                         "месячный доход 🔴 нестабилен, перепроверьте на oif.gov.hu."
                     ),
                     "pt": (
                         "🔴 FICHA NÃO VERIFICADA EM FONTE PRIMÁRIA. ⚠️ BECO SEM SAÍDA: o White "
-                        "Card não conta NEM para a residência permanente NEM para a naturalização "
-                        "— solução de ensaio de 1-2 anos. Para se instalar de forma duradoura, "
+                        "Card não conta NEM para a residência permanente NEM para a naturalização: "
+                        "solução de ensaio de 1-2 anos. Para se instalar de forma duradoura, "
                         "mudar para outra via. Proibido trabalhar para o mercado húngaro. "
                         "Rendimento mensal mínimo 🔴 volátil, reverificar em oif.gov.hu."
                     ),
                     "it": (
                         "🔴 SCHEDA NON VERIFICATA NELLA FONTE PRIMARIA. ⚠️ VICOLO CIECO: il White "
-                        "Card non conta NÉ per la residenza permanente NÉ per la naturalizzazione "
-                        "— soluzione di prova di 1-2 anni. Per stabilirsi in modo duraturo, "
+                        "Card non conta NÉ per la residenza permanente NÉ per la naturalizzazione: "
+                        "soluzione di prova di 1-2 anni. Per stabilirsi in modo duraturo, "
                         "passare a un'altra via. Vietato lavorare per il mercato ungherese. "
                         "Reddito mensile minimo 🔴 volatile, riverificare su oif.gov.hu."
                     ),
@@ -9800,9 +9800,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     HU_GI_NAME: {
         "name": {
-            "ru": "Венгрия — Guest Investor (золотая виза, вне ЕС)",
-            "pt": "Hungria — Guest Investor (golden visa, fora da UE)",
-            "it": "Ungheria — Guest Investor (golden visa, extra-UE)",
+            "ru": "Венгрия: Guest Investor (золотая виза, вне ЕС)",
+            "pt": "Hungria: Guest Investor (golden visa, fora da UE)",
+            "it": "Ungheria: Guest Investor (golden visa, extra-UE)",
         },
         "steps": [
             (
@@ -9816,14 +9816,14 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🔴 КАРТОЧКА НЕ ПРОВЕРЕНА ПО ПЕРВИЧНОМУ ИСТОЧНИКУ. Варианты "
                         "(ориентировочные суммы, перепроверьте): одобренные MNB фонды ≈ 250 000 € "
                         "(самый дешёвый путь); прямая жилая недвижимость ≈ 500 000 € (вариант, "
-                        "возможно, ОТЛОЖЕН — проверьте, действительно ли он открыт); пожертвование "
+                        "возможно, ОТЛОЖЕН: проверьте, действительно ли он открыт); пожертвование "
                         "высшему образованию ≈ 1 000 000 €. Проверьте список фондов MNB, реально "
                         "доступных для подписки."
                     ),
                     "pt": (
                         "🔴 FICHA NÃO VERIFICADA EM FONTE PRIMÁRIA. Opções (montantes indicativos, "
                         "reverificar): fundos aprovados pelo MNB ≈ 250 000 € (via mais barata); "
-                        "imóvel residencial direto ≈ 500 000 € (opção possivelmente ADIADA — "
+                        "imóvel residencial direto ≈ 500 000 € (opção possivelmente ADIADA: "
                         "verificar se está realmente aberta); donativo ao ensino superior ≈ 1 000 "
                         "000 €. Verificar a lista de fundos MNB realmente subscritíveis."
                     ),
@@ -9831,7 +9831,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🔴 SCHEDA NON VERIFICATA NELLA FONTE PRIMARIA. Opzioni (importi "
                         "indicativi, da riverificare): fondi approvati dalla MNB ≈ 250 000 € (via "
                         "più economica); immobile residenziale diretto ≈ 500 000 € (opzione forse "
-                        "RINVIATA — verificare se realmente aperta); donazione all'istruzione "
+                        "RINVIATA: verificare se realmente aperta); donazione all'istruzione "
                         "superiore ≈ 1 000 000 €. Verificare l'elenco dei fondi MNB realmente "
                         "sottoscrivibili."
                     ),
@@ -9879,9 +9879,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     HU_SP_NAME: {
         "name": {
-            "ru": "Венгрия — Single permit (наёмный работник вне ЕС)",
-            "pt": "Hungria — Single permit (trabalhador por conta de outrem fora da UE)",
-            "it": "Ungheria — Single permit (lavoratore dipendente extra-UE)",
+            "ru": "Венгрия: Single permit (наёмный работник вне ЕС)",
+            "pt": "Hungria: Single permit (trabalhador por conta de outrem fora da UE)",
+            "it": "Ungheria: Single permit (lavoratore dipendente extra-UE)",
         },
         "steps": [
             (
@@ -9933,9 +9933,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     AE_GV_NAME: {
         "name": {
-            "ru": "Дубай (ОАЭ) — Golden Visa (10 лет)",
-            "pt": "Dubai (EAU) — Golden Visa (10 anos)",
-            "it": "Dubai (EAU) — Golden Visa (10 anni)",
+            "ru": "Дубай (ОАЭ): Golden Visa (10 лет)",
+            "pt": "Dubai (EAU): Golden Visa (10 anos)",
+            "it": "Dubai (EAU): Golden Visa (10 anni)",
         },
         "steps": [
             (
@@ -9947,9 +9947,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 Критерии (нестабильные суммы в AED, перепроверьте u.ae / icp.gov.ae): "
-                        "инвестор ≥ 2 M AED (одобренный фонд или недвижимость) · таланты — "
+                        "инвестор ≥ 2 M AED (одобренный фонд или недвижимость) · таланты: "
                         "зарплата ≥ 30 000 AED/месяц + диплом + классификация MOHRE уровня 1/2 · "
-                        "предприниматель — проект ≥ 500 000 AED или одобрение инкубатора · "
+                        "предприниматель: проект ≥ 500 000 AED или одобрение инкубатора · "
                         "недвижимость ≥ 2 M AED."
                     ),
                     "pt": (
@@ -10018,17 +10018,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "10 лет с возможностью продления, автономная (без спонсора), освобождена "
-                        "от правила 6-месячного отсутствия — подходит для очень мобильных "
+                        "от правила 6-месячного отсутствия: подходит для очень мобильных "
                         "профилей. Может спонсировать семью."
                     ),
                     "pt": (
                         "10 anos renovável, autónomo (sem patrocinador), isento da regra de "
-                        "ausência de 6 meses — adequado a perfis muito móveis. Pode patrocinar a "
+                        "ausência de 6 meses: adequado a perfis muito móveis. Pode patrocinar a "
                         "família."
                     ),
                     "it": (
                         "10 anni rinnovabile, autonomo (senza sponsor), esente dalla regola di "
-                        "assenza di 6 mesi — adatto a profili molto mobili. Può sponsorizzare la "
+                        "assenza di 6 mesi: adatto a profili molto mobili. Può sponsorizzare la "
                         "famiglia."
                     ),
                 },
@@ -10037,9 +10037,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     AE_FZ_NAME: {
         "name": {
-            "ru": "Дубай (ОАЭ) — Резидентство через компанию в free zone",
-            "pt": "Dubai (EAU) — Residência através de empresa free zone",
-            "it": "Dubai (EAU) — Residenza tramite società free zone",
+            "ru": "Дубай (ОАЭ): Резидентство через компанию в free zone",
+            "pt": "Dubai (EAU): Residência através de empresa free zone",
+            "it": "Dubai (EAU): Residenza tramite società free zone",
         },
         "steps": [
             (
@@ -10134,9 +10134,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     AE_RE_NAME: {
         "name": {
-            "ru": "Дубай (ОАЭ) — Виза за недвижимость (2 года)",
-            "pt": "Dubai (EAU) — Visto imobiliário (2 anos)",
-            "it": "Dubai (EAU) — Visto immobiliare (2 anni)",
+            "ru": "Дубай (ОАЭ): Виза за недвижимость (2 года)",
+            "pt": "Dubai (EAU): Visto imobiliário (2 anos)",
+            "it": "Dubai (EAU): Visto immobiliare (2 anni)",
         },
         "steps": [
             (
@@ -10218,9 +10218,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     AE_RW_NAME: {
         "name": {
-            "ru": "Дубай (ОАЭ) — Виза для удалённой работы (1 год)",
-            "pt": "Dubai (EAU) — Visto de remote work (1 ano)",
-            "it": "Dubai (EAU) — Visto remote work (1 anno)",
+            "ru": "Дубай (ОАЭ): Виза для удалённой работы (1 год)",
+            "pt": "Dubai (EAU): Visto de remote work (1 ano)",
+            "it": "Dubai (EAU): Visto remote work (1 anno)",
         },
         "steps": [
             (
@@ -10232,19 +10232,19 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 Ориентировочный порог. ⚠️ Удалённая работа НЕ ведёт к долгосрочному "
-                        "резидентству (1 год) — для устойчивой базы + налоговой оптимизации лучше "
+                        "резидентству (1 год): для устойчивой базы + налоговой оптимизации лучше "
                         "с самого начала создать компанию в free zone. Сказать об этом до того, "
                         "как клиент окажется связан этим выбором."
                     ),
                     "pt": (
                         "🟠 Limiar indicativo. ⚠️ O remote work NÃO conduz a uma residência de "
-                        "longo prazo (1 ano) — para uma base duradoura + otimização fiscal, "
+                        "longo prazo (1 ano): para uma base duradoura + otimização fiscal, "
                         "preferir uma empresa em free zone desde o início. Dizê-lo antes de o "
                         "cliente ficar preso a esta opção."
                     ),
                     "it": (
                         "🟠 Soglia indicativa. ⚠️ Il remote work NON conduce a una residenza a "
-                        "lungo termine (1 anno) — per una base duratura + ottimizzazione fiscale, "
+                        "lungo termine (1 anno): per una base duratura + ottimizzazione fiscale, "
                         "preferire una società in free zone fin dall'inizio. Dirlo prima che il "
                         "cliente si vincoli a questa scelta."
                     ),
@@ -10290,9 +10290,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     AE_RET_NAME: {
         "name": {
-            "ru": "Дубай (ОАЭ) — Виза для пенсионеров (5 лет, 55 лет и старше)",
-            "pt": "Dubai (EAU) — Visto de reformado (5 anos, 55 anos e mais)",
-            "it": "Dubai (EAU) — Visto per pensionati (5 anni, 55 anni e oltre)",
+            "ru": "Дубай (ОАЭ): Виза для пенсионеров (5 лет, 55 лет и старше)",
+            "pt": "Dubai (EAU): Visto de reformado (5 anos, 55 anos e mais)",
+            "it": "Dubai (EAU): Visto per pensionati (5 anni, 55 anni e oltre)",
         },
         "steps": [
             (
@@ -10367,9 +10367,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     AE_CO_NAME: {
         "name": {
-            "ru": "Дубай (ОАЭ) — Создание компании (free zone / mainland)",
-            "pt": "Dubai (EAU) — Constituição de empresa (free zone / mainland)",
-            "it": "Dubai (EAU) — Costituzione di società (free zone / mainland)",
+            "ru": "Дубай (ОАЭ): Создание компании (free zone / mainland)",
+            "pt": "Dubai (EAU): Constituição de empresa (free zone / mainland)",
+            "it": "Dubai (EAU): Costituzione di società (free zone / mainland)",
         },
         "steps": [
             (
@@ -10382,11 +10382,11 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "ФИЛЬТРУЮЩИЙ ВОПРОС: продаёт ли клиент напрямую на внутреннем рынке ОАЭ? "
                         "ДА → mainland (DET): доступ onshore + государственные тендеры. НЕТ "
-                        "(международная / B2B / холдинг / цифровая деятельность / цель — "
+                        "(международная / B2B / холдинг / цифровая деятельность / цель: "
                         "резидентство) → free zone: 100 % собственности + самоспонсирование визы. "
                         "100 % иностранной собственности теперь разрешено для многих видов "
                         "деятельности на mainland (регулируемый перечень видов деятельности "
-                        "стратегического значения — уточнить в DET)."
+                        "стратегического значения: уточнить в DET)."
                     ),
                     "pt": (
                         "PERGUNTA FILTRO: o cliente vende diretamente no mercado interno dos EAU? "
@@ -10394,7 +10394,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "(internacional / B2B / holding / digital / objetivo residência) → free "
                         "zone: 100 % de propriedade + auto-patrocínio do visto. 100 % de "
                         "propriedade estrangeira agora permitida para muitas atividades mainland "
-                        "(uma lista regulada de atividades de impacto estratégico — verificar "
+                        "(uma lista regulada de atividades de impacto estratégico: verificar "
                         "junto do DET)."
                     ),
                     "it": (
@@ -10403,7 +10403,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "(internazionale / B2B / holding / digitale / obiettivo residenza) → free "
                         "zone: 100 % di proprietà + auto-sponsorizzazione del visto. 100 % di "
                         "proprietà straniera ora consentita per molte attività mainland (un elenco "
-                        "regolamentato di attività a impatto strategico — verificare presso il "
+                        "regolamentato di attività a impatto strategico: verificare presso il "
                         "DET)."
                     ),
                 },
@@ -10500,9 +10500,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     MU_OPI_NAME: {
         "name": {
-            "ru": "Маврикий — Occupation Permit Investor (предприниматель)",
-            "pt": "Maurícia — Occupation Permit Investor (empreendedor)",
-            "it": "Mauritius — Occupation Permit Investor (imprenditore)",
+            "ru": "Маврикий: Occupation Permit Investor (предприниматель)",
+            "pt": "Maurícia: Occupation Permit Investor (empreendedor)",
+            "it": "Mauritius: Occupation Permit Investor (imprenditore)",
         },
         "steps": [
             (
@@ -10550,7 +10550,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "EDB рассматривает, PIO выдаёт. Единое разрешение на резидентство + "
-                        "деятельность. Члены семьи — на производном разрешении. Требуется "
+                        "деятельность. Члены семьи: на производном разрешении. Требуется "
                         "биометрия."
                     ),
                     "pt": (
@@ -10567,9 +10567,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     MU_OPP_NAME: {
         "name": {
-            "ru": "Маврикий — Occupation Permit Professional (наёмный работник)",
-            "pt": "Maurícia — Occupation Permit Professional (assalariado)",
-            "it": "Mauritius — Occupation Permit Professional (lavoratore dipendente)",
+            "ru": "Маврикий: Occupation Permit Professional (наёмный работник)",
+            "pt": "Maurícia: Occupation Permit Professional (assalariado)",
+            "it": "Mauritius: Occupation Permit Professional (lavoratore dipendente)",
         },
         "steps": [
             (
@@ -10581,18 +10581,18 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🔴 Минимальная зарплата 30 000 против 60 000 MUR/месяц в зависимости от "
-                        "периода/сектора — САМЫЙ нестабильный порог, обязательно перепроверить. "
+                        "периода/сектора: САМЫЙ нестабильный порог, обязательно перепроверить. "
                         "Исключения для ICT/BPO возможно ниже (🟠)."
                     ),
                     "pt": (
-                        "🔴 Salário mínimo 30 000 vs 60 000 MUR/mês consoante o período/setor — O "
+                        "🔴 Salário mínimo 30 000 vs 60 000 MUR/mês consoante o período/setor: O "
                         "limiar mais instável, reverificar imperativamente. Exceções ICT/BPO "
                         "possivelmente mais baixas (🟠)."
                     ),
                     "it": (
-                        "🔴 Salario minimo 30 000 vs 60 000 MUR/mese a seconda del periodo/settore "
-                        "— LA soglia più instabile, riverificare tassativamente. Eccezioni ICT/BPO "
-                        "possibilmente più basse (🟠)."
+                        "🔴 Salario minimo 30 000 vs 60 000 MUR/mese a seconda del periodo/"
+                        "settore: LA soglia più instabile, riverificare tassativamente. "
+                        "Eccezioni ICT/BPO possibilmente più basse (🟠)."
                     ),
                 },
             ),
@@ -10633,9 +10633,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     MU_OPS_NAME: {
         "name": {
-            "ru": "Маврикий — Occupation Permit Self-Employed (индивидуальный консультант)",
-            "pt": "Maurícia — Occupation Permit Self-Employed (consultor individual)",
-            "it": "Mauritius — Occupation Permit Self-Employed (consulente individuale)",
+            "ru": "Маврикий: Occupation Permit Self-Employed (индивидуальный консультант)",
+            "pt": "Maurícia: Occupation Permit Self-Employed (consultor individual)",
+            "it": "Mauritius: Occupation Permit Self-Employed (consulente individuale)",
         },
         "steps": [
             (
@@ -10688,9 +10688,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     MU_PV_NAME: {
         "name": {
-            "ru": "Маврикий — Premium Visa (номад / пассивный иностранный доход)",
-            "pt": "Maurícia — Premium Visa (nómada / rendimento passivo estrangeiro)",
-            "it": "Mauritius — Premium Visa (nomade / reddito passivo estero)",
+            "ru": "Маврикий: Premium Visa (номад / пассивный иностранный доход)",
+            "pt": "Maurícia: Premium Visa (nómada / rendimento passivo estrangeiro)",
+            "it": "Mauritius: Premium Visa (nomade / reddito passivo estero)",
         },
         "steps": [
             (
@@ -10737,15 +10737,15 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "1 год, продлеваемая. Не даёт доступа к долгосрочному резидентству — для "
+                        "1 год, продлеваемая. Не даёт доступа к долгосрочному резидентству: для "
                         "стабильности рассмотреть недвижимость ≥ 375k USD (отдельный путь)."
                     ),
                     "pt": (
-                        "1 ano renovável. Não dá acesso a uma residência de longo prazo — para a "
+                        "1 ano renovável. Não dá acesso a uma residência de longo prazo: para a "
                         "estabilidade, considerar o imóvel ≥ 375k USD (percurso separado)."
                     ),
                     "it": (
-                        "1 anno rinnovabile. Non dà accesso a una residenza a lungo termine — per "
+                        "1 anno rinnovabile. Non dà accesso a una residenza a lungo termine: per "
                         "la stabilità, considerare l'immobile ≥ 375k USD (percorso separato)."
                     ),
                 },
@@ -10754,9 +10754,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     MU_RE_NAME: {
         "name": {
-            "ru": "Маврикий — Резидентство через инвестиции в недвижимость (≥ 375k USD)",
-            "pt": "Maurícia — Residência por investimento imobiliário (≥ 375k USD)",
-            "it": "Mauritius — Residenza tramite investimento immobiliare (≥ 375k USD)",
+            "ru": "Маврикий: Резидентство через инвестиции в недвижимость (≥ 375k USD)",
+            "pt": "Maurícia: Residência por investimento imobiliário (≥ 375k USD)",
+            "it": "Mauritius: Residenza tramite investimento immobiliare (≥ 375k USD)",
         },
         "steps": [
             (
@@ -10826,9 +10826,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     MU_CO_NAME: {
         "name": {
-            "ru": "Маврикий — Создание компании (Domestic / GBC / Authorised)",
-            "pt": "Maurícia — Constituição de sociedade (Domestic / GBC / Authorised)",
-            "it": "Mauritius — Costituzione di società (Domestic / GBC / Authorised)",
+            "ru": "Маврикий: Создание компании (Domestic / GBC / Authorised)",
+            "pt": "Maurícia: Constituição de sociedade (Domestic / GBC / Authorised)",
+            "it": "Mauritius: Costituzione di società (Domestic / GBC / Authorised)",
         },
         "steps": [
             (
@@ -10938,9 +10938,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     TH_LTR_NAME: {
         "name": {
-            "ru": "Таиланд — Long-Term Resident (LTR, 10 лет)",
-            "pt": "Tailândia — Long-Term Resident (LTR, 10 anos)",
-            "it": "Thailandia — Long-Term Resident (LTR, 10 anni)",
+            "ru": "Таиланд: Long-Term Resident (LTR, 10 лет)",
+            "pt": "Tailândia: Long-Term Resident (LTR, 10 anos)",
+            "it": "Thailandia: Long-Term Resident (LTR, 10 anni)",
         },
         "steps": [
             (
@@ -11016,9 +11016,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     TH_OA_NAME: {
         "name": {
-            "ru": "Таиланд — Виза пенсионера (O-A, 50 лет и старше)",
-            "pt": "Tailândia — Visto de reformado (O-A, 50+)",
-            "it": "Thailandia — Visto pensionati (O-A, 50+)",
+            "ru": "Таиланд: Виза пенсионера (O-A, 50 лет и старше)",
+            "pt": "Tailândia: Visto de reformado (O-A, 50+)",
+            "it": "Thailandia: Visto pensionati (O-A, 50+)",
         },
         "steps": [
             (
@@ -11032,20 +11032,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🟠 ≥ 50 лет + депозит 800 000 THB ИЛИ доход 65 000 THB/месяц + "
                         "медицинская страховка (покрытие ~3 M THB). Ориентировочные пороги. "
                         "ПРИМЕЧАНИЕ: O-X (до 10 лет) существует для некоторых допустимых "
-                        "национальностей (US, Канада, Австралия, UK, Япония…), порог 3 M THB — "
+                        "национальностей (US, Канада, Австралия, UK, Япония…), порог 3 M THB: "
                         "список требует подтверждения. ⚠️ Не ведёт к PR."
                     ),
                     "pt": (
                         "🟠 ≥ 50 anos + depósito 800 000 THB OU rendimento 65 000 THB/mês + seguro "
                         "de saúde (cobertura ~3 M THB). Limiares indicativos. NOTA: o O-X (até 10 "
                         "anos) existe para certas nacionalidades elegíveis (US, Canadá, Austrália, "
-                        "UK, Japão…), limiar 3 M THB — lista a confirmar. ⚠️ Não conduz à PR."
+                        "UK, Japão…), limiar 3 M THB: lista a confirmar. ⚠️ Não conduz à PR."
                     ),
                     "it": (
                         "🟠 ≥ 50 anni + deposito 800 000 THB OPPURE reddito 65 000 THB/mese + "
                         "assicurazione sanitaria (copertura ~3 M THB). Soglie indicative. NOTA: "
                         "l'O-X (fino a 10 anni) esiste per alcune nazionalità idonee (US, Canada, "
-                        "Australia, UK, Giappone…), soglia 3 M THB — elenco da confermare. ⚠️ Non "
+                        "Australia, UK, Giappone…), soglia 3 M THB: elenco da confermare. ⚠️ Non "
                         "porta alla PR."
                     ),
                 },
@@ -11078,9 +11078,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     TH_PRIV_NAME: {
         "name": {
-            "ru": "Таиланд — Thailand Privilege (платная карта пребывания)",
-            "pt": "Tailândia — Thailand Privilege (cartão de residência pago)",
-            "it": "Thailandia — Thailand Privilege (carta di soggiorno a pagamento)",
+            "ru": "Таиланд: Thailand Privilege (платная карта пребывания)",
+            "pt": "Tailândia: Thailand Privilege (cartão de residência pago)",
+            "it": "Thailandia: Thailand Privilege (carta di soggiorno a pagamento)",
         },
         "steps": [
             (
@@ -11144,9 +11144,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     TH_NONB_NAME: {
         "name": {
-            "ru": "Таиланд — Non-B + Work Permit (наёмный работник)",
-            "pt": "Tailândia — Non-B + Work Permit (trabalhador por conta de outrem)",
-            "it": "Thailandia — Non-B + Work Permit (lavoratore dipendente)",
+            "ru": "Таиланд: Non-B + Work Permit (наёмный работник)",
+            "pt": "Tailândia: Non-B + Work Permit (trabalhador por conta de outrem)",
+            "it": "Thailandia: Non-B + Work Permit (lavoratore dipendente)",
         },
         "steps": [
             (
@@ -11160,21 +11160,21 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🟠 Сторона работодателя: капитал 2 M THB на каждую иностранную позицию (1 "
                         "M при браке с тайцем/тайкой) + соотношение 4 тайских работника : 1 "
                         "иностранец. Сектор S-Curve + высокая зарплата → возможна SMART Visa "
-                        "(SMART-T ≥ 100 000 THB/месяц, без отдельного work permit — внимание, "
+                        "(SMART-T ≥ 100 000 THB/месяц, без отдельного work permit: внимание, "
                         "многие источники по-прежнему указывают 200k)."
                     ),
                     "pt": (
                         "🟠 Lado do empregador: capital 2 M THB por posto estrangeiro (1 M se "
                         "casado com um·a tailandês·a) + rácio 4 empregados tailandeses : 1 "
                         "estrangeiro. Setor S-Curve + salário elevado → SMART Visa possível "
-                        "(SMART-T ≥ 100 000 THB/mês, sem work permit separado — atenção, muitas "
+                        "(SMART-T ≥ 100 000 THB/mês, sem work permit separado: atenção, muitas "
                         "fontes ainda citam 200k)."
                     ),
                     "it": (
                         "🟠 Lato datore di lavoro: capitale 2 M THB per posizione straniera (1 M "
                         "se sposato con un·a thailandese) + rapporto 4 dipendenti thailandesi : 1 "
                         "straniero. Settore S-Curve + stipendio elevato → SMART Visa possibile "
-                        "(SMART-T ≥ 100 000 THB/mese, senza work permit separato — attenzione, "
+                        "(SMART-T ≥ 100 000 THB/mese, senza work permit separato: attenzione, "
                         "molte fonti citano ancora 200k)."
                     ),
                 },
@@ -11219,9 +11219,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     TH_CO_NAME: {
         "name": {
-            "ru": "Таиланд — Создание компании (FBA: 100 % / BOI / Amity / FBL)",
-            "pt": "Tailândia — Constituição de sociedade (FBA: 100 % / BOI / Amity / FBL)",
-            "it": "Thailandia — Costituzione di società (FBA: 100 % / BOI / Amity / FBL)",
+            "ru": "Таиланд: Создание компании (FBA: 100 % / BOI / Amity / FBL)",
+            "pt": "Tailândia: Constituição de sociedade (FBA: 100 % / BOI / Amity / FBL)",
+            "it": "Thailandia: Costituzione di società (FBA: 100 % / BOI / Amity / FBL)",
         },
         "steps": [
             (
@@ -11241,7 +11241,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "освобождение от соотношения 4:1); иначе → FBL (дискреционно, медленно, "
                         "капитал 3 M THB) ИЛИ реальный тайский партнёр ≥ 51 %. (c) Список 1 = "
                         "запрещено, Список 2 = одобрение Кабинета (редко). 🔴 СХЕМА «THAI NOMINEE "
-                        "SHAREHOLDERS» НЕЗАКОННА (art. 36 FBA — штрафы и возможное тюремное "
+                        "SHAREHOLDERS» НЕЗАКОННА (art. 36 FBA: штрафы и возможное тюремное "
                         "заключение, предписание о ликвидации участия). НИКОГДА не предлагать её."
                     ),
                     "pt": (
@@ -11253,7 +11253,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "facilitados, isento do rácio 4:1); caso contrário → FBL (discricionário, "
                         "lento, capital 3 M THB) OU um sócio tailandês real ≥ 51 %. (c) Lista 1 = "
                         "proibido, Lista 2 = aprovação do Conselho de Ministros (raro). 🔴 O "
-                        'ESQUEMA "THAI NOMINEE SHAREHOLDERS" É ILEGAL (art. 36 FBA — multas e '
+                        'ESQUEMA "THAI NOMINEE SHAREHOLDERS" É ILEGAL (art. 36 FBA: multas e '
                         "possível prisão, ordem de alienação). NUNCA o propor."
                     ),
                     "it": (
@@ -11266,7 +11266,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "4:1); altrimenti → FBL (discrezionale, lento, capitale 3 M THB) OPPURE un "
                         "socio thailandese reale ≥ 51 %. (c) Lista 1 = vietato, Lista 2 = "
                         'approvazione del Consiglio dei Ministri (raro). 🔴 LO SCHEMA "THAI '
-                        'NOMINEE SHAREHOLDERS" È ILLEGALE (art. 36 FBA — multe ed eventuale '
+                        'NOMINEE SHAREHOLDERS" È ILLEGALE (art. 36 FBA: multe ed eventuale '
                         "carcere, ordine di dismissione). MAI proporlo."
                     ),
                 },
@@ -11344,9 +11344,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     ID_RW_NAME: {
         "name": {
-            "ru": "Индонезия — Remote Worker KITAS (E33G, кочевник)",
-            "pt": "Indonésia — Remote Worker KITAS (E33G, nómada)",
-            "it": "Indonesia — Remote Worker KITAS (E33G, nomade)",
+            "ru": "Индонезия: Remote Worker KITAS (E33G, кочевник)",
+            "pt": "Indonésia: Remote Worker KITAS (E33G, nómada)",
+            "it": "Indonesia: Remote Worker KITAS (E33G, nomade)",
         },
         "steps": [
             (
@@ -11359,18 +11359,18 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "🟠 Иностранный доход ~60 000 USD/год (ориентировочно, "
                         "evisa.imigrasi.go.id). ⚠️ Работа ТОЛЬКО на клиентов/работодателей ВНЕ "
-                        "Индонезии. Нет более высокого уровня типа LTR — E33G является "
+                        "Индонезии. Нет более высокого уровня типа LTR: E33G является "
                         "единственным путём для кочевника."
                     ),
                     "pt": (
                         "🟠 Rendimento estrangeiro ~60 000 USD/ano (indicativo, "
                         "evisa.imigrasi.go.id). ⚠️ Trabalho APENAS para clientes/empregadores FORA "
-                        "da Indonésia. Sem nível superior tipo LTR — E33G é a única via do nómada."
+                        "da Indonésia. Sem nível superior tipo LTR: E33G é a única via do nómada."
                     ),
                     "it": (
                         "🟠 Reddito estero ~60 000 USD/anno (indicativo, evisa.imigrasi.go.id). ⚠️ "
                         "Lavoro SOLO per clienti/datori di lavoro FUORI dall'Indonesia. Nessun "
-                        "livello superiore tipo LTR — E33G è l'unica via del nomade."
+                        "livello superiore tipo LTR: E33G è l'unica via del nomade."
                     ),
                 },
             ),
@@ -11402,9 +11402,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     ID_SH_NAME: {
         "name": {
-            "ru": "Индонезия — Second Home Visa (рантье)",
-            "pt": "Indonésia — Second Home Visa (rendista)",
-            "it": "Indonesia — Second Home Visa (redditiere)",
+            "ru": "Индонезия: Second Home Visa (рантье)",
+            "pt": "Indonésia: Second Home Visa (rendista)",
+            "it": "Indonesia: Second Home Visa (redditiere)",
         },
         "steps": [
             (
@@ -11415,17 +11415,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🟠 Депозит ~IDR 2 млрд (≈ 130 000 USD) — сумма расходится по источникам, "
+                        "🟠 Депозит ~IDR 2 млрд (≈ 130 000 USD): сумма расходится по источникам, "
                         "перепроверить на evisa.imigrasi.go.id. Без возрастного требования. ⚠️ Без "
                         "права на работу."
                     ),
                     "pt": (
-                        "🟠 Depósito ~IDR 2 mil milhões (≈ 130 000 USD) — montante divergente "
+                        "🟠 Depósito ~IDR 2 mil milhões (≈ 130 000 USD): montante divergente "
                         "consoante as fontes, reverificar evisa.imigrasi.go.id. Sem requisito de "
                         "idade. ⚠️ Sem direito a trabalhar."
                     ),
                     "it": (
-                        "🟠 Deposito ~IDR 2 miliardi (≈ 130 000 USD) — importo divergente a "
+                        "🟠 Deposito ~IDR 2 miliardi (≈ 130 000 USD): importo divergente a "
                         "seconda delle fonti, riverificare evisa.imigrasi.go.id. Nessun requisito "
                         "di età. ⚠️ Nessun diritto al lavoro."
                     ),
@@ -11471,9 +11471,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     ID_RET_NAME: {
         "name": {
-            "ru": "Индонезия — Retirement KITAS (E33F, 55 лет и старше)",
-            "pt": "Indonésia — Retirement KITAS (E33F, 55+)",
-            "it": "Indonesia — Retirement KITAS (E33F, 55+)",
+            "ru": "Индонезия: Retirement KITAS (E33F, 55 лет и старше)",
+            "pt": "Indonésia: Retirement KITAS (E33F, 55+)",
+            "it": "Indonesia: Retirement KITAS (E33F, 55+)",
         },
         "steps": [
             (
@@ -11485,17 +11485,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 ≥ 55 лет + минимальная пенсия + медицинская страховка. ЛИЦЕНЗИРОВАННЫЙ "
-                        "АГЕНТ-СПОНСОР ОБЯЗАТЕЛЕН (иногда требуется нанять местного работника — "
+                        "АГЕНТ-СПОНСОР ОБЯЗАТЕЛЕН (иногда требуется нанять местного работника: "
                         "практика варьируется). ⚠️ Без права на работу."
                     ),
                     "pt": (
                         "🟠 ≥ 55 anos + pensão mínima + seguro de saúde. AGENTE PATROCINADOR "
-                        "LICENCIADO OBRIGATÓRIO (por vezes exige-se empregar um local — prática "
+                        "LICENCIADO OBRIGATÓRIO (por vezes exige-se empregar um local: prática "
                         "variável). ⚠️ Sem direito a trabalhar."
                     ),
                     "it": (
                         "🟠 ≥ 55 anni + pensione minima + assicurazione sanitaria. AGENTE SPONSOR "
-                        "AUTORIZZATO OBBLIGATORIO (talvolta è richiesto l'impiego di un locale — "
+                        "AUTORIZZATO OBBLIGATORIO (talvolta è richiesto l'impiego di un locale: "
                         "prassi variabile). ⚠️ Nessun diritto al lavoro."
                     ),
                 },
@@ -11524,17 +11524,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "1 год с продлением, возможная цепочка к KITAP. ⚠️ РИСК СПОНСОРА: "
-                        "разрешение утрачивается, если спонсор (агент) прекращает деятельность — "
+                        "разрешение утрачивается, если спонсор (агент) прекращает деятельность: "
                         "предусмотреть запасной путь. Требуется биометрия."
                     ),
                     "pt": (
                         "1 ano renovável, possível encadeamento até ao KITAP. ⚠️ RISCO SPONSOR: o "
-                        "título cai se o sponsor (agente) cessar — prever uma via de recuo. "
+                        "título cai se o sponsor (agente) cessar: prever uma via de recuo. "
                         "Biometria exigida."
                     ),
                     "it": (
                         "1 anno rinnovabile, possibile catena verso il KITAP. ⚠️ RISCHIO SPONSOR: "
-                        "il titolo decade se lo sponsor (agente) cessa — prevedere una via di "
+                        "il titolo decade se lo sponsor (agente) cessa: prevedere una via di "
                         "ripiego. Biometria richiesta."
                     ),
                 },
@@ -11543,9 +11543,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     ID_WORK_NAME: {
         "name": {
-            "ru": "Индонезия — Work KITAS (E23, наёмный работник)",
-            "pt": "Indonésia — Work KITAS (E23, trabalhador por conta de outrem)",
-            "it": "Indonesia — Work KITAS (E23, lavoratore dipendente)",
+            "ru": "Индонезия: Work KITAS (E23, наёмный работник)",
+            "pt": "Indonésia: Work KITAS (E23, trabalhador por conta de outrem)",
+            "it": "Indonesia: Work KITAS (E23, lavoratore dipendente)",
         },
         "steps": [
             (
@@ -11590,17 +11590,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "От 6 месяцев до 2 лет с продлением. После 3-4 непрерывных лет → возможен "
-                        "KITAP. ⚠️ РИСК СПОНСОРА: KITAS утрачивается по окончании контракта — "
+                        "KITAP. ⚠️ РИСК СПОНСОРА: KITAS утрачивается по окончании контракта, "
                         "предусмотреть запасной путь. Требуется биометрия."
                     ),
                     "pt": (
                         "6 meses a 2 anos renovável. Após 3-4 anos contínuos → KITAP possível. ⚠️ "
-                        "RISCO SPONSOR: o KITAS cai no final do contrato — prever um recuo. "
+                        "RISCO SPONSOR: o KITAS cai no final do contrato, prever um recuo. "
                         "Biometria exigida."
                     ),
                     "it": (
                         "Da 6 mesi a 2 anni rinnovabile. Dopo 3-4 anni continuativi → KITAP "
-                        "possibile. ⚠️ RISCHIO SPONSOR: il KITAS decade al termine del contratto — "
+                        "possibile. ⚠️ RISCHIO SPONSOR: il KITAS decade al termine del contratto, "
                         "prevedere un ripiego. Biometria richiesta."
                     ),
                 },
@@ -11609,9 +11609,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     ID_INV_NAME: {
         "name": {
-            "ru": "Индонезия — Investor KITAS (E28A) + PT PMA",
-            "pt": "Indonésia — Investor KITAS (E28A) + PT PMA",
-            "it": "Indonesia — Investor KITAS (E28A) + PT PMA",
+            "ru": "Индонезия: Investor KITAS (E28A) + PT PMA",
+            "pt": "Indonésia: Investor KITAS (E28A) + PT PMA",
+            "it": "Indonesia: Investor KITAS (E28A) + PT PMA",
         },
         "steps": [
             (
@@ -11646,18 +11646,18 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🔴 Участие ~IDR 1 млрд (иногда 1,125 млрд) — в основном источник "
+                        "🔴 Участие ~IDR 1 млрд (иногда 1,125 млрд): в основном источник "
                         "агентств, перепроверить. АКТИВНЫЙ ДИРЕКТОР → может работать (Investor "
                         "KITAS); ПАССИВНЫЙ АКЦИОНЕР → только владение, без права на работу."
                     ),
                     "pt": (
-                        "🔴 Participação ~IDR 1 mil milhões (por vezes 1,125 mil milhões) — "
+                        "🔴 Participação ~IDR 1 mil milhões (por vezes 1,125 mil milhões): "
                         "maioritariamente fonte de agências, reverificar. DIRETOR ATIVO → pode "
                         "trabalhar (Investor KITAS); ACIONISTA PASSIVO → apenas detenção, sem "
                         "direito a trabalhar."
                     ),
                     "it": (
-                        "🔴 Partecipazione ~IDR 1 miliardo (talvolta 1,125 miliardi) — perlopiù "
+                        "🔴 Partecipazione ~IDR 1 miliardo (talvolta 1,125 miliardi): perlopiù "
                         "fonte di agenzie, riverificare. DIRETTORE ATTIVO → può lavorare (Investor "
                         "KITAS); AZIONISTA PASSIVO → solo detenzione, nessun diritto al lavoro."
                     ),
@@ -11700,9 +11700,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     ID_CO_NAME: {
         "name": {
-            "ru": "Индонезия — Создание компании (PT PMA)",
-            "pt": "Indonésia — Constituição de empresa (PT PMA)",
-            "it": "Indonesia — Costituzione di società (PT PMA)",
+            "ru": "Индонезия: Создание компании (PT PMA)",
+            "pt": "Indonésia: Constituição de empresa (PT PMA)",
+            "it": "Indonesia: Costituzione di società (PT PMA)",
         },
         "steps": [
             (
@@ -11749,20 +11749,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "🟠 Инвестиционный план > IDR 10 млрд (без учёта земли/здания) на "
                         "KBLI/локацию + оплаченный капитал ~IDR 10 млрд. ⚠️ ПРЕКРАТИТЬ "
-                        "ИСПОЛЬЗОВАТЬ старый порог 2,5 млрд (до 2021) — частая ошибка агентств. "
+                        "ИСПОЛЬЗОВАТЬ старый порог 2,5 млрд (до 2021): частая ошибка агентств. "
                         "Уровень риска OSS: низкий → достаточно NIB; высокий → NIB + izin."
                     ),
                     "pt": (
                         "🟠 Plano de investimento > IDR 10 mil milhões (excluindo "
                         "terreno/edifício) por KBLI/localização + capital realizado ~IDR 10 mil "
-                        "milhões. ⚠️ DEIXAR DE USAR o antigo limiar de 2,5 mil milhões (pré-2021) "
-                        "— erro frequente das agências. Nível de risco OSS: baixo → NIB basta; "
+                        "milhões. ⚠️ DEIXAR DE USAR o antigo limiar de 2,5 mil milhões (pré-2021), "
+                        "erro frequente das agências. Nível de risco OSS: baixo → NIB basta; "
                         "alto → NIB + izin."
                     ),
                     "it": (
                         "🟠 Piano d'investimento > IDR 10 miliardi (esclusi terreno/edificio) per "
                         "KBLI/localizzazione + capitale versato ~IDR 10 miliardi. ⚠️ SMETTERE DI "
-                        "USARE la vecchia soglia di 2,5 miliardi (pre-2021) — errore frequente "
+                        "USARE la vecchia soglia di 2,5 miliardi (pre-2021): errore frequente "
                         "delle agenzie. Livello di rischio OSS: basso → NIB sufficiente; alto → "
                         "NIB + izin."
                     ),
@@ -11814,9 +11814,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PH_SRRV_NAME: {
         "name": {
-            "ru": "Филиппины — SRRV (резиденция через депозит, via PRA)",
-            "pt": "Filipinas — SRRV (residência por depósito, via PRA)",
-            "it": "Filippine — SRRV (residenza tramite deposito, via PRA)",
+            "ru": "Филиппины: SRRV (резиденция через депозит, via PRA)",
+            "pt": "Filipinas: SRRV (residência por depósito, via PRA)",
+            "it": "Filippine: SRRV (residenza tramite deposito, via PRA)",
         },
         "steps": [
             (
@@ -11833,7 +11833,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "· Classic 50+ без пенсии 20k · Human Touch 10k (+1 500 USD/мес). ⚠️ "
                         "ПРОЖИВАНИЕ ≠ РАБОТА: SRRV НЕ даёт права на работу (дополнительно "
                         "требуется DOLE AEP). ПРИМЕЧАНИЕ: Digital Nomad Visa (EO 86, 2025) "
-                        "существует на бумаге, но НЕ функционирует — не предлагать его до "
+                        "существует на бумаге, но НЕ функционирует: не предлагать его до "
                         "подтверждения выдачи."
                     ),
                     "pt": (
@@ -11843,7 +11843,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "10k · Classic 50+ sem pensão 20k · Human Touch 10k (+1 500 USD/mês). ⚠️ "
                         "RESIDIR ≠ TRABALHAR: o SRRV NÃO confere o direito a trabalhar (AEP do "
                         "DOLE exigido adicionalmente). NOTA: um Digital Nomad Visa (EO 86, 2025) "
-                        "existe no papel mas NÃO é operacional — não o propor até confirmar a "
+                        "existe no papel mas NÃO é operacional: não o propor até confirmar a "
                         "emissão."
                     ),
                     "it": (
@@ -11853,7 +11853,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "10k · Classic 50+ senza pensione 20k · Human Touch 10k (+1 500 USD/mese). "
                         "⚠️ RISIEDERE ≠ LAVORARE: l'SRRV NON conferisce il diritto al lavoro (AEP "
                         "del DOLE richiesto in aggiunta). NOTA: un Digital Nomad Visa (EO 86, "
-                        "2025) esiste sulla carta ma NON è operativo — non proporlo fino a "
+                        "2025) esiste sulla carta ma NON è operativo: non proporlo fino a "
                         "conferma del rilascio."
                     ),
                 },
@@ -11904,9 +11904,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PH_SIRV_NAME: {
         "name": {
-            "ru": "Филиппины — SIRV (виза инвестора, via BOI)",
-            "pt": "Filipinas — SIRV (visto de investidor, via BOI)",
-            "it": "Filippine — SIRV (visto investitore, via BOI)",
+            "ru": "Филиппины: SIRV (виза инвестора, via BOI)",
+            "pt": "Filipinas: SIRV (visto de investidor, via BOI)",
+            "it": "Filippine: SIRV (visto investitore, via BOI)",
         },
         "steps": [
             (
@@ -11918,21 +11918,21 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 ~75 000 USD инвестировано и поддерживается (простая покупка "
-                        "недвижимости, как правило, не квалифицируется — допустимые активы "
+                        "недвижимости, как правило, не квалифицируется: допустимые активы "
                         "определяются BOI). ⚠️ ПРОЖИВАНИЕ ≠ РАБОТА: статус инвестора, не наёмного "
-                        "работника — управление своей компанией в качестве наёмного работника "
+                        "работника: управление своей компанией в качестве наёмного работника "
                         "требует 9(g) + AEP."
                     ),
                     "pt": (
                         "🟠 ~75 000 USD investidos e mantidos (uma simples compra imobiliária "
-                        "geralmente não qualifica — ativos admissíveis definidos pelo BOI). ⚠️ "
+                        "geralmente não qualifica: ativos admissíveis definidos pelo BOI). ⚠️ "
                         "RESIDIR ≠ TRABALHAR: estatuto de investidor, não trabalhador por conta de "
-                        "outrem — dirigir a sua empresa como trabalhador exige um 9(g) + AEP."
+                        "outrem: dirigir a sua empresa como trabalhador exige um 9(g) + AEP."
                     ),
                     "it": (
                         "🟠 ~75 000 USD investiti e mantenuti (un semplice acquisto immobiliare "
-                        "generalmente non qualifica — attivi ammissibili definiti dal BOI). ⚠️ "
-                        "RISIEDERE ≠ LAVORARE: status di investitore, non lavoratore dipendente — "
+                        "generalmente non qualifica: attivi ammissibili definiti dal BOI). ⚠️ "
+                        "RISIEDERE ≠ LAVORARE: status di investitore, non lavoratore dipendente, "
                         "dirigere la propria società come dipendente richiede un 9(g) + AEP."
                     ),
                 },
@@ -11968,9 +11968,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PH_13A_NAME: {
         "name": {
-            "ru": "Филиппины — Виза 13(a) (супруг·а гражданина·ки Филиппин)",
-            "pt": "Filipinas — Visto 13(a) (cônjuge de um·a nacional filipino·a)",
-            "it": "Filippine — Visto 13(a) (coniuge di un·a cittadino·a filippino·a)",
+            "ru": "Филиппины: Виза 13(a) (супруг·а гражданина·ки Филиппин)",
+            "pt": "Filipinas: Visto 13(a) (cônjuge de um·a nacional filipino·a)",
+            "it": "Filippine: Visto 13(a) (coniuge di un·a cittadino·a filippino·a)",
         },
         "steps": [
             (
@@ -11983,28 +11983,28 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "🟠 13(a) подчиняется ВЗАИМНОСТИ: открыта для граждан стран, "
                         "предоставляющих эквивалентное право филиппинцам (у большинства западных "
-                        "стран оно есть — проверять по гражданству). Требуется действительный брак "
+                        "стран оно есть: проверять по гражданству). Требуется действительный брак "
                         "с гражданином·кой Филиппин."
                     ),
                     "pt": (
                         "🟠 O 13(a) está sujeito a RECIPROCIDADE: aberto aos nacionais de países "
                         "que concedem um direito equivalente aos filipinos (a maioria dos países "
-                        "ocidentais tem-no — a verificar por nacionalidade). Casamento válido com "
+                        "ocidentais tem-no: a verificar por nacionalidade). Casamento válido com "
                         "um·a nacional filipino·a exigido."
                     ),
                     "it": (
                         "🟠 Il 13(a) è soggetto a RECIPROCITÀ: aperto ai cittadini di paesi che "
                         "concedono un diritto equivalente ai filippini (la maggior parte dei paesi "
-                        "occidentali lo prevede — da verificare per nazionalità). Matrimonio "
+                        "occidentali lo prevede: da verificare per nazionalità). Matrimonio "
                         "valido con un·a cittadino·a filippino·a richiesto."
                     ),
                 },
             ),
             (
                 {
-                    "ru": "Подача заявления (BI) — испытательный статус на 1 год",
-                    "pt": "Apresentar o pedido (BI) — estatuto probatório de 1 ano",
-                    "it": "Presentare la domanda (BI) — status probatorio di 1 anno",
+                    "ru": "Подача заявления (BI): испытательный статус на 1 год",
+                    "pt": "Apresentar o pedido (BI): estatuto probatório de 1 ano",
+                    "it": "Presentare la domanda (BI): status probatorio di 1 anno",
                 },
                 {
                     "ru": "Заявление подаётся в BI; испытательный статус на один год.",
@@ -12039,9 +12039,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PH_CO_NAME: {
         "name": {
-            "ru": "Филиппины — Создание компании (60/40 / FINL / экспорт / DME)",
-            "pt": "Filipinas — Constituição de sociedade (60/40 / FINL / exportação / DME)",
-            "it": "Filippine — Costituzione di società (60/40 / FINL / esportazione / DME)",
+            "ru": "Филиппины: Создание компании (60/40 / FINL / экспорт / DME)",
+            "pt": "Filipinas: Constituição de sociedade (60/40 / FINL / exportação / DME)",
+            "it": "Filippine: Costituzione di società (60/40 / FINL / esportazione / DME)",
         },
         "steps": [
             (
@@ -12060,8 +12060,8 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "DME, капитал 200 000 USD (снижается до 100 000 при передовых "
                         "технологиях/одобренном стартапе/≥ 50 филиппинских сотрудниках). 🔴 "
                         "ANTI-DUMMY LAW (CA 108): фиктивное 60/40 (филиппинский подставной "
-                        "владелец, скрытый voting trust, займы под обеспечение акциями) НЕЗАКОННО "
-                        "— уголовная ответственность для иностранца И для подставного лица. 60/40 "
+                        "владелец, скрытый voting trust, займы под обеспечение акциями) НЕЗАКОННО: "
+                        "уголовная ответственность для иностранца И для подставного лица. 60/40 "
                         "должно отражать РЕАЛЬНЫЙ филиппинский экономический контроль. НИКОГДА не "
                         "предлагать это."
                     ),
@@ -12074,7 +12074,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "100 000 se tecnologia avançada/startup endossada/≥ 50 empregados "
                         "filipinos). 🔴 ANTI-DUMMY LAW (CA 108): o 60/40 de fachada (testa de "
                         "ferro filipino, voting trust oculto, empréstimos garantidos por ações) é "
-                        "ILEGAL — sanções penais para o estrangeiro E para o testa de ferro. O "
+                        "ILEGAL: sanções penais para o estrangeiro E para o testa de ferro. O "
                         "60/40 deve refletir um controlo económico filipino REAL. NUNCA o propor."
                     ),
                     "it": (
@@ -12086,7 +12086,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "capitale 200 000 USD (riducibile a 100 000 se tecnologia avanzata/startup "
                         "avallata/≥ 50 dipendenti filippini). 🔴 ANTI-DUMMY LAW (CA 108): il 60/40 "
                         "di facciata (prestanome filippino, voting trust occulto, prestiti "
-                        "garantiti da azioni) è ILLEGALE — sanzioni penali per lo straniero E per "
+                        "garantiti da azioni) è ILLEGALE: sanzioni penali per lo straniero E per "
                         "il prestanome. Il 60/40 deve riflettere un controllo economico filippino "
                         "REALE. MAI proporlo."
                     ),
@@ -12153,9 +12153,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PT_CRUE_NAME: {
         "name": {
-            "ru": "Португалия — Регистрация резидентства ЕС (CRUE)",
-            "pt": "Portugal — Registo de residência UE (CRUE)",
-            "it": "Portogallo — Registrazione di residenza UE (CRUE)",
+            "ru": "Португалия: Регистрация резидентства ЕС (CRUE)",
+            "pt": "Portugal: Registo de residência UE (CRUE)",
+            "it": "Portogallo: Registrazione di residenza UE (CRUE)",
         },
         "steps": [
             (
@@ -12209,15 +12209,15 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "⚠️ Натурализация через 5 лет сегодня, но проводимая реформа 2025 может "
-                        "продлить этот срок (7/10 лет) — регуляторный риск, а не данность."
+                        "продлить этот срок (7/10 лет): регуляторный риск, а не данность."
                     ),
                     "pt": (
                         "⚠️ Naturalização aos 5 anos hoje, mas uma reforma de 2025 em curso pode "
-                        "prolongá-la (7/10 anos) — risco regulatório, não um direito adquirido."
+                        "prolongá-la (7/10 anos): risco regulatório, não um direito adquirido."
                     ),
                     "it": (
                         "⚠️ Naturalizzazione a 5 anni oggi, ma una riforma del 2025 in corso "
-                        "potrebbe allungarla (7/10 anni) — rischio regolatorio, non un dato di "
+                        "potrebbe allungarla (7/10 anni): rischio regolatorio, non un dato di "
                         "fatto."
                     ),
                 },
@@ -12226,9 +12226,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PT_D8_NAME: {
         "name": {
-            "ru": "Португалия — Виза D8 (цифровой кочевник, не из ЕС)",
-            "pt": "Portugal — Visto D8 (nómada digital, fora da UE)",
-            "it": "Portogallo — Visto D8 (nomade digitale, extra-UE)",
+            "ru": "Португалия: Виза D8 (цифровой кочевник, не из ЕС)",
+            "pt": "Portugal: Visto D8 (nómada digital, fora da UE)",
+            "it": "Portogallo: Visto D8 (nomade digitale, extra-UE)",
         },
         "steps": [
             (
@@ -12295,9 +12295,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     PT_GV_NAME: {
         "name": {
-            "ru": "Португалия — Golden Visa / ARI (пассивный инвестор, после 2023)",
-            "pt": "Portugal — Golden Visa / ARI (investidor passivo, pós-2023)",
-            "it": "Portogallo — Golden Visa / ARI (investitore passivo, post-2023)",
+            "ru": "Португалия: Golden Visa / ARI (пассивный инвестор, после 2023)",
+            "pt": "Portugal: Golden Visa / ARI (investidor passivo, pós-2023)",
+            "it": "Portogallo: Golden Visa / ARI (investitore passivo, post-2023)",
         },
         "steps": [
             (
@@ -12311,7 +12311,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🟠 ТЕКУЩИЕ пути (ориентировочные суммы): квалифицированные фонды ≥ 500 "
                         "000 € · создание 10 рабочих мест · R&D ≥ 500 000 € · поддержка культуры ≥ "
                         "250 000 € · капитализация компании ≥ 500 000 €. ⚠️ НЕДВИЖИМОСТЬ и простой "
-                        "перевод капитала были ОТМЕНЕНЫ в 2023 (закон Mais Habitação) — любая "
+                        "перевод капитала были ОТМЕНЕНЫ в 2023 (закон Mais Habitação): любая "
                         "брошюра, упоминающая покупку недвижимости (280k/350k/500k), ЛОЖНА."
                     ),
                     "pt": (
@@ -12319,7 +12319,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "criação de 10 postos de trabalho · I&D ≥ 500 000 € · apoio cultural ≥ 250 "
                         "000 € · capitalização de empresa ≥ 500 000 €. ⚠️ O IMOBILIÁRIO e a "
                         "simples transferência de capital foram RETIRADOS em 2023 (lei Mais "
-                        "Habitação) — qualquer folheto que cite a compra imobiliária "
+                        "Habitação): qualquer folheto que cite a compra imobiliária "
                         "(280k/350k/500k) é FALSO."
                     ),
                     "it": (
@@ -12327,7 +12327,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "creazione di 10 posti di lavoro · R&S ≥ 500 000 € · sostegno culturale ≥ "
                         "250 000 € · capitalizzazione d'impresa ≥ 500 000 €. ⚠️ L'IMMOBILIARE e il "
                         "semplice trasferimento di capitale sono stati RIMOSSI nel 2023 (legge "
-                        "Mais Habitação) — qualsiasi brochure che citi l'acquisto immobiliare "
+                        "Mais Habitação): qualsiasi brochure che citi l'acquisto immobiliare "
                         "(280k/350k/500k) è FALSA."
                     ),
                 },
@@ -12374,9 +12374,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     VN_WP_NAME: {
         "name": {
-            "ru": "Вьетнам — Work Permit + TRC (наёмный работник)",
-            "pt": "Vietname — Work Permit + TRC (trabalhador por conta de outrem)",
-            "it": "Vietnam — Work Permit + TRC (lavoratore dipendente)",
+            "ru": "Вьетнам: Work Permit + TRC (наёмный работник)",
+            "pt": "Vietname: Work Permit + TRC (trabalhador por conta de outrem)",
+            "it": "Vietnam: Work Permit + TRC (lavoratore dipendente)",
         },
         "steps": [
             (
@@ -12393,20 +12393,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🔴 Орган, выдающий work permit, НЕОПРЕДЕЛЁН после административной "
-                        "реорганизации 2025 (DOLISA → Министерство внутренних дел?) — уточнять по "
+                        "реорганизации 2025 (DOLISA → Министерство внутренних дел?): уточнять по "
                         "каждой провинции. Квота + квалификация (~3 года опыта для «эксперта»). "
                         "Освобождение от разрешения (LD1) при внесённом капитале ≥ ~3 млрд VND."
                     ),
                     "pt": (
                         "🔴 Autoridade emissora do work permit INCERTA desde a reorganização "
-                        "administrativa de 2025 (DOLISA → Ministério do Interior?) — a confirmar "
+                        "administrativa de 2025 (DOLISA → Ministério do Interior?): a confirmar "
                         "província a província. Quota + qualificação (~3 anos de experiência para "
                         '"perito"). Isenção de autorização (LD1) se o capital aportado ≥ ~3 mil '
                         "milhões VND."
                     ),
                     "it": (
                         "🔴 Autorità emittente del work permit INCERTA dalla riorganizzazione "
-                        "amministrativa del 2025 (DOLISA → Ministero dell'Interno?) — da "
+                        "amministrativa del 2025 (DOLISA → Ministero dell'Interno?): da "
                         "confermare provincia per provincia. Quota + qualifica (~3 anni di "
                         'esperienza per "esperto"). Esenzione dal permesso (LD1) se il capitale '
                         "apportato ≥ ~3 miliardi VND."
@@ -12435,20 +12435,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "TRC до 2 лет, привязана к работодателю. После 3 лет непрерывного TRC + "
                         "спонсор → возможен PRC (редко, на усмотрение). ⚠️ Для потребности «выход "
-                        "на пенсию» или «кочевник» у Вьетнама нет пути — перенаправить "
+                        "на пенсию» или «кочевник» у Вьетнама нет пути: перенаправить "
                         "(Таиланд/Индонезия/Филиппины). Требуется биометрия."
                     ),
                     "pt": (
                         "TRC até 2 anos, vinculado ao empregador. Após 3 anos de TRC contínuo + "
                         "sponsor → PRC possível (raro, discricionário). ⚠️ Para uma necessidade de "
-                        '"reforma" ou "nómada", o Vietname não tem via — reorientar '
+                        '"reforma" ou "nómada", o Vietname não tem via: reorientar '
                         "(Tailândia/Indonésia/Filipinas). Biometria obrigatória."
                     ),
                     "it": (
                         "TRC fino a 2 anni, vincolato al datore di lavoro. Dopo 3 anni di TRC "
                         "continuativo + sponsor → PRC possibile (raro, discrezionale). ⚠️ Per "
-                        'un\'esigenza di "pensionamento" o "nomade", il Vietnam non ha una via '
-                        "— reindirizzare (Thailandia/Indonesia/Filippine). Biometria richiesta."
+                        'un\'esigenza di "pensionamento" o "nomade", il Vietnam non ha una via: '
+                        "reindirizzare (Thailandia/Indonesia/Filippine). Biometria richiesta."
                     ),
                 },
             ),
@@ -12456,9 +12456,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     VN_INV_NAME: {
         "name": {
-            "ru": "Вьетнам — Investor TRC (DT1-DT4)",
-            "pt": "Vietname — Investor TRC (DT1-DT4)",
-            "it": "Vietnam — Investor TRC (DT1-DT4)",
+            "ru": "Вьетнам: Investor TRC (DT1-DT4)",
+            "pt": "Vietname: Investor TRC (DT1-DT4)",
+            "it": "Vietnam: Investor TRC (DT1-DT4)",
         },
         "steps": [
             (
@@ -12531,9 +12531,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     VN_TT_NAME: {
         "name": {
-            "ru": "Вьетнам — Семейный TRC (TT, супруг(а) гражданина(ки) Вьетнама)",
-            "pt": "Vietname — TRC familiar (TT, cônjuge de um(a) cidadão(ã) vietnamita)",
-            "it": "Vietnam — TRC familiare (TT, coniuge di un(a) cittadino(a) vietnamita)",
+            "ru": "Вьетнам: Семейный TRC (TT, супруг(а) гражданина(ки) Вьетнама)",
+            "pt": "Vietname: TRC familiar (TT, cônjuge de um(a) cidadão(ã) vietnamita)",
+            "it": "Vietnam: TRC familiare (TT, coniuge di un(a) cittadino(a) vietnamita)",
         },
         "steps": [
             (
@@ -12595,9 +12595,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     VN_RO_NAME: {
         "name": {
-            "ru": "Вьетнам — Representative Office (представительство)",
-            "pt": "Vietname — Representative Office (escritório de representação)",
-            "it": "Vietnam — Representative Office (ufficio di rappresentanza)",
+            "ru": "Вьетнам: Representative Office (представительство)",
+            "pt": "Vietname: Representative Office (escritório de representação)",
+            "it": "Vietnam: Representative Office (ufficio di rappresentanza)",
         },
         "steps": [
             (
@@ -12609,16 +12609,16 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "Материнская компания существует ≥ 1 года (Decree 07/2016). RO НЕ МОЖЕТ "
-                        "генерировать прямой коммерческий доход — только функция "
+                        "генерировать прямой коммерческий доход: только функция "
                         "связи/представительства."
                     ),
                     "pt": (
                         "Empresa-mãe existente há ≥ 1 ano (Decree 07/2016). O RO NÃO PODE gerar "
-                        "receita comercial direta — função de ligação/representação apenas."
+                        "receita comercial direta: função de ligação/representação apenas."
                     ),
                     "it": (
                         "Casa madre esistente da ≥ 1 anno (Decree 07/2016). Il RO NON PUÒ generare "
-                        "ricavi commerciali diretti — solo funzione di "
+                        "ricavi commerciali diretti: solo funzione di "
                         "collegamento/rappresentanza."
                     ),
                 },
@@ -12663,9 +12663,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_E2_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Виза E-2 (инвестор по договору)",
-            "pt": "Estados Unidos — Visa E-2 (investidor ao abrigo de tratado)",
-            "it": "Stati Uniti — Visa E-2 (investitore in base a trattato)",
+            "ru": "Соединённые Штаты: Виза E-2 (инвестор по договору)",
+            "pt": "Estados Unidos: Visa E-2 (investidor ao abrigo de tratado)",
+            "it": "Stati Uniti: Visa E-2 (investitore in base a trattato)",
         },
         "steps": [
             (
@@ -12678,7 +12678,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "🟠 Франция является страной — участницей договора E-2. Фиксированного "
+                        "🟠 Франция является страной: участницей договора E-2. Фиксированного "
                         "законодательного порога НЕТ: инвестиция должна быть «существенной» "
                         "относительно стоимости бизнеса и НЕМАРГИНАЛЬНОЙ (часто упоминаемые ~100k "
                         "USD являются наблюдаемой практикой, а НЕ правилом). Никаких "
@@ -12766,9 +12766,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_L1_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Виза L-1 (внутрикорпоративный перевод)",
-            "pt": "Estados Unidos — Visa L-1 (transferência intraempresa)",
-            "it": "Stati Uniti — Visa L-1 (trasferimento infragruppo)",
+            "ru": "Соединённые Штаты: Виза L-1 (внутрикорпоративный перевод)",
+            "pt": "Estados Unidos: Visa L-1 (transferência intraempresa)",
+            "it": "Stati Uniti: Visa L-1 (trasferimento infragruppo)",
         },
         "steps": [
             (
@@ -12846,9 +12846,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_O1_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Виза O-1 (исключительные способности)",
-            "pt": "Estados Unidos — Visa O-1 (capacidades extraordinárias)",
-            "it": "Stati Uniti — Visa O-1 (capacità straordinarie)",
+            "ru": "Соединённые Штаты: Виза O-1 (исключительные способности)",
+            "pt": "Estados Unidos: Visa O-1 (capacidades extraordinárias)",
+            "it": "Stati Uniti: Visa O-1 (capacità straordinarie)",
         },
         "steps": [
             (
@@ -12918,9 +12918,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_H1B_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Виза H-1B (specialty occupation)",
-            "pt": "Estados Unidos — Visa H-1B (specialty occupation)",
-            "it": "Stati Uniti — Visa H-1B (specialty occupation)",
+            "ru": "Соединённые Штаты: Виза H-1B (specialty occupation)",
+            "pt": "Estados Unidos: Visa H-1B (specialty occupation)",
+            "it": "Stati Uniti: Visa H-1B (specialty occupation)",
         },
         "steps": [
             (
@@ -12932,20 +12932,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🔴 Годовая квота 65 000 + 20 000 (магистратура США) → ЛОТЕРЕЯ: отбор НЕ "
-                        "гарантирован. ⚠️ Прокламация от 19/09/2025, вводящая сбор в 100 000 USD — "
+                        "гарантирован. ⚠️ Прокламация от 19/09/2025, вводящая сбор в 100 000 USD: "
                         "сфера применения/исключения/судебный статус НЕОПРЕДЕЛЁННЫ, пункт №1 для "
                         "проверки. Регистрационный сбор уточняется (FY2027)."
                     ),
                     "pt": (
                         "🔴 Quota anual 65 000 + 20 000 (mestrado nos EUA) → LOTARIA: seleção NÃO "
-                        "garantida. ⚠️ Proclamação de 19/09/2025 que impõe uma taxa de 100 000 USD "
-                        "— âmbito/isenções/estatuto judicial INCERTOS, o ponto n.º 1 a verificar. "
+                        "garantida. ⚠️ Proclamação de 19/09/2025 que impõe uma taxa de 100 000 USD: "
+                        "âmbito/isenções/estatuto judicial INCERTOS, o ponto n.º 1 a verificar. "
                         "Taxa de inscrição a confirmar (FY2027)."
                     ),
                     "it": (
                         "🔴 Quota annuale 65 000 + 20 000 (master USA) → LOTTERIA: selezione NON "
                         "garantita. ⚠️ Proclamazione del 19/09/2025 che impone una tassa di 100 "
-                        "000 USD — ambito/esenzioni/stato giudiziario INCERTI, il punto n. 1 da "
+                        "000 USD: ambito/esenzioni/stato giudiziario INCERTI, il punto n. 1 da "
                         "verificare. Tassa di registrazione da confermare (FY2027)."
                     ),
                 },
@@ -12987,9 +12987,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_EB5_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Green card EB-5 (инвестор-иммигрант)",
-            "pt": "Estados Unidos — Green card EB-5 (investidor imigrante)",
-            "it": "Stati Uniti — Green card EB-5 (investitore immigrante)",
+            "ru": "Соединённые Штаты: Green card EB-5 (инвестор-иммигрант)",
+            "pt": "Estados Unidos: Green card EB-5 (investidor imigrante)",
+            "it": "Stati Uniti: Green card EB-5 (investitore immigrante)",
         },
         "steps": [
             (
@@ -13036,9 +13036,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
             ),
             (
                 {
-                    "ru": "Условная green card (2 года) — консульство или adjustment of status",
-                    "pt": "Green card condicional (2 anos) — consulado ou adjustment of status",
-                    "it": "Green card condizionale (2 anni) — consolato o adjustment of status",
+                    "ru": "Условная green card (2 года): консульство или adjustment of status",
+                    "pt": "Green card condicional (2 anos): consulado ou adjustment of status",
+                    "it": "Green card condizionale (2 anni): consolato o adjustment of status",
                 },
                 {
                     "ru": (
@@ -13080,9 +13080,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_NIW_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Green card EB-2 NIW / EB-1A (по заслугам)",
-            "pt": "Estados Unidos — Green card EB-2 NIW / EB-1A (por mérito)",
-            "it": "Stati Uniti — Green card EB-2 NIW / EB-1A (per merito)",
+            "ru": "Соединённые Штаты: Green card EB-2 NIW / EB-1A (по заслугам)",
+            "pt": "Estados Unidos: Green card EB-2 NIW / EB-1A (por mérito)",
+            "it": "Stati Uniti: Green card EB-2 NIW / EB-1A (per merito)",
         },
         "steps": [
             (
@@ -13168,9 +13168,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     US_CO_NAME: {
         "name": {
-            "ru": "Соединённые Штаты — Создание компании (LLC / C-Corp)",
-            "pt": "Estados Unidos — Constituição de empresa (LLC / C-Corp)",
-            "it": "Stati Uniti — Costituzione di società (LLC / C-Corp)",
+            "ru": "Соединённые Штаты: Создание компании (LLC / C-Corp)",
+            "pt": "Estados Unidos: Constituição de empresa (LLC / C-Corp)",
+            "it": "Stati Uniti: Costituzione di società (LLC / C-Corp)",
         },
         "steps": [
             (
@@ -13261,14 +13261,14 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "связанном иностранном акционере ≥ 25 %; удержание налога с дивидендов 30 "
                         "% → 15 % (договор США-Франция). 🔴 BOI/Corporate Transparency Act: "
                         "правило FinCEN от марта 2025 года, перенацеленное на иностранные "
-                        "организации — сферу применения проверять на fincen.gov/boi."
+                        "организации: сферу применения проверять на fincen.gov/boi."
                     ),
                     "pt": (
                         "🟢 Single-member LLC detida por um estrangeiro → Form 5472 + 1120 pro "
                         "forma (prazo 15 de abril, COIMA 25 000 USD). C-Corp → 1120; 5472 se um "
                         "acionista estrangeiro relacionado ≥ 25 %; retenção de dividendos 30 % → "
                         "15 % (convenção EUA-França). 🔴 BOI/Corporate Transparency Act: regra "
-                        "FinCEN de março de 2025 reorientada para as entidades estrangeiras — "
+                        "FinCEN de março de 2025 reorientada para as entidades estrangeiras: "
                         "âmbito a verificar em fincen.gov/boi."
                     ),
                     "it": (
@@ -13276,7 +13276,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "forma (scadenza 15 aprile, SANZIONE 25 000 USD). C-Corp → 1120; 5472 se "
                         "un azionista straniero collegato ≥ 25 %; ritenuta sui dividendi 30 % → 15 "
                         "% (convenzione USA-Francia). 🔴 BOI/Corporate Transparency Act: regola "
-                        "FinCEN del marzo 2025 riorientata sulle entità estere — ambito da "
+                        "FinCEN del marzo 2025 riorientata sulle entità estere: ambito da "
                         "verificare su fincen.gov/boi."
                     ),
                 },
@@ -13285,9 +13285,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CH_BNA_NAME: {
         "name": {
-            "ru": "Швейцария — Разрешение B неработающего (рантье/пенсионер ЕС/ЕАСТ)",
-            "pt": "Suíça — Autorização B não ativo (rentista/reformado UE/EFTA)",
-            "it": "Svizzera — Permesso B non attivo (rentier/pensionato UE/AELS)",
+            "ru": "Швейцария: Разрешение B неработающего (рантье/пенсионер ЕС/ЕАСТ)",
+            "pt": "Suíça: Autorização B não ativo (rentista/reformado UE/EFTA)",
+            "it": "Svizzera: Permesso B non attivo (rentier/pensionato UE/AELS)",
         },
         "steps": [
             (
@@ -13345,19 +13345,19 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "Разрешение B (5 лет). 🟠 Налогообложение по фиксированной ставке доступно "
                         "в большинстве кантонов (отдельный НАЛОГОВЫЙ режим, согласуется отдельно с "
-                        "кантональной налоговой службой — не право на проживание). Кантон имеет "
+                        "кантональной налоговой службой: не право на проживание). Кантон имеет "
                         "решающее значение (налогообложение)."
                     ),
                     "pt": (
                         "Autorização B (5 anos). 🟠 Tributação por montante fixo disponível na "
                         "maioria dos cantões (um regime FISCAL distinto, a negociar separadamente "
-                        "com a administração fiscal cantonal — não um direito de residência). O "
+                        "com a administração fiscal cantonal: não um direito de residência). O "
                         "cantão é determinante (fiscalidade)."
                     ),
                     "it": (
                         "Permesso B (5 anni). 🟠 Tassazione forfettaria disponibile nella maggior "
                         "parte dei cantoni (un regime FISCALE distinto, da negoziare separatamente "
-                        "con l'ufficio fiscale cantonale — non un diritto di residenza). Il "
+                        "con l'ufficio fiscale cantonale: non un diritto di residenza). Il "
                         "cantone è determinante (fiscalità)."
                     ),
                 },
@@ -13366,9 +13366,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CH_EMP_NAME: {
         "name": {
-            "ru": "Швейцария — Разрешение L/B для наёмного работника (ЕС/ЕАСТ)",
-            "pt": "Suíça — Autorização L/B para trabalhador assalariado (UE/EFTA)",
-            "it": "Svizzera — Permesso L/B per lavoratore dipendente (UE/AELS)",
+            "ru": "Швейцария: Разрешение L/B для наёмного работника (ЕС/ЕАСТ)",
+            "pt": "Suíça: Autorização L/B para trabalhador assalariado (UE/EFTA)",
+            "it": "Svizzera: Permesso L/B per lavoratore dipendente (UE/AELS)",
         },
         "steps": [
             (
@@ -13380,7 +13380,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "Тип разрешения зависит от длительности договора: < 3 месяцев = простое "
-                        "уведомление · 3–12 месяцев = разрешение L · ≥ 12 месяцев = разрешение B "
+                        "уведомление · 3-12 месяцев = разрешение L · ≥ 12 месяцев = разрешение B "
                         "(5 лет). Для гражданина ЕС/ЕАСТ нет квот и проверки рынка труда."
                     ),
                     "pt": (
@@ -13433,9 +13433,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CH_IND_NAME: {
         "name": {
-            "ru": "Швейцария — Самозанятый / предприниматель (ЕС/ЕАСТ)",
-            "pt": "Suíça — Trabalhador independente / empresário (UE/EFTA)",
-            "it": "Svizzera — Lavoratore autonomo / imprenditore (UE/AELS)",
+            "ru": "Швейцария: Самозанятый / предприниматель (ЕС/ЕАСТ)",
+            "pt": "Suíça: Trabalhador independente / empresário (UE/EFTA)",
+            "it": "Svizzera: Lavoratore autonomo / imprenditore (UE/AELS)",
         },
         "steps": [
             (
@@ -13446,17 +13446,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "Бизнес-план, прогнозная бухгалтерия, помещения/клиенты — деятельность "
+                        "Бизнес-план, прогнозная бухгалтерия, помещения/клиенты: деятельность "
                         "должна быть действительной (не фиктивной). Регистрация AVS как "
                         "самозанятого."
                     ),
                     "pt": (
-                        "Business plan, contabilidade previsional, instalações/clientes — a "
+                        "Business plan, contabilidade previsional, instalações/clientes: a "
                         "atividade tem de ser efetiva (não fictícia). Inscrição na AVS como "
                         "independente."
                     ),
                     "it": (
-                        "Business plan, contabilità previsionale, locali/clienti — l'attività deve "
+                        "Business plan, contabilità previsionale, locali/clienti: l'attività deve "
                         "essere effettiva (non fittizia). Affiliazione AVS come lavoratore "
                         "autonomo."
                     ),
@@ -13499,9 +13499,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CH_RET_NAME: {
         "name": {
-            "ru": "Швейцария — Рантье из стран вне ЕС (55+ лет, art. 28 LEI)",
-            "pt": "Suíça — Rentista extra-UE (55+ anos, art. 28 LEI)",
-            "it": "Svizzera — Rentier extra-UE (55+ anni, art. 28 LEI)",
+            "ru": "Швейцария: Рантье из стран вне ЕС (55+ лет, art. 28 LEI)",
+            "pt": "Suíça: Rentista extra-UE (55+ anos, art. 28 LEI)",
+            "it": "Svizzera: Rentier extra-UE (55+ anni, art. 28 LEI)",
         },
         "steps": [
             (
@@ -13515,7 +13515,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 лет + ОСОБЫЕ личные связи со "
                         "Швейцарией + отсутствие приносящей доход деятельности + достаточные "
                         "средства + фактический перенос центра жизненных интересов. ОЧЕНЬ "
-                        "дискреционно: одни кантоны приветливы, другие ограничительны — выбор "
+                        "дискреционно: одни кантоны приветливы, другие ограничительны, выбор "
                         "кантона имеет решающее значение. Рантье из стран вне ЕС МОЛОЖЕ 55 лет не "
                         "имеет чёткого пути."
                     ),
@@ -13523,7 +13523,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 anos + laços pessoais PARTICULARES "
                         "com a Suíça + nenhuma atividade lucrativa + meios suficientes + "
                         "transferência efetiva do centro de vida. MUITO discricionário: alguns "
-                        "cantões acolhedores, outros restritivos — a escolha do cantão é "
+                        "cantões acolhedores, outros restritivos: a escolha do cantão é "
                         "determinante. Um rentista extra-UE com MENOS de 55 anos não tem via "
                         "clara."
                     ),
@@ -13531,7 +13531,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "🔴 Art. 28 LEI / art. 25 OASA: ≥ 55 anni + legami personali PARTICOLARI "
                         "con la Svizzera + nessuna attività lucrativa + mezzi sufficienti + "
                         "trasferimento effettivo del centro della vita. MOLTO discrezionale: "
-                        "alcuni cantoni accoglienti, altri restrittivi — la scelta del cantone è "
+                        "alcuni cantoni accoglienti, altri restrittivi: la scelta del cantone è "
                         "determinante. Un rentier extra-UE con MENO di 55 anni non ha una via "
                         "chiara."
                     ),
@@ -13563,17 +13563,17 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "🟠 Целевая аудитория паушального налогообложения (отдельный налоговый "
-                        "режим, согласуемый через кантональный ruling ДО переезда — не является "
+                        "режим, согласуемый через кантональный ruling ДО переезда: не является "
                         "разрешением сам по себе)."
                     ),
                     "pt": (
                         "🟠 Público-alvo da tributação por montante fixo (um regime fiscal "
-                        "distinto, a negociar mediante um ruling cantonal ANTES de se instalar — "
+                        "distinto, a negociar mediante um ruling cantonal ANTES de se instalar: "
                         "não é uma autorização em si)."
                     ),
                     "it": (
                         "🟠 Pubblico target dell'imposizione forfettaria (un regime fiscale "
-                        "distinto, da negoziare tramite un ruling cantonale PRIMA di stabilirsi — "
+                        "distinto, da negoziare tramite un ruling cantonale PRIMA di stabilirsi: "
                         "non è un permesso di per sé)."
                     ),
                 },
@@ -13582,9 +13582,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CH_TCN_NAME: {
         "name": {
-            "ru": "Швейцария — Наёмный работник из стран вне ЕС (art. 18-23 LEI)",
-            "pt": "Suíça — Trabalhador assalariado extra-UE (art. 18-23 LEI)",
-            "it": "Svizzera — Lavoratore dipendente extra-UE (art. 18-23 LEI)",
+            "ru": "Швейцария: Наёмный работник из стран вне ЕС (art. 18-23 LEI)",
+            "pt": "Suíça: Trabalhador assalariado extra-UE (art. 18-23 LEI)",
+            "it": "Svizzera: Lavoratore dipendente extra-UE (art. 18-23 LEI)",
         },
         "steps": [
             (
@@ -13652,9 +13652,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CH_CO_NAME: {
         "name": {
-            "ru": "Швейцария — Создание компании (Sàrl / SA)",
-            "pt": "Suíça — Constituição de empresa (Sàrl / SA)",
-            "it": "Svizzera — Costituzione di società (Sàrl / SA)",
+            "ru": "Швейцария: Создание компании (Sàrl / SA)",
+            "pt": "Suíça: Constituição de empresa (Sàrl / SA)",
+            "it": "Svizzera: Costituzione di società (Sàrl / SA)",
         },
         "steps": [
             (
@@ -13666,7 +13666,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "⚠️ ДИРЕКТОР-РЕЗИДЕНТ ОБЯЗАТЕЛЕН: как минимум одно лицо с местожительством "
-                        "в Швейцарии и правом подписи (art. 814 п. 3 / 718 п. 4 CO) — местный "
+                        "в Швейцарии и правом подписи (art. 814 п. 3 / 718 п. 4 CO): местный "
                         "наём, фидуциарный администратор или переезжающий учредитель. Без него "
                         "компании нет. КАНТОН = налоговый рычаг №1: налог на прибыль ~11,5 % "
                         "(Zug/Nidwalden) до ~21 % (Bern); Geneva ~14 % (БОЛЬШЕ НЕ кантон с высоким "
@@ -13676,7 +13676,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     ),
                     "pt": (
                         "⚠️ ADMINISTRADOR RESIDENTE OBRIGATÓRIO: pelo menos uma pessoa domiciliada "
-                        "na Suíça com poder de assinatura (art. 814 n.º 3 / 718 n.º 4 CO) — "
+                        "na Suíça com poder de assinatura (art. 814 n.º 3 / 718 n.º 4 CO): "
                         "contratação local, administrador fiduciário, ou instalação do fundador. "
                         "Sem ele, não há empresa. CANTÃO = alavanca fiscal n.º 1: imposto sobre os "
                         "lucros ~11,5 % (Zug/Nidwalden) a ~21 % (Bern); Genebra ~14 % (JÁ NÃO é um "
@@ -13686,7 +13686,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     ),
                     "it": (
                         "⚠️ AMMINISTRATORE RESIDENTE OBBLIGATORIO: almeno una persona domiciliata "
-                        "in Svizzera con potere di firma (art. 814 cpv. 3 / 718 cpv. 4 CO) — "
+                        "in Svizzera con potere di firma (art. 814 cpv. 3 / 718 cpv. 4 CO): "
                         "assunzione locale, amministratore fiduciario, o insediamento del "
                         "fondatore. Senza di esso, niente società. CANTONE = leva fiscale n°1: "
                         "imposta sugli utili ~11,5 % (Zug/Nidwalden) a ~21 % (Bern); Ginevra ~14 % "
@@ -13742,7 +13742,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "на дивиденды (остаточные ставки по соглашениям). Гербовый сбор 1 % свыше "
                         "1 млн CHF вклада. ПРИМЕЧАНИЕ о паушальном налогообложении: режим для "
                         "иностранного рантье без деятельности (федеральный минимум 400 000 CHF / "
-                        "7× аренды, кантональный ruling) — отдельный, не вид на жительство; "
+                        "7× аренды, кантональный ruling): отдельный, не вид на жительство; "
                         "отменён в Zurich/Basel/Schaffhausen/Appenzell AR."
                     ),
                     "pt": (
@@ -13751,7 +13751,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "antecipado 35 % sobre dividendos (taxas residuais por convenção). Imposto "
                         "de selo 1 % acima de 1 M CHF de entrada. NOTA tributação por montante "
                         "fixo: regime para um rentista estrangeiro sem atividade (limiar federal "
-                        "400 000 CHF / 7× renda, ruling cantonal) — distinto, não é uma "
+                        "400 000 CHF / 7× renda, ruling cantonal): distinto, não é uma "
                         "autorização de residência; abolido em "
                         "Zurique/Basileia/Schaffhausen/Appenzell AR."
                     ),
@@ -13761,7 +13761,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                         "% sui dividendi (aliquote residue da convenzione). Tassa di bollo 1 % "
                         "oltre 1 M CHF di conferimento. NOTA imposizione forfettaria: regime per "
                         "un rentier straniero senza attività (soglia federale 400 000 CHF / 7× "
-                        "affitto, ruling cantonale) — distinto, non è un permesso di soggiorno; "
+                        "affitto, ruling cantonale): distinto, non è un permesso di soggiorno; "
                         "abolito a Zurigo/Basilea/Sciaffusa/Appenzello Esterno."
                     ),
                 },
@@ -13770,9 +13770,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CA_EE_NAME: {
         "name": {
-            "ru": "Канада — Express Entry (федеральное постоянное проживание)",
-            "pt": "Canadá — Express Entry (residência permanente federal)",
-            "it": "Canada — Express Entry (residenza permanente federale)",
+            "ru": "Канада: Express Entry (федеральное постоянное проживание)",
+            "pt": "Canadá: Express Entry (residência permanente federal)",
+            "it": "Canada: Express Entry (residenza permanente federale)",
         },
         "steps": [
             (
@@ -13845,9 +13845,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CA_PNP_NAME: {
         "name": {
-            "ru": "Канада — Provincial Nominee Program (PNP)",
-            "pt": "Canadá — Provincial Nominee Program (PNP)",
-            "it": "Canada — Provincial Nominee Program (PNP)",
+            "ru": "Канада: Provincial Nominee Program (PNP)",
+            "pt": "Canadá: Provincial Nominee Program (PNP)",
+            "it": "Canada: Provincial Nominee Program (PNP)",
         },
         "steps": [
             (
@@ -13860,20 +13860,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "🔴 У каждой провинции свои потоки и критерии (часто привязанные к "
                         "востребованной профессии, местному предложению работы или связи с "
-                        "провинцией). Квота PNP на 2025 год сокращена (~55 000) — доступность "
+                        "провинцией). Квота PNP на 2025 год сокращена (~55 000): доступность "
                         "потоков изменчива, уточнять по провинции (OINP/BC PNP/AAIP…)."
                     ),
                     "pt": (
                         "🔴 Cada província tem os seus próprios fluxos e critérios (muitas vezes "
                         "ligados a uma profissão em procura, a uma oferta de emprego local, ou a "
-                        "uma ligação à província). Alocação PNP 2025 reduzida (~55 000) — "
+                        "uma ligação à província). Alocação PNP 2025 reduzida (~55 000): "
                         "disponibilidade dos fluxos volátil, a confirmar por província (OINP/BC "
                         "PNP/AAIP…)."
                     ),
                     "it": (
                         "🔴 Ogni provincia ha i propri flussi e criteri (spesso legati a una "
                         "professione richiesta, a un'offerta di lavoro locale, o a un legame con "
-                        "la provincia). Allocazione PNP 2025 ridotta (~55 000) — disponibilità dei "
+                        "la provincia). Allocazione PNP 2025 ridotta (~55 000): disponibilità dei "
                         "flussi volatile, da confermare per provincia (OINP/BC PNP/AAIP…)."
                     ),
                 },
@@ -13918,9 +13918,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CA_QC_NAME: {
         "name": {
-            "ru": "Квебек — PSTQ / Arrima (квебекский отбор, затем ПМЖ)",
-            "pt": "Quebeque — PSTQ / Arrima (seleção quebequense, depois RP)",
-            "it": "Québec — PSTQ / Arrima (selezione quebecchese, poi RP)",
+            "ru": "Квебек: PSTQ / Arrima (квебекский отбор, затем ПМЖ)",
+            "pt": "Quebeque: PSTQ / Arrima (seleção quebequense, depois RP)",
+            "it": "Québec: PSTQ / Arrima (selezione quebecchese, poi RP)",
         },
         "steps": [
             (
@@ -13932,7 +13932,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 {
                     "ru": (
                         "⚠️ Квебекская система ОТДЕЛЬНАЯ от Express Entry. PSTQ = Программа отбора "
-                        "квалифицированных работников (отдельные потоки). 🟠 ФРАНЦУЗСКИЙ — важный "
+                        "квалифицированных работников (отдельные потоки). 🟠 ФРАНЦУЗСКИЙ: важный "
                         "рычаг (пороги и баллы). Названия потоков и пороги уточнять "
                         "(Québec.ca/MIFI)."
                     ),
@@ -13979,8 +13979,8 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "ПМЖ по-прежнему выдаётся федеральным правительством, но ОТБОР — "
-                        "квебекский. ПРИМЕЧАНИЕ: PEQ (Программа квебекского опыта) — ускоренный "
+                        "ПМЖ по-прежнему выдаётся федеральным правительством, но ОТБОР: "
+                        "квебекский. ПРИМЕЧАНИЕ: PEQ (Программа квебекского опыта), ускоренный "
                         "путь для выпускников/работников, уже находящихся в Квебеке."
                     ),
                     "pt": (
@@ -13999,9 +13999,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CA_WP_NAME: {
         "name": {
-            "ru": "Канада — Разрешение на работу → канадский опыт → PR",
-            "pt": "Canadá — Autorização de trabalho → experiência canadiana → PR",
-            "it": "Canada — Permesso di lavoro → esperienza canadese → PR",
+            "ru": "Канада: Разрешение на работу → канадский опыт → PR",
+            "pt": "Canadá: Autorização de trabalho → experiência canadiana → PR",
+            "it": "Canada: Permesso di lavoro → esperienza canadese → PR",
         },
         "steps": [
             (
@@ -14063,7 +14063,7 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                 },
                 {
                     "ru": (
-                        "CEC — самый быстрый путь к PR для тех, кто уже имеет канадский опыт. "
+                        "CEC: самый быстрый путь к PR для тех, кто уже имеет канадский опыт. "
                         "Французский язык = преимущество (специальные отборы)."
                     ),
                     "pt": (
@@ -14080,9 +14080,9 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
     },
     CA_SUV_NAME: {
         "name": {
-            "ru": "Канада — Start-up Visa (SUV, предприниматель)",
-            "pt": "Canadá — Start-up Visa (SUV, empreendedor)",
-            "it": "Canada — Start-up Visa (SUV, imprenditore)",
+            "ru": "Канада: Start-up Visa (SUV, предприниматель)",
+            "pt": "Canadá: Start-up Visa (SUV, empreendedor)",
+            "it": "Canada: Start-up Visa (SUV, imprenditore)",
         },
         "steps": [
             (
@@ -14095,20 +14095,20 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
                     "ru": (
                         "🟠 Назначенная организация: венчурный капитал ≥ 200 000 $ / бизнес-ангел "
                         "≥ 75 000 $ / инкубатор (средства не требуются). Требуется письмо "
-                        "поддержки. ⚠️ В Канаде нет инвесторской/golden visa — это путь для "
+                        "поддержки. ⚠️ В Канаде нет инвесторской/golden visa: это путь для "
                         "проекта."
                     ),
                     "pt": (
                         "🟠 Organização designada: capital de risco ≥ 200 000 $ / investidor anjo "
                         "≥ 75 000 $ / incubadora (sem fundos exigidos). Carta de apoio "
-                        "obrigatória. ⚠️ Não existe visto de investidor/golden visa no Canadá — "
+                        "obrigatória. ⚠️ Não existe visto de investidor/golden visa no Canadá: "
                         "esta é a via de projeto."
                     ),
                     "it": (
                         "🟠 Organizzazione designata: capitale di rischio ≥ 200 000 $ / "
                         "investitore angel ≥ 75 000 $ / incubatore (nessun fondo richiesto). "
                         "Lettera di sostegno obbligatoria. ⚠️ Nessun visto per investitori/golden "
-                        "visa in Canada — questa è la via del progetto."
+                        "visa in Canada: questa è la via del progetto."
                     ),
                 },
             ),
@@ -14153,13 +14153,15 @@ _SAMPLE_I18N_RUPTIT: dict[str, dict[str, object]] = {
 def _merge_i18n(
     blob: dict[str, str], scalar: str | None, extra: dict[str, str] | None
 ) -> dict[str, str]:
-    """Merge EN/ES variants into an i18n blob WITHOUT touching FR. Ensures the
-    "fr" key (from the scalar) is present, then adds only NON-EMPTY en/es — an
-    absent/empty variant is left out (FR fallback). Returns a NEW dict so
-    SQLAlchemy detects the change."""
+    """Merge EN/ES variants into an i18n blob. The "fr" key MIRRORS the
+    scalar (content drift, e.g. the dash purge, must reach the blob too —
+    samples are read-only for agencies, nothing user-made is overwritten);
+    then only NON-EMPTY variants are added — an absent/empty variant is
+    left out (FR fallback). Returns a NEW dict so SQLAlchemy detects the
+    change."""
     out = dict(blob or {})
     if scalar is not None:
-        out.setdefault("fr", scalar)
+        out["fr"] = scalar
     for lang, value in (extra or {}).items():
         if value:
             out[lang] = value
@@ -14227,7 +14229,14 @@ async def _reconcile_existing(
         )
     ).scalars()
     steps_with_participant = set(existing)
-    for db_step, (_n, _d, _note, role, _docs) in zip(db_steps, steps, strict=False):
+    for db_step, (step_name, _d, note, role, _docs) in zip(db_steps, steps, strict=False):
+        # Content drift (the dash purge, future wording fixes) updates the
+        # row in place — samples are read-only for agencies, there is no
+        # user edit to fight (same mechanic as the legal texts).
+        if db_step.name != step_name:
+            db_step.name = step_name
+        if db_step.content_note != note:
+            db_step.content_note = note
         if role is None and db_step.id not in steps_with_participant:
             _add_participant(db, db_step.id, None)
     # EN/ES variants — added to the i18n blobs (FR untouched). Idempotent.
@@ -14247,6 +14256,26 @@ async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step
             )
         )
     ).scalar_one_or_none()
+    if existing is None and " : " in name:
+        # Dash purge (2026-07-05): rows seeded before it carry the em-dash
+        # spelling ("Pays — Dispositif"). Find them by the LEGACY name and
+        # rename IN PLACE — the re-seed never duplicates a renamed sample.
+        # Agency-made templates are out of reach by construction (the
+        # filter is agency_id IS NULL + is_sample).
+        # The em dash is spelled via chr() so the dash guard test stays
+        # ABSOLUTE on string literals (this is the one legitimate use).
+        legacy = name.replace(" : ", f" {chr(0x2014)} ", 1)
+        existing = (
+            await db.execute(
+                select(JourneyTemplate).where(
+                    JourneyTemplate.agency_id.is_(None),
+                    JourneyTemplate.is_sample.is_(True),
+                    JourneyTemplate.name == legacy,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.name = name
     if existing is not None:
         await _reconcile_existing(db, existing, country, steps)
         return

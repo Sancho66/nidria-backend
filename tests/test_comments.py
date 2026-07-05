@@ -101,7 +101,7 @@ async def test_notif_routes_recipient_language_and_resolves_step_name(
     # The step name was resolved in the recipient's language (EN), not the FR scalar.
     assert "Step EN" in sent.body and "Étape FR" not in sent.body
     # NOTIF-2: the subject + body are now in EN (recipient language).
-    assert sent.subject == "Nidria — New message from your advisor"
+    assert sent.subject == "Nidria: New message from your advisor"
     assert 'html lang="en"' in sent.html
 
 

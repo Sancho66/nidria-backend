@@ -667,7 +667,7 @@ async def run_seed(db: AsyncSession, mode: str) -> list[str]:
     """The whole seed against an EXISTING session — testable on the
     harness DB. The prod guard lives here so no entry point skips it."""
     if mode not in {"dev", "prod"}:
-        raise SystemExit(f"Unknown seed mode {mode!r} — use dev|prod.")
+        raise SystemExit(f"Unknown seed mode {mode!r} : use dev|prod.")
     if mode == "prod" and get_settings().environment != "production":
         raise SystemExit(
             "Refusing --mode prod: ENVIRONMENT != production (mirror of the db-reset guard)."
@@ -711,7 +711,7 @@ async def seed(mode: str = "dev") -> None:
         print(f"          {PROD_EXPAT_VOLKOV} (Client Volkov)")
         print(f"          {PROD_EXPAT_DUPONT} (Client Dupont)")
         print("  Superadmin = all permissions + agency.create (platform-reserved role).")
-        print('  First login: use "Forgot password" — no seeded password is usable.')
+        print('  First login: use "Forgot password", no seeded password is usable.')
     else:
         print(f"  ALL demo passwords (agents AND expats): {DEMO_PASSWORD}")
         print("  Agents:")

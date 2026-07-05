@@ -17,7 +17,7 @@ def test_client_template_es_subject_body_and_html_lang() -> None:
     # A client whose resolved language is ES → ES subject, ES body, html lang=es,
     # and the (already-resolved) ES step name interpolated.
     c = requirement_request_email("Agencia X", "Presentación", "https://x/space", lang="es")
-    assert c.subject == "Nidria — Se requiere nueva información"
+    assert c.subject == "Nidria: Se requiere nueva información"
     assert "necesita información o documentos para la etapa «Presentación»" in c.text
     assert 'html lang="es"' in c.html
     assert "Completar mi expediente" in c.html  # button localized
@@ -28,7 +28,7 @@ def test_client_unsupported_preferred_lang_falls_back_to_english() -> None:
     lang = resolve_notification_lang_client("ko")
     assert lang == "en"
     c = new_comment_to_client("Agency X", "Mary", "Submission", "https://x/space", lang=lang)
-    assert c.subject == "Nidria — New message from your advisor"
+    assert c.subject == "Nidria: New message from your advisor"
     assert "wrote to you about the step “Submission”" in c.text
     assert 'html lang="en"' in c.html
 
@@ -38,7 +38,7 @@ def test_agent_template_default_fr() -> None:
     lang = resolve_notification_lang_agent("fr")
     assert lang == "fr"
     c = ready_to_validate_email("Dossier 42", "Examen médical", "https://x/app", lang=lang)
-    assert c.subject == "Nidria — Un dossier est prêt à valider"
+    assert c.subject == "Nidria : Un dossier est prêt à valider"
     assert "Toutes les informations attendues pour l'étape « Examen médical »" in c.text
     assert 'html lang="fr"' in c.html
 
@@ -48,7 +48,7 @@ def test_client_template_ru_subject_body_and_html_lang() -> None:
     lang = resolve_notification_lang_client("ru")
     assert lang == "ru"
     c = requirement_request_email("Acme", "Виза D7", "https://x/space", lang=lang)
-    assert c.subject == "Nidria — Ожидается новая информация"
+    assert c.subject == "Nidria: Ожидается новая информация"
     assert "для этапа «Виза D7»" in c.text
     assert 'html lang="ru"' in c.html
     assert "Заполнить моё дело" in c.html  # button localized
@@ -59,7 +59,7 @@ def test_agent_template_default_it() -> None:
     lang = resolve_notification_lang_agent("it")
     assert lang == "it"
     c = new_comment_to_agent("Jean Martin", "Numero fiscale", "https://x/app", lang=lang)
-    assert c.subject == "Nidria — Nuovo messaggio dal tuo cliente"
+    assert c.subject == "Nidria: Nuovo messaggio dal tuo cliente"
     assert "ha scritto in merito alla fase «Numero fiscale»" in c.text
     assert 'html lang="it"' in c.html
 

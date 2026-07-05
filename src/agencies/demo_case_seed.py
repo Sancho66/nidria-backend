@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 DEMO_SEED_MARKER = "demo_case_seeded_at"
 
-DEMO_JOURNEY_NAME = "Exemple — Installation à l'étranger"
+DEMO_JOURNEY_NAME = "Exemple : Installation à l'étranger"
 
 # (name, estimated_days, content_note, status) — linear AND chain, the
 # agency validates every step (template defaults). Generic on purpose:
@@ -74,7 +74,7 @@ _DEMO_STEPS: list[tuple[str, int | None, str, str]] = [
         "Dépôt de la demande auprès de l'administration",
         30,
         "L'agence dépose le dossier complet. Le client suit l'avancement en "
-        "temps réel depuis son espace — sans avoir besoin d'appeler.",
+        "temps réel depuis son espace, sans avoir besoin d'appeler.",
         StepStatus.IN_PROGRESS.value,
     ),
     (
@@ -95,7 +95,7 @@ _DEMO_STEPS: list[tuple[str, int | None, str, str]] = [
 _DEMO_REQUIREMENTS = ("Copie du passeport", "Justificatif de domicile")
 
 _DEMO_COMMENT = (
-    "Bonjour ! Je viens de déposer mes pièces justificatives — "
+    "Bonjour ! Je viens de déposer mes pièces justificatives, "
     "dites-moi s'il manque quelque chose. Merci pour le suivi !"
 )
 
