@@ -25,6 +25,7 @@ from src.core.email_templates import (
 from src.core.enums import (
     ActorType,
     CasePersonKind,
+    CaseStatus,
     RequirementStatus,
     ResponsibleType,
     StepRequirementKind,
@@ -287,6 +288,7 @@ class ProgressManager:
             actor_id=agent.id,
             details={"journey_template_id": str(template.id)},
         )
+        await self._sync_case_status(case)
         self._log(
             case.id,
             agent,
@@ -346,6 +348,8 @@ class ProgressManager:
                 await self.repo.ensure_external_assignment(case.id, v_agent_id, agent.id)
             await self._seed_participants(case, progress, participants, resolved_agents, agent)
             self._log(case.id, agent, "step.added", {"template_step_id": str(step.id)})
+            await self.db.flush()  # the new row must be visible to the sync below
+            await self._sync_case_status(case)
         return len(cases)
 
     async def backfill_requirements(
@@ -796,6 +800,7 @@ class ProgressManager:
         await UsageManager(self.db).emit_for_case(
             case, "case.step_validated", actor_type=actor_type, actor_id=actor_id
         )
+        await self._sync_case_status(case)
 
     async def _apply_responsible_change(
         self,
@@ -866,6 +871,48 @@ class ProgressManager:
             },
         )
 
+    async def _sync_case_status(self, case: ClientCase) -> None:
+        """Journey-driven status (cohérence statut/étape). Reacts ONLY to
+        step events (validation, reopening, instantiation) — never a
+        background pass — so a manually posed status HOLDS between events
+        (no tug-of-war). Rules: any step activity pulls a PROSPECT to
+        IN_PROGRESS; ALL steps validated → VALIDATED; a step reopened (or
+        newly instantiated) on a VALIDATED case → back to IN_PROGRESS.
+        Never automates toward PROSPECT (initial commercial state), and a
+        CLOSED case is a manual terminal state the automaton never
+        touches. No journey → the status is never automated."""
+        if case.status == CaseStatus.CLOSED.value:
+            return
+        rows = await self.repo.list_progress_for_case(case.id)
+        if not rows:
+            return
+        any_step_active = any(r.status != StepStatus.TODO.value for r in rows)
+        new_status: str | None = None
+        if all(r.status == StepStatus.DONE.value for r in rows):
+            new_status = CaseStatus.VALIDATED.value
+        elif case.status == CaseStatus.VALIDATED.value:
+            new_status = CaseStatus.IN_PROGRESS.value  # reopened / new step
+        elif case.status == CaseStatus.PROSPECT.value and any_step_active:
+            new_status = CaseStatus.IN_PROGRESS.value
+        if new_status is None or new_status == case.status:
+            return
+        # The normal status-change trail (activity + usage event), with
+        # the SYSTEM actor and the auto marker.
+        self.activity.log_action(
+            case_id=case.id,
+            actor_type=ActorType.SYSTEM,
+            actor_id=None,
+            action_type="case.status_changed",
+            details={"old": case.status, "new": new_status, "auto": True},
+        )
+        await UsageManager(self.db).emit_for_case(
+            case,
+            "case.status_changed",
+            actor_type=ActorType.SYSTEM,
+            details={"old": case.status, "new": new_status, "auto": True},
+        )
+        case.status = new_status
+
     async def _apply_transition(
         self, agent: Agent, case: ClientCase, row: CaseStepProgress, target: StepStatus
     ) -> list[PendingMail]:
@@ -928,6 +975,7 @@ class ProgressManager:
             mail = await self._client_step_mail_for_row(case, row, reopened=False)
             if mail is not None:
                 pending.append(mail)
+        await self._sync_case_status(case)
         return pending
 
     async def _sync_missing_requirements(self, row: CaseStepProgress) -> int:
@@ -1066,6 +1114,7 @@ class ProgressManager:
 
         notifications_on = await self._notifications_enabled(case)
         pending: list[PendingMail] = []
+        auto_closed = False
         for row in rows:
             row_reqs = by_progress.get(row.id, [])
             row_case_reqs = case_by_step.get(row.template_step_id, [])
@@ -1095,6 +1144,7 @@ class ProgressManager:
                     await UsageManager(self.db).emit_for_case(
                         case, "case.step_validated", actor_type=ActorType.SYSTEM
                     )
+                    auto_closed = True
             elif row.validated_by_type == StepValidatorType.AGENT.value and not before.get(
                 row.id, False
             ):
@@ -1107,6 +1157,10 @@ class ProgressManager:
                 mail = await self._ready_to_validate_mail(case, step)
                 if notifications_on and mail is not None:
                     pending.append(mail)
+        if auto_closed:
+            # A step auto-completed IS a step event — the manual-priority
+            # rule only shields the status between step transitions.
+            await self._sync_case_status(case)
         return pending
 
     async def _ready_to_validate_mail(

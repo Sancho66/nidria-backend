@@ -109,6 +109,7 @@ CASE_COLUMNS: Final[tuple[AvailableColumn, ...]] = (
     AvailableColumn(key="dest_country", label="Destination", type="country"),
     AvailableColumn(key="owner", label="Responsable", type="agent"),
     AvailableColumn(key="journey", label="Parcours", type="text"),
+    AvailableColumn(key="current_step", label="Étape en cours", type="text"),
     AvailableColumn(key="tags", label="Tags", type="tags"),
     AvailableColumn(key="source", label="Source", type="text", default=False),
     AvailableColumn(key="preferred_lang", label="Langue", type="text", default=False),

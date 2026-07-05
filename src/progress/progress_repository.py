@@ -76,6 +76,36 @@ class ProgressRepository:
         stmt = select(StepPrerequisite).where(StepPrerequisite.step_id.in_(step_ids))
         return list((await self.db.execute(stmt)).scalars())
 
+    async def current_steps_for_cases(
+        self, case_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, tuple[JourneyTemplateStep | None, int, int]]:
+        """Per case: (first non-DONE step in journey order, its 1-based
+        position, total steps) — the progression-band rule, batched for a
+        whole list page in ONE query (no N+1). All steps done → (None, 0,
+        total); cases without progress are simply absent."""
+        if not case_ids:
+            return {}
+        stmt = (
+            select(CaseStepProgress.case_id, CaseStepProgress.status, JourneyTemplateStep)
+            .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
+            .where(CaseStepProgress.case_id.in_(case_ids))
+            .order_by(CaseStepProgress.case_id, JourneyTemplateStep.position)
+        )
+        grouped: dict[uuid.UUID, list[tuple[str, JourneyTemplateStep]]] = {}
+        for case_id, status, step in (await self.db.execute(stmt)).all():
+            grouped.setdefault(case_id, []).append((status, step))
+        out: dict[uuid.UUID, tuple[JourneyTemplateStep | None, int, int]] = {}
+        for case_id, rows in grouped.items():
+            total = len(rows)
+            pending = (
+                (i, step)
+                for i, (status, step) in enumerate(rows)
+                if status != StepStatus.DONE.value
+            )
+            current = next(pending, None)
+            out[case_id] = (current[1], current[0] + 1, total) if current else (None, 0, total)
+        return out
+
     async def list_progress_for_case(self, case_id: uuid.UUID) -> list[CaseStepProgress]:
         stmt = select(CaseStepProgress).where(CaseStepProgress.case_id == case_id)
         return list((await self.db.execute(stmt)).scalars())

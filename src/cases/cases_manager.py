@@ -48,6 +48,7 @@ from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
 from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
+from src.progress.progress_repository import ProgressRepository
 from src.usage.usage_manager import UsageManager
 
 
@@ -303,6 +304,33 @@ class CasesManager:
                     names[case.id] = resolved
         return names
 
+    async def _resolve_current_steps(
+        self, agent: Agent, cases: list[ClientCase], lang: str
+    ) -> dict[uuid.UUID, dict[str, str | None]]:
+        """current_step_name/_position per case id (display only) — the
+        progression-band rule (first non-validated step in journey order),
+        batched exactly like journey_name: ONE progress query for the
+        whole page, no N+1. Absent case → schema defaults (no journey);
+        all-validated → explicit Nones."""
+        with_journey = [c.id for c in cases if c.journey_template_id is not None]
+        if not with_journey:
+            return {}
+        rows = await ProgressRepository(self.db).current_steps_for_cases(with_journey)
+        agency = await self.repo.get_agency(agent.agency_id)
+        agency_default = agency.default_language if agency else DEFAULT_LANG
+        out: dict[uuid.UUID, dict[str, str | None]] = {}
+        for case_id, (step, index, total) in rows.items():
+            if step is None:
+                out[case_id] = {"current_step_name": None, "current_step_position": None}
+            else:
+                out[case_id] = {
+                    "current_step_name": resolve_i18n(
+                        step.name_i18n, lang, agency_default, step.name
+                    ),
+                    "current_step_position": f"{index}/{total}",
+                }
+        return out
+
     async def list_cases(
         self,
         agent: Agent,
@@ -316,10 +344,14 @@ class CasesManager:
             agent.agency_id, filters.as_dict(), page, page_size, sorts=sorts
         )
         journey_names = await self._resolve_journey_names(agent, cases, lang)
+        current_steps = await self._resolve_current_steps(agent, cases, lang)
         return CaseListResponse(
             items=[
                 CaseListItemResponse.model_validate(case).model_copy(
-                    update={"journey_name": journey_names.get(case.id)}
+                    update={
+                        "journey_name": journey_names.get(case.id),
+                        **current_steps.get(case.id, {}),
+                    }
                 )
                 for case in cases
             ],
@@ -339,9 +371,12 @@ class CasesManager:
         principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         journey_names = await self._resolve_journey_names(agent, [case], lang)
+        current = (await self._resolve_current_steps(agent, [case], lang)).get(case.id, {})
         return CaseDetailResponse(
             **CaseResponse.model_validate(case).model_dump(),
             journey_name=journey_names.get(case.id),
+            current_step_name=current.get("current_step_name"),
+            current_step_position=current.get("current_step_position"),
             persons=[self._person_response(p, definitions) for p in persons],
             principal_person_id=principal_person.id,
             custom_field_definitions=[

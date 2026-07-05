@@ -13099,6 +13099,28 @@
             ],
             "title": "Journey Name"
           },
+          "current_step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Name"
+          },
+          "current_step_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Position"
+          },
           "persons": {
             "items": {
               "$ref": "#/components/schemas/PersonResponse"
@@ -13514,6 +13536,28 @@
               }
             ],
             "title": "Journey Name"
+          },
+          "current_step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Name"
+          },
+          "current_step_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Position"
           }
         },
         "type": "object",
