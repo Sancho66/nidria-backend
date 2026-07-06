@@ -87,6 +87,13 @@ class ValidationError(NidriaError):
     code = "validation_error"
 
 
+class UpstreamError(NidriaError):
+    """A dependent external service failed or is unconfigured (AI...)."""
+
+    status_code = 502
+    code = "upstream_error"
+
+
 async def _nidria_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, NidriaError)
     headers = {"WWW-Authenticate": "Bearer"} if isinstance(exc, UnauthorizedError) else None

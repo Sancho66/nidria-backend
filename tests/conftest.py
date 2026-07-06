@@ -18,6 +18,12 @@ os.environ.setdefault("ENVIRONMENT", "test")
 # the suite must never silently hit real APIs).
 os.environ["MOCK_SERVICES"] = "true"
 os.environ["MOCK_EMAIL"] = "true"
+# AI translation: a blank key means the REAL client refuses to call out
+# (ai.not_configured) — no test can ever hit Z.ai; list prices pinned so
+# the points math never depends on a developer's .env.
+os.environ["AI_TRANSLATION_API_KEY"] = ""
+os.environ["AI_TRANSLATION_PRICE_INPUT_USD_PER_MTOK"] = "0.1"
+os.environ["AI_TRANSLATION_PRICE_OUTPUT_USD_PER_MTOK"] = "0.4"
 
 from collections.abc import AsyncGenerator, Generator  # noqa: E402
 
@@ -150,7 +156,15 @@ async def client(
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_sync_session_local] = lambda: sync_session_local
+    # Background workers (AI translation) open their OWN session — point
+    # their factory at the SAME testcontainer engine.
+    from src.journeys import translation_manager
+
+    translation_manager.session_factory = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    translation_manager.session_factory = None
     app.dependency_overrides.clear()

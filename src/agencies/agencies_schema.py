@@ -11,6 +11,17 @@ from src.core.email import NormalizedEmailStr
 from src.core.i18n import Language
 
 
+class AiUsageResponse(BaseModel):
+    """The agency's AI monthly quota state (points). `remaining` is
+    served (not front-computed) — the NaN of 2026-07-05 came from the
+    front reading a field that did not exist."""
+
+    used: int
+    limit: int
+    remaining: int
+    month: str
+
+
 class AgencyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -15,9 +15,11 @@ from src.agencies.agencies_schema import (
     AgencyUpdateRequest,
     AgentInvitationCreateRequest,
     AgentInvitationResponse,
+    AiUsageResponse,
     CreatedAdminResponse,
     RoleResponse,
 )
+from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
@@ -37,6 +39,8 @@ BINDINGS = [
     # /me without permission: every authenticated agent sees their own
     # agency (tenant identity endpoint).
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
+    # AI quota state: any agent of the agency (a read on their own tenant).
+    RouteBinding("GET", "/agencies/me/ai-usage", Audience.AGENT),
     RouteBinding("PATCH", "/agencies/me", Audience.AGENT, Permission.AGENCY_MANAGE),
     # Logo: any agent of the agency reads it (the app shell shows it);
     # only agency.manage uploads/removes it.
@@ -166,6 +170,12 @@ public_router = APIRouter(prefix="/public", tags=["public"])
 async def public_agency_logo(slug: str, db: DbDep) -> Response:
     content, media_type = await AgenciesManager(db).public_logo_by_slug(slug)
     return _logo_response(content, media_type, public=True)
+
+
+@router.get("/me/ai-usage", response_model=AiUsageResponse)
+async def get_ai_usage(agent: AgentDep, db: DbDep) -> AiUsageResponse:
+    used, limit, month = await quota.get_usage(db, agent.agency_id)
+    return AiUsageResponse(used=used, limit=limit, remaining=max(0, limit - used), month=month)
 
 
 @router.get("/me", response_model=AgencyResponse)

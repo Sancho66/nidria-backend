@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,11 +11,74 @@ from src.core.enums import (
     StepRequirementScope,
     StepValidatorType,
 )
+from src.core.i18n import Language
 
 # BLOC 2bis — i18n WRITE: optional {lang: text} blob accepted alongside (or
 # instead of) the scalar. Empty values are dropped (absent key, never ""); the
 # manager keeps the scalar in sync via apply_i18n_write.
 I18nBlob = dict[str, str]
+
+
+class JourneyTranslateRequest(BaseModel):
+    """POST /journeys/{id}/translate — empty body = every incomplete
+    language. The source language is never a valid target.
+    `include_stale=True` also RE-translates (overwrites) the AI variants
+    whose source drifted; human translations and human corrections are
+    never touched, in any mode. `retranslate_langs` is the CONSENTED
+    overwrite: for those languages EVERY field of the template is
+    regenerated — including human work — and the hash trail is laid, so
+    staleness detection works afterwards on pre-feature translations.
+    Never implied; the front confirms explicitly before sending it."""
+
+    target_langs: list[Language] | None = None
+    include_stale: bool = False
+    retranslate_langs: list[Language] | None = None
+
+
+class LangTranslationCounts(BaseModel):
+    """Per-language field counts: `empty` variants to fill, `stale` AI
+    variants whose source drifted (human work never counts here)."""
+
+    empty: int
+    stale: int
+
+
+class TranslateEstimateResponse(BaseModel):
+    """GET /journeys/{id}/translate/estimate — the front's honest number
+    (calibrated on real runs) plus the quota state. `counts` carries the
+    per-language {empty, stale} split in BOTH modes, so the modal can
+    offer the retranslate choice instead of a flat 'already complete'."""
+
+    items: int
+    langs: list[str]
+    counts: dict[str, LangTranslationCounts]
+    estimated_points: int
+    quota_used: int
+    quota_limit: int
+    month: str
+
+
+class JobProgress(BaseModel):
+    done: int
+    total: int
+
+
+class TranslationJobResponse(BaseModel):
+    """An async translation job — progress.done/progress.total IS the
+    progress bar; poll GET /journeys/translate-jobs/{id} until
+    done|failed. One lot = one language."""
+
+    id: uuid.UUID
+    translation_job_id: uuid.UUID  # alias of id (the ticket's name)
+    template_id: uuid.UUID
+    status: str  # pending | running | done | failed
+    langs: list[str]
+    progress: JobProgress
+    translated_keys: int
+    points_charged: int
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class JourneyTemplateCreateRequest(BaseModel):

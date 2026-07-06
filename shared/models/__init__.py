@@ -1,6 +1,8 @@
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.ai_translation_job import AiTranslationJob, AiTranslationSource
+from shared.models.ai_usage import AgencyAiUsage
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.base import Base
 from shared.models.case_external_assignment import CaseExternalAssignment
@@ -88,6 +90,9 @@ __all__ = [
     "StepPrerequisite",
     "StepCaseRequirement",
     "StepRequirement",
+    "AgencyAiUsage",
+    "AiTranslationJob",
+    "AiTranslationSource",
     "AgencyUsageMilestone",
     "NurtureSend",
     "UsageEvent",

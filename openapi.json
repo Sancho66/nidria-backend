@@ -1350,6 +1350,32 @@
         ]
       }
     },
+    "/agencies/me/ai-usage": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Get Ai Usage",
+        "operationId": "get_ai_usage_agencies_me_ai_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiUsageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me": {
       "get": {
         "tags": [
@@ -7447,6 +7473,207 @@
         ]
       }
     },
+    "/journeys/{template_id}/translate": {
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Translate Template",
+        "description": "START an async AI translation of the EMPTY language variants\n(default), or empty + STALE ones with include_stale=True (a stale\nvariant = AI-written, untouched by a human, whose source drifted —\nit gets overwritten; human work never does). retranslate_langs is\nthe CONSENTED overwrite: those languages regenerate EVERY field,\nhuman retouches included — the front confirms explicitly, the back\nnever infers it. Quota gated BEFORE launch; answers 202 with\ntranslation_job_id — the agency keeps working while the front polls\n/journeys/translate-jobs/{id} (one lot = one language = real\nprogress grain).",
+        "operationId": "translate_template_journeys__template_id__translate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/JourneyTranslateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/translate/estimate": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Translate Estimate",
+        "description": "The honest pre-launch number for the front's modal. `counts`\nreports the per-language {empty, stale} split in both modes;\n`items`/`estimated_points` follow the requested mode — with\nretranslate_langs, items covers EVERY field of those languages.",
+        "operationId": "translate_estimate_journeys__template_id__translate_estimate_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Stale"
+            }
+          },
+          {
+            "name": "retranslate_langs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "fr",
+                      "en",
+                      "es",
+                      "ru",
+                      "pt",
+                      "it"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Retranslate Langs"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslateEstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/translate-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Get Translate Job",
+        "description": "Polling read: status + progress {done,total} + points_charged.",
+        "operationId": "get_translate_job_journeys_translate_jobs__job_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/clone": {
       "post": {
         "tags": [
@@ -12130,6 +12357,35 @@
           "effective_permissions"
         ],
         "title": "AgentMeResponse"
+      },
+      "AiUsageResponse": {
+        "properties": {
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "remaining": {
+            "type": "integer",
+            "title": "Remaining"
+          },
+          "month": {
+            "type": "string",
+            "title": "Month"
+          }
+        },
+        "type": "object",
+        "required": [
+          "used",
+          "limit",
+          "remaining",
+          "month"
+        ],
+        "title": "AiUsageResponse",
+        "description": "The agency's AI monthly quota state (points). `remaining` is\nserved (not front-computed) — the NaN of 2026-07-05 came from the\nfront reading a field that did not exist."
       },
       "AssignJourneyRequest": {
         "properties": {
@@ -16899,6 +17155,24 @@
         ],
         "title": "JobPauseRequest"
       },
+      "JobProgress": {
+        "properties": {
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "done",
+          "total"
+        ],
+        "title": "JobProgress"
+      },
       "JobRunDetailResponse": {
         "properties": {
           "id": {
@@ -17432,6 +17706,81 @@
         },
         "type": "object",
         "title": "JourneyTemplateUpdateRequest"
+      },
+      "JourneyTranslateRequest": {
+        "properties": {
+          "target_langs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fr",
+                    "en",
+                    "es",
+                    "ru",
+                    "pt",
+                    "it"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Langs"
+          },
+          "include_stale": {
+            "type": "boolean",
+            "title": "Include Stale",
+            "default": false
+          },
+          "retranslate_langs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fr",
+                    "en",
+                    "es",
+                    "ru",
+                    "pt",
+                    "it"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retranslate Langs"
+          }
+        },
+        "type": "object",
+        "title": "JourneyTranslateRequest",
+        "description": "POST /journeys/{id}/translate — empty body = every incomplete\nlanguage. The source language is never a valid target.\n`include_stale=True` also RE-translates (overwrites) the AI variants\nwhose source drifted; human translations and human corrections are\nnever touched, in any mode. `retranslate_langs` is the CONSENTED\noverwrite: for those languages EVERY field of the template is\nregenerated — including human work — and the hash trail is laid, so\nstaleness detection works afterwards on pre-feature translations.\nNever implied; the front confirms explicitly before sending it."
+      },
+      "LangTranslationCounts": {
+        "properties": {
+          "empty": {
+            "type": "integer",
+            "title": "Empty"
+          },
+          "stale": {
+            "type": "integer",
+            "title": "Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "empty",
+          "stale"
+        ],
+        "title": "LangTranslationCounts",
+        "description": "Per-language field counts: `empty` variants to fill, `stale` AI\nvariants whose source drifted (human work never counts here)."
       },
       "LoginRequest": {
         "properties": {
@@ -21149,6 +21498,134 @@
           "refresh_token"
         ],
         "title": "TokenPairResponse"
+      },
+      "TranslateEstimateResponse": {
+        "properties": {
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "langs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Langs"
+          },
+          "counts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LangTranslationCounts"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "estimated_points": {
+            "type": "integer",
+            "title": "Estimated Points"
+          },
+          "quota_used": {
+            "type": "integer",
+            "title": "Quota Used"
+          },
+          "quota_limit": {
+            "type": "integer",
+            "title": "Quota Limit"
+          },
+          "month": {
+            "type": "string",
+            "title": "Month"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "langs",
+          "counts",
+          "estimated_points",
+          "quota_used",
+          "quota_limit",
+          "month"
+        ],
+        "title": "TranslateEstimateResponse",
+        "description": "GET /journeys/{id}/translate/estimate — the front's honest number\n(calibrated on real runs) plus the quota state. `counts` carries the\nper-language {empty, stale} split in BOTH modes, so the modal can\noffer the retranslate choice instead of a flat 'already complete'."
+      },
+      "TranslationJobResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "translation_job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Translation Job Id"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "langs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Langs"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgress"
+          },
+          "translated_keys": {
+            "type": "integer",
+            "title": "Translated Keys"
+          },
+          "points_charged": {
+            "type": "integer",
+            "title": "Points Charged"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "translation_job_id",
+          "template_id",
+          "status",
+          "langs",
+          "progress",
+          "translated_keys",
+          "points_charged",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TranslationJobResponse",
+        "description": "An async translation job — progress.done/progress.total IS the\nprogress bar; poll GET /journeys/translate-jobs/{id} until\ndone|failed. One lot = one language."
       },
       "UnsectionedFields": {
         "properties": {

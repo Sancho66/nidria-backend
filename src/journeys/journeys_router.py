@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -9,7 +9,7 @@ from src.auth.auth_schema import MessageResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.http import file_download_response
-from src.core.i18n import DEFAULT_LANG, RequestLang, resolve_i18n
+from src.core.i18n import DEFAULT_LANG, Language, RequestLang, resolve_i18n
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.journeys.journeys_manager import JourneysManager
@@ -25,6 +25,7 @@ from src.journeys.journeys_schema import (
     JourneyTemplateDetailResponse,
     JourneyTemplateResponse,
     JourneyTemplateUpdateRequest,
+    JourneyTranslateRequest,
     SectionCreateRequest,
     SectionOrderRequest,
     SectionUpdateRequest,
@@ -47,7 +48,10 @@ from src.journeys.journeys_schema import (
     TemplateStepParticipantResponse,
     TemplateStepResponse,
     TemplateStepUpdateRequest,
+    TranslateEstimateResponse,
+    TranslationJobResponse,
 )
+from src.journeys.translation_manager import TranslationManager, execute_job, job_response
 
 router = APIRouter(prefix="/journeys", tags=["journeys"])
 
@@ -63,6 +67,24 @@ BINDINGS = [
     # Deep clone (source = sample OR own template) into the calling agency.
     RouteBinding(
         "POST", "/journeys/{template_id}/clone", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    # AI translation of the template's 6-language variants (fill-empty-only,
+    # monthly points quota, ASYNC with per-language progress) — same
+    # configure gate as the editor for the three faces.
+    RouteBinding(
+        "POST", "/journeys/{template_id}/translate", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/translate/estimate",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "GET",
+        "/journeys/translate-jobs/{job_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
     ),
     RouteBinding("GET", "/journeys/{template_id}", Audience.AGENT),
     RouteBinding("PATCH", "/journeys/{template_id}", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
@@ -320,6 +342,68 @@ async def create_template(
 ) -> JourneyTemplateResponse:
     template = await JourneysManager(db).create_template(agent, body.name, body.name_i18n)
     return JourneyTemplateResponse.model_validate(template)
+
+
+@router.post("/{template_id}/translate", response_model=TranslationJobResponse, status_code=202)
+async def translate_template(
+    template_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    background: BackgroundTasks,
+    body: JourneyTranslateRequest | None = None,
+) -> TranslationJobResponse:
+    """START an async AI translation of the EMPTY language variants
+    (default), or empty + STALE ones with include_stale=True (a stale
+    variant = AI-written, untouched by a human, whose source drifted —
+    it gets overwritten; human work never does). retranslate_langs is
+    the CONSENTED overwrite: those languages regenerate EVERY field,
+    human retouches included — the front confirms explicitly, the back
+    never infers it. Quota gated BEFORE launch; answers 202 with
+    translation_job_id — the agency keeps working while the front polls
+    /journeys/translate-jobs/{id} (one lot = one language = real
+    progress grain)."""
+    target_langs = body.target_langs if body is not None else None
+    langs: list[str] | None = [str(lang) for lang in target_langs] if target_langs else None
+    include_stale = body.include_stale if body is not None else False
+    retranslate = (
+        [str(lang) for lang in body.retranslate_langs]
+        if body is not None and body.retranslate_langs
+        else None
+    )
+    job = await TranslationManager(db).start_translation(
+        agent, template_id, langs, include_stale=include_stale, retranslate_langs=retranslate
+    )
+    background.add_task(execute_job, job.id, agent, include_stale, retranslate)
+    return job_response(job)
+
+
+@router.get("/{template_id}/translate/estimate", response_model=TranslateEstimateResponse)
+async def translate_estimate(
+    template_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    include_stale: bool = False,
+    retranslate_langs: Annotated[list[Language] | None, Query()] = None,
+) -> TranslateEstimateResponse:
+    """The honest pre-launch number for the front's modal. `counts`
+    reports the per-language {empty, stale} split in both modes;
+    `items`/`estimated_points` follow the requested mode — with
+    retranslate_langs, items covers EVERY field of those languages."""
+    return await TranslationManager(db).estimate(
+        agent,
+        template_id,
+        None,
+        include_stale=include_stale,
+        retranslate_langs=[str(lang) for lang in retranslate_langs] if retranslate_langs else None,
+    )
+
+
+@router.get("/translate-jobs/{job_id}", response_model=TranslationJobResponse)
+async def get_translate_job(
+    job_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> TranslationJobResponse:
+    """Polling read: status + progress {done,total} + points_charged."""
+    return await TranslationManager(db).get_job(agent, job_id)
 
 
 @router.post("/{template_id}/clone", response_model=JourneyTemplateResponse, status_code=201)

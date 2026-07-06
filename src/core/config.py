@@ -49,6 +49,21 @@ class Settings(BaseSettings):
     nurture_booking_url: str = ""
     # Never nurtured: the platform agency + internal test agencies.
     nurture_excluded_slugs: list[str] = ["nidria-demo"]
+    # AI translation (journey templates, GLM via Z.ai OpenAI-compatible API).
+    ai_translation_base_url: str = "https://api.z.ai/api/paas/v4"
+    ai_translation_api_key: str = ""
+    ai_translation_model: str = "glm-4.7-flash"
+    # Flash models fit a full journey in ~20-25s with thinking disabled;
+    # raise locally/prod if the provider slows down.
+    ai_translation_timeout_seconds: float = 30.0
+    # Monthly per-agency quota in POINTS (1 point = a tenth of a cent of
+    # model cost, floor 1 per successful call) — debited on success only.
+    ai_translation_monthly_points: int = 200  # = 20 cents/month (Alex, 2026-07-05)
+    # Model list prices (USD per Mtoken) — estimation AND debit follow the
+    # CONFIGURED model through these. Defaults = glm-4.7-flash (0.06/0.40);
+    # for the full glm-4.7 set 0.40/1.75 alongside the model switch.
+    ai_translation_price_input_usd_per_mtok: float = 0.06
+    ai_translation_price_output_usd_per_mtok: float = 0.40
     agent_invitation_expires_days: int = 7
     # Expats are clients, not staff — longer runway than agent invites.
     case_invitation_expires_days: int = 14
