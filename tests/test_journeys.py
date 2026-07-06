@@ -396,9 +396,14 @@ async def test_patch_editing_language_persisted_and_exposed(
     agent_headers: AuthHeaders,
 ) -> None:
     """(a) valid language persisted + on the detail; (c) explicit null
-    resets to the no-preference state."""
+    resets to the DEFAULT: the agency's settings language (resolved at
+    read time — a template without preference follows the agency)."""
     headers = agent_headers(configurer)
     template = await make_journey_template(agency_id=configurer.agency_id)
+
+    # No preference yet → the agency's settings language ("fr" default).
+    detail = await journeys_client.get(f"/journeys/{template.id}", headers=headers)
+    assert detail.json()["editing_language"] == "fr"
 
     patched = await journeys_client.patch(
         f"/journeys/{template.id}", headers=headers, json={"editing_language": "es"}
@@ -412,7 +417,7 @@ async def test_patch_editing_language_persisted_and_exposed(
     )
     assert reset.status_code == 200
     detail = await journeys_client.get(f"/journeys/{template.id}", headers=headers)
-    assert detail.json()["editing_language"] is None
+    assert detail.json()["editing_language"] == "fr"  # back on the agency default
 
 
 async def test_patch_editing_language_unsupported_422(

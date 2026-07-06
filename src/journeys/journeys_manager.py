@@ -302,7 +302,10 @@ class JourneysManager:
             canvas_layout=template.canvas_layout,
             active_cases_count=active_cases_count,
             archived_cases_count=archived_cases_count,
-            editing_language=template.editing_language,
+            # Editor preference, RESOLVED: explicit choice, else the
+            # agency's settings language (demande 2026-07-05) — templates
+            # without a preference follow the agency, live.
+            editing_language=template.editing_language or agency_default,
         )
 
     async def set_canvas_layout(
