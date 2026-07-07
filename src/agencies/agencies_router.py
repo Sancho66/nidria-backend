@@ -17,6 +17,7 @@ from src.agencies.agencies_schema import (
     AgentInvitationResponse,
     AiUsageResponse,
     CreatedAdminResponse,
+    OnboardingResponse,
     RoleResponse,
 )
 from src.ai import quota
@@ -41,6 +42,10 @@ BINDINGS = [
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
     # AI quota state: any agent of the agency (a read on their own tenant).
     RouteBinding("GET", "/agencies/me/ai-usage", Audience.AGENT),
+    # Activation checklist: any agent reads it, any agent can dismiss the
+    # banner (a UI aid, not a structural mutation).
+    RouteBinding("GET", "/agencies/me/onboarding", Audience.AGENT),
+    RouteBinding("POST", "/agencies/me/onboarding/dismiss", Audience.AGENT),
     RouteBinding("PATCH", "/agencies/me", Audience.AGENT, Permission.AGENCY_MANAGE),
     # Logo: any agent of the agency reads it (the app shell shows it);
     # only agency.manage uploads/removes it.
@@ -176,6 +181,19 @@ async def public_agency_logo(slug: str, db: DbDep) -> Response:
 async def get_ai_usage(agent: AgentDep, db: DbDep) -> AiUsageResponse:
     used, limit, month = await quota.get_usage(db, agent.agency_id)
     return AiUsageResponse(used=used, limit=limit, remaining=max(0, limit - used), month=month)
+
+
+@router.get("/me/onboarding", response_model=OnboardingResponse)
+async def get_onboarding(agent: AgentDep, db: DbDep) -> OnboardingResponse:
+    """The activation checklist, computed live from the usage
+    milestones/events - no checkbox state is ever stored."""
+    return await AgenciesManager(db).onboarding_state(agent)
+
+
+@router.post("/me/onboarding/dismiss", response_model=OnboardingResponse)
+async def dismiss_onboarding(agent: AgentDep, db: DbDep) -> OnboardingResponse:
+    """Persist the dismiss (once, no un-dismiss) and return the state."""
+    return await AgenciesManager(db).dismiss_onboarding(agent)
 
 
 @router.get("/me", response_model=AgencyResponse)

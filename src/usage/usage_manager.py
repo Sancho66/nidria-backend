@@ -35,6 +35,10 @@ MILESTONE_BY_EVENT: dict[str, str] = {
     "member.activated": "premier_membre_actif",
     "provider.invited": "premier_prestataire_invite",
     "journey.created": "premier_parcours_cree",
+    # The AI-JSON import is a journey creation too (fix 2026-07-07: the
+    # onboarding checklist reads this milestone; the clone already goes
+    # through journey.created).
+    "journey.imported_from_ai": "premier_parcours_cree",
     "case.created": "premier_dossier_cree",
     "case.imported_from_crm": "premier_dossier_importe",
     "case.client_invited": "premier_client_invite",

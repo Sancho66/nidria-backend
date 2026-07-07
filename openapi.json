@@ -1376,6 +1376,60 @@
         ]
       }
     },
+    "/agencies/me/onboarding": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Get Onboarding",
+        "description": "The activation checklist, computed live from the usage\nmilestones/events - no checkbox state is ever stored.",
+        "operationId": "get_onboarding_agencies_me_onboarding_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/agencies/me/onboarding/dismiss": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Dismiss Onboarding",
+        "description": "Persist the dismiss (once, no un-dismiss) and return the state.",
+        "operationId": "dismiss_onboarding_agencies_me_onboarding_dismiss_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me": {
       "get": {
         "tags": [
@@ -18481,6 +18535,60 @@
           "code"
         ],
         "title": "MfaVerifyRequest"
+      },
+      "OnboardingResponse": {
+        "properties": {
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingStepState"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "dismissed": {
+            "type": "boolean",
+            "title": "Dismissed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "steps",
+          "dismissed"
+        ],
+        "title": "OnboardingResponse",
+        "description": "GET /agencies/me/onboarding - the activation checklist, COMPUTED\nlive from the usage milestones/events (no checkbox state table: the\nmilestones ARE the truth). Only the dismiss is persisted."
+      },
+      "OnboardingStepState": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "done": {
+            "type": "boolean",
+            "title": "Done"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "done",
+          "done_at"
+        ],
+        "title": "OnboardingStepState",
+        "description": "One activation gesture: create_journey | open_case |\nview_as_client."
       },
       "PendingDocumentResponse": {
         "properties": {

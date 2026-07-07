@@ -11,6 +11,24 @@ from src.core.email import NormalizedEmailStr
 from src.core.i18n import Language
 
 
+class OnboardingStepState(BaseModel):
+    """One activation gesture: create_journey | open_case |
+    view_as_client."""
+
+    key: str
+    done: bool
+    done_at: datetime | None
+
+
+class OnboardingResponse(BaseModel):
+    """GET /agencies/me/onboarding - the activation checklist, COMPUTED
+    live from the usage milestones/events (no checkbox state table: the
+    milestones ARE the truth). Only the dismiss is persisted."""
+
+    steps: list[OnboardingStepState]
+    dismissed: bool
+
+
 class AiUsageResponse(BaseModel):
     """The agency's AI monthly quota state (points). `remaining` is
     served (not front-computed) — the NaN of 2026-07-05 came from the

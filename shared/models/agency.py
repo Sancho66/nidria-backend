@@ -39,6 +39,11 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     default_language: Mapped[str] = mapped_column(
         String(2), nullable=False, server_default=text("'fr'")
     )
+    # Onboarding checklist (activation): timestamp of the agency-side
+    # dismiss. NULL = checklist shown; set once, no un-dismiss. The
+    # checklist STATE itself is never stored - computed live from the
+    # usage milestones/events, which are the truth.
+    onboarding_dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def has_logo(self) -> bool:

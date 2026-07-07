@@ -7,15 +7,23 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.invitation import AgentInvitation
+from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
+from shared.models.usage import AgencyUsageMilestone, UsageEvent
 from src.agencies.agencies_repository import AgenciesRepository
-from src.agencies.agencies_schema import AgencyCreateRequest, AgencyUpdateRequest
-from src.agencies.demo_case_seed import seed_demo_case
+from src.agencies.agencies_schema import (
+    AgencyCreateRequest,
+    AgencyUpdateRequest,
+    OnboardingResponse,
+    OnboardingStepState,
+)
+from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME, seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.core import storage
@@ -244,6 +252,69 @@ class AgenciesManager:
         if agency is None:
             raise NotFoundError("Agency not found.")
         return agency
+
+    # --- onboarding checklist (activation) ------------------------------------------
+
+    async def onboarding_state(self, agent: Agent) -> OnboardingResponse:
+        """The activation checklist, computed LIVE from the milestones
+        and events (zero checkbox state - the trackers are the truth):
+        - create_journey: milestone premier_parcours_cree (demo excluded
+          as always) OR any agency template besides the seeded demo gift
+          (covers histories predating the import/clone milestone fix);
+        - open_case: milestone premier_dossier_cree OR the closest
+          existing trace of a demo consultation - the case.viewed_as_client
+          event (a plain GET leaves no trace BY DESIGN, no new tracker);
+        - view_as_client: the case.viewed_as_client event."""
+        agency = await self.get_my_agency(agent)
+        rows = (
+            await self.db.execute(
+                select(AgencyUsageMilestone.key, AgencyUsageMilestone.first_at).where(
+                    AgencyUsageMilestone.agency_id == agent.agency_id,
+                    AgencyUsageMilestone.key.in_(["premier_parcours_cree", "premier_dossier_cree"]),
+                )
+            )
+        ).all()
+        firsts: dict[str, datetime] = {row.key: row.first_at for row in rows}
+        journey_at = firsts.get("premier_parcours_cree")
+        if journey_at is None:
+            journey_at = (
+                await self.db.execute(
+                    select(func.min(JourneyTemplate.created_at)).where(
+                        JourneyTemplate.agency_id == agent.agency_id,
+                        JourneyTemplate.name != DEMO_JOURNEY_NAME,
+                    )
+                )
+            ).scalar_one_or_none()
+        viewed_at = (
+            await self.db.execute(
+                select(func.min(UsageEvent.created_at)).where(
+                    UsageEvent.agency_id == agent.agency_id,
+                    UsageEvent.event_type == "case.viewed_as_client",
+                )
+            )
+        ).scalar_one_or_none()
+        open_at = firsts.get("premier_dossier_cree") or viewed_at
+        return OnboardingResponse(
+            steps=[
+                OnboardingStepState(
+                    key="create_journey", done=journey_at is not None, done_at=journey_at
+                ),
+                OnboardingStepState(key="open_case", done=open_at is not None, done_at=open_at),
+                OnboardingStepState(
+                    key="view_as_client", done=viewed_at is not None, done_at=viewed_at
+                ),
+            ],
+            dismissed=agency.onboarding_dismissed_at is not None,
+        )
+
+    async def dismiss_onboarding(self, agent: Agent) -> OnboardingResponse:
+        """Persist the dismiss (once - no un-dismiss) and return the
+        state the front should render."""
+        agency = await self.get_my_agency(agent)
+        if agency.onboarding_dismissed_at is None:
+            agency.onboarding_dismissed_at = datetime.now(UTC)
+            await self.db.commit()
+        return await self.onboarding_state(agent)
 
     async def update_my_agency(self, agent: Agent, payload: AgencyUpdateRequest) -> Agency:
         agency = await self.get_my_agency(agent)
