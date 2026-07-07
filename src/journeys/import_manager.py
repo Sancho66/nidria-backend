@@ -22,7 +22,11 @@ Arbitrated v1 perimeter (Alexandre, 2026-07-07, on Eric's spec):
   accepted anywhere a label is expected and normalized to
   {langue_par_defaut | fr: string} BEFORE validation (the fr-required
   rule applies AFTER, unchanged); any other type keeps the exact-path
-  rejection. A soft warning counts the normalized labels.
+  rejection. A soft warning counts the normalized labels. Select
+  OPTIONS additionally accept the RICH form {valeur|value|cle|key,
+  libelle|label} AIs produce spontaneously: it collapses to its label
+  (the options storage is a plain list[str] - verified - so the
+  technical key has nowhere to live and is dropped cleanly).
 
 Validation is two-tiered: a violation INSIDE a step rejects that step
 (partial import, prerequisite dependents cascade-rejected with
@@ -160,6 +164,21 @@ class JourneyImportManager:
             return {self._default_lang: value}
         return value
 
+    def _coerce_option(self, value: Any) -> Any:
+        """Single normalization point for select OPTIONS, on top of
+        `_coerce_label`: the rich form {valeur|value|cle|key,
+        libelle|label} collapses to its label (the technical key is
+        dropped - `custom_field_definition.options` stores plain
+        strings). Anything without a label keeps the exact-path
+        rejection downstream."""
+        if isinstance(value, dict) and ("libelle" in value or "label" in value):
+            inner = value.get("libelle", value.get("label"))
+            self._normalized += 1
+            if isinstance(inner, str) and inner.strip():
+                return {self._default_lang: inner}
+            return inner
+        return self._coerce_label(value)
+
     def _label(self, value: Any, chemin: str, *, require_fr: bool) -> dict[str, str]:
         value = self._coerce_label(value)
         if not isinstance(value, dict):
@@ -184,7 +203,9 @@ class JourneyImportManager:
                 raise _StepInvalid("import_ai.select_options_missing", f"{chemin}.options")
             options = []
             for i, raw_option in enumerate(raw_options):
-                option_label = self._label(raw_option, f"{chemin}.options[{i}]", require_fr=True)
+                option_label = self._label(
+                    self._coerce_option(raw_option), f"{chemin}.options[{i}]", require_fr=True
+                )
                 if option_label["fr"] not in options:  # storage wants unique strings
                     options.append(option_label["fr"])
         key = _slugify(str(raw.get("cle") or "")) or _slugify(label["fr"]) or "champ"

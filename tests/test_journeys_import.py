@@ -14,6 +14,8 @@ created, exact report; (h) prestataire:avocat -> a typed slot in the
 report, no invented member, no participant row."""
 
 import copy
+import json
+import pathlib
 import uuid
 from typing import Any
 
@@ -344,6 +346,115 @@ async def test_non_string_label_keeps_the_exact_path_rejection(
     assert body["code"] == "import_ai.label_invalid"
     assert body["params"]["chemin"] == "parcours.etapes[0].informations_a_collecter[0].libelle"
     assert body["params"]["valeur"] == "42"
+
+
+# --- Rich options {valeur, libelle}: normalized to their label ----------------------
+
+
+async def test_alexandre_real_json_imports_fully(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """(a): the REAL 12-step JSON (Alexandre's AI test, 2026-07-07, 21
+    rich {valeur, libelle} options) imports with ZERO rejected step."""
+    payload = json.loads(
+        (pathlib.Path(__file__).parent / "assets" / "ai_import_bulgarie_real.json").read_text()
+    )
+    response = await client.post("/journeys/import", headers=agent_headers(admin), json=payload)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["created"] is True
+    assert len(report["steps_created"]) == 12
+    assert report["steps_ignored"] == []
+    normalized = next(w for w in report["warnings"] if w["code"] == "import_ai.labels_normalized")
+    assert int(normalized["valeur"]) >= 21  # every rich option counted
+
+    # The rich options landed as their FR labels (key dropped cleanly).
+    definition = (
+        await db_session.execute(
+            select(CustomFieldDefinition).where(
+                CustomFieldDefinition.agency_id == admin.agency_id,
+                CustomFieldDefinition.key == "type_siege",
+            )
+        )
+    ).scalar_one()
+    assert definition.options is not None and len(definition.options) == 3
+    assert definition.options[0] == "Service de domiciliation (recommandé)"
+    assert all(isinstance(option, str) for option in definition.options)
+
+
+async def test_rich_option_with_plain_string_label(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """(b): rich form whose label is itself a plain string."""
+    payload = {
+        "version": 1,
+        "parcours": {
+            "nom": {"fr": "Riche"},
+            "etapes": [
+                {
+                    "ref": "e1",
+                    "nom": {"fr": "Etape"},
+                    "informations_a_collecter": [
+                        {
+                            "cle": "forme",
+                            "type": "select_single",
+                            "libelle": {"fr": "Forme"},
+                            "options": [
+                                {"valeur": "eood", "libelle": "EOOD"},
+                                {"value": "ood", "label": {"fr": "OOD"}},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+    response = await client.post("/journeys/import", headers=agent_headers(admin), json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] is True
+    definition = (
+        await db_session.execute(
+            select(CustomFieldDefinition).where(
+                CustomFieldDefinition.agency_id == admin.agency_id,
+                CustomFieldDefinition.key == "forme",
+            )
+        )
+    ).scalar_one()
+    assert definition.options == ["EOOD", "OOD"]
+
+
+async def test_rich_option_without_any_label_keeps_exact_path(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """(c): a rich option carrying NO label at all keeps the exact-path
+    rejection."""
+    payload = {
+        "version": 1,
+        "parcours": {
+            "nom": {"fr": "X"},
+            "etapes": [
+                {
+                    "ref": "e1",
+                    "nom": {"fr": "Etape"},
+                    "informations_a_collecter": [
+                        {
+                            "cle": "forme",
+                            "type": "select_single",
+                            "libelle": {"fr": "Forme"},
+                            "options": [{"valeur": "eood"}],
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+    response = await client.post("/journeys/import", headers=agent_headers(admin), json=payload)
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "import_ai.label_fr_missing"
+    assert body["params"]["chemin"] == (
+        "parcours.etapes[0].informations_a_collecter[0].options[0].fr"
+    )
 
 
 # --- (b) prerequisite cycle -> 422 --------------------------------------------------

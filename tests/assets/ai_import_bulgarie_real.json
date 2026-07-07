@@ -1,0 +1,768 @@
+{
+ "version": 1,
+ "parcours": {
+  "nom": {
+   "fr": "Création de société en Bulgarie",
+   "en": "Company setup in Bulgaria",
+   "es": "Creación de sociedad en Bulgaria",
+   "pt": "Criação de empresa na Bulgária",
+   "ru": "Регистрация компании в Болгарии"
+  },
+  "langue_par_defaut": "fr",
+  "etapes": [
+   {
+    "ref": "depot_dossier",
+    "nom": {
+     "fr": "Dépôt du dossier initial",
+     "en": "Initial file submission",
+     "es": "Presentación del expediente inicial",
+     "pt": "Envio do dossiê inicial",
+     "ru": "Подача первоначального досье"
+    },
+    "delai_jours": 5,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "client",
+      "role": "fournit_documents"
+     },
+     {
+      "acteur": "agence",
+      "role": "executant"
+     }
+    ],
+    "prerequis": [],
+    "informations_a_collecter": [
+     {
+      "cle": "nationalite",
+      "type": "country",
+      "requis": true,
+      "libelle": {
+       "fr": "Nationalité",
+       "en": "Nationality"
+      }
+     },
+     {
+      "cle": "adresse_actuelle",
+      "type": "address",
+      "requis": true,
+      "libelle": {
+       "fr": "Adresse de résidence actuelle",
+       "en": "Current residential address"
+      }
+     },
+     {
+      "cle": "pays_residence_fiscale",
+      "type": "country",
+      "requis": true,
+      "libelle": {
+       "fr": "Pays de résidence fiscale actuel",
+       "en": "Current country of tax residence"
+      }
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Merci de téléverser une copie couleur de votre passeport en cours de validité et de renseigner les informations ci-dessous : elles serviront à préparer l'ensemble des documents de constitution.",
+      "en": "Please upload a colour copy of your valid passport and fill in the information below: it will be used to prepare all incorporation documents."
+     }
+    }
+   },
+   {
+    "ref": "verification_nom",
+    "nom": {
+     "fr": "Vérification du nom de société",
+     "en": "Company name check",
+     "es": "Verificación del nombre de la sociedad",
+     "pt": "Verificação do nome da empresa",
+     "ru": "Проверка названия компании"
+    },
+    "delai_jours": 2,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "agence",
+      "role": "executant"
+     },
+     {
+      "acteur": "client",
+      "role": "contributeur"
+     }
+    ],
+    "prerequis": [
+     "depot_dossier"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "nom_societe_1",
+      "type": "text",
+      "requis": true,
+      "libelle": {
+       "fr": "Nom de société souhaité (1er choix)",
+       "en": "Preferred company name (1st choice)"
+      }
+     },
+     {
+      "cle": "nom_societe_2",
+      "type": "text",
+      "requis": false,
+      "libelle": {
+       "fr": "Nom de société alternatif (2e choix)",
+       "en": "Alternative company name (2nd choice)"
+      }
+     },
+     {
+      "cle": "activite_principale",
+      "type": "text",
+      "requis": true,
+      "libelle": {
+       "fr": "Description de l'activité principale",
+       "en": "Description of the main business activity"
+      }
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Nous vérifions la disponibilité du nom auprès du Registre du commerce bulgare. Prévoyez une alternative en cas d'indisponibilité.",
+      "en": "We check the name's availability with the Bulgarian Commercial Register. Please provide an alternative in case it is unavailable."
+     }
+    }
+   },
+   {
+    "ref": "siege_social",
+    "nom": {
+     "fr": "Choix du siège social",
+     "en": "Registered office selection",
+     "es": "Elección del domicilio social",
+     "pt": "Escolha da sede social",
+     "ru": "Выбор юридического адреса"
+    },
+    "delai_jours": 5,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "client",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "agence",
+      "role": "executant"
+     }
+    ],
+    "prerequis": [
+     "depot_dossier"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "type_siege",
+      "type": "select_single",
+      "requis": true,
+      "libelle": {
+       "fr": "Type de siège social",
+       "en": "Type of registered office"
+      },
+      "options": [
+       {
+        "valeur": "domiciliation",
+        "libelle": {
+         "fr": "Service de domiciliation (recommandé)",
+         "en": "Registered address service (recommended)"
+        }
+       },
+       {
+        "valeur": "adresse_propre",
+        "libelle": {
+         "fr": "Je dispose déjà d'une adresse en Bulgarie",
+         "en": "I already have an address in Bulgaria"
+        }
+       },
+       {
+        "valeur": "bureau",
+        "libelle": {
+         "fr": "Location d'un bureau physique",
+         "en": "Physical office rental"
+        }
+       }
+      ]
+     },
+     {
+      "cle": "ville_siege",
+      "type": "select_single",
+      "requis": true,
+      "libelle": {
+       "fr": "Ville du siège social",
+       "en": "City of the registered office"
+      },
+      "options": [
+       {
+        "valeur": "sofia",
+        "libelle": {
+         "fr": "Sofia",
+         "en": "Sofia"
+        }
+       },
+       {
+        "valeur": "plovdiv",
+        "libelle": {
+         "fr": "Plovdiv",
+         "en": "Plovdiv"
+        }
+       },
+       {
+        "valeur": "varna",
+        "libelle": {
+         "fr": "Varna",
+         "en": "Varna"
+        }
+       },
+       {
+        "valeur": "burgas",
+        "libelle": {
+         "fr": "Bourgas",
+         "en": "Burgas"
+        }
+       },
+       {
+        "valeur": "autre",
+        "libelle": {
+         "fr": "Autre ville",
+         "en": "Other city"
+        }
+       }
+      ]
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Toute société bulgare doit disposer d'un siège social en Bulgarie, mentionné dans les statuts. Notre service de domiciliation inclut la réception et la numérisation du courrier officiel.",
+      "en": "Every Bulgarian company must have a registered office in Bulgaria, stated in the articles of association. Our registered address service includes receiving and scanning official mail."
+     }
+    }
+   },
+   {
+    "ref": "preparation_actes",
+    "nom": {
+     "fr": "Préparation des actes constitutifs",
+     "en": "Drafting of incorporation documents",
+     "es": "Preparación de los documentos constitutivos",
+     "pt": "Preparação dos documentos de constituição",
+     "ru": "Подготовка учредительных документов"
+    },
+    "delai_jours": 5,
+    "validee_par": "personne",
+    "participants": [
+     {
+      "acteur": "prestataire:avocat",
+      "role": "executant"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "client",
+      "role": "informe"
+     }
+    ],
+    "prerequis": [
+     "verification_nom",
+     "siege_social"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "type_societe",
+      "type": "select_single",
+      "requis": true,
+      "libelle": {
+       "fr": "Forme juridique souhaitée",
+       "en": "Desired legal form"
+      },
+      "options": [
+       {
+        "valeur": "eood",
+        "libelle": {
+         "fr": "EOOD — SARL unipersonnelle (associé unique)",
+         "en": "EOOD — single-member limited liability company"
+        }
+       },
+       {
+        "valeur": "ood",
+        "libelle": {
+         "fr": "OOD — SARL à plusieurs associés",
+         "en": "OOD — multi-member limited liability company"
+        }
+       }
+      ]
+     },
+     {
+      "cle": "capital_social",
+      "type": "number",
+      "requis": true,
+      "libelle": {
+       "fr": "Capital social souhaité (en euros)",
+       "en": "Desired share capital (in euros)"
+      }
+     },
+     {
+      "cle": "nb_associes",
+      "type": "number",
+      "requis": false,
+      "libelle": {
+       "fr": "Nombre d'associés (si OOD)",
+       "en": "Number of shareholders (if OOD)"
+      }
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Notre avocat partenaire rédige les statuts, l'acte de constitution et le consentement du gérant. Le capital minimum légal est symbolique ; un montant plus élevé renforce la crédibilité bancaire.",
+      "en": "Our partner lawyer drafts the articles of association, the incorporation deed and the manager's consent. The legal minimum capital is symbolic; a higher amount strengthens banking credibility."
+     }
+    }
+   },
+   {
+    "ref": "notarisation",
+    "nom": {
+     "fr": "Signature et légalisation notariale",
+     "en": "Signature and notarization",
+     "es": "Firma y legalización notarial",
+     "pt": "Assinatura e reconhecimento notarial",
+     "ru": "Подписание и нотариальное заверение"
+    },
+    "delai_jours": 7,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "client",
+      "role": "executant"
+     },
+     {
+      "acteur": "prestataire:notaire",
+      "role": "executant"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     }
+    ],
+    "prerequis": [
+     "preparation_actes"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "deplacement_bulgarie",
+      "type": "boolean",
+      "requis": true,
+      "libelle": {
+       "fr": "Pouvez-vous vous déplacer en Bulgarie pour la signature ?",
+       "en": "Can you travel to Bulgaria for the signing?"
+      }
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Le spécimen de signature du gérant doit être certifié : devant notaire en Bulgarie, ou à distance via une procuration notariée munie d'une apostille dans votre pays de résidence.",
+      "en": "The manager's specimen signature must be certified: before a notary in Bulgaria, or remotely via a notarized power of attorney with an apostille in your country of residence."
+     }
+    }
+   },
+   {
+    "ref": "traduction_documents",
+    "nom": {
+     "fr": "Traduction certifiée en bulgare",
+     "en": "Certified translation into Bulgarian",
+     "es": "Traducción jurada al búlgaro",
+     "pt": "Tradução juramentada para o búlgaro",
+     "ru": "Заверенный перевод на болгарский язык"
+    },
+    "delai_jours": 7,
+    "validee_par": "personne",
+    "participants": [
+     {
+      "acteur": "prestataire:traducteur",
+      "role": "executant"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "client",
+      "role": "informe"
+     }
+    ],
+    "prerequis": [
+     "notarisation"
+    ],
+    "informations_a_collecter": [],
+    "informations_fournies": {
+     "note": {
+      "fr": "Traduction certifiée en bulgare des documents établis à l'étranger (procuration apostillée, pièces d'identité) par un traducteur assermenté. Le dossier traduit sera déposé ici.",
+      "en": "Certified translation into Bulgarian of documents issued abroad (apostilled power of attorney, identity documents) by a sworn translator. The translated file will be uploaded here."
+     }
+    }
+   },
+   {
+    "ref": "depot_capital",
+    "nom": {
+     "fr": "Dépôt du capital social",
+     "en": "Share capital deposit",
+     "es": "Depósito del capital social",
+     "pt": "Depósito do capital social",
+     "ru": "Внесение уставного капитала"
+    },
+    "delai_jours": 5,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "client",
+      "role": "executant"
+     },
+     {
+      "acteur": "prestataire:banque",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     }
+    ],
+    "prerequis": [
+     "notarisation"
+    ],
+    "informations_a_collecter": [],
+    "informations_fournies": {
+     "note": {
+      "fr": "Ouverture du compte de capital et versement du capital social. L'attestation de dépôt délivrée par la banque est indispensable à l'immatriculation.",
+      "en": "Opening of the capital account and payment of the share capital. The deposit certificate issued by the bank is required for registration."
+     }
+    }
+   },
+   {
+    "ref": "immatriculation",
+    "nom": {
+     "fr": "Immatriculation au Registre du commerce",
+     "en": "Registration with the Commercial Register",
+     "es": "Inscripción en el Registro Mercantil",
+     "pt": "Registro no Registro Comercial",
+     "ru": "Регистрация в Торговом реестре"
+    },
+    "delai_jours": 5,
+    "validee_par": "personne",
+    "participants": [
+     {
+      "acteur": "prestataire:avocat",
+      "role": "executant"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "client",
+      "role": "informe"
+     }
+    ],
+    "prerequis": [
+     "traduction_documents",
+     "depot_capital"
+    ],
+    "informations_a_collecter": [],
+    "informations_fournies": {
+     "note": {
+      "fr": "Dépôt du dossier complet au Registre du commerce. Votre société reçoit son numéro d'identification unique (EIK), généralement sous 3 à 5 jours ouvrés.",
+      "en": "Filing of the complete file with the Commercial Register. Your company receives its unique identification number (EIK), usually within 3 to 5 business days."
+     }
+    }
+   },
+   {
+    "ref": "enregistrement_tva",
+    "nom": {
+     "fr": "Immatriculation à la TVA",
+     "en": "VAT registration",
+     "es": "Alta en el IVA",
+     "pt": "Registro de IVA",
+     "ru": "Регистрация плательщиком НДС"
+    },
+    "delai_jours": 14,
+    "validee_par": "personne",
+    "participants": [
+     {
+      "acteur": "prestataire:comptable",
+      "role": "executant"
+     },
+     {
+      "acteur": "client",
+      "role": "informe"
+     }
+    ],
+    "prerequis": [
+     "immatriculation"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "tva_volontaire",
+      "type": "boolean",
+      "requis": true,
+      "libelle": {
+       "fr": "Souhaitez-vous une immatriculation TVA volontaire dès la création ?",
+       "en": "Do you want voluntary VAT registration from incorporation?"
+      }
+     },
+     {
+      "cle": "clients_ue",
+      "type": "boolean",
+      "requis": true,
+      "libelle": {
+       "fr": "Facturerez-vous des clients établis dans l'Union européenne ?",
+       "en": "Will you invoice clients established in the European Union?"
+      }
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "L'immatriculation TVA devient obligatoire au-delà du seuil légal de chiffre d'affaires ; une immatriculation volontaire immédiate est souvent recommandée pour une activité B2B intra-UE. L'administration statue sous 14 jours.",
+      "en": "VAT registration becomes mandatory above the legal turnover threshold; immediate voluntary registration is often recommended for intra-EU B2B activity. The tax authority decides within 14 days."
+     }
+    }
+   },
+   {
+    "ref": "compte_bancaire",
+    "nom": {
+     "fr": "Ouverture du compte bancaire professionnel",
+     "en": "Business bank account opening",
+     "es": "Apertura de la cuenta bancaria profesional",
+     "pt": "Abertura da conta bancária empresarial",
+     "ru": "Открытие корпоративного банковского счёта"
+    },
+    "delai_jours": 10,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "client",
+      "role": "executant"
+     },
+     {
+      "acteur": "prestataire:banque",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     }
+    ],
+    "prerequis": [
+     "immatriculation"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "type_banque",
+      "type": "select_single",
+      "requis": true,
+      "libelle": {
+       "fr": "Type d'établissement privilégié",
+       "en": "Preferred type of institution"
+      },
+      "options": [
+       {
+        "valeur": "banque_traditionnelle",
+        "libelle": {
+         "fr": "Banque traditionnelle bulgare (présence requise)",
+         "en": "Traditional Bulgarian bank (in-person visit required)"
+        }
+       },
+       {
+        "valeur": "fintech",
+        "libelle": {
+         "fr": "Établissement de paiement en ligne",
+         "en": "Online payment institution"
+        }
+       },
+       {
+        "valeur": "les_deux",
+        "libelle": {
+         "fr": "Les deux",
+         "en": "Both"
+        }
+       }
+      ]
+     },
+     {
+      "cle": "devises",
+      "type": "select_multi",
+      "requis": false,
+      "libelle": {
+       "fr": "Devises souhaitées sur le compte",
+       "en": "Desired account currencies"
+      },
+      "options": [
+       {
+        "valeur": "eur",
+        "libelle": {
+         "fr": "Euro (EUR)",
+         "en": "Euro (EUR)"
+        }
+       },
+       {
+        "valeur": "usd",
+        "libelle": {
+         "fr": "Dollar américain (USD)",
+         "en": "US dollar (USD)"
+        }
+       },
+       {
+        "valeur": "gbp",
+        "libelle": {
+         "fr": "Livre sterling (GBP)",
+         "en": "Pound sterling (GBP)"
+        }
+       },
+       {
+        "valeur": "autre",
+        "libelle": {
+         "fr": "Autres devises",
+         "en": "Other currencies"
+        }
+       }
+      ]
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "La plupart des banques bulgares exigent la présence du gérant (contrôle KYC). Le compte de capital est transformé en compte courant ou un compte opérationnel distinct est ouvert.",
+      "en": "Most Bulgarian banks require the manager to be present (KYC check). The capital account is converted into a current account or a separate operational account is opened."
+     }
+    }
+   },
+   {
+    "ref": "comptabilite",
+    "nom": {
+     "fr": "Mise en place de la comptabilité",
+     "en": "Accounting setup",
+     "es": "Puesta en marcha de la contabilidad",
+     "pt": "Implementação da contabilidade",
+     "ru": "Организация бухгалтерского учёта"
+    },
+    "delai_jours": 5,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "prestataire:comptable",
+      "role": "executant"
+     },
+     {
+      "acteur": "client",
+      "role": "contributeur"
+     },
+     {
+      "acteur": "agence",
+      "role": "contributeur"
+     }
+    ],
+    "prerequis": [
+     "immatriculation"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "volume_factures",
+      "type": "number",
+      "requis": false,
+      "libelle": {
+       "fr": "Nombre estimé de factures par mois",
+       "en": "Estimated number of invoices per month"
+      }
+     },
+     {
+      "cle": "salaries_prevus",
+      "type": "boolean",
+      "requis": true,
+      "libelle": {
+       "fr": "Prévoyez-vous des embauches la première année ?",
+       "en": "Do you plan to hire employees in the first year?"
+      }
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Mise en place de la comptabilité mensuelle et du calendrier des obligations : TVA, impôt sur les sociétés (taux fixe de 10 %), déclarations annuelles.",
+      "en": "Setup of monthly bookkeeping and the compliance calendar: VAT, corporate income tax (10% flat rate), annual filings."
+     }
+    }
+   },
+   {
+    "ref": "remise_dossier",
+    "nom": {
+     "fr": "Remise du dossier final",
+     "en": "Final handover",
+     "es": "Entrega del expediente final",
+     "pt": "Entrega do dossiê final",
+     "ru": "Передача итогового досье"
+    },
+    "delai_jours": 3,
+    "validee_par": "agence",
+    "participants": [
+     {
+      "acteur": "agence",
+      "role": "executant"
+     },
+     {
+      "acteur": "client",
+      "role": "informe"
+     }
+    ],
+    "prerequis": [
+     "enregistrement_tva",
+     "compte_bancaire",
+     "comptabilite"
+    ],
+    "informations_a_collecter": [
+     {
+      "cle": "services_complementaires",
+      "type": "select_multi",
+      "requis": false,
+      "libelle": {
+       "fr": "Services complémentaires souhaités",
+       "en": "Additional services of interest"
+      },
+      "options": [
+       {
+        "valeur": "residence",
+        "libelle": {
+         "fr": "Demande de titre de séjour en Bulgarie",
+         "en": "Bulgarian residence permit application"
+        }
+       },
+       {
+        "valeur": "compte_personnel",
+        "libelle": {
+         "fr": "Ouverture d'un compte bancaire personnel",
+         "en": "Personal bank account opening"
+        }
+       },
+       {
+        "valeur": "fiscalite_depart",
+        "libelle": {
+         "fr": "Formalités fiscales dans le pays de départ",
+         "en": "Tax formalities in the departure country"
+        }
+       },
+       {
+        "valeur": "recrutement",
+        "libelle": {
+         "fr": "Accompagnement au recrutement local",
+         "en": "Local hiring support"
+        }
+       }
+      ]
+     }
+    ],
+    "informations_fournies": {
+     "note": {
+      "fr": "Remise du dossier complet : actes constitutifs, EIK, accès bancaires et calendrier des obligations. Votre gestionnaire reste votre point de contact pour la suite.",
+      "en": "Handover of the complete file: incorporation documents, EIK, banking access and compliance calendar. Your account manager remains your point of contact going forward."
+     }
+    }
+   }
+  ]
+ }
+}
