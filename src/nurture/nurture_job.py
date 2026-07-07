@@ -113,8 +113,16 @@ def send_trial_nurture(db: Session, *, log: LogFn, dry_run: bool = False) -> dic
     now = datetime.now(UTC)
     stats = {"in_scope": 0, "sent": 0, "skipped": 0, "pending_config": 0}
 
+    # trial_ends_at NOT NULL = the trial calendar; converted agencies
+    # (converted_at posed by Eric) leave the nurture scope immediately -
+    # trial_ends_at itself is never touched at conversion (pricing
+    # 2026-07-07), so the extra guard is required.
     agencies = (
-        db.execute(select(Agency).where(Agency.trial_ends_at.is_not(None)).order_by(Agency.slug))
+        db.execute(
+            select(Agency)
+            .where(Agency.trial_ends_at.is_not(None), Agency.converted_at.is_(None))
+            .order_by(Agency.slug)
+        )
         .scalars()
         .all()
     )

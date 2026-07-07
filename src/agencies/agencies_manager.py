@@ -19,9 +19,12 @@ from shared.models.usage import AgencyUsageMilestone, UsageEvent
 from src.agencies.agencies_repository import AgenciesRepository
 from src.agencies.agencies_schema import (
     AgencyCreateRequest,
+    AgencySubscriptionInfo,
     AgencyUpdateRequest,
     OnboardingResponse,
     OnboardingStepState,
+    SeatUsage,
+    SubscriptionUpdateRequest,
 )
 from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME, seed_demo_case
 from src.auth.auth_manager import AuthManager
@@ -30,7 +33,7 @@ from src.core import storage
 from src.core.config import get_settings
 from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
-from src.core.enums import ActorType, Audience, InvitationStatus
+from src.core.enums import ActorType, Audience, InvitationStatus, SubscriptionPlan
 from src.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -45,6 +48,13 @@ from src.usage.usage_manager import UsageManager
 logger = logging.getLogger(__name__)
 
 _EMAIL_TAKEN = "This email already has an agent account."
+
+# Structure F (pricing Eric 2026-07-07). Seats bill from the 4th; the
+# cap is a hard product limit per plan. An unconverted agency (trial)
+# is capped at the 3 included seats of the future base plan.
+SEAT_PRICES_EUR = {SubscriptionPlan.CABINET.value: 35, SubscriptionPlan.AGENCE.value: 25}
+SEATS_MAX_BY_PLAN = {SubscriptionPlan.CABINET.value: 5, SubscriptionPlan.AGENCE.value: 10}
+TRIAL_SEAT_LIMIT = 3
 
 
 def _slugify(name: str) -> str:
@@ -92,9 +102,17 @@ class AgenciesManager:
         if admin_role is None:
             raise NotFoundError("System role 'admin' is not seeded — run the RBAC baseline seed.")
 
+        if payload.founding_free_seats > 0 and not payload.is_founding:
+            raise ValidationError(
+                "Free seats are reserved for founding agencies.",
+                code="subscription.founding_seats_invalid",
+            )
         agency = self.repo.add_agency(
             name=payload.name, slug=slug, default_language=payload.default_language
         )
+        # Founding offer posed at creation when Eric already knows it.
+        agency.is_founding = payload.is_founding
+        agency.founding_free_seats = payload.founding_free_seats
         await self.db.flush()  # need agency.id for the admin row
         admin = self.repo.add_agent(
             agency_id=agency.id,
@@ -253,6 +271,82 @@ class AgenciesManager:
             raise NotFoundError("Agency not found.")
         return agency
 
+    # --- subscription (structure F, manual billing) ----------------------------------
+
+    async def seat_usage(self, agency: Agency) -> SeatUsage:
+        """Derived seat capacity: active INTERNAL members only (external
+        providers never consume a seat). `billed` counts past the
+        included + founding-offered seats - Eric bills those manually,
+        the app never blocks paid usage below the plan cap."""
+        members = (
+            await self.db.execute(
+                select(func.count(Agent.id)).where(
+                    Agent.agency_id == agency.id, Agent.is_external.is_(False)
+                )
+            )
+        ).scalar_one()
+        return SeatUsage(
+            members=members,
+            included=agency.seats_included,
+            offered=agency.founding_free_seats,
+            billed=max(0, members - agency.seats_included - agency.founding_free_seats),
+            max=SEATS_MAX_BY_PLAN.get(agency.plan or "", TRIAL_SEAT_LIMIT),
+        )
+
+    async def subscription_info(self, agency: Agency) -> AgencySubscriptionInfo:
+        return AgencySubscriptionInfo(
+            plan=agency.plan,
+            billing_cycle=agency.billing_cycle,
+            is_founding=agency.is_founding,
+            seats=await self.seat_usage(agency),
+        )
+
+    async def update_subscription(
+        self, superadmin: Agent, agency_id: uuid.UUID, payload: SubscriptionUpdateRequest
+    ) -> AgencySubscriptionInfo:
+        """Eric's post-closing gesture (superadmin only): pose the plan,
+        cycle, founding terms and conversion date. Setting the plan
+        derives seat_price_eur and stamps converted_at when absent;
+        trial_ends_at is NEVER touched here (pre-conversion marker)."""
+        agency = await self.repo.get_agency(agency_id)
+        if agency is None:
+            raise NotFoundError("Agency not found.")
+        if payload.is_founding is not None:
+            agency.is_founding = payload.is_founding
+        if payload.founding_free_seats is not None:
+            if payload.founding_free_seats > 0 and not agency.is_founding:
+                raise ValidationError(
+                    "Free seats are reserved for founding agencies.",
+                    code="subscription.founding_seats_invalid",
+                )
+            agency.founding_free_seats = payload.founding_free_seats
+        if payload.plan is not None:
+            agency.plan = payload.plan.value
+            agency.seat_price_eur = SEAT_PRICES_EUR[payload.plan.value]
+        if payload.billing_cycle is not None:
+            agency.billing_cycle = payload.billing_cycle.value
+        if payload.price_locked_until is not None:
+            agency.price_locked_until = payload.price_locked_until
+        if payload.converted_at is not None:
+            agency.converted_at = payload.converted_at
+        elif payload.plan is not None and agency.converted_at is None:
+            agency.converted_at = datetime.now(UTC)
+        if payload.plan is not None:
+            await UsageManager(self.db).emit(
+                agency_id=agency.id,
+                event_type="agency.converted",
+                actor_type=ActorType.AGENT,
+                actor_id=superadmin.id,
+                details={
+                    "plan": agency.plan,
+                    "billing_cycle": agency.billing_cycle,
+                    "is_founding": agency.is_founding,
+                },
+            )
+        await self.db.commit()
+        await self.db.refresh(agency)
+        return await self.subscription_info(agency)
+
     # --- onboarding checklist (activation) ------------------------------------------
 
     async def onboarding_state(self, agent: Agent) -> OnboardingResponse:
@@ -384,6 +478,28 @@ class AgenciesManager:
             raise ValidationError("This endpoint requires one of the external provider roles.")
         if not external and role.is_external:
             raise ValidationError("External roles are invited via the external-invitation flow.")
+        # SEAT GATE (decision flagged, pricing 2026-07-07): an INTERNAL
+        # invitation is blocked only at the plan's hard cap (5 cabinet,
+        # 10 agence; 3 on trial = the future included seats). Between
+        # included+offered and the cap the invitation goes THROUGH:
+        # billing is manual (Eric bills), the app never blocks paid
+        # usage. Externals never consume a seat. Members are counted,
+        # not pending invitations (an accepted invite past the cap is a
+        # manual-billing tolerance, not a hole).
+        if not external:
+            agency = await self.get_my_agency(agent)
+            usage = await self.seat_usage(agency)
+            if usage.members >= usage.max:
+                message = (
+                    f"The {agency.plan} plan is capped at {usage.max} members."
+                    if agency.plan
+                    else "The trial is capped at 3 members; converting to a plan unlocks more."
+                )
+                raise ConflictError(
+                    message,
+                    code="subscription.seat_limit",
+                    params={"members": usage.members, "max": usage.max, "plan": agency.plan},
+                )
 
         # One human = one agent account = one agency at MVP
         # (agent.email is table-unique); refuse at creation, whichever

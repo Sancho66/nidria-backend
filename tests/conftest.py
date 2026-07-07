@@ -24,6 +24,10 @@ os.environ["MOCK_EMAIL"] = "true"
 os.environ["AI_TRANSLATION_API_KEY"] = ""
 os.environ["AI_TRANSLATION_PRICE_INPUT_USD_PER_MTOK"] = "0.1"
 os.environ["AI_TRANSLATION_PRICE_OUTPUT_USD_PER_MTOK"] = "0.4"
+# Nurture: the booking URL now lives in developers' .env (prod
+# activation 2026-07-07) — pin it EMPTY so the J+28 held/pending_config
+# semantics stay testable whatever the local .env carries.
+os.environ["NURTURE_BOOKING_URL"] = ""
 
 from collections.abc import AsyncGenerator, Generator  # noqa: E402
 

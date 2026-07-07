@@ -12,6 +12,7 @@ from src.agencies.agencies_schema import (
     AgencyCreateResponse,
     AgencyMemberResponse,
     AgencyResponse,
+    AgencySubscriptionInfo,
     AgencyUpdateRequest,
     AgentInvitationCreateRequest,
     AgentInvitationResponse,
@@ -19,6 +20,7 @@ from src.agencies.agencies_schema import (
     CreatedAdminResponse,
     OnboardingResponse,
     RoleResponse,
+    SubscriptionUpdateRequest,
 )
 from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
@@ -37,6 +39,11 @@ BINDINGS = [
     # List EVERY agency — the platform agency switcher. Same superadmin gate
     # as create (agency.create); the one deliberate cross-tenant read.
     RouteBinding("GET", "/agencies", Audience.AGENT, Permission.AGENCY_CREATE),
+    # Subscription pose (Eric's post-closing gesture): same strict
+    # superadmin gate as the wizard.
+    RouteBinding(
+        "PATCH", "/agencies/{agency_id}/subscription", Audience.AGENT, Permission.AGENCY_CREATE
+    ),
     # /me without permission: every authenticated agent sees their own
     # agency (tenant identity endpoint).
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
@@ -198,8 +205,23 @@ async def dismiss_onboarding(agent: AgentDep, db: DbDep) -> OnboardingResponse:
 
 @router.get("/me", response_model=AgencyResponse)
 async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
-    agency = await AgenciesManager(db).get_my_agency(agent)
-    return AgencyResponse.model_validate(agency)
+    manager = AgenciesManager(db)
+    agency = await manager.get_my_agency(agent)
+    response = AgencyResponse.model_validate(agency)
+    # Read-only settings block: the agency SEES where it stands
+    # (plan, cycle, seats); the conversion itself goes through Eric.
+    response.subscription = await manager.subscription_info(agency)
+    return response
+
+
+@router.patch("/{agency_id}/subscription", response_model=AgencySubscriptionInfo)
+async def update_subscription(
+    agency_id: uuid.UUID, agent: AgentDep, db: DbDep, body: SubscriptionUpdateRequest
+) -> AgencySubscriptionInfo:
+    """Superadmin only (agency.create gate): pose the plan, cycle,
+    founding terms and conversion date - manual billing stays with
+    Eric, the app stores the deal and derives the seat capacity."""
+    return await AgenciesManager(db).update_subscription(agent, agency_id, body)
 
 
 @router.patch("/me", response_model=AgencyResponse)

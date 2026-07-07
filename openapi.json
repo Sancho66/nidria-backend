@@ -1500,6 +1500,65 @@
         ]
       }
     },
+    "/agencies/{agency_id}/subscription": {
+      "patch": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Update Subscription",
+        "description": "Superadmin only (agency.create gate): pose the plan, cycle,\nfounding terms and conversion date - manual billing stays with\nEric, the app stores the deal and derives the seat capacity.",
+        "operationId": "update_subscription_agencies__agency_id__subscription_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencySubscriptionInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/members": {
       "get": {
         "tags": [
@@ -12151,6 +12210,18 @@
             "maxLength": 100,
             "minLength": 1,
             "title": "Admin Last Name"
+          },
+          "is_founding": {
+            "type": "boolean",
+            "title": "Is Founding",
+            "default": false
+          },
+          "founding_free_seats": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Founding Free Seats",
+            "default": 0
           }
         },
         "type": "object",
@@ -12265,6 +12336,16 @@
             "type": "boolean",
             "title": "Has Cover",
             "default": false
+          },
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgencySubscriptionInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -12276,6 +12357,48 @@
           "default_language"
         ],
         "title": "AgencyResponse"
+      },
+      "AgencySubscriptionInfo": {
+        "properties": {
+          "plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "billing_cycle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Cycle"
+          },
+          "is_founding": {
+            "type": "boolean",
+            "title": "Is Founding"
+          },
+          "seats": {
+            "$ref": "#/components/schemas/SeatUsage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "billing_cycle",
+          "is_founding",
+          "seats"
+        ],
+        "title": "AgencySubscriptionInfo",
+        "description": "Read-only settings block: the agency SEES where it stands, never\nedits it - the conversion is Eric's post-closing gesture."
       },
       "AgencyUpdateRequest": {
         "properties": {
@@ -12563,6 +12686,15 @@
           "columns"
         ],
         "title": "AvailableColumnsResponse"
+      },
+      "BillingCycle": {
+        "type": "string",
+        "enum": [
+          "mensuel",
+          "annuel"
+        ],
+        "title": "BillingCycle",
+        "description": "Annual = 2 months off + concierge setup + price locked 2 years\n(or as long as the subscription stays continuous). Values follow\nEric's passation vocabulary."
       },
       "BlockingStep": {
         "properties": {
@@ -20487,6 +20619,40 @@
         "type": "object",
         "title": "SavedViewUpdate"
       },
+      "SeatUsage": {
+        "properties": {
+          "members": {
+            "type": "integer",
+            "title": "Members"
+          },
+          "included": {
+            "type": "integer",
+            "title": "Included"
+          },
+          "offered": {
+            "type": "integer",
+            "title": "Offered"
+          },
+          "billed": {
+            "type": "integer",
+            "title": "Billed"
+          },
+          "max": {
+            "type": "integer",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "members",
+          "included",
+          "offered",
+          "billed",
+          "max"
+        ],
+        "title": "SeatUsage",
+        "description": "Seat capacity, DERIVED live (structure F): `billed` starts at the\n4th seat (past included + founding offered); `max` = 5 (cabinet),\n10 (agence), 3 on trial (the included seats of the future base)."
+      },
       "SectionCreateRequest": {
         "properties": {
           "name": {
@@ -21245,6 +21411,90 @@
         ],
         "title": "StepValidatorType",
         "description": "\"Action validée par\" — who closes a journey step (symmetric to the\nresponsible: a TYPE at the template, the precise person at the dossier).\nReuses the responsible actor strings so both mechanisms read alike, plus\n`none` = \"validated by no one\" = the former `auto` self-completion.\n\n- `none`     → self-completes when all requirements are met (ex-`auto`).\n- `expat`    → the case principal (client) clicks validate.\n- `agent`    → the agency closes (a NAMED internal member, or — agent_id\n               NULL — any member; ex-`agency_validation`, the default).\n- `external` → a DESIGNATED provider (an is_external Agent, stored in\n               `validated_by_agent_id` like the content-wave responsible —\n               a validator must be able to log in and click, so it is an\n               Agent, never a no-login external_contact)."
+      },
+      "SubscriptionPlan": {
+        "type": "string",
+        "enum": [
+          "cabinet",
+          "agence"
+        ],
+        "title": "SubscriptionPlan",
+        "description": "Structure F (pricing Eric 2026-07-07): 99 EUR base INCLUDING 3\nseats, extra seats billed from the 4th. Values are the product plan\nnames as Eric bills them (manual billing at first)."
+      },
+      "SubscriptionUpdateRequest": {
+        "properties": {
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubscriptionPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "billing_cycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillingCycle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_founding": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Founding"
+          },
+          "founding_free_seats": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Founding Free Seats"
+          },
+          "price_locked_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Locked Until"
+          },
+          "converted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted At"
+          }
+        },
+        "type": "object",
+        "title": "SubscriptionUpdateRequest",
+        "description": "PATCH /agencies/{id}/subscription (superadmin) - the post-closing\ngesture: pose the plan, cycle, founding terms and conversion date.\nPartial: absent fields stay untouched."
       },
       "TemplateCaseFieldResponse": {
         "properties": {

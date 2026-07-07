@@ -228,6 +228,24 @@ class RequirementStatus(StrEnum):
     PROVIDED = "provided"
 
 
+class SubscriptionPlan(StrEnum):
+    """Structure F (pricing Eric 2026-07-07): 99 EUR base INCLUDING 3
+    seats, extra seats billed from the 4th. Values are the product plan
+    names as Eric bills them (manual billing at first)."""
+
+    CABINET = "cabinet"  # +35 EUR per extra seat, up to 5 members
+    AGENCE = "agence"  # +25 EUR per extra seat, up to 10 members
+
+
+class BillingCycle(StrEnum):
+    """Annual = 2 months off + concierge setup + price locked 2 years
+    (or as long as the subscription stays continuous). Values follow
+    Eric's passation vocabulary."""
+
+    MONTHLY = "mensuel"
+    ANNUAL = "annuel"
+
+
 class ConsentDocumentType(StrEnum):
     """Legal documents subject to BLOCKING consent (point 16). The two
     agency documents bind the AGENCY and are accepted once per agency

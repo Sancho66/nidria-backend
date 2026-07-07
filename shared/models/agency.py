@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, String, text
+from sqlalchemy import CheckConstraint, Date, DateTime, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +19,11 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(
             "default_language IN ('fr', 'en', 'es', 'ru', 'pt', 'it')",
             name="agency_default_language_check",
+        ),
+        # Founding offer: at most 3 free seats (pricing 2026-07-07).
+        CheckConstraint(
+            "founding_free_seats >= 0 AND founding_free_seats <= 3",
+            name="agency_founding_free_seats_check",
         ),
     )
 
@@ -44,6 +49,27 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # checklist STATE itself is never stored - computed live from the
     # usage milestones/events, which are the truth.
     onboarding_dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Subscription (structure F, pricing Eric 2026-07-07). Billing is
+    # MANUAL at first - these columns store the deal for the future
+    # automation and drive the seat capacity. plan NULL = not converted
+    # yet (trial state; trial_ends_at above stays THE pre-conversion
+    # marker, unchanged). Posed by the superadmin (Eric's post-closing
+    # gesture), never by the agency.
+    plan: Mapped[str | None] = mapped_column(String(20))  # SubscriptionPlan
+    billing_cycle: Mapped[str | None] = mapped_column(String(10))  # BillingCycle
+    seats_included: Mapped[int] = mapped_column(default=3, server_default=text("3"))
+    # Founding offer (first 20 agencies): up to 3 free seats on top of
+    # the included ones.
+    founding_free_seats: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    base_price_eur: Mapped[int] = mapped_column(default=99, server_default=text("99"))
+    # 35 (cabinet) | 25 (agence), billed from the 4th seat; set with the
+    # plan at conversion.
+    seat_price_eur: Mapped[int | None] = mapped_column()
+    # Annual/founding promise: price locked until this date (or as long
+    # as the subscription stays continuous - Eric's call, not enforced).
+    price_locked_until: Mapped[date | None] = mapped_column(Date)
+    is_founding: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def has_logo(self) -> bool:

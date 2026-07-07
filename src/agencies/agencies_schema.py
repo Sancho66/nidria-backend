@@ -1,10 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.email import NormalizedEmailStr
+from src.core.enums import BillingCycle, SubscriptionPlan
 
 # The agency's default content language — the fallback for its i18n blobs.
 # Single source of truth: src.core.i18n (SUPPORTED_LANGUAGES / Language).
@@ -40,6 +41,41 @@ class AiUsageResponse(BaseModel):
     month: str
 
 
+class SeatUsage(BaseModel):
+    """Seat capacity, DERIVED live (structure F): `billed` starts at the
+    4th seat (past included + founding offered); `max` = 5 (cabinet),
+    10 (agence), 3 on trial (the included seats of the future base)."""
+
+    members: int  # active internal agents (externals never consume a seat)
+    included: int
+    offered: int  # founding free seats
+    billed: int
+    max: int
+
+
+class AgencySubscriptionInfo(BaseModel):
+    """Read-only settings block: the agency SEES where it stands, never
+    edits it - the conversion is Eric's post-closing gesture."""
+
+    plan: str | None
+    billing_cycle: str | None
+    is_founding: bool
+    seats: SeatUsage
+
+
+class SubscriptionUpdateRequest(BaseModel):
+    """PATCH /agencies/{id}/subscription (superadmin) - the post-closing
+    gesture: pose the plan, cycle, founding terms and conversion date.
+    Partial: absent fields stay untouched."""
+
+    plan: SubscriptionPlan | None = None
+    billing_cycle: BillingCycle | None = None
+    is_founding: bool | None = None
+    founding_free_seats: int | None = Field(default=None, ge=0, le=3)
+    price_locked_until: date | None = None
+    converted_at: datetime | None = None
+
+
 class AgencyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,6 +88,9 @@ class AgencyResponse(BaseModel):
     # the images are served by their endpoints, never a raw storage URL.
     has_logo: bool = False
     has_cover: bool = False
+    # Filled on GET /agencies/me only (the settings read); other call
+    # sites leave it None.
+    subscription: AgencySubscriptionInfo | None = None
 
 
 class AgencyCreateRequest(BaseModel):
@@ -66,6 +105,10 @@ class AgencyCreateRequest(BaseModel):
     admin_email: NormalizedEmailStr
     admin_first_name: str = Field(min_length=1, max_length=100)
     admin_last_name: str = Field(min_length=1, max_length=100)
+    # Founding offer (first 20 agencies), posed at creation when known;
+    # also editable later via PATCH /agencies/{id}/subscription.
+    is_founding: bool = False
+    founding_free_seats: int = Field(default=0, ge=0, le=3)
 
 
 class CreatedAdminResponse(BaseModel):
