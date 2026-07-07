@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,6 +18,74 @@ from src.core.i18n import Language
 # instead of) the scalar. Empty values are dropped (absent key, never ""); the
 # manager keeps the scalar in sync via apply_i18n_write.
 I18nBlob = dict[str, str]
+
+
+class JourneyImportRequest(BaseModel):
+    """POST /journeys/import — the ROOT JSON produced by the agency's own
+    AI ({version, parcours}). `parcours` is validated by hand in the
+    import manager (never by pydantic) so every violation surfaces as an
+    import_ai.* catalog code with {chemin, valeur} params the front can
+    render in the agency's language."""
+
+    version: int = 1
+    parcours: dict[str, Any]
+
+
+class ImportStepCreated(BaseModel):
+    """One step created (or, in preview, that WOULD be created)."""
+
+    ref: str
+    name: str
+    position: int
+    fields: int  # informations_a_collecter kept on this step
+
+
+class ImportStepIgnored(BaseModel):
+    """One step rejected by validation (partial import) with the exact
+    reason, front-renderable via the code catalog."""
+
+    ref: str | None
+    code: str
+    chemin: str
+    valeur: str | None = None
+
+
+class ImportWarningItem(BaseModel):
+    """Non-blocking notice (ignored volet A, suspected personal data,
+    participants to finalize...)."""
+
+    code: str
+    chemin: str | None = None
+    valeur: str | None = None
+
+
+class ImportExternalSlot(BaseModel):
+    """A typed external-provider SLOT ('prestataire:<job>') to be named
+    by the agency: the template participant model requires a real
+    provider identity, so the import never invents one — the slot lists
+    the steps waiting for the provider of that job."""
+
+    job: str
+    steps: list[str]  # step refs
+
+
+class ImportParticipantsSummary(BaseModel):
+    client: int
+    agency: int
+    external_slots: list[ImportExternalSlot]
+
+
+class JourneyImportReport(BaseModel):
+    """The import outcome, same shape in preview and creation —
+    `template_id` is only set when the journey was actually created."""
+
+    template_id: uuid.UUID | None
+    name: str
+    created: bool
+    steps_created: list[ImportStepCreated]
+    steps_ignored: list[ImportStepIgnored]
+    participants: ImportParticipantsSummary
+    warnings: list[ImportWarningItem]
 
 
 class JourneyTranslateRequest(BaseModel):

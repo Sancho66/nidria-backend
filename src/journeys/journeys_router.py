@@ -12,6 +12,7 @@ from src.core.http import file_download_response
 from src.core.i18n import DEFAULT_LANG, Language, RequestLang, resolve_i18n
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
+from src.journeys.import_manager import JourneyImportManager
 from src.journeys.journeys_manager import JourneysManager
 from src.journeys.journeys_schema import (
     CanvasLayoutRequest,
@@ -20,6 +21,8 @@ from src.journeys.journeys_schema import (
     CaseFieldOrderRequest,
     CaseFieldUpdateRequest,
     JourneyCloneRequest,
+    JourneyImportReport,
+    JourneyImportRequest,
     JourneySectionResponse,
     JourneyTemplateCreateRequest,
     JourneyTemplateDetailResponse,
@@ -64,6 +67,9 @@ BINDINGS = [
     # Library samples (read-only) — any agent reads; gated like GET /journeys.
     RouteBinding("GET", "/journeys/library", Audience.AGENT),
     RouteBinding("POST", "/journeys", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
+    # AI-JSON import (the agency pastes its own AI's output) - same
+    # configure gate as the editor; deterministic, no LLM server-side.
+    RouteBinding("POST", "/journeys/import", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
     # Deep clone (source = sample OR own template) into the calling agency.
     RouteBinding(
         "POST", "/journeys/{template_id}/clone", Audience.AGENT, Permission.JOURNEY_CONFIGURE
@@ -342,6 +348,21 @@ async def create_template(
 ) -> JourneyTemplateResponse:
     template = await JourneysManager(db).create_template(agent, body.name, body.name_i18n)
     return JourneyTemplateResponse.model_validate(template)
+
+
+@router.post("/import", response_model=JourneyImportReport)
+async def import_journey(
+    agent: AgentDep,
+    db: DbDep,
+    body: JourneyImportRequest,
+    preview: bool = False,
+) -> JourneyImportReport:
+    """Create a journey template from the JSON the agency's own AI
+    produced (deterministic interpreter, zero LLM call here). Partial
+    import: an invalid step is rejected with its import_ai.* code while
+    coherent steps are created; a globally invalid JSON is a 422.
+    ?preview=true validates and reports without writing anything."""
+    return await JourneyImportManager(db).run(agent, body.parcours, preview=preview)
 
 
 @router.post("/{template_id}/translate", response_model=TranslationJobResponse, status_code=202)

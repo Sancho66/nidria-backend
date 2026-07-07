@@ -7473,6 +7473,65 @@
         ]
       }
     },
+    "/journeys/import": {
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Import Journey",
+        "description": "Create a journey template from the JSON the agency's own AI\nproduced (deterministic interpreter, zero LLM call here). Partial\nimport: an invalid step is rejected with its import_ai.* code while\ncoherent steps are created; a globally invalid JSON is a 422.\n?preview=true validates and reports without writing anything.",
+        "operationId": "import_journey_journeys_import_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Preview"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JourneyImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyImportReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/translate": {
       "post": {
         "tags": [
@@ -16852,6 +16911,28 @@
         ],
         "title": "ImportCreated"
       },
+      "ImportExternalSlot": {
+        "properties": {
+          "job": {
+            "type": "string",
+            "title": "Job"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "steps"
+        ],
+        "title": "ImportExternalSlot",
+        "description": "A typed external-provider SLOT ('prestataire:<job>') to be named\nby the agency: the template participant model requires a real\nprovider identity, so the import never invents one — the slot lists\nthe steps waiting for the provider of that job."
+      },
       "ImportFieldError": {
         "properties": {
           "row": {
@@ -16880,6 +16961,32 @@
         ],
         "title": "ImportFieldError",
         "description": "A non-blocking per-cell failure: the dossier is still created, this\none field is left unset and reported."
+      },
+      "ImportParticipantsSummary": {
+        "properties": {
+          "client": {
+            "type": "integer",
+            "title": "Client"
+          },
+          "agency": {
+            "type": "integer",
+            "title": "Agency"
+          },
+          "external_slots": {
+            "items": {
+              "$ref": "#/components/schemas/ImportExternalSlot"
+            },
+            "type": "array",
+            "title": "External Slots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client",
+          "agency",
+          "external_slots"
+        ],
+        "title": "ImportParticipantsSummary"
       },
       "ImportPreview": {
         "properties": {
@@ -17020,6 +17127,113 @@
           "reason"
         ],
         "title": "ImportSkipped"
+      },
+      "ImportStepCreated": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "fields": {
+            "type": "integer",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "name",
+          "position",
+          "fields"
+        ],
+        "title": "ImportStepCreated",
+        "description": "One step created (or, in preview, that WOULD be created)."
+      },
+      "ImportStepIgnored": {
+        "properties": {
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "chemin": {
+            "type": "string",
+            "title": "Chemin"
+          },
+          "valeur": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valeur"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "code",
+          "chemin"
+        ],
+        "title": "ImportStepIgnored",
+        "description": "One step rejected by validation (partial import) with the exact\nreason, front-renderable via the code catalog."
+      },
+      "ImportWarningItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "chemin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chemin"
+          },
+          "valeur": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valeur"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "ImportWarningItem",
+        "description": "Non-blocking notice (ignored volet A, suspected personal data,\nparticipants to finalize...)."
       },
       "JobConfigResponse": {
         "properties": {
@@ -17390,6 +17604,86 @@
         "type": "object",
         "title": "JourneyCloneRequest",
         "description": "Optional new name for a deep clone; defaults to \"{source} (copie)\"."
+      },
+      "JourneyImportReport": {
+        "properties": {
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "steps_created": {
+            "items": {
+              "$ref": "#/components/schemas/ImportStepCreated"
+            },
+            "type": "array",
+            "title": "Steps Created"
+          },
+          "steps_ignored": {
+            "items": {
+              "$ref": "#/components/schemas/ImportStepIgnored"
+            },
+            "type": "array",
+            "title": "Steps Ignored"
+          },
+          "participants": {
+            "$ref": "#/components/schemas/ImportParticipantsSummary"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ImportWarningItem"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_id",
+          "name",
+          "created",
+          "steps_created",
+          "steps_ignored",
+          "participants",
+          "warnings"
+        ],
+        "title": "JourneyImportReport",
+        "description": "The import outcome, same shape in preview and creation —\n`template_id` is only set when the journey was actually created."
+      },
+      "JourneyImportRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "parcours": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parcours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "parcours"
+        ],
+        "title": "JourneyImportRequest",
+        "description": "POST /journeys/import — the ROOT JSON produced by the agency's own\nAI ({version, parcours}). `parcours` is validated by hand in the\nimport manager (never by pydantic) so every violation surfaces as an\nimport_ai.* catalog code with {chemin, valeur} params the front can\nrender in the agency's language."
       },
       "JourneySectionDetail": {
         "properties": {
