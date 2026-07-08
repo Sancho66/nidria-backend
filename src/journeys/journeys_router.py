@@ -361,8 +361,15 @@ async def import_journey(
     produced (deterministic interpreter, zero LLM call here). Partial
     import: an invalid step is rejected with its import_ai.* code while
     coherent steps are created; a globally invalid JSON is a 422.
-    ?preview=true validates and reports without writing anything."""
-    return await JourneyImportManager(db).run(agent, body.parcours, preview=preview)
+    ?preview=true validates and reports without writing anything.
+    `provider_assignments` resolves external slots: an assigned job
+    becomes a real participant and drops out of external_slots."""
+    return await JourneyImportManager(db).run(
+        agent,
+        body.parcours,
+        preview=preview,
+        provider_assignments=body.provider_assignments,
+    )
 
 
 @router.post("/{template_id}/translate", response_model=TranslationJobResponse, status_code=202)

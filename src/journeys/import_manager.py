@@ -40,7 +40,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from shared.models.agent import Agent
 from shared.models.custom_field import CustomFieldDefinition
@@ -64,7 +66,9 @@ from src.core.exceptions import ValidationError
 from src.core.i18n import SUPPORTED_LANGUAGES, normalize_i18n_input
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_manager import JourneysManager
+from src.journeys.journeys_repository import JourneysRepository
 from src.journeys.journeys_schema import (
+    AssignableProvider,
     ImportExternalSlot,
     ImportParticipantsSummary,
     ImportStepCreated,
@@ -302,7 +306,55 @@ class JourneyImportManager:
 
     # --- the entry point -------------------------------------------------------------
 
-    async def run(self, agent: Agent, parcours: Any, *, preview: bool) -> JourneyImportReport:
+    async def _resolve_providers(
+        self, agent: Agent, provider_assignments: dict[str, uuid.UUID] | None
+    ) -> dict[str, Agent]:
+        """Validate {job: agent_id}: each target must be an EXTERNAL of
+        THIS agency (422 otherwise). Returns job -> external Agent."""
+        resolved: dict[str, Agent] = {}
+        for job, agent_id in (provider_assignments or {}).items():
+            target = await JourneysRepository(self.db).get_agent_in_agency(
+                agent.agency_id, agent_id
+            )
+            if target is None or not target.is_external:
+                raise ValidationError(
+                    "The assigned provider is not an external of this agency.",
+                    code="import_ai.provider_not_assignable",
+                    params={"job": job, "agent_id": str(agent_id)},
+                )
+            resolved[job] = target
+        return resolved
+
+    async def _assignable_providers(self, agent: Agent) -> list[AssignableProvider]:
+        """The agency's external providers the front can pick per slot
+        (same list for every slot: no reliable job -> role match, the
+        agency chooses). One query, role eager-loaded."""
+        rows = (
+            await self.db.execute(
+                select(Agent)
+                .where(Agent.agency_id == agent.agency_id, Agent.is_external.is_(True))
+                .options(selectinload(Agent.role))
+                .order_by(Agent.first_name, Agent.last_name)
+            )
+        ).scalars()
+        return [
+            AssignableProvider(
+                agent_id=a.id,
+                name=f"{a.first_name} {a.last_name}".strip(),
+                role=a.role.name if a.role else "",
+            )
+            for a in rows
+        ]
+
+    async def run(
+        self,
+        agent: Agent,
+        parcours: Any,
+        *,
+        preview: bool,
+        provider_assignments: dict[str, uuid.UUID] | None = None,
+    ) -> JourneyImportReport:
+        resolved_providers = await self._resolve_providers(agent, provider_assignments)
         if not isinstance(parcours, dict):
             raise ValidationError(
                 "The import payload must carry a 'parcours' object.",
@@ -460,9 +512,13 @@ class JourneyImportManager:
                     valeur=", ".join(agency_steps),
                 )
             )
+        # A job with a provided assignment is RESOLVED: it becomes a real
+        # participant (see _create) and drops out of the slots/warnings.
         slots: dict[str, list[str]] = {}
         for step in valid:
             for job, _role in step.provider_jobs:
+                if job in resolved_providers:
+                    continue
                 slots.setdefault(job, [])
                 if step.ref not in slots[job]:
                     slots[job].append(step.ref)
@@ -474,11 +530,13 @@ class JourneyImportManager:
                 )
             )
 
+        assignable = await self._assignable_providers(agent) if slots else []
         participants = ImportParticipantsSummary(
             client=sum(1 for s in valid for k, _ in s.participant_roles if k == "client"),
             agency=sum(1 for s in valid for k, _ in s.participant_roles if k == "agency"),
             external_slots=[
-                ImportExternalSlot(job=job, steps=refs) for job, refs in sorted(slots.items())
+                ImportExternalSlot(job=job, steps=refs, assignable=assignable)
+                for job, refs in sorted(slots.items())
             ],
         )
         report = JourneyImportReport(
@@ -497,7 +555,7 @@ class JourneyImportManager:
             return report
 
         report.template_id = await self._create(
-            agent, name_blob, valid, defs_plan, defs_position, len(warnings)
+            agent, name_blob, valid, defs_plan, defs_position, resolved_providers, len(warnings)
         )
         report.created = True
         return report
@@ -573,6 +631,7 @@ class JourneyImportManager:
         steps: list[_Step],
         defs_plan: dict[str, _Field],
         defs_position: int,
+        resolved_providers: dict[str, Agent],
         warning_count: int,
     ) -> uuid.UUID:
         agency_default = await JourneysManager(self.db).agency_default(agent.agency_id)
@@ -641,6 +700,21 @@ class JourneyImportManager:
                         role=role,
                     )
                 )
+            # Resolved provider slots become REAL template participants
+            # (type='agent' + the external agent_id, the slot's own role).
+            # ensure_external_assignment then propagates to every dossier
+            # instantiated from this template.
+            for job, role in parsed_step.provider_jobs:
+                external = resolved_providers.get(job)
+                if external is not None:
+                    self.db.add(
+                        JourneyStepParticipant(
+                            step_id=row.id,
+                            type="agent",
+                            agent_id=external.id,
+                            role=role,
+                        )
+                    )
             step_keys: set[str] = set()
             for i, parsed_field in enumerate(parsed_step.fields):
                 key = parsed_field.final_key

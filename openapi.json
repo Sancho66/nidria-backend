@@ -5285,6 +5285,83 @@
         ]
       }
     },
+    "/consents/external/pending": {
+      "get": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "External Pending",
+        "description": "Provider terms still to accept, grouped per agency the provider\nworks for (empty for a non-external agent).",
+        "operationId": "external_pending_consents_external_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatAgencyPendingResponse"
+                  },
+                  "type": "array",
+                  "title": "Response External Pending Consents External Pending Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/consents/external/accept": {
+      "post": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "External Accept",
+        "operationId": "external_accept_consents_external_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentAcceptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/external/cases": {
       "get": {
         "tags": [
@@ -7646,7 +7723,7 @@
           "journeys"
         ],
         "summary": "Import Journey",
-        "description": "Create a journey template from the JSON the agency's own AI\nproduced (deterministic interpreter, zero LLM call here). Partial\nimport: an invalid step is rejected with its import_ai.* code while\ncoherent steps are created; a globally invalid JSON is a 422.\n?preview=true validates and reports without writing anything.",
+        "description": "Create a journey template from the JSON the agency's own AI\nproduced (deterministic interpreter, zero LLM call here). Partial\nimport: an invalid step is rejected with its import_ai.* code while\ncoherent steps are created; a globally invalid JSON is a 422.\n?preview=true validates and reports without writing anything.\n`provider_assignments` resolves external slots: an assigned job\nbecomes a real participant and drops out of external_slots.",
         "operationId": "import_journey_journeys_import_post",
         "security": [
           {
@@ -12750,6 +12827,31 @@
         ],
         "title": "AssignJourneyRequest"
       },
+      "AssignableProvider": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "name",
+          "role"
+        ],
+        "title": "AssignableProvider",
+        "description": "An external provider of the agency the front can pick to fill a\nslot (`role` is its métier, the external role name)."
+      },
       "AvailableColumn": {
         "properties": {
           "key": {
@@ -14846,10 +14948,11 @@
           "agency_terms",
           "agency_dpa",
           "client_terms",
-          "client_privacy"
+          "client_privacy",
+          "external_terms"
         ],
         "title": "ConsentDocumentType",
-        "description": "Legal documents subject to BLOCKING consent (point 16). The two\nagency documents bind the AGENCY and are accepted once per agency\nadmin; the two client documents bind the client PER AGENCY (the\nagency is the data controller, Nidria the processor)."
+        "description": "Legal documents subject to BLOCKING consent (point 16). The two\nagency documents bind the AGENCY and are accepted once per agency\nadmin; the two client documents bind the client PER AGENCY (the\nagency is the data controller, Nidria the processor); the external\ndocument binds a PROVIDER for the agency whose portal they enter."
       },
       "CreatedAdminResponse": {
         "properties": {
@@ -17222,6 +17325,14 @@
             },
             "type": "array",
             "title": "Steps"
+          },
+          "assignable": {
+            "items": {
+              "$ref": "#/components/schemas/AssignableProvider"
+            },
+            "type": "array",
+            "title": "Assignable",
+            "default": []
           }
         },
         "type": "object",
@@ -17230,7 +17341,7 @@
           "steps"
         ],
         "title": "ImportExternalSlot",
-        "description": "A typed external-provider SLOT ('prestataire:<job>') to be named\nby the agency: the template participant model requires a real\nprovider identity, so the import never invents one — the slot lists\nthe steps waiting for the provider of that job."
+        "description": "A typed external-provider SLOT ('prestataire:<job>') to be named\nby the agency: the template participant model requires a real\nprovider identity, so the import never invents one — the slot lists\nthe steps waiting for the provider of that job, plus the agency's\nassignable providers (the front proposes a choice). A slot that has\na provider_assignment is resolved and no longer listed."
       },
       "ImportFieldError": {
         "properties": {
@@ -17975,6 +18086,21 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Parcours"
+          },
+          "provider_assignments": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Assignments"
           }
         },
         "type": "object",
@@ -17982,7 +18108,7 @@
           "parcours"
         ],
         "title": "JourneyImportRequest",
-        "description": "POST /journeys/import — the ROOT JSON produced by the agency's own\nAI ({version, parcours}). `parcours` is validated by hand in the\nimport manager (never by pydantic) so every violation surfaces as an\nimport_ai.* catalog code with {chemin, valeur} params the front can\nrender in the agency's language."
+        "description": "POST /journeys/import — the ROOT JSON produced by the agency's own\nAI ({version, parcours}). `parcours` is validated by hand in the\nimport manager (never by pydantic) so every violation surfaces as an\nimport_ai.* catalog code with {chemin, valeur} params the front can\nrender in the agency's language.\n\n`provider_assignments` (point 6 Eric) resolves external SLOTS: a map\n{slot_job: external agent_id}. Optional (without it the slots stay\nreporting-only). An assigned job becomes a real external participant\non its steps and disappears from the preview's external_slots."
       },
       "JourneySectionDetail": {
         "properties": {

@@ -26,6 +26,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.case_external_assignment import CaseExternalAssignment
+from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.journey import (
     JourneySection,
@@ -136,8 +138,8 @@ async def test_spec_example_creates_a_conforming_journey(
     assert report["participants"]["client"] == 1
     assert report["participants"]["agency"] == 1
     assert report["participants"]["external_slots"] == [
-        {"job": "traducteur", "steps": ["traduction"]}
-    ]
+        {"job": "traducteur", "steps": ["traduction"], "assignable": []}
+    ]  # no external provider in this agency yet → nothing assignable
     # The arbitrated mentions.
     codes = _codes(report["warnings"])
     assert "import_ai.sections_ignored" in codes  # volet A ignored (d)
@@ -565,7 +567,7 @@ async def test_preview_writes_nothing(
     assert report["created"] is False and report["template_id"] is None
     assert len(report["steps_created"]) == 2  # the honest preview summary
     assert report["participants"]["external_slots"] == [
-        {"job": "traducteur", "steps": ["traduction"]}
+        {"job": "traducteur", "steps": ["traduction"], "assignable": []}
     ]
 
     db_session.expire_all()
@@ -651,3 +653,223 @@ async def test_globally_invalid_json_is_a_clean_422(
     body = response.json()
     assert body["code"] == "import_ai.invalid_delay"
     assert body["params"]["valeur"] == "-2"
+
+
+# --- Point 6 Eric: strong provider-slot assignment ----------------------------------
+
+_SLOT_JSON: dict[str, Any] = {
+    "version": 1,
+    "parcours": {
+        "nom": {"fr": "Parcours avec prestataire"},
+        "etapes": [
+            {
+                "ref": "traduction",
+                "nom": {"fr": "Traduction certifiée"},
+                "participants": [
+                    {"acteur": "client", "role": "fournit_documents"},
+                    {"acteur": "prestataire:traducteur", "role": "executant"},
+                ],
+            }
+        ],
+    },
+}
+
+
+@pytest_asyncio.fixture
+async def translator(make_agent: MakeAgent, admin: Agent, db_session: AsyncSession) -> Agent:
+    role = (
+        await db_session.execute(
+            select(Role).where(Role.is_external.is_(True), Role.name == "external_translator")
+        )
+    ).scalar_one()
+    return await make_agent(
+        agency_id=admin.agency_id,
+        role=role,
+        is_external=True,
+        email="trad@ext.com",
+        first_name="Tara",
+        last_name="Duval",
+    )
+
+
+async def _slot_step_id(db_session: AsyncSession, template_id: uuid.UUID) -> uuid.UUID:
+    return (
+        await db_session.execute(
+            select(JourneyTemplateStep.id).where(JourneyTemplateStep.template_id == template_id)
+        )
+    ).scalar_one()
+
+
+# --- (a) + (f) assignment creates the participant, role preserved, propagates --------
+
+
+async def test_provider_assignment_creates_participant_and_propagates(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    translator: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    body = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(translator.id)}}
+    created = await client.post("/journeys/import", headers=headers, json=body)
+    assert created.status_code == 200, created.text
+    report = created.json()
+    assert report["created"] is True
+    # (d)-like: the resolved slot is GONE from external_slots.
+    assert report["participants"]["external_slots"] == []
+    tid = uuid.UUID(report["template_id"])
+
+    # The provider is a real template participant on the step, type=agent,
+    # with the SLOT's role (f).
+    step_id = await _slot_step_id(db_session, tid)
+    parts = list(
+        (
+            await db_session.execute(
+                select(JourneyStepParticipant).where(JourneyStepParticipant.step_id == step_id)
+            )
+        ).scalars()
+    )
+    provider = next(p for p in parts if p.agent_id == translator.id)
+    assert provider.type == "agent" and provider.role == "executant"
+
+    # Creating a dossier from this template auto-assigns the provider
+    # (ensure_external_assignment) and seeds the case participant (a).
+    made = await client.post(
+        "/cases",
+        headers=headers,
+        json={
+            "first_name": "Marie",
+            "last_name": "Curie",
+            "email": "marie@example.com",
+            "journey_template_id": str(tid),
+        },
+    )
+    assert made.status_code == 201, made.text
+    case_id = uuid.UUID(made.json()["id"])
+    assignment = (
+        await db_session.execute(
+            select(CaseExternalAssignment).where(
+                CaseExternalAssignment.case_id == case_id,
+                CaseExternalAssignment.agent_id == translator.id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert assignment is not None  # the provider gained portal access
+    case_part = (
+        await db_session.execute(
+            select(CaseStepParticipant).where(
+                CaseStepParticipant.agent_id == translator.id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert case_part is not None and case_part.role == "executant"
+
+
+# --- (b) a foreign or non-external agent is a 422 ------------------------------------
+
+
+async def test_provider_assignment_rejects_non_external_and_foreign_agent(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+) -> None:
+    headers = agent_headers(admin)
+
+    # An INTERNAL agent of the agency is not assignable as a provider.
+    internal = await make_agent(agency_id=admin.agency_id, role=system_roles["member"])
+    bad_internal = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(internal.id)}}
+    r1 = await client.post("/journeys/import", headers=headers, json=bad_internal)
+    assert r1.status_code == 422
+    assert r1.json()["code"] == "import_ai.provider_not_assignable"
+    assert r1.json()["params"]["job"] == "traducteur"
+
+    # An external of ANOTHER agency is invisible (same 422, agency-scoped).
+    other_admin = await make_agent(role=system_roles["admin"], email="other@ag.com")
+    other_role = (
+        await db_session.execute(
+            select(Role).where(Role.is_external.is_(True), Role.name == "external_lawyer")
+        )
+    ).scalar_one()
+    foreign = await make_agent(
+        agency_id=other_admin.agency_id, role=other_role, is_external=True, email="foreign@ext.com"
+    )
+    bad_foreign = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(foreign.id)}}
+    r2 = await client.post("/journeys/import", headers=headers, json=bad_foreign)
+    assert r2.status_code == 422
+    assert r2.json()["code"] == "import_ai.provider_not_assignable"
+
+    # Nothing was created by either failed attempt.
+    assert (
+        await db_session.execute(
+            select(func.count(JourneyTemplate.id)).where(
+                JourneyTemplate.name == "Parcours avec prestataire"
+            )
+        )
+    ).scalar_one() == 0
+
+
+# --- (c) preview lists the assignable providers per slot ------------------------------
+
+
+async def test_preview_lists_assignable_providers(
+    client: AsyncClient, admin: Agent, translator: Agent, agent_headers: AuthHeaders
+) -> None:
+    response = await client.post(
+        "/journeys/import?preview=true", headers=agent_headers(admin), json=_SLOT_JSON
+    )
+    assert response.status_code == 200, response.text
+    slots = response.json()["participants"]["external_slots"]
+    assert len(slots) == 1 and slots[0]["job"] == "traducteur"
+    assignable = slots[0]["assignable"]
+    assert {a["agent_id"] for a in assignable} == {str(translator.id)}
+    assert assignable[0]["name"] == "Tara Duval"
+    assert assignable[0]["role"] == "external_translator"
+
+
+# --- (d) re-preview with the assignment: the resolved slot disappears ----------------
+
+
+async def test_re_preview_with_assignment_drops_the_slot(
+    client: AsyncClient, admin: Agent, translator: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    before = (
+        await client.post("/journeys/import?preview=true", headers=headers, json=_SLOT_JSON)
+    ).json()
+    assert [s["job"] for s in before["participants"]["external_slots"]] == ["traducteur"]
+
+    body = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(translator.id)}}
+    after = (await client.post("/journeys/import?preview=true", headers=headers, json=body)).json()
+    assert after["created"] is False  # still a preview, nothing written
+    assert after["participants"]["external_slots"] == []  # the slot is resolved
+
+
+# --- (e) no provider_assignments: the current reporting behavior is unchanged ---------
+
+
+async def test_no_assignments_keeps_reporting_behavior(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    created = await client.post("/journeys/import", headers=agent_headers(admin), json=_SLOT_JSON)
+    assert created.status_code == 200, created.text
+    report = created.json()
+    assert report["participants"]["external_slots"] == [
+        {"job": "traducteur", "steps": ["traduction"], "assignable": []}
+    ]
+    assert any(w["code"] == "import_ai.external_provider_to_name" for w in report["warnings"])
+    # No provider participant was created (only the client one).
+    tid = uuid.UUID(report["template_id"])
+    step_id = await _slot_step_id(db_session, tid)
+    parts = list(
+        (
+            await db_session.execute(
+                select(JourneyStepParticipant).where(JourneyStepParticipant.step_id == step_id)
+            )
+        ).scalars()
+    )
+    assert all(p.agent_id is None for p in parts)  # no external named
+    assert {p.type for p in parts} == {"expat"}  # only the client participant

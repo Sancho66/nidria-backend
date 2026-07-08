@@ -25,10 +25,16 @@ class JourneyImportRequest(BaseModel):
     AI ({version, parcours}). `parcours` is validated by hand in the
     import manager (never by pydantic) so every violation surfaces as an
     import_ai.* catalog code with {chemin, valeur} params the front can
-    render in the agency's language."""
+    render in the agency's language.
+
+    `provider_assignments` (point 6 Eric) resolves external SLOTS: a map
+    {slot_job: external agent_id}. Optional (without it the slots stay
+    reporting-only). An assigned job becomes a real external participant
+    on its steps and disappears from the preview's external_slots."""
 
     version: int = 1
     parcours: dict[str, Any]
+    provider_assignments: dict[str, uuid.UUID] | None = None
 
 
 class ImportStepCreated(BaseModel):
@@ -59,14 +65,26 @@ class ImportWarningItem(BaseModel):
     valeur: str | None = None
 
 
+class AssignableProvider(BaseModel):
+    """An external provider of the agency the front can pick to fill a
+    slot (`role` is its métier, the external role name)."""
+
+    agent_id: uuid.UUID
+    name: str
+    role: str
+
+
 class ImportExternalSlot(BaseModel):
     """A typed external-provider SLOT ('prestataire:<job>') to be named
     by the agency: the template participant model requires a real
     provider identity, so the import never invents one — the slot lists
-    the steps waiting for the provider of that job."""
+    the steps waiting for the provider of that job, plus the agency's
+    assignable providers (the front proposes a choice). A slot that has
+    a provider_assignment is resolved and no longer listed."""
 
     job: str
     steps: list[str]  # step refs
+    assignable: list[AssignableProvider] = []
 
 
 class ImportParticipantsSummary(BaseModel):
