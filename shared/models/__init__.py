@@ -1,5 +1,6 @@
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
+from shared.models.agency_deletion_log import AgencyDeletionLog
 from shared.models.agent import Agent
 from shared.models.ai_translation_job import AiTranslationJob, AiTranslationSource
 from shared.models.ai_usage import AgencyAiUsage
@@ -64,6 +65,7 @@ __all__ = [
     "ExternalContact",
     "CasePerson",
     "ImpersonationLog",
+    "AgencyDeletionLog",
     "JobConfig",
     "JobRun",
     "JourneySection",

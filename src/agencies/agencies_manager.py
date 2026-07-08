@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
+from shared.models.agency_deletion_log import AgencyDeletionLog
 from shared.models.agent import Agent
 from shared.models.invitation import AgentInvitation
 from shared.models.journey import JourneyTemplate
@@ -19,6 +20,8 @@ from shared.models.usage import AgencyUsageMilestone, UsageEvent
 from src.agencies.agencies_repository import AgenciesRepository
 from src.agencies.agencies_schema import (
     AgencyCreateRequest,
+    AgencyDeletedResponse,
+    AgencyDeleteRequest,
     AgencySubscriptionInfo,
     AgencyUpdateRequest,
     OnboardingResponse,
@@ -169,6 +172,65 @@ class AgenciesManager:
         )
         return AgencyCreated(
             agency=agency, admin=admin, admin_role_name=admin_role.name, email=email
+        )
+
+    # --- hard delete (Groupe C, superadmin platform tool) ----------------------------
+
+    async def delete_agency(
+        self, superadmin: Agent, agency_id: uuid.UUID, payload: AgencyDeleteRequest
+    ) -> AgencyDeletedResponse:
+        """HARD delete an agency and everything it owns (platform
+        housekeeping, NOT métier archival). Guardrails: the exact name
+        must be re-typed (422), and live non-demo cases block it unless
+        `force` (409). Isolation: the global expat accounts, their
+        sessions and cases at OTHER agencies are never touched; the legal
+        consent trace survives by design. One transaction for all rows,
+        storage purged best-effort after commit, an audit row written."""
+        agency = await self.repo.get_agency(agency_id)
+        if agency is None:
+            raise NotFoundError("Agency not found.")
+        if payload.confirm_name != agency.name:
+            raise ValidationError(
+                "The typed name does not match the agency name.",
+                code="agency.name_mismatch",
+            )
+        active = await self.repo.count_active_non_demo_cases(agency_id)
+        if active > 0 and not payload.force:
+            raise ConflictError(
+                "The agency still has active client cases.",
+                code="agency.has_active_cases",
+                params={"count": active},
+            )
+
+        name, slug = agency.name, agency.slug
+        total_cases = await self.repo.count_all_cases(agency_id)
+        paths = await self.repo.storage_paths(agency_id)
+        agent_ids = await self.repo.agent_ids(agency_id)
+
+        await self.repo.purge_agency_rows(agency_id, agent_ids)
+        self.db.add(
+            AgencyDeletionLog(
+                deleted_agency_id=agency_id,
+                agency_name=name,
+                agency_slug=slug,
+                deleted_cases_count=total_cases,
+                performed_by_agent_id=superadmin.id,
+                performed_by_email=superadmin.email,
+            )
+        )
+        await self.db.commit()
+
+        # Storage AFTER the DB commit: a transient blob error must never
+        # leave the agency half-deleted in the database. Best-effort;
+        # orphaned blobs are logged, never fatal.
+        for path in paths:
+            try:
+                await asyncio.to_thread(storage.delete, path)
+            except Exception:
+                logger.exception("agency %s deletion: storage blob not purged: %s", slug, path)
+
+        return AgencyDeletedResponse(
+            agency_id=agency_id, name=name, deleted_cases_count=total_cases
         )
 
     # --- logo (branding) --------------------------------------------------------------

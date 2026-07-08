@@ -1,15 +1,20 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.auth_tokens import PasswordResetToken, RefreshToken
+from shared.models.client_case import ClientCase
+from shared.models.document import Document
 from shared.models.invitation import AgentInvitation
+from shared.models.journey import JourneyStepAttachment, JourneyTemplate, JourneyTemplateStep
+from shared.models.mfa import MfaChallenge, MfaTotp
 from shared.models.rbac import Role
-from src.core.enums import InvitationStatus
+from src.core.enums import ActorType, InvitationStatus
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 
 
@@ -35,6 +40,99 @@ class AgenciesRepository:
         agency = Agency(name=name, slug=slug, default_language=default_language, settings={})
         self.db.add(agency)
         return agency
+
+    # --- hard delete (Groupe C) ------------------------------------------------------
+
+    async def count_active_non_demo_cases(self, agency_id: uuid.UUID) -> int:
+        """The 409 guardrail: live (not soft-deleted), real (non-demo)
+        cases. Demo cases never block a deletion."""
+        stmt = select(func.count(ClientCase.id)).where(
+            ClientCase.agency_id == agency_id,
+            ClientCase.deleted_at.is_(None),
+            ClientCase.is_demo.is_(False),
+        )
+        return (await self.db.execute(stmt)).scalar_one()
+
+    async def count_all_cases(self, agency_id: uuid.UUID) -> int:
+        """Every case of the agency (demo + soft-deleted included): what
+        the hard delete actually removes, for the trace."""
+        stmt = select(func.count(ClientCase.id)).where(ClientCase.agency_id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one()
+
+    async def agent_ids(self, agency_id: uuid.UUID) -> list[uuid.UUID]:
+        stmt = select(Agent.id).where(Agent.agency_id == agency_id)
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def storage_paths(self, agency_id: uuid.UUID) -> list[str]:
+        """Every blob to purge for the agency, gathered BEFORE the rows
+        cascade away (the storage has no prefix delete; paths are keyed
+        by object id, never by agency). Expat avatars are NOT here - they
+        belong to the global client identity, shared across agencies."""
+        agency = await self.db.get(Agency, agency_id)
+        paths: list[str] = []
+        if agency is not None:
+            paths += [p for p in (agency.logo_path, agency.cover_path) if p]
+        paths += [
+            p
+            for (p,) in (
+                await self.db.execute(
+                    select(Agent.avatar_path).where(
+                        Agent.agency_id == agency_id, Agent.avatar_path.is_not(None)
+                    )
+                )
+            ).all()
+            if p
+        ]
+        paths += list(
+            (
+                await self.db.execute(
+                    select(Document.storage_path)
+                    .join(ClientCase, ClientCase.id == Document.case_id)
+                    .where(ClientCase.agency_id == agency_id)
+                )
+            ).scalars()
+        )
+        paths += list(
+            (
+                await self.db.execute(
+                    select(JourneyStepAttachment.storage_path)
+                    .join(
+                        JourneyTemplateStep,
+                        JourneyTemplateStep.id == JourneyStepAttachment.step_id,
+                    )
+                    .join(JourneyTemplate, JourneyTemplate.id == JourneyTemplateStep.template_id)
+                    .where(JourneyTemplate.agency_id == agency_id)
+                )
+            ).scalars()
+        )
+        return paths
+
+    async def purge_agency_rows(self, agency_id: uuid.UUID, agent_ids: list[uuid.UUID]) -> None:
+        """Ordered hard delete (NO commit — the manager owns the tx).
+        Breaks the 4 RESTRICT edges by deleting the referencing rows
+        FIRST, cleans the no-FK polymorphic token tables by hand, then
+        DELETEs the agency (CASCADE clears everything else). Consent
+        acceptances (no FK, legal trace) survive by design."""
+        # Polymorphic no-FK tables: keyed by the agency's AGENT ids only
+        # (expat tokens are global — the client keeps sessions for other
+        # agencies).
+        if agent_ids:
+            agents = ActorType.AGENT.value
+            for model in (RefreshToken, PasswordResetToken, MfaTotp, MfaChallenge):
+                await self.db.execute(
+                    delete(model).where(model.actor_type == agents, model.actor_id.in_(agent_ids))
+                )
+        # RESTRICT edges (client_case→journey_template,
+        # case_step_progress→journey_template_step, agent→role,
+        # agent_invitation→role): delete the referencing rows before the
+        # agency cascade would hit the referenced ones in an unsafe order.
+        await self.db.execute(delete(ClientCase).where(ClientCase.agency_id == agency_id))
+        await self.db.execute(delete(AgentInvitation).where(AgentInvitation.agency_id == agency_id))
+        await self.db.execute(delete(Agent).where(Agent.agency_id == agency_id))
+        # The agency itself: CASCADE clears journeys, custom fields,
+        # custom roles, usage, milestones, ai usage/jobs, nurture, crm
+        # mappings, message templates, saved views...
+        await self.db.execute(delete(Agency).where(Agency.id == agency_id))
 
     async def get_role(self, role_id: uuid.UUID) -> Role | None:
         return await self.db.get(Role, role_id)

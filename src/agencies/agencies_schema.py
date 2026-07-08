@@ -76,6 +76,24 @@ class SubscriptionUpdateRequest(BaseModel):
     converted_at: datetime | None = None
 
 
+class AgencyDeleteRequest(BaseModel):
+    """DELETE /agencies/{id} (superadmin, HARD delete, Groupe C). The
+    front makes the user type the agency name: `confirm_name` must equal
+    it EXACTLY (422 otherwise). `force` overrides the active-cases
+    guardrail (409 without it when non-demo cases exist)."""
+
+    confirm_name: str = Field(min_length=1)
+    force: bool = False
+
+
+class AgencyDeletedResponse(BaseModel):
+    """The outcome of a hard deletion (also the trace's payload)."""
+
+    agency_id: uuid.UUID
+    name: str
+    deleted_cases_count: int
+
+
 class AgencyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

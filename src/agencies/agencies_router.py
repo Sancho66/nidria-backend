@@ -10,6 +10,8 @@ from src.agencies.agencies_schema import (
     AcceptInvitationRequest,
     AgencyCreateRequest,
     AgencyCreateResponse,
+    AgencyDeletedResponse,
+    AgencyDeleteRequest,
     AgencyMemberResponse,
     AgencyResponse,
     AgencySubscriptionInfo,
@@ -39,6 +41,10 @@ BINDINGS = [
     # List EVERY agency — the platform agency switcher. Same superadmin gate
     # as create (agency.create); the one deliberate cross-tenant read.
     RouteBinding("GET", "/agencies", Audience.AGENT, Permission.AGENCY_CREATE),
+    # HARD delete an agency (Groupe C): the same platform-lifecycle gate
+    # as create — only the superadmin holds agency.create, an agency admin
+    # gets 403. Never reachable from within an agency.
+    RouteBinding("DELETE", "/agencies/{agency_id}", Audience.AGENT, Permission.AGENCY_CREATE),
     # Subscription pose (Eric's post-closing gesture): same strict
     # superadmin gate as the wizard.
     RouteBinding(
@@ -130,6 +136,17 @@ async def list_agencies(agent: AgentDep, db: DbDep) -> list[AgencyResponse]:
     The one read that deliberately crosses the tenant boundary."""
     agencies = await AgenciesManager(db).list_all_agencies()
     return [AgencyResponse.model_validate(a) for a in agencies]
+
+
+@router.delete("/{agency_id}", response_model=AgencyDeletedResponse)
+async def delete_agency(
+    agency_id: uuid.UUID, body: AgencyDeleteRequest, agent: AgentDep, db: DbDep
+) -> AgencyDeletedResponse:
+    """Superadmin-only HARD delete (agency.create gate). Requires the
+    exact agency name in `confirm_name`; refuses if live non-demo cases
+    exist unless `force`. Purges every agency-scoped row + storage blob;
+    global expat accounts and their other-agency cases are untouched."""
+    return await AgenciesManager(db).delete_agency(agent, agency_id, body)
 
 
 def _logo_response(content: bytes, media_type: str, *, public: bool) -> Response:

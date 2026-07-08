@@ -1166,6 +1166,65 @@
         ]
       }
     },
+    "/agencies/{agency_id}": {
+      "delete": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Delete Agency",
+        "description": "Superadmin-only HARD delete (agency.create gate). Requires the\nexact agency name in `confirm_name`; refuses if live non-demo cases\nexist unless `force`. Purges every agency-scoped row + storage blob;\nglobal expat accounts and their other-agency cases are untouched.",
+        "operationId": "delete_agency_agencies__agency_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgencyDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyDeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/logo": {
       "get": {
         "tags": [
@@ -12439,6 +12498,51 @@
           "admin"
         ],
         "title": "AgencyCreateResponse"
+      },
+      "AgencyDeleteRequest": {
+        "properties": {
+          "confirm_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Confirm Name"
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirm_name"
+        ],
+        "title": "AgencyDeleteRequest",
+        "description": "DELETE /agencies/{id} (superadmin, HARD delete, Groupe C). The\nfront makes the user type the agency name: `confirm_name` must equal\nit EXACTLY (422 otherwise). `force` overrides the active-cases\nguardrail (409 without it when non-demo cases exist)."
+      },
+      "AgencyDeletedResponse": {
+        "properties": {
+          "agency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agency Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "deleted_cases_count": {
+            "type": "integer",
+            "title": "Deleted Cases Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency_id",
+          "name",
+          "deleted_cases_count"
+        ],
+        "title": "AgencyDeletedResponse",
+        "description": "The outcome of a hard deletion (also the trace's payload)."
       },
       "AgencyMemberResponse": {
         "properties": {
