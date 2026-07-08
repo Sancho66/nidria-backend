@@ -3953,6 +3953,60 @@
         ]
       }
     },
+    "/dashboard/worklist": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Worklist",
+        "description": "The agent's unified \"to handle\" queue: steps awaiting my\nvalidation, my late steps, client documents to review, reminders to\napprove on my cases - overdue first, oldest waiting first.",
+        "operationId": "get_worklist_dashboard_worklist_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorklistResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/dashboard/activity": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Activity",
+        "description": "The \"Activite des clients\" bento feed: agency-wide client\ngestures, aggregated per (type, case, day), 14 sliding days, 15\nitems max, newest first. Demo excluded, agent gestures excluded.",
+        "operationId": "get_activity_dashboard_activity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/{case_id}/documents": {
       "post": {
         "tags": [
@@ -12080,6 +12134,48 @@
         "title": "ActivateResponse",
         "description": "Either a fresh token pair (account just activated, logged in) or\n`already_active=True` with no tokens (2nd invitation of an existing\naccount — password untouched, go through login)."
       },
+      "ActivityItem": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "expat_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Expat User Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "case_id",
+          "client_name",
+          "expat_user_id",
+          "count",
+          "occurred_at"
+        ],
+        "title": "ActivityItem",
+        "description": "One AGGREGATED client gesture: (type, case, calendar day) with\nits count - N same-day deposits by one client are one line. Types\nare the bento vocabulary: documents_uploaded | comment_added |\naccount_activated | step_validated."
+      },
       "ActivityListResponse": {
         "properties": {
           "items": {
@@ -12159,6 +12255,23 @@
           "created_at"
         ],
         "title": "ActivityLogResponse"
+      },
+      "ActivityResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ActivityResponse",
+        "description": "GET /dashboard/activity - the agency-wide client pulse: 14\nsliding days, 15 aggregated items max, newest first. Demo cases\nnever appear; agent gestures never appear (the agency would watch\nitself)."
       },
       "AgencyCreateRequest": {
         "properties": {
@@ -22368,6 +22481,132 @@
         ],
         "title": "ValidatorUpdateRequest",
         "description": "\"Action validée par\" — designate the validator on the DOSSIER\n(gate case.edit), symmetric to the responsible assignment. `none`/`expat`\ncarry no agent; `agent` takes an optional INTERNAL member (NULL = any\nmember); `external` REQUIRES a provider (is_external Agent) assigned to\nthe case — enforced in the Manager."
+      },
+      "WorklistItem": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "is_overdue": {
+            "type": "boolean",
+            "title": "Is Overdue"
+          },
+          "days_late": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Late"
+          },
+          "progress_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "reminder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "case_id",
+          "client_name",
+          "dest_country",
+          "title",
+          "occurred_at",
+          "is_overdue",
+          "days_late"
+        ],
+        "title": "WorklistItem",
+        "description": "One actionable item of the unified \"to handle\" queue (contract\nvalidated 2026-07-08). `type` picks the action link the front opens:\nstep_* carry progress_id (case timeline, step focused),\ndocument_to_review carries document_id (validation modal),\nreminder_to_approve carries reminder_id (reminders screen). A step\nboth awaiting my validation AND late appears ONCE as\nstep_to_validate with is_overdue=true (the action wins, the delay\nsorts); step_overdue carries the remaining late steps I must realize."
+      },
+      "WorklistResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorklistItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "counts"
+        ],
+        "title": "WorklistResponse",
+        "description": "Sorted queue: overdue first (largest delay first), then oldest\nwaiting first. `counts` = per-type volumes + total."
       }
     },
     "securitySchemes": {
