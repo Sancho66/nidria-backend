@@ -13,6 +13,12 @@ Scope of the requirement:
 - EXPAT face: gated PER AGENCY where the client has at least one live
   case (the agency is the data controller; a client at two agencies
   accepts for each).
+- EXTERNAL face: a provider (an is_external Agent) is gated for THE
+  agency their account belongs to (a provider Agent has exactly one
+  agency; get_case_for_external confirms their access never crosses it).
+  A person working for two agencies has two provider accounts, one gate
+  and one trace each. The pair shape mirrors the expat gate, so it stays
+  correct if a provider ever spans agencies.
 
 "Required" always means: the latest ACTIVE version of each type of the
 audience's set. Publishing a new version therefore re-gates everyone
@@ -30,6 +36,7 @@ from shared.models.rbac import Role
 from src.core.enums import (
     AGENT_CONSENT_TYPES,
     EXPAT_CONSENT_TYPES,
+    EXTERNAL_CONSENT_TYPES,
     ActorType,
 )
 
@@ -122,6 +129,33 @@ async def missing_for_expat(
     return [
         (agency_id, doc)
         for agency_id in sorted(agency_ids)
+        for doc in sorted(required.values(), key=lambda d: d.type)
+        if (doc.type, doc.version, agency_id) not in accepted
+    ]
+
+
+def external_agency_ids(agent: Agent) -> list[uuid.UUID]:
+    """The agencies a provider consents for. A provider Agent belongs to
+    exactly one agency and its access never crosses it, so this is that
+    single agency (a list, mirroring the expat scoping shape)."""
+    return [agent.agency_id]
+
+
+async def missing_for_external(
+    db: AsyncSession, external_agent: Agent
+) -> list[tuple[uuid.UUID, ConsentDocument]]:
+    """(agency_id, document) pairs a provider still has to accept. Empty
+    for a non-external agent (the gate never fires on the internal
+    face)."""
+    if not external_agent.is_external:
+        return []
+    required = await active_documents_by_type(db, EXTERNAL_CONSENT_TYPES)
+    if not required:
+        return []
+    accepted = await _accepted_keys(db, ActorType.EXTERNAL, external_agent.id)
+    return [
+        (agency_id, doc)
+        for agency_id in sorted(external_agency_ids(external_agent))
         for doc in sorted(required.values(), key=lambda d: d.type)
         if (doc.type, doc.version, agency_id) not in accepted
     ]

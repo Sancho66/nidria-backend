@@ -496,4 +496,4 @@ async def test_seed_publishes_new_version_when_canonical_text_changes(
     # Strict idempotence: a second reconcile writes nothing.
     await seed_consent_documents(db_session)
     count = len((await db_session.execute(select(ConsentDocument))).scalars().all())
-    assert count == 5  # 4 types + the one republished version
+    assert count == 6  # 5 types + the one republished version

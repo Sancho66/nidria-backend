@@ -277,9 +277,32 @@ _CLIENT_PRIVACY = """# Note d'information sur vos données
    Vous pouvez également saisir l'autorité de contrôle compétente (en France, la CNIL).
 """
 
+_EXTERNAL_TERMS = """# Conditions d'accès prestataire
+
+[TEXTE PROVISOIRE : version de travail, à remplacer par le texte définitif fourni par Eric,
+comme pour les autres documents. Le cadre ci-dessous fixe le périmètre : confidentialité, usage,
+RGPD ; le seed publie une nouvelle version dès que ce texte change, ce qui redemande le
+consentement aux prestataires concernés.]
+
+1. Objet : ces conditions régissent votre accès, en qualité de prestataire externe, au portail
+   Nidria pour le compte de {agency_name}. Vous y accédez uniquement pour les dossiers auxquels
+   {agency_name} vous a assigné.
+2. Confidentialité : les informations et documents des dossiers auxquels vous accédez sont
+   confidentiels. Vous vous engagez à ne les utiliser que pour la mission confiée par
+   {agency_name} et à ne les divulguer à aucun tiers.
+3. Usage : vos identifiants sont personnels ; vous répondez de l'usage de votre compte. Vous vous
+   interdisez tout accès ou traitement des données au delà de la mission confiée.
+4. RGPD : {agency_name} est responsable de traitement ; vous agissez sur ses instructions pour la
+   mission. Les données sont hébergées dans l'Union européenne. Vous exercez vos éventuels droits
+   et signalez tout incident auprès de {agency_name}, votre interlocuteur.
+5. Fin d'accès : {agency_name} peut fermer votre accès à tout moment, notamment à la fin de la
+   mission ; vous cessez alors tout usage des données concernées.
+"""
+
 CANONICAL_DOCUMENTS: dict[str, str] = {
     "agency_terms": _AGENCY_TERMS,
     "agency_dpa": _AGENCY_DPA,
     "client_terms": _CLIENT_TERMS,
     "client_privacy": _CLIENT_PRIVACY,
+    "external_terms": _EXTERNAL_TERMS,
 }

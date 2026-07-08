@@ -17,11 +17,14 @@ class Audience(StrEnum):
 
 class ActorType(StrEnum):
     """Who performed an action (`activity_log.actor_type`,
-    `document.uploaded_by_type`)."""
+    `document.uploaded_by_type`). EXTERNAL is used by the consent trace
+    (a provider signs external_terms); the activity/document paths still
+    record a provider as AGENT (their audience)."""
 
     AGENT = "agent"
     EXPAT = "expat"
     SYSTEM = "system"
+    EXTERNAL = "external"
 
 
 class CaseStatus(StrEnum):
@@ -250,12 +253,16 @@ class ConsentDocumentType(StrEnum):
     """Legal documents subject to BLOCKING consent (point 16). The two
     agency documents bind the AGENCY and are accepted once per agency
     admin; the two client documents bind the client PER AGENCY (the
-    agency is the data controller, Nidria the processor)."""
+    agency is the data controller, Nidria the processor); the external
+    document binds a PROVIDER for the agency whose portal they enter."""
 
     AGENCY_TERMS = "agency_terms"  # CGV Nidria (agency face)
     AGENCY_DPA = "agency_dpa"  # data processing agreement (agency face)
     CLIENT_TERMS = "client_terms"  # CGU of the client space
     CLIENT_PRIVACY = "client_privacy"  # privacy notice of the client space
+    # Unified provider access terms (confidentiality + usage + GDPR),
+    # accepted per agency the provider works for (provider face).
+    EXTERNAL_TERMS = "external_terms"
 
 
 # Required set per audience: what the consent gate demands (the latest
@@ -266,3 +273,4 @@ AGENT_CONSENT_TYPES: frozenset[str] = frozenset(
 EXPAT_CONSENT_TYPES: frozenset[str] = frozenset(
     {ConsentDocumentType.CLIENT_TERMS.value, ConsentDocumentType.CLIENT_PRIVACY.value}
 )
+EXTERNAL_CONSENT_TYPES: frozenset[str] = frozenset({ConsentDocumentType.EXTERNAL_TERMS.value})

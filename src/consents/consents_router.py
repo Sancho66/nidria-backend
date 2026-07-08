@@ -26,6 +26,11 @@ BINDINGS = [
     RouteBinding("POST", "/consents/agent/accept", Audience.AGENT),
     RouteBinding("GET", "/consents/expat/pending", Audience.EXPAT),
     RouteBinding("POST", "/consents/expat/accept", Audience.EXPAT),
+    # Provider face: a provider is an is_external AGENT, so audience AGENT.
+    # Both routes are in enforcement.CONSENT_EXEMPT and in the external
+    # allowlist: reachable before consent, and before the portal opens.
+    RouteBinding("GET", "/consents/external/pending", Audience.AGENT),
+    RouteBinding("POST", "/consents/external/accept", Audience.AGENT),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -68,3 +73,17 @@ async def expat_accept(
     body: ConsentAcceptRequest, request: Request, expat: ExpatDep, db: DbDep
 ) -> ConsentAcceptResponse:
     return await ConsentsManager(db).accept_as_expat(expat, body, _client_ip(request))
+
+
+@router.get("/external/pending", response_model=list[ExpatAgencyPendingResponse])
+async def external_pending(agent: AgentDep, db: DbDep) -> list[ExpatAgencyPendingResponse]:
+    """Provider terms still to accept, grouped per agency the provider
+    works for (empty for a non-external agent)."""
+    return await ConsentsManager(db).pending_for_external(agent)
+
+
+@router.post("/external/accept", response_model=ConsentAcceptResponse)
+async def external_accept(
+    body: ConsentAcceptRequest, request: Request, agent: AgentDep, db: DbDep
+) -> ConsentAcceptResponse:
+    return await ConsentsManager(db).accept_as_external(agent, body, _client_ip(request))

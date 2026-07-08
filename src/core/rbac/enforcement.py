@@ -13,7 +13,11 @@ from src.core.database import get_db
 from src.core.dependencies import agent_oauth2_scheme, expat_oauth2_scheme
 from src.core.enums import Audience
 from src.core.exceptions import ForbiddenError, UnauthorizedError
-from src.core.rbac.consent_gate import missing_for_agent, missing_for_expat
+from src.core.rbac.consent_gate import (
+    missing_for_agent,
+    missing_for_expat,
+    missing_for_external,
+)
 from src.core.rbac.integrity import INFRA_WHITELIST
 from src.core.security import decode_access_token, token_subject
 
@@ -102,6 +106,10 @@ CONSENT_EXEMPT: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/auth/expat/logout"),
         ("GET", "/consents/expat/pending"),
         ("POST", "/consents/expat/accept"),
+        # external (provider) face — reachable BEFORE consent so the
+        # provider can read and sign external_terms.
+        ("GET", "/consents/external/pending"),
+        ("POST", "/consents/external/accept"),
     }
 )
 
@@ -118,9 +126,14 @@ CONSENT_EXEMPT: frozenset[tuple[str, str]] = frozenset(
 # unscoped). The internal /cases/* routes are deliberately NOT here.
 EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
-        # identity
+        # identity (login/refresh are PUBLIC, so ungated)
         ("GET", "/auth/agent/me"),
         ("POST", "/auth/agent/logout"),
+        # provider consent: read + sign external_terms before the portal
+        # opens (also in CONSENT_EXEMPT, so the consent gate lets them
+        # through).
+        ("GET", "/consents/external/pending"),
+        ("POST", "/consents/external/accept"),
         # branding: the provider portal shows the agency logo + cover
         # (read-only)
         ("GET", "/agencies/me/logo"),
@@ -248,6 +261,20 @@ async def _enforce_consent(
     missing: list[dict[str, object]]
     if audience is Audience.AGENT:
         assert isinstance(actor, Agent)
+        if actor.is_external:
+            # Provider face (audience is AGENT, is_external flag): gated
+            # per agency, external_terms, distinct code prefix.
+            missing = [
+                {"type": doc.type, "version": doc.version, "agency_id": str(agency_id)}
+                for agency_id, doc in await missing_for_external(db, actor)
+            ]
+            if missing:
+                raise ForbiddenError(
+                    "Consent to the current provider terms is required.",
+                    code="external.consent.required",
+                    params={"missing": missing},
+                )
+            return
         missing = [
             {"type": doc.type, "version": doc.version} for doc in await missing_for_agent(db, actor)
         ]
