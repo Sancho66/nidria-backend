@@ -41,7 +41,7 @@ from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
-from src.core.i18n import DEFAULT_LANG, resolve_i18n
+from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
@@ -252,6 +252,11 @@ class CasesManager:
         agency = await self.repo.get_agency(agent.agency_id)
         agency_name = agency.name if agency else "Votre agence"
         agency_slug = agency.slug if agency else None
+        # ICP multi-métier: the invite names the JOURNEY, in the client's
+        # language (neutral "votre dossier" when the case has no journey).
+        lang = resolve_notification_lang_client(expat.preferred_lang)
+        agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
+        journey_name = await self._journey_name(agent, case, lang, agency_default)
         if expat.activated_at is None:
             # The activation screen is the FIRST thing a client ever sees:
             # it must land branded (?agency=<slug>).
@@ -259,11 +264,14 @@ class CasesManager:
                 settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
             )
             content = expat_activation_email(
-                agency_name, link, settings.case_invitation_expires_days
+                agency_name, link, settings.case_invitation_expires_days, journey_name, lang
             )
         else:
             content = new_case_email(
-                agency_name, space_link(settings.frontend_url, "/space/login", agency_slug)
+                agency_name,
+                space_link(settings.frontend_url, "/space/login", agency_slug),
+                journey_name,
+                lang,
             )
         if email_sink is not None:
             # Deferred: the import collects, the router dispatches later.
@@ -282,6 +290,21 @@ class CasesManager:
         return case
 
     # --- read ---------------------------------------------------------------------
+
+    async def _journey_name(
+        self, agent: Agent, case: ClientCase, lang: str, agency_default: str
+    ) -> str | None:
+        """The case's journey name resolved in `lang` (the invite email's
+        recipient language), or None when the case has no journey (the
+        mail then falls back to a neutral 'votre dossier')."""
+        if case.journey_template_id is None:
+            return None
+        template = await JourneysRepository(self.db).get_template_in_agency(
+            agent.agency_id, case.journey_template_id
+        )
+        if template is None:
+            return None
+        return resolve_i18n(template.name_i18n, lang, agency_default, template.name)
 
     async def _resolve_journey_names(
         self, agent: Agent, cases: list[ClientCase], lang: str

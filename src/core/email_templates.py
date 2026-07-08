@@ -179,7 +179,7 @@ def agent_invitation_email(agency_name: str, link: str, expires_days: int) -> Em
         title=f"Vous êtes invité(e) à rejoindre {agency_name} sur Nidria",
         intro=(
             f"{agency_name} vous invite à rejoindre son espace de travail "
-            "sur Nidria pour gérer ses dossiers d'expatriation."
+            "sur Nidria pour gérer ses dossiers."  # ICP multi-métier: never "expatriation"
         ),
         button_label="Accepter l'invitation",
         button_url=link,
@@ -187,30 +187,170 @@ def agent_invitation_email(agency_name: str, link: str, expires_days: int) -> Em
     )
 
 
-def expat_activation_email(agency_name: str, link: str, expires_days: int) -> EmailContent:
-    return _render(
-        subject=f"Nidria : {agency_name} vous a ouvert un espace de suivi",
-        title=f"{agency_name} vous a ouvert un espace de suivi",
-        intro=(
-            "Un dossier d'expatriation a été ouvert pour vous. Activez votre "
-            "espace personnel pour suivre son avancement, étape par étape."
+# ICP multi-métier (Eric): the client invitation emails NEVER say
+# "expatriation". They carry the JOURNEY NAME (resolved in the recipient
+# language), or a neutral fallback ("votre dossier") when the case has no
+# journey. `{dossier}` is the shared noun phrase, filled by `_dossier`.
+_DOSSIER = {
+    "fr": {"named": "votre dossier « {name} »", "neutral": "votre dossier"},
+    "en": {"named": "your case “{name}”", "neutral": "your case"},
+    "es": {"named": "su expediente «{name}»", "neutral": "su expediente"},
+    "ru": {"named": "ваше дело «{name}»", "neutral": "ваше дело"},
+    "pt": {"named": "o seu processo «{name}»", "neutral": "o seu processo"},
+    "it": {"named": "la tua pratica «{name}»", "neutral": "la tua pratica"},
+}
+
+
+def _dossier(journey_name: str | None, lang: str) -> str:
+    d = _pick(_DOSSIER, lang)
+    return d["named"].format(name=journey_name) if journey_name else d["neutral"]
+
+
+_CASE_ACTIVATION = {
+    "fr": {
+        "subject": "Nidria : {agency} vous a ouvert un espace de suivi",
+        "title": "{agency} vous a ouvert un espace de suivi",
+        "intro": (
+            "{agency} vient d'ouvrir {dossier}. Activez votre espace personnel pour en suivre "
+            "l'avancement, étape par étape."
         ),
-        button_label="Activer mon espace",
+        "button": "Activer mon espace",
+        "expires": "Ce lien expire dans {days} jours.",
+    },
+    "en": {
+        "subject": "Nidria: {agency} opened a tracking space for you",
+        "title": "{agency} opened a tracking space for you",
+        "intro": (
+            "{agency} has just opened {dossier}. Activate your personal space to follow its "
+            "progress, step by step."
+        ),
+        "button": "Activate my space",
+        "expires": "This link expires in {days} days.",
+    },
+    "es": {
+        "subject": "Nidria: {agency} le abrió un espacio de seguimiento",
+        "title": "{agency} le abrió un espacio de seguimiento",
+        "intro": (
+            "{agency} acaba de abrir {dossier}. Active su espacio personal para seguir su avance, "
+            "etapa por etapa."
+        ),
+        "button": "Activar mi espacio",
+        "expires": "Este enlace caduca en {days} días.",
+    },
+    "ru": {
+        "subject": "Nidria: {agency} открыло для вас пространство отслеживания",
+        "title": "{agency} открыло для вас пространство отслеживания",
+        "intro": (
+            "{agency} только что открыло {dossier}. Активируйте личный кабинет, чтобы следить за "
+            "ходом дела, шаг за шагом."
+        ),
+        "button": "Активировать кабинет",
+        "expires": "Эта ссылка действительна {days} дней.",
+    },
+    "pt": {
+        "subject": "Nidria: {agency} abriu-lhe um espaço de acompanhamento",
+        "title": "{agency} abriu-lhe um espaço de acompanhamento",
+        "intro": (
+            "{agency} acaba de abrir {dossier}. Ative o seu espaço pessoal para acompanhar o seu "
+            "avanço, etapa por etapa."
+        ),
+        "button": "Ativar o meu espaço",
+        "expires": "Este link expira em {days} dias.",
+    },
+    "it": {
+        "subject": "Nidria: {agency} ti ha aperto uno spazio di monitoraggio",
+        "title": "{agency} ti ha aperto uno spazio di monitoraggio",
+        "intro": (
+            "{agency} ha appena aperto {dossier}. Attiva il tuo spazio personale per seguirne "
+            "l'avanzamento, passo dopo passo."
+        ),
+        "button": "Attivare il mio spazio",
+        "expires": "Questo link scade tra {days} giorni.",
+    },
+}
+
+_NEW_CASE = {
+    "fr": {
+        "subject": "Nidria : Un nouveau dossier vous attend",
+        "title": "Un nouveau dossier vous attend",
+        "intro": (
+            "{agency} vient d'ouvrir {dossier}. Connectez-vous à votre espace pour le consulter."
+        ),
+        "button": "Accéder à mon espace",
+    },
+    "en": {
+        "subject": "Nidria: A new case is waiting for you",
+        "title": "A new case is waiting for you",
+        "intro": "{agency} has just opened {dossier}. Log in to your space to view it.",
+        "button": "Open my space",
+    },
+    "es": {
+        "subject": "Nidria: Un nuevo expediente le espera",
+        "title": "Un nuevo expediente le espera",
+        "intro": "{agency} acaba de abrir {dossier}. Inicie sesión en su espacio para consultarlo.",
+        "button": "Acceder a mi espacio",
+    },
+    "ru": {
+        "subject": "Nidria: Вас ждёт новое дело",
+        "title": "Вас ждёт новое дело",
+        "intro": (
+            "{agency} только что открыло {dossier}. Войдите в свой кабинет, чтобы ознакомиться "
+            "с ним."
+        ),
+        "button": "Открыть мой кабинет",
+    },
+    "pt": {
+        "subject": "Nidria: Um novo processo aguarda-o",
+        "title": "Um novo processo aguarda-o",
+        "intro": "{agency} acaba de abrir {dossier}. Inicie sessão no seu espaço para o consultar.",
+        "button": "Aceder ao meu espaço",
+    },
+    "it": {
+        "subject": "Nidria: Una nuova pratica ti aspetta",
+        "title": "Una nuova pratica ti aspetta",
+        "intro": "{agency} ha appena aperto {dossier}. Accedi al tuo spazio per consultarla.",
+        "button": "Accedere al mio spazio",
+    },
+}
+
+
+def expat_activation_email(
+    agency_name: str,
+    link: str,
+    expires_days: int,
+    journey_name: str | None = None,
+    lang: str = "fr",
+) -> EmailContent:
+    """Client activation invite, rendered in the recipient language. The
+    intro carries the journey name (resolved) or the neutral fallback."""
+    s = _pick(_CASE_ACTIVATION, lang)
+    return _render(
+        subject=s["subject"].format(agency=agency_name),
+        title=s["title"].format(agency=agency_name),
+        intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
+        button_label=s["button"],
         button_url=link,
-        validity=f"Ce lien expire dans {expires_days} jours.",
+        validity=s["expires"].format(days=expires_days),
+        lang=lang,
     )
 
 
-def new_case_email(agency_name: str, login_link: str) -> EmailContent:
+def new_case_email(
+    agency_name: str,
+    login_link: str,
+    journey_name: str | None = None,
+    lang: str = "fr",
+) -> EmailContent:
+    """ "A new case awaits you", for an already-active client, in their
+    language, carrying the journey name or the neutral fallback."""
+    s = _pick(_NEW_CASE, lang)
     return _render(
-        subject="Nidria : Un nouveau dossier vous attend",
-        title="Un nouveau dossier vous attend",
-        intro=(
-            f"{agency_name} a ouvert un nouveau dossier d'expatriation pour "
-            "vous. Connectez-vous à votre espace pour le consulter."
-        ),
-        button_label="Accéder à mon espace",
+        subject=s["subject"].format(agency=agency_name),
+        title=s["title"].format(agency=agency_name),
+        intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
+        button_label=s["button"],
         button_url=login_link,
+        lang=lang,
     )
 
 
