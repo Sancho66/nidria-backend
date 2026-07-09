@@ -284,6 +284,20 @@ class StepRequirementOrderRequest(BaseModel):
     requirement_ids: list[uuid.UUID]
 
 
+class RequirementImpactResponse(BaseModel):
+    """Impact of deleting a template requirement — read BEFORE the
+    destructive delete so the front can confirm strongly ("N dossiers sur
+    T ont deja repondu"). An instance is per targeted person, so a single
+    case may hold several responses: `cases_with_response` = distinct
+    cases with at least one PROVIDED instance, `responses_count` = the
+    provided instances themselves, `cases_total` = distinct cases carrying
+    the requirement at all (answered or not)."""
+
+    cases_with_response: int
+    responses_count: int
+    cases_total: int
+
+
 # --- step CASE requirements (sections chantier, vague C) -----------------------------
 # A step may require a client_case column (country/address). Twin of the
 # step_requirement schemas, minus kind/scope: a case field has a single

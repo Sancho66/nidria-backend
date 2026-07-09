@@ -57,6 +57,7 @@ from src.journeys.journeys_schema import (
     JourneySectionResponse,
     JourneyTemplateDetailResponse,
     JourneyTemplateUpdateRequest,
+    RequirementImpactResponse,
     SectionCreateRequest,
     SectionUpdateRequest,
     StepAttachmentResponse,
@@ -1068,14 +1069,57 @@ class JourneysManager:
         await self.db.commit()
         return await self.repo.list_requirements(step_id)
 
-    async def delete_requirement(
+    async def requirement_impact(
         self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, requirement_id: uuid.UUID
-    ) -> None:
+    ) -> RequirementImpactResponse:
+        """How many cases already carry a client response for this template
+        requirement — read BEFORE a destructive delete so the front can
+        confirm strongly. ONE batched read + a Python fold via
+        requirements_eval (document → the stored status; base/custom field
+        → the live case_person value), no N+1."""
+        from src.progress.progress_repository import ProgressRepository
+        from src.progress.requirements_eval import is_provided
+
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
         requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
         if requirement is None:
             raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
+
+        rows = await ProgressRepository(self.db).requirement_instances_for_definition(
+            requirement.id
+        )
+        cases_total: set[uuid.UUID] = set()
+        cases_with_response: set[uuid.UUID] = set()
+        responses = 0
+        for row in rows:
+            cases_total.add(row.case_id)
+            if is_provided(row.CaseStepRequirement, row.CasePerson):
+                responses += 1
+                cases_with_response.add(row.case_id)
+        return RequirementImpactResponse(
+            cases_with_response=len(cases_with_response),
+            responses_count=responses,
+            cases_total=len(cases_total),
+        )
+
+    async def delete_requirement(
+        self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, requirement_id: uuid.UUID
+    ) -> None:
+        from src.progress.progress_repository import ProgressRepository
+
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
+        if requirement is None:
+            raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
+        # Propagate EXPLICITLY (not a DB cascade — the manager knows what it
+        # destroys), in the same transaction: drop the concrete instances so
+        # the case > journey view stops showing the info. Submitted values
+        # are NOT touched (field value on case_person, document in `document`).
+        await ProgressRepository(self.db).delete_requirement_instances_for_definition(
+            requirement.id
+        )
         await self.repo.delete_requirement(requirement)
         await self.db.commit()
 

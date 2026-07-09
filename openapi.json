@@ -9450,6 +9450,75 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}/impact": {
+      "get": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Requirement Impact",
+        "description": "Read-only pre-delete impact: how many cases already carry a client\nresponse for this requirement, so the front confirms strongly before\nthe destructive delete.",
+        "operationId": "requirement_impact_journeys__template_id__steps__step_id__requirements__requirement_id__impact_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requirement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequirementImpactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/case-requirements": {
       "get": {
         "tags": [
@@ -20480,6 +20549,30 @@
         "type": "object",
         "title": "ReminderUpdateRequest",
         "description": "Any edit of an APPROVED reminder sends it back to TO_APPROVE —\nthe approval covers exactly what goes out."
+      },
+      "RequirementImpactResponse": {
+        "properties": {
+          "cases_with_response": {
+            "type": "integer",
+            "title": "Cases With Response"
+          },
+          "responses_count": {
+            "type": "integer",
+            "title": "Responses Count"
+          },
+          "cases_total": {
+            "type": "integer",
+            "title": "Cases Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cases_with_response",
+          "responses_count",
+          "cases_total"
+        ],
+        "title": "RequirementImpactResponse",
+        "description": "Impact of deleting a template requirement — read BEFORE the\ndestructive delete so the front can confirm strongly (\"N dossiers sur\nT ont deja repondu\"). An instance is per targeted person, so a single\ncase may hold several responses: `cases_with_response` = distinct\ncases with at least one PROVIDED instance, `responses_count` = the\nprovided instances themselves, `cases_total` = distinct cases carrying\nthe requirement at all (answered or not)."
       },
       "RequirementStateResponse": {
         "properties": {

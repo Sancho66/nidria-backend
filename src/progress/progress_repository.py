@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import CursorResult, Row, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -365,6 +365,41 @@ class ProgressRepository:
             .order_by(CaseStepRequirement.created_at)
         )
         return list((await self.db.execute(stmt)).scalars())
+
+    async def requirement_instances_for_definition(
+        self, step_requirement_id: uuid.UUID
+    ) -> list[Row[Any]]:
+        """Every concrete instance of ONE template requirement, with its
+        person (for the live field-provided eval) and case id (to count
+        distinct cases). ONE query — the impact counter folds in Python via
+        requirements_eval, no N+1 whatever the number of cases."""
+        stmt = (
+            select(CaseStepRequirement, CasePerson, CaseStepProgress.case_id)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+            )
+            .join(CasePerson, CasePerson.id == CaseStepRequirement.person_id)
+            .where(CaseStepRequirement.step_requirement_id == step_requirement_id)
+        )
+        return list((await self.db.execute(stmt)).all())
+
+    async def delete_requirement_instances_for_definition(
+        self, step_requirement_id: uuid.UUID
+    ) -> int:
+        """EXPLICIT propagation (never a silent DB cascade): remove the
+        concrete instances of a deleted template requirement, in the
+        caller's transaction. Returns how many were removed. Destroys
+        NOTHING submitted — a field value lives on case_person, a document
+        in `document`; only the requirement line goes. The FK stays ON
+        DELETE SET NULL as a LEAK DETECTOR: after this, no row must ever
+        carry a NULL step_requirement_id from a deletion."""
+        result = await self.db.execute(
+            delete(CaseStepRequirement)
+            .where(CaseStepRequirement.step_requirement_id == step_requirement_id)
+            .execution_options(synchronize_session=False)
+        )
+        return cast("CursorResult[Any]", result).rowcount or 0
 
     async def get_step(self, step_id: uuid.UUID) -> JourneyTemplateStep | None:
         return await self.db.get(JourneyTemplateStep, step_id)

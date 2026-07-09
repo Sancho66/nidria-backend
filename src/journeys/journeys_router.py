@@ -29,6 +29,7 @@ from src.journeys.journeys_schema import (
     JourneyTemplateResponse,
     JourneyTemplateUpdateRequest,
     JourneyTranslateRequest,
+    RequirementImpactResponse,
     SectionCreateRequest,
     SectionOrderRequest,
     SectionUpdateRequest,
@@ -149,6 +150,13 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    # Pre-delete impact counter — same gate as the delete it guards.
+    RouteBinding(
+        "GET",
+        "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}/impact",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -702,6 +710,23 @@ async def delete_requirement(
 ) -> MessageResponse:
     await JourneysManager(db).delete_requirement(agent, template_id, step_id, requirement_id)
     return MessageResponse(detail="Requirement removed.")
+
+
+@router.get(
+    "/{template_id}/steps/{step_id}/requirements/{requirement_id}/impact",
+    response_model=RequirementImpactResponse,
+)
+async def requirement_impact(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    requirement_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+) -> RequirementImpactResponse:
+    """Read-only pre-delete impact: how many cases already carry a client
+    response for this requirement, so the front confirms strongly before
+    the destructive delete."""
+    return await JourneysManager(db).requirement_impact(agent, template_id, step_id, requirement_id)
 
 
 # --- step CASE requirements (sections chantier, vague C) -----------------------------
