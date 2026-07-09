@@ -11,6 +11,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_person import CasePerson
+from shared.models.case_step_cost import CaseStepCost
 from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
@@ -24,6 +25,7 @@ from shared.models.journey import (
     JourneyTemplateStep,
     StepPrerequisite,
 )
+from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
@@ -166,6 +168,23 @@ class ProgressRepository:
             return []
         stmt = select(JourneyStepParticipant).where(JourneyStepParticipant.step_id.in_(step_ids))
         return list((await self.db.execute(stmt)).scalars())
+
+    async def list_template_step_costs(self, step_ids: list[uuid.UUID]) -> list[JourneyStepCost]:
+        """Planned costs of the given template steps — batched, copied BY VALUE
+        into case_step_cost at assignment (planned_amount frozen + a trace)."""
+        if not step_ids:
+            return []
+        stmt = (
+            select(JourneyStepCost)
+            .where(JourneyStepCost.step_id.in_(step_ids))
+            .order_by(JourneyStepCost.created_at, JourneyStepCost.id)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    def add_case_step_cost(self, **kwargs: Any) -> CaseStepCost:
+        row = CaseStepCost(**kwargs)
+        self.db.add(row)
+        return row
 
     def add_case_participant(self, **kwargs: Any) -> CaseStepParticipant:
         row = CaseStepParticipant(**kwargs)

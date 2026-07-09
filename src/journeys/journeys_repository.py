@@ -18,6 +18,7 @@ from shared.models.journey import (
     JourneyTemplateStep,
     StepPrerequisite,
 )
+from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_requirement import StepRequirement
 
@@ -307,6 +308,40 @@ class JourneysRepository:
         row = JourneyStepParticipant(**kwargs)
         self.db.add(row)
         return row
+
+    # --- planned costs (template step) -----------------------------------------
+
+    async def list_step_costs_for_steps(self, step_ids: list[uuid.UUID]) -> list[JourneyStepCost]:
+        """Batched load for the template detail + the clone (no N+1). Ordered by
+        creation so the several lines of a step keep a stable display order."""
+        if not step_ids:
+            return []
+        stmt = (
+            select(JourneyStepCost)
+            .where(JourneyStepCost.step_id.in_(step_ids))
+            .order_by(JourneyStepCost.created_at, JourneyStepCost.id)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    def add_step_cost(self, **kwargs: object) -> JourneyStepCost:
+        row = JourneyStepCost(**kwargs)
+        self.db.add(row)
+        return row
+
+    async def get_step_cost_in_template(
+        self, template_id: uuid.UUID, cost_id: uuid.UUID
+    ) -> JourneyStepCost | None:
+        """A planned cost reached through its step's template — a cost of another
+        agency's template is invisible (the join scopes it)."""
+        stmt = (
+            select(JourneyStepCost)
+            .join(JourneyTemplateStep, JourneyStepCost.step_id == JourneyTemplateStep.id)
+            .where(
+                JourneyStepCost.id == cost_id,
+                JourneyTemplateStep.template_id == template_id,
+            )
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_agency_directory_contact(
         self, agency_id: uuid.UUID, contact_id: uuid.UUID

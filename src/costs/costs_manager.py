@@ -9,10 +9,10 @@ from shared.models.case_step_cost import CaseStepCost
 from shared.models.client_case import ClientCase
 from src.activity.activity_manager import ActivityManager
 from src.cases.cases_repository import CasesRepository
-from src.core.currencies import decimals_for
 from src.core.enums import ActorType
-from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.exceptions import NotFoundError
 from src.costs.costs_repository import CostsRepository
+from src.costs.costs_rules import check_amount_decimals, require_agency_currency
 from src.costs.costs_schema import (
     CaseCostsResponse,
     CostLineCreateRequest,
@@ -40,28 +40,11 @@ class CostsManager:
         return case
 
     async def _require_currency(self, agent: Agent) -> str:
-        """A cost has no meaning without a unit: refuse to record one until the
-        agency has set its currency (a 300 with no currency is a landmine)."""
-        agency = await self.db.get(Agency, agent.agency_id)
-        currency = agency.currency if agency else None
-        if currency is None:
-            raise ConflictError(
-                "Set your agency currency in the settings before recording costs.",
-                code="cost.currency_required",
-            )
-        return currency
+        # One rule, one code — shared with template planned costs (costs_rules).
+        return await require_agency_currency(self.db, agent.agency_id)
 
     def _check_decimals(self, amount: Decimal, currency: str) -> None:
-        """The currency constrains what ENTERS (not what is stored): guaraní
-        rejects 120.50, euro rejects 120.505, the Tunisian dinar accepts it."""
-        allowed = decimals_for(currency)
-        exponent = amount.as_tuple().exponent
-        places = -exponent if isinstance(exponent, int) and exponent < 0 else 0
-        if places > allowed:
-            raise ValidationError(
-                f"{currency} allows at most {allowed} decimal place(s).",
-                code="cost.amount_decimals",
-            )
+        check_amount_decimals(amount, currency)
 
     def _log(self, case_id: uuid.UUID, agent: Agent, action: str, line: CaseStepCost) -> None:
         self.activity.log_action(
@@ -72,7 +55,8 @@ class CostsManager:
             details={
                 "cost_id": str(line.id),
                 "step_progress_id": str(line.case_step_progress_id),
-                "amount": str(line.amount),
+                # A planned-but-unpaid line has no real amount yet.
+                "amount": str(line.amount) if line.amount is not None else None,
                 "label": line.label,
             },
         )
@@ -80,12 +64,28 @@ class CostsManager:
     async def list_costs(self, agent: Agent, case_id: uuid.UUID) -> CaseCostsResponse:
         case = await self._case(agent, case_id)
         lines = await self.repo.list_for_case(case.id)
-        # Computed at READ, never materialized. Decimal sum — no float ever.
-        total = sum((line.amount for line in lines), Decimal(0))
+        # THREE totals, all computed at READ, never materialized. Decimal sums —
+        # no float ever. planned ignores lines without a plan; real ignores
+        # unpaid lines; variance sums (real − planned) only where BOTH exist.
+        planned_total = sum(
+            (line.planned_amount for line in lines if line.planned_amount is not None),
+            Decimal(0),
+        )
+        real_total = sum((line.amount for line in lines if line.amount is not None), Decimal(0))
+        variance = sum(
+            (
+                line.amount - line.planned_amount
+                for line in lines
+                if line.amount is not None and line.planned_amount is not None
+            ),
+            Decimal(0),
+        )
         agency = await self.db.get(Agency, agent.agency_id)
         return CaseCostsResponse(
             currency=agency.currency if agency else None,
-            total=total,
+            planned_total=planned_total,
+            real_total=real_total,
+            variance=variance,
             lines=[CostLineResponse.model_validate(line) for line in lines],
         )
 

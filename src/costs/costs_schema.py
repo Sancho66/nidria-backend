@@ -39,30 +39,42 @@ class CostLineResponse(BaseModel):
 
     id: uuid.UUID
     case_step_progress_id: uuid.UUID
-    amount: Decimal
+    # REAL amount — None until the agency pays (a planned line starts empty).
+    amount: Decimal | None
+    # PLANNED amount, frozen at instantiation — None for a manual débours.
+    planned_amount: Decimal | None
     label: str
     incurred_on: date | None
     author_agent_id: uuid.UUID | None
+    # Trace to the template planned cost this line was born from (None for a
+    # manual débours; None too once that template cost is deleted).
+    source_template_cost_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
 
     # Serialize money as a STRING — never a JSON number (which decodes to a
-    # float client-side). Exact, all the way to the front. Same on the total.
-    @field_serializer("amount")
-    def _ser_amount(self, value: Decimal) -> str:
-        return str(value)
+    # float client-side). Exact, all the way to the front. None stays null.
+    @field_serializer("amount", "planned_amount")
+    def _ser_money(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
 
 
 class CaseCostsResponse(BaseModel):
-    """All the cost lines of a dossier (across every step) + the total. The
-    total is COMPUTED at read, never materialized. `currency` is the agency's
-    ISO-4217 code (drives the displayed decimals); None when the agency has not
-    set it yet."""
+    """All the cost lines of a dossier (across every step) + the THREE totals,
+    each COMPUTED at read, never materialized:
+    - `planned_total` — Σ planned_amount over lines that HAVE a plan.
+    - `real_total` — Σ amount over lines actually PAID (amount set).
+    - `variance` — Σ (amount − planned_amount) over lines that have BOTH (the
+      honest écart: unpaid-planned and unplanned-débours never distort it).
+    `currency` is the agency's ISO-4217 code (drives the displayed decimals);
+    None when the agency has not set it yet."""
 
     currency: str | None
-    total: Decimal
+    planned_total: Decimal
+    real_total: Decimal
+    variance: Decimal
     lines: list[CostLineResponse]
 
-    @field_serializer("total")
+    @field_serializer("planned_total", "real_total", "variance")
     def _ser_total(self, value: Decimal) -> str:
         return str(value)

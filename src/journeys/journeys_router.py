@@ -29,6 +29,9 @@ from src.journeys.journeys_schema import (
     JourneyTemplateResponse,
     JourneyTemplateUpdateRequest,
     JourneyTranslateRequest,
+    PlannedCostCreateRequest,
+    PlannedCostResponse,
+    PlannedCostUpdateRequest,
     RequirementImpactResponse,
     SectionCreateRequest,
     SectionOrderRequest,
@@ -104,6 +107,28 @@ BINDINGS = [
     ),
     RouteBinding(
         "POST", "/journeys/{template_id}/steps", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
+    # Planned costs on a template step — the SAME gate as real costs (point 9):
+    # cost.manage to write; reading is embedded in GET /journeys/{template_id}
+    # (steps[].planned_costs), gated cost.view IN the manager (an agent with
+    # journey.configure but no cost.view never sees the section).
+    RouteBinding(
+        "POST",
+        "/journeys/{template_id}/steps/{step_id}/planned-costs",
+        Audience.AGENT,
+        Permission.COST_MANAGE,
+    ),
+    RouteBinding(
+        "PATCH",
+        "/journeys/{template_id}/planned-costs/{cost_id}",
+        Audience.AGENT,
+        Permission.COST_MANAGE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/journeys/{template_id}/planned-costs/{cost_id}",
+        Audience.AGENT,
+        Permission.COST_MANAGE,
     ),
     RouteBinding(
         "PUT",
@@ -531,6 +556,41 @@ async def delete_step(
 ) -> MessageResponse:
     await JourneysManager(db).delete_step(agent, template_id, step_id)
     return MessageResponse(detail="Step deleted.")
+
+
+# --- planned costs (template step) — cost.manage; read is embedded in the detail
+@router.post(
+    "/{template_id}/steps/{step_id}/planned-costs",
+    response_model=PlannedCostResponse,
+    status_code=201,
+)
+async def add_planned_cost(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: PlannedCostCreateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> PlannedCostResponse:
+    return await JourneysManager(db).add_planned_cost(agent, template_id, step_id, body)
+
+
+@router.patch("/{template_id}/planned-costs/{cost_id}", response_model=PlannedCostResponse)
+async def update_planned_cost(
+    template_id: uuid.UUID,
+    cost_id: uuid.UUID,
+    body: PlannedCostUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> PlannedCostResponse:
+    return await JourneysManager(db).update_planned_cost(agent, template_id, cost_id, body)
+
+
+@router.delete("/{template_id}/planned-costs/{cost_id}", response_model=MessageResponse)
+async def delete_planned_cost(
+    template_id: uuid.UUID, cost_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> MessageResponse:
+    await JourneysManager(db).delete_planned_cost(agent, template_id, cost_id)
+    return MessageResponse(detail="Planned cost deleted.")
 
 
 @router.put(

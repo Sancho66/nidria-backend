@@ -9089,6 +9089,198 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/planned-costs": {
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Add Planned Cost",
+        "operationId": "add_planned_cost_journeys__template_id__steps__step_id__planned_costs_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlannedCostCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedCostResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journeys/{template_id}/planned-costs/{cost_id}": {
+      "patch": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Update Planned Cost",
+        "operationId": "update_planned_cost_journeys__template_id__planned_costs__cost_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "cost_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlannedCostUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedCostResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Planned Cost",
+        "operationId": "delete_planned_cost_journeys__template_id__planned_costs__cost_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "cost_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/prerequisites": {
       "put": {
         "tags": [
@@ -14239,9 +14431,17 @@
             ],
             "title": "Currency"
           },
-          "total": {
+          "planned_total": {
             "type": "string",
-            "title": "Total"
+            "title": "Planned Total"
+          },
+          "real_total": {
+            "type": "string",
+            "title": "Real Total"
+          },
+          "variance": {
+            "type": "string",
+            "title": "Variance"
           },
           "lines": {
             "items": {
@@ -14254,11 +14454,13 @@
         "type": "object",
         "required": [
           "currency",
-          "total",
+          "planned_total",
+          "real_total",
+          "variance",
           "lines"
         ],
         "title": "CaseCostsResponse",
-        "description": "All the cost lines of a dossier (across every step) + the total. The\ntotal is COMPUTED at read, never materialized. `currency` is the agency's\nISO-4217 code (drives the displayed decimals); None when the agency has not\nset it yet."
+        "description": "All the cost lines of a dossier (across every step) + the THREE totals,\neach COMPUTED at read, never materialized:\n- `planned_total` — Σ planned_amount over lines that HAVE a plan.\n- `real_total` — Σ amount over lines actually PAID (amount set).\n- `variance` — Σ (amount − planned_amount) over lines that have BOTH (the\n  honest écart: unpaid-planned and unplanned-débours never distort it).\n`currency` is the agency's ISO-4217 code (drives the displayed decimals);\nNone when the agency has not set it yet."
       },
       "CaseCreateRequest": {
         "properties": {
@@ -15957,8 +16159,26 @@
             "title": "Case Step Progress Id"
           },
           "amount": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Amount"
+          },
+          "planned_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Amount"
           },
           "label": {
             "type": "string",
@@ -15988,6 +16208,18 @@
             ],
             "title": "Author Agent Id"
           },
+          "source_template_cost_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Template Cost Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -16004,9 +16236,11 @@
           "id",
           "case_step_progress_id",
           "amount",
+          "planned_amount",
           "label",
           "incurred_on",
           "author_agent_id",
+          "source_template_cost_id",
           "created_at",
           "updated_at"
         ],
@@ -20957,6 +21191,112 @@
         "title": "PersonUpdateRequest",
         "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key."
       },
+      "PlannedCostCreateRequest": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Amount"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount",
+          "label"
+        ],
+        "title": "PlannedCostCreateRequest",
+        "description": "A planned cost line on a template step — same shape as a real cost\n(amount + label). DECIMAL(18,4); the agency currency drives decimals."
+      },
+      "PlannedCostResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "step_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Step Id"
+          },
+          "amount": {
+            "type": "string",
+            "title": "Amount"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "step_id",
+          "amount",
+          "label",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlannedCostResponse"
+      },
+      "PlannedCostUpdateRequest": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "PlannedCostUpdateRequest",
+        "description": "Partial correction of a template planned cost."
+      },
       "PrefillSourceResponse": {
         "properties": {
           "id": {
@@ -23684,6 +24024,14 @@
             },
             "type": "array",
             "title": "Attachments"
+          },
+          "planned_costs": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedCostResponse"
+            },
+            "type": "array",
+            "title": "Planned Costs",
+            "default": []
           }
         },
         "type": "object",

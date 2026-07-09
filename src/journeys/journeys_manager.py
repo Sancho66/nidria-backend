@@ -21,6 +21,7 @@ from shared.models.journey import (
     JourneyTemplateStep,
     StepPrerequisite,
 )
+from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_requirement import StepRequirement
 from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
@@ -46,6 +47,9 @@ from src.core.i18n import (
     normalize_i18n_input,
     resolve_i18n,
 )
+from src.core.rbac.enforcement import effective_permissions
+from src.core.rbac.permissions import Permission
+from src.costs.costs_rules import check_amount_decimals, require_agency_currency
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.field_catalog import FIELD_PRESETS
 from src.journeys.journeys_repository import JourneysRepository
@@ -58,6 +62,9 @@ from src.journeys.journeys_schema import (
     JourneySectionResponse,
     JourneyTemplateDetailResponse,
     JourneyTemplateUpdateRequest,
+    PlannedCostCreateRequest,
+    PlannedCostResponse,
+    PlannedCostUpdateRequest,
     RequirementImpactResponse,
     SectionCreateRequest,
     SectionUpdateRequest,
@@ -268,6 +275,13 @@ class JourneysManager:
         )
         for p in participants:
             participants_by_step[p.step_id].append(_participant_response(p, p_names))
+        # Planned costs (agency-internal) — batched, and ONLY when the agent may
+        # SEE them (point 9): without cost.view the section stays empty, so an
+        # agent editing the journey never learns a planned cost exists.
+        planned_by_step: dict[uuid.UUID, list[PlannedCostResponse]] = defaultdict(list)
+        if Permission.COST_VIEW.value in effective_permissions(agent):
+            for pc in await self.repo.list_step_costs_for_steps([s.id for s in steps]):
+                planned_by_step[pc.step_id].append(PlannedCostResponse.model_validate(pc))
         return JourneyTemplateDetailResponse(
             id=template.id,
             name=resolve_i18n(template.name_i18n, lang, agency_default, template.name),
@@ -291,6 +305,7 @@ class JourneysManager:
                     content_note_i18n=step.content_note_i18n,
                     attachments=attach_by_step.get(step.id, []),
                     participants=participants_by_step.get(step.id, []),
+                    planned_costs=planned_by_step.get(step.id, []),
                 )
                 for step in steps
             ],
@@ -323,6 +338,64 @@ class JourneysManager:
             # without a preference follow the agency, live.
             editing_language=template.editing_language or agency_default,
         )
+
+    # --- planned costs (template step) -----------------------------------------
+    # cost.manage-gated at the router (point 9). Same money rules as real costs
+    # (point 8), reused verbatim from costs_rules — 409 cost.currency_required,
+    # 422 cost.amount_decimals. A sample template is unreachable (_get_template
+    # is agency-scoped): a shared model never carries an agency's costs.
+
+    async def add_planned_cost(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        payload: PlannedCostCreateRequest,
+    ) -> PlannedCostResponse:
+        await self._get_template(agent, template_id)
+        # Currency guard BEFORE the step lookup — same order as real costs.
+        currency = await require_agency_currency(self.db, agent.agency_id)
+        check_amount_decimals(payload.amount, currency)
+        step = await self.repo.get_step_in_template(template_id, step_id)
+        if step is None:
+            raise NotFoundError("Journey step not found.", code="journey.step_not_found")
+        row = self.repo.add_step_cost(step_id=step.id, amount=payload.amount, label=payload.label)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return PlannedCostResponse.model_validate(row)
+
+    async def update_planned_cost(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        cost_id: uuid.UUID,
+        payload: PlannedCostUpdateRequest,
+    ) -> PlannedCostResponse:
+        await self._get_template(agent, template_id)
+        row = await self.repo.get_step_cost_in_template(template_id, cost_id)
+        if row is None:
+            raise NotFoundError("Planned cost not found.", code="cost.not_found")
+        data = payload.model_dump(exclude_unset=True)
+        if data.get("amount") is not None:
+            check_amount_decimals(
+                data["amount"], await require_agency_currency(self.db, agent.agency_id)
+            )
+            row.amount = data["amount"]
+        if data.get("label") is not None:
+            row.label = data["label"]
+        await self.db.commit()
+        await self.db.refresh(row)
+        return PlannedCostResponse.model_validate(row)
+
+    async def delete_planned_cost(
+        self, agent: Agent, template_id: uuid.UUID, cost_id: uuid.UUID
+    ) -> None:
+        await self._get_template(agent, template_id)
+        row = await self.repo.get_step_cost_in_template(template_id, cost_id)
+        if row is None:
+            raise NotFoundError("Planned cost not found.", code="cost.not_found")
+        await self.db.delete(row)
+        await self.db.commit()
 
     async def set_canvas_layout(
         self, agent: Agent, template_id: uuid.UUID, payload: CanvasLayoutRequest
@@ -436,6 +509,16 @@ class JourneysManager:
             )
         # Template + sections + steps exist before their children FK them.
         await self.db.flush()
+
+        # Planned costs — copied ONLY from an agency-owned source, NEVER a shared
+        # sample (point 7: a shared model carries no agency's costs; Nicolas
+        # never sees Reside's débours). A sample carries none anyway (unreachable
+        # for writes), so this guard is the explicit, tested statement of intent.
+        if not source.is_sample:
+            for pc in await self.repo.list_step_costs_for_steps([s.id for s in src_steps]):
+                self.db.add(
+                    JourneyStepCost(step_id=step_map[pc.step_id], amount=pc.amount, label=pc.label)
+                )
 
         for pr in src_prereqs:
             self.db.add(

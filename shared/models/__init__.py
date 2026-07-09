@@ -33,6 +33,7 @@ from shared.models.journey import (
     JourneyTemplateStep,
     StepPrerequisite,
 )
+from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.message_template import MessageTemplate
 from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
 from shared.models.nurture import NurtureSend
@@ -72,6 +73,7 @@ __all__ = [
     "JobRun",
     "JourneySection",
     "JourneyStepAttachment",
+    "JourneyStepCost",
     "JourneyStepParticipant",
     "JourneyTemplate",
     "JourneyTemplateCaseField",

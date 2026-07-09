@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from src.core.enums import (
     CompletionMode,
@@ -532,6 +533,37 @@ class JourneyCloneRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class PlannedCostCreateRequest(BaseModel):
+    """A planned cost line on a template step — same shape as a real cost
+    (amount + label). DECIMAL(18,4); the agency currency drives decimals."""
+
+    amount: Decimal = Field(max_digits=18, decimal_places=4)
+    label: str = Field(min_length=1, max_length=200)
+
+
+class PlannedCostUpdateRequest(BaseModel):
+    """Partial correction of a template planned cost."""
+
+    amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
+    label: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class PlannedCostResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    step_id: uuid.UUID
+    amount: Decimal
+    label: str
+    created_at: datetime
+    updated_at: datetime
+
+    # Money as a STRING — never a JSON float (exact to the front).
+    @field_serializer("amount")
+    def _ser_amount(self, value: Decimal) -> str:
+        return str(value)
+
+
 class TemplateStepResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -552,6 +584,11 @@ class TemplateStepResponse(BaseModel):
     content_note: str | None
     content_note_i18n: I18nBlob
     attachments: list[StepAttachmentResponse]
+    # Planned costs on this step (agency-internal). Populated ONLY when the
+    # agent has cost.view — empty otherwise (an agent editing a journey without
+    # cost.view never sees the section). STRUCTURALLY never projected to the
+    # expat/external client faces (they read case_step_progress, not templates).
+    planned_costs: list[PlannedCostResponse] = []
 
 
 class CanvasNodePosition(BaseModel):

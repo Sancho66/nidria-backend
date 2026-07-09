@@ -118,8 +118,13 @@ async def test_total_is_exact_over_three_steps_six_lines(
     # total + every amount are STRINGS (never a JSON float) — reconstruct exact
     # Decimals and compare by value.
     assert all(isinstance(line["amount"], str) for line in body["lines"])
-    assert isinstance(body["total"], str)
-    assert Decimal(body["total"]) == sum(Decimal(a) for a in amounts)
+    # Manual débours are REAL and unplanned: real_total sums them; planned_total
+    # and variance are zero (no line carries a plan).
+    assert isinstance(body["real_total"], str)
+    assert Decimal(body["real_total"]) == sum(Decimal(a) for a in amounts)
+    assert Decimal(body["planned_total"]) == 0
+    assert Decimal(body["variance"]) == 0
+    assert all(line["planned_amount"] is None for line in body["lines"])
 
 
 # --- the two permissions: no cost.view → 403; view without manage → read-only --------

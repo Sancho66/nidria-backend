@@ -12,6 +12,7 @@ from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyStepParticipant, JourneyTemplateStep
+from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.step_requirement import StepRequirement
 from src.activity.activity_manager import ActivityManager
 from src.core.config import get_settings
@@ -249,6 +250,11 @@ class ProgressManager:
         participants_by_step: dict[uuid.UUID, list[JourneyStepParticipant]] = defaultdict(list)
         for tp in await self.repo.list_template_participants_for_steps([s.id for s in steps]):
             participants_by_step[tp.step_id].append(tp)
+        # Planned costs per step — batched, copied BY VALUE into case_step_cost
+        # below (planned_amount frozen, real amount empty, a trace to the origin).
+        costs_by_step: dict[uuid.UUID, list[JourneyStepCost]] = defaultdict(list)
+        for pc in await self.repo.list_template_step_costs([s.id for s in steps]):
+            costs_by_step[pc.step_id].append(pc)
         # Resolve EVERY referenced agent (responsible defaults + participants)
         # in ONE batch → is_external, for the "external ⟹ assigned" invariant.
         agent_ids = [
@@ -271,6 +277,24 @@ class ProgressManager:
                 validated_by_type=v_type,
                 validated_by_agent_id=v_agent_id,
             )
+            # Each planned cost of this step → a REAL case line: planned_amount
+            # frozen by value, real amount EMPTY (paid later), a dead trace to
+            # its origin. Editing/deleting the template cost never reaches here.
+            planned = costs_by_step.get(step.id, [])
+            if planned:
+                # Same as _seed_participants: no ORM relationship orders the two
+                # inserts, so flush the progress row before its cost lines FK it.
+                await self.db.flush()
+                for pc in planned:
+                    self.repo.add_case_step_cost(
+                        id=uuid.uuid4(),
+                        case_step_progress_id=progress.id,
+                        amount=None,
+                        planned_amount=pc.amount,
+                        label=pc.label,
+                        author_agent_id=agent.id,
+                        source_template_cost_id=pc.id,
+                    )
             if r_agent_id is not None and (a := resolved_agents.get(r_agent_id)) and a.is_external:
                 await self.repo.ensure_external_assignment(case.id, r_agent_id, agent.id)
             # A designated external validator (type=external) must hold the
