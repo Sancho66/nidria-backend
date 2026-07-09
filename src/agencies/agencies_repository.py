@@ -288,12 +288,27 @@ class AgenciesRepository:
     async def list_directory_contacts(self, agency_id: uuid.UUID) -> list[Row[Any]]:
         """Directory rows (case_id IS NULL) + the designated account's role
         name (NULL if no account) + the count of TEMPLATE step participations
-        (what a delete would SET NULL). ONE query, no N+1."""
+        (what a delete would SET NULL) + the PENDING invitation's created_at
+        (invited_at, NULL if none — the authority for access_state). ONE query,
+        no N+1."""
         participations = (
             select(func.count())
             .select_from(JourneyStepParticipant)
             .where(JourneyStepParticipant.external_id == ExternalContact.id)
             .correlate(ExternalContact)
+            .scalar_subquery()
+        )
+        # invited_at = the PENDING invitation's created_at (authority for
+        # 'invited' vs 'active': a pending invitation means not-yet-activated).
+        invited_at = (
+            select(AgentInvitation.created_at)
+            .where(
+                AgentInvitation.external_contact_id == ExternalContact.id,
+                AgentInvitation.status == InvitationStatus.PENDING.value,
+            )
+            .correlate(ExternalContact)
+            .order_by(AgentInvitation.created_at.desc())
+            .limit(1)
             .scalar_subquery()
         )
         stmt = (
@@ -306,6 +321,7 @@ class AgenciesRepository:
                 ExternalContact.agent_id,
                 Role.name.label("agent_role"),
                 participations.label("used_in_steps"),
+                invited_at.label("invited_at"),
             )
             .select_from(ExternalContact)
             .outerjoin(Agent, Agent.id == ExternalContact.agent_id)

@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,10 +35,13 @@ class DirectoryContactResponse(BaseModel):
 
 
 class DirectoryContactListItem(BaseModel):
-    """One directory row for the agency table. `agent_id` DERIVES the nature
-    (NULL = no access). `agent_role` names the designated account's role (NULL
-    if none); `used_in_steps` = template step participations (what a delete
-    would SET NULL — the agency sees what it breaks)."""
+    """One directory row for the agency table. `access_state` (stable key, the
+    front never derives from text): 'none' (named, never invited) | 'invited'
+    (agent_id posed, invitation PENDING, mail sent) | 'active' (invitation
+    accepted, can log in). `invited_at` = when the pending invitation was
+    created (NULL unless 'invited'). `agent_role` names the designated
+    account's role; `used_in_steps` = template step participations (what a
+    delete would SET NULL — the agency sees what it breaks)."""
 
     id: uuid.UUID
     name: str
@@ -47,6 +50,8 @@ class DirectoryContactListItem(BaseModel):
     type: str
     agent_id: uuid.UUID | None
     agent_role: str | None
+    access_state: Literal["none", "invited", "active"]
+    invited_at: datetime | None
     used_in_steps: int
 
 

@@ -107,6 +107,12 @@ class AuthManager:
         agent = await self.repo.get_agent_by_email(normalize_email(email))
         if agent is None or not verify_password(password, agent.password_hash):
             raise UnauthorizedError(_INVALID_CREDENTIALS)
+        # A provider whose invitation is still PENDING has an Agent row (agent_id
+        # posed at invite) but NO access: refuse with the SAME error — never
+        # reveal that the account exists but is not activated. The throwaway
+        # password is unknowable anyway; this is the belt.
+        if agent.is_external and await self.repo.has_pending_external_invitation(agent.id):
+            raise UnauthorizedError(_INVALID_CREDENTIALS)
         challenge = await self._mfa_challenge_if_enabled(Audience.AGENT, agent.id)
         if challenge is not None:
             return challenge
@@ -264,6 +270,14 @@ class AuthManager:
         actor: Agent | ExpatUser | None
         if audience is Audience.AGENT:
             actor = await self.repo.get_agent_by_email(email)
+            # A provider with a PENDING invitation is not activated: silent 200,
+            # NO mail — identical to an unknown email (mirror of the expat rule).
+            if (
+                actor is not None
+                and actor.is_external
+                and await self.repo.has_pending_external_invitation(actor.id)
+            ):
+                actor = None
         else:
             actor = await self.repo.get_expat_by_email(email)
             if actor is not None and actor.activated_at is None:
@@ -445,6 +459,14 @@ class AuthManager:
         actor: Agent | ExpatUser | None
         if audience is Audience.AGENT:
             actor = await self.repo.get_agent(row.actor_id)
+            # A stray reset token can NEVER activate a pending provider — the
+            # invitation is the only entry until accepted.
+            if (
+                isinstance(actor, Agent)
+                and actor.is_external
+                and await self.repo.has_pending_external_invitation(actor.id)
+            ):
+                raise BadRequestError(_INVALID_RESET_TOKEN)
         else:
             actor = await self.repo.get_expat(row.actor_id)
         if actor is None:

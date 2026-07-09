@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,13 +28,23 @@ class JourneyImportRequest(BaseModel):
     render in the agency's language.
 
     `provider_assignments` (point 6 Eric) resolves external SLOTS: a map
-    {slot_job: external agent_id}. Optional (without it the slots stay
-    reporting-only). An assigned job becomes a real external participant
-    on its steps and disappears from the preview's external_slots."""
+    {slot_job: {type, id}} — POLYMORPHIC: type='agent' names an is_external
+    Agent (account), type='external' names a directory external_contact
+    (no account, exactly as assignable). Optional (without it the slots stay
+    reporting-only). An assigned job becomes a real participant on its steps
+    and disappears from the preview's external_slots."""
 
     version: int = 1
     parcours: dict[str, Any]
-    provider_assignments: dict[str, uuid.UUID] | None = None
+    provider_assignments: dict[str, "ProviderRef"] | None = None
+
+
+class ProviderRef(BaseModel):
+    """A polymorphic provider reference in provider_assignments: an is_external
+    Agent (account) OR a directory external_contact (no account)."""
+
+    type: Literal["agent", "external"]
+    id: uuid.UUID
 
 
 class ImportStepCreated(BaseModel):
@@ -66,12 +76,16 @@ class ImportWarningItem(BaseModel):
 
 
 class AssignableProvider(BaseModel):
-    """An external provider of the agency the front can pick to fill a
-    slot (`role` is its métier, the external role name)."""
+    """A provider of the agency the front can pick to fill a slot —
+    POLYMORPHIC: type='agent' (an is_external Agent, an ACCOUNT provider) or
+    type='external' (a directory external_contact with NO account, assignable
+    exactly the same). `id` is the agent id or the contact id per type; `role`
+    is the métier hint (the external role name, or the contact type)."""
 
-    agent_id: uuid.UUID
+    type: Literal["agent", "external"]
+    id: uuid.UUID
     name: str
-    role: str
+    role: str | None = None
 
 
 class ImportExternalSlot(BaseModel):

@@ -8,9 +8,11 @@ from sqlalchemy.orm import selectinload
 from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.expat_user import ExpatUser
-from shared.models.invitation import CaseInvitation
+from shared.models.external_contact import ExternalContact
+from shared.models.invitation import AgentInvitation, CaseInvitation
 from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
 from shared.models.rbac import Role
+from src.core.enums import InvitationStatus
 
 
 class AuthRepository:
@@ -29,6 +31,22 @@ class AuthRepository:
             .options(selectinload(Agent.role).selectinload(Role.permissions))
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def has_pending_external_invitation(self, agent_id: uuid.UUID) -> bool:
+        """True when this Agent was created by a still-PENDING external
+        invitation — the account exists (agent_id posed at invite) but is NOT
+        yet activated. The invitation is the ONLY entry until accepted, so
+        login / forgot-password / reset are BLOCKED while this holds."""
+        stmt = (
+            select(AgentInvitation.id)
+            .join(ExternalContact, ExternalContact.id == AgentInvitation.external_contact_id)
+            .where(
+                ExternalContact.agent_id == agent_id,
+                AgentInvitation.status == InvitationStatus.PENDING.value,
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).first() is not None
 
     async def get_agent(self, agent_id: uuid.UUID) -> Agent | None:
         return await self.db.get(Agent, agent_id)

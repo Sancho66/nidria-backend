@@ -10,9 +10,12 @@ Arbitrated v1 perimeter (Alexandre, 2026-07-07, on Eric's spec):
 - every collected field becomes a CUSTOM field (no catalog matching);
 - abstract actors, never invented identities: `client` maps to the
   expat participant, `agence` to the "agency in general" participant
-  (agent_id NULL) flagged "to assign", and `prestataire:<job>` becomes
-  a TYPED SLOT in the report (the template participant model requires
-  a real provider Agent, so nothing is created for it);
+  (agent_id NULL) flagged "to assign", and `prestataire:<job>` is a
+  TYPED SLOT in the report. A slot RESOLVED via provider_assignments
+  ({type, id}) becomes a real participant — type='agent' (an account
+  provider) or type='external' (a directory external_contact, NO
+  account) — and drops out of the warnings; an unresolved slot stays
+  reporting-only, nothing created;
 - creation only, no re-import; `pieces_jointes` ignored with mention
   (a JSON carries no file);
 - personal-data detection (email / long digit run / precise date in
@@ -46,6 +49,7 @@ from sqlalchemy.orm import selectinload
 
 from shared.models.agent import Agent
 from shared.models.custom_field import CustomFieldDefinition
+from shared.models.external_contact import ExternalContact
 from shared.models.journey import (
     JourneyStepParticipant,
     JourneyTemplate,
@@ -75,6 +79,7 @@ from src.journeys.journeys_schema import (
     ImportStepIgnored,
     ImportWarningItem,
     JourneyImportReport,
+    ProviderRef,
 )
 from src.usage.usage_manager import UsageManager
 
@@ -307,29 +312,40 @@ class JourneyImportManager:
     # --- the entry point -------------------------------------------------------------
 
     async def _resolve_providers(
-        self, agent: Agent, provider_assignments: dict[str, uuid.UUID] | None
-    ) -> dict[str, Agent]:
-        """Validate {job: agent_id}: each target must be an EXTERNAL of
-        THIS agency (422 otherwise). Returns job -> external Agent."""
-        resolved: dict[str, Agent] = {}
-        for job, agent_id in (provider_assignments or {}).items():
-            target = await JourneysRepository(self.db).get_agent_in_agency(
-                agent.agency_id, agent_id
-            )
-            if target is None or not target.is_external:
-                raise ValidationError(
-                    "The assigned provider is not an external of this agency.",
-                    code="import_ai.provider_not_assignable",
-                    params={"job": job, "agent_id": str(agent_id)},
-                )
-            resolved[job] = target
+        self, agent: Agent, provider_assignments: dict[str, ProviderRef] | None
+    ) -> dict[str, tuple[str, uuid.UUID]]:
+        """Validate {job: {type, id}} → job -> (type, id). type='agent' must
+        be an is_external Agent of THIS agency; type='external' a directory
+        external_contact of THIS agency (422 otherwise, whichever type)."""
+        repo = JourneysRepository(self.db)
+        resolved: dict[str, tuple[str, uuid.UUID]] = {}
+        for job, ref in (provider_assignments or {}).items():
+            if ref.type == "agent":
+                target = await repo.get_agent_in_agency(agent.agency_id, ref.id)
+                if target is None or not target.is_external:
+                    raise ValidationError(
+                        "The assigned provider is not an external of this agency.",
+                        code="import_ai.provider_not_assignable",
+                        params={"job": job, "type": ref.type, "id": str(ref.id)},
+                    )
+                resolved[job] = ("agent", target.id)
+            else:  # external — a directory contact (no account needed)
+                contact = await repo.get_agency_directory_contact(agent.agency_id, ref.id)
+                if contact is None:
+                    raise ValidationError(
+                        "The assigned provider is not a directory contact of this agency.",
+                        code="import_ai.provider_not_assignable",
+                        params={"job": job, "type": ref.type, "id": str(ref.id)},
+                    )
+                resolved[job] = ("external", contact.id)
         return resolved
 
     async def _assignable_providers(self, agent: Agent) -> list[AssignableProvider]:
-        """The agency's external providers the front can pick per slot
-        (same list for every slot: no reliable job -> role match, the
-        agency chooses). One query, role eager-loaded."""
-        rows = (
+        """Every provider the front can pick per slot, POLYMORPHIC: the
+        agency's account providers (is_external Agents → type='agent') AND its
+        directory contacts WITHOUT an account (type='external'). No reliable
+        job -> role match, the agency chooses. Two queries, no N+1."""
+        agents = (
             await self.db.execute(
                 select(Agent)
                 .where(Agent.agency_id == agent.agency_id, Agent.is_external.is_(True))
@@ -337,13 +353,27 @@ class JourneyImportManager:
                 .order_by(Agent.first_name, Agent.last_name)
             )
         ).scalars()
+        contacts = (
+            await self.db.execute(
+                select(ExternalContact)
+                .where(
+                    ExternalContact.agency_id == agent.agency_id,
+                    ExternalContact.case_id.is_(None),
+                    ExternalContact.agent_id.is_(None),
+                )
+                .order_by(ExternalContact.name)
+            )
+        ).scalars()
         return [
             AssignableProvider(
-                agent_id=a.id,
+                type="agent",
+                id=a.id,
                 name=f"{a.first_name} {a.last_name}".strip(),
-                role=a.role.name if a.role else "",
+                role=a.role.name if a.role else None,
             )
-            for a in rows
+            for a in agents
+        ] + [
+            AssignableProvider(type="external", id=c.id, name=c.name, role=c.type) for c in contacts
         ]
 
     async def run(
@@ -352,7 +382,7 @@ class JourneyImportManager:
         parcours: Any,
         *,
         preview: bool,
-        provider_assignments: dict[str, uuid.UUID] | None = None,
+        provider_assignments: dict[str, ProviderRef] | None = None,
     ) -> JourneyImportReport:
         resolved_providers = await self._resolve_providers(agent, provider_assignments)
         if not isinstance(parcours, dict):
@@ -631,7 +661,7 @@ class JourneyImportManager:
         steps: list[_Step],
         defs_plan: dict[str, _Field],
         defs_position: int,
-        resolved_providers: dict[str, Agent],
+        resolved_providers: dict[str, tuple[str, uuid.UUID]],
         warning_count: int,
     ) -> uuid.UUID:
         agency_default = await JourneysManager(self.db).agency_default(agent.agency_id)
@@ -700,18 +730,21 @@ class JourneyImportManager:
                         role=role,
                     )
                 )
-            # Resolved provider slots become REAL template participants
-            # (type='agent' + the external agent_id, the slot's own role).
-            # ensure_external_assignment then propagates to every dossier
-            # instantiated from this template.
+            # Resolved provider slots become REAL template participants,
+            # POLYMORPHIC: type='agent' + agent_id (an account provider, the
+            # unchanged path) OR type='external' + external_id (a directory
+            # contact, NO account). At instantiation _seed_participants
+            # propagates to every dossier (and scopes only account agents).
             for job, role in parsed_step.provider_jobs:
-                external = resolved_providers.get(job)
-                if external is not None:
+                resolved = resolved_providers.get(job)
+                if resolved is not None:
+                    rtype, rid = resolved
                     self.db.add(
                         JourneyStepParticipant(
                             step_id=row.id,
-                            type="agent",
-                            agent_id=external.id,
+                            type=rtype,
+                            agent_id=rid if rtype == "agent" else None,
+                            external_id=rid if rtype == "external" else None,
                             role=role,
                         )
                     )

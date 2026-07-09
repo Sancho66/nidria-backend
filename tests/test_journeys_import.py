@@ -29,6 +29,7 @@ from shared.models.agent import Agent
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.custom_field import CustomFieldDefinition
+from shared.models.external_contact import ExternalContact
 from shared.models.journey import (
     JourneySection,
     JourneyStepParticipant,
@@ -711,7 +712,10 @@ async def test_provider_assignment_creates_participant_and_propagates(
     agent_headers: AuthHeaders,
 ) -> None:
     headers = agent_headers(admin)
-    body = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(translator.id)}}
+    body = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "agent", "id": str(translator.id)}},
+    }
     created = await client.post("/journeys/import", headers=headers, json=body)
     assert created.status_code == 200, created.text
     report = created.json()
@@ -781,7 +785,10 @@ async def test_provider_assignment_rejects_non_external_and_foreign_agent(
 
     # An INTERNAL agent of the agency is not assignable as a provider.
     internal = await make_agent(agency_id=admin.agency_id, role=system_roles["member"])
-    bad_internal = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(internal.id)}}
+    bad_internal = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "agent", "id": str(internal.id)}},
+    }
     r1 = await client.post("/journeys/import", headers=headers, json=bad_internal)
     assert r1.status_code == 422
     assert r1.json()["code"] == "import_ai.provider_not_assignable"
@@ -797,7 +804,10 @@ async def test_provider_assignment_rejects_non_external_and_foreign_agent(
     foreign = await make_agent(
         agency_id=other_admin.agency_id, role=other_role, is_external=True, email="foreign@ext.com"
     )
-    bad_foreign = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(foreign.id)}}
+    bad_foreign = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "agent", "id": str(foreign.id)}},
+    }
     r2 = await client.post("/journeys/import", headers=headers, json=bad_foreign)
     assert r2.status_code == 422
     assert r2.json()["code"] == "import_ai.provider_not_assignable"
@@ -825,7 +835,8 @@ async def test_preview_lists_assignable_providers(
     slots = response.json()["participants"]["external_slots"]
     assert len(slots) == 1 and slots[0]["job"] == "traducteur"
     assignable = slots[0]["assignable"]
-    assert {a["agent_id"] for a in assignable} == {str(translator.id)}
+    assert {a["id"] for a in assignable} == {str(translator.id)}
+    assert assignable[0]["type"] == "agent"
     assert assignable[0]["name"] == "Tara Duval"
     assert assignable[0]["role"] == "external_translator"
 
@@ -842,7 +853,10 @@ async def test_re_preview_with_assignment_drops_the_slot(
     ).json()
     assert [s["job"] for s in before["participants"]["external_slots"]] == ["traducteur"]
 
-    body = {**_SLOT_JSON, "provider_assignments": {"traducteur": str(translator.id)}}
+    body = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "agent", "id": str(translator.id)}},
+    }
     after = (await client.post("/journeys/import?preview=true", headers=headers, json=body)).json()
     assert after["created"] is False  # still a preview, nothing written
     assert after["participants"]["external_slots"] == []  # the slot is resolved
@@ -873,3 +887,129 @@ async def test_no_assignments_keeps_reporting_behavior(
     )
     assert all(p.agent_id is None for p in parts)  # no external named
     assert {p.type for p in parts} == {"expat"}  # only the client participant
+
+
+# --- polymorphic AssignableProvider: a directory contact fills a slot ----------------
+
+
+async def _directory_contact(db_session: AsyncSession, agency_id: uuid.UUID, name: str):
+    c = ExternalContact(agency_id=agency_id, case_id=None, name=name, type="translator")
+    db_session.add(c)
+    await db_session.commit()
+    await db_session.refresh(c)
+    return c
+
+
+async def _template_participants(client, headers: dict, tid: str) -> list[dict]:
+    detail = (await client.get(f"/journeys/{tid}", headers=headers)).json()
+    return [p for s in detail["steps"] for p in s["participants"]]
+
+
+async def test_slot_resolved_by_no_account_contact(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A slot resolved by a directory contact WITHOUT access: the warning
+    disappears, the parcours is created, the participant is type='external'."""
+    headers = agent_headers(admin)
+    contact = await _directory_contact(db_session, admin.agency_id, "Trad Sans Compte")
+    body = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "external", "id": str(contact.id)}},
+    }
+    r = await client.post("/journeys/import", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    report = r.json()
+    assert report["participants"]["external_slots"] == []  # slot resolved → gone
+    assert not any(w["code"] == "import_ai.external_provider_to_name" for w in report["warnings"])
+    ext = [
+        p
+        for p in await _template_participants(client, headers, report["template_id"])
+        if p["type"] == "external"
+    ]
+    assert ext and ext[0]["external_id"] == str(contact.id) and ext[0]["name"] == "Trad Sans Compte"
+
+
+async def test_imported_external_participant_propagates_to_case(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case,
+    make_expat_user,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Instantiating a case on the imported parcours propagates the contact,
+    with NO account, and the step shows its name."""
+    headers = agent_headers(admin)
+    contact = await _directory_contact(db_session, admin.agency_id, "Notaire Import")
+    body = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "external", "id": str(contact.id)}},
+    }
+    tid = (await client.post("/journeys/import", headers=headers, json=body)).json()["template_id"]
+
+    expat = await make_expat_user(email="c@x.io")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await client.post(
+        f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": tid}
+    )
+    steps = (await client.get(f"/cases/{case.id}/steps", headers=headers)).json()
+    ext = [p for s in steps for p in s["participants"] if p["type"] == "external"]
+    assert ext and ext[0]["name"] == "Notaire Import"
+    # No account: the contact is still access-less.
+    fresh = (
+        await db_session.execute(
+            select(ExternalContact.agent_id).where(ExternalContact.id == contact.id)
+        )
+    ).scalar_one()
+    assert fresh is None
+
+
+async def test_slot_resolved_by_agent_is_unchanged(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    translator: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Non-regression: a slot resolved by an is_external Agent still makes a
+    type='agent' participant carrying agent_id (the current path)."""
+    headers = agent_headers(admin)
+    body = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "agent", "id": str(translator.id)}},
+    }
+    tid = (await client.post("/journeys/import", headers=headers, json=body)).json()["template_id"]
+    ext = [
+        p
+        for p in await _template_participants(client, headers, tid)
+        if p["type"] == "agent" and p["agent_id"]
+    ]
+    assert any(p["agent_id"] == str(translator.id) for p in ext)
+
+
+async def test_assignable_never_leaks_ids_across_types(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    translator: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The assignable list is polymorphic and never leaks an agent_id where an
+    external_id is expected or vice versa: an account provider is
+    {type:agent, id:agent_id}; a directory contact is {type:external,
+    id:contact_id}. The two never collide."""
+    headers = agent_headers(admin)
+    contact = await _directory_contact(db_session, admin.agency_id, "Contact Assignable")
+    resp = await client.post("/journeys/import", headers=headers, json=_SLOT_JSON)
+    assignable = resp.json()["participants"]["external_slots"][0]["assignable"]
+    by_type = {a["type"]: a for a in assignable}
+    assert by_type["agent"]["id"] == str(translator.id)  # account → its agent_id
+    assert by_type["external"]["id"] == str(contact.id)  # no-account → its contact id
+    # No external entry carries an agent id, and no agent entry a contact id.
+    assert by_type["external"]["id"] != str(translator.id)
+    assert by_type["agent"]["id"] != str(contact.id)

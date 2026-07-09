@@ -546,6 +546,14 @@ class AgenciesManager:
                 type=r.type,
                 agent_id=r.agent_id,
                 agent_role=r.agent_role,
+                # Authority = the invitation status: no agent → none; agent +
+                # a PENDING invitation → invited; agent + none pending → active.
+                access_state=(
+                    "none"
+                    if r.agent_id is None
+                    else ("invited" if r.invited_at is not None else "active")
+                ),
+                invited_at=r.invited_at,
                 used_in_steps=r.used_in_steps,
             )
             for r in rows
@@ -645,8 +653,7 @@ class AgenciesManager:
 
         # The directory external_contact this invitation designates (external
         # only): an EXISTING one (invite a named contact) or a NEW one created
-        # here (invite a brand-new provider — name mandatory). agent_id is set
-        # on acceptance; the contact id never changes.
+        # here (invite a brand-new provider — name mandatory).
         external_contact_id: uuid.UUID | None = None
         if external:
             if existing_contact_id is not None:
@@ -662,9 +669,8 @@ class AgenciesManager:
                         "This contact already has an account.",
                         code="external_contact.already_invited",
                     )
-                external_contact_id = contact.id
             else:
-                new_contact = self.repo.add_directory_contact(
+                contact = self.repo.add_directory_contact(
                     agency_id=agent.agency_id,
                     name=name or "",
                     email=email,
@@ -679,7 +685,24 @@ class AgenciesManager:
                         f"A directory contact named '{name}' already exists.",
                         code="external_contact.duplicate_name",
                     ) from exc
-                external_contact_id = new_contact.id
+            # Pose agent_id AT INVITE so the directory is honest immediately
+            # (access_state='invited', not a false 'none'). The Agent gets a
+            # THROWAWAY password (unusable — login/forgot/reset are blocked while
+            # the invitation is PENDING) and PLACEHOLDER names; accept poses the
+            # real password + names and consumes the invitation. The directory
+            # shows the CONTACT name, so the placeholder never surfaces.
+            provider = self.repo.add_agent(
+                agency_id=agent.agency_id,
+                role_id=role_id,
+                email=email,
+                first_name=contact.name[:100],
+                last_name="",
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+                is_external=True,
+            )
+            await self.db.flush()
+            contact.agent_id = provider.id
+            external_contact_id = contact.id
 
         settings = get_settings()
         invitation = self.repo.add_invitation(
@@ -731,43 +754,46 @@ class AgenciesManager:
         ):
             raise BadRequestError("Invalid or expired invitation token.")
 
-        # Re-check at accept: the email may have become an agent
-        # between invite and accept.
-        if await self.repo.get_agent_by_email(invitation.email) is not None:
-            raise ConflictError(_EMAIL_TAKEN)
-
-        # The agent is created in the INVITATION's agency — never in
-        # any context derived from the caller. Single-role model: the
-        # invitation's role_id becomes the agent's role directly.
-        # is_external is DERIVED from the role (the denormalized filter).
         role = await self.repo.get_role(invitation.role_id)
-        agent = self.repo.add_agent(
-            agency_id=invitation.agency_id,
-            role_id=invitation.role_id,
-            email=invitation.email,
-            first_name=first_name,
-            last_name=last_name,
-            password_hash=hash_password(password),
-            is_external=bool(role and role.is_external),
+        # The Agent PRE-CREATED at invite (new external flow): the invitation's
+        # contact already designates it. Its email is taken by ITSELF, so we
+        # ACTIVATE (real password + names) — never create nor 409.
+        contact = (
+            await self.db.get(ExternalContact, invitation.external_contact_id)
+            if invitation.external_contact_id is not None
+            else None
         )
-        await self.db.flush()
-        invitation.status = InvitationStatus.ACCEPTED
-        invitation.accepted_at = now
-
-        if role and role.is_external:
-            # DESIGNATION: link the directory external_contact created at
-            # invite time — set agent_id, the contact id NEVER changes and NO
-            # assignment is repointed. Fallback (legacy invite with no linked
-            # contact): create one, savepoint so a name collision can't break
-            # the account creation.
-            contact = (
-                await self.db.get(ExternalContact, invitation.external_contact_id)
-                if invitation.external_contact_id is not None
-                else None
+        pre_agent = (
+            await self.db.get(Agent, contact.agent_id)
+            if contact is not None and contact.agent_id is not None
+            else None
+        )
+        if pre_agent is not None:
+            pre_agent.password_hash = hash_password(password)
+            pre_agent.first_name = first_name
+            pre_agent.last_name = last_name
+            agent = pre_agent
+        else:
+            # Legacy external (invite before this fix → no pre-created agent) OR
+            # internal: create the agent. Re-check email-taken (a race between
+            # invite and accept).
+            if await self.repo.get_agent_by_email(invitation.email) is not None:
+                raise ConflictError(_EMAIL_TAKEN)
+            agent = self.repo.add_agent(
+                agency_id=invitation.agency_id,
+                role_id=invitation.role_id,
+                email=invitation.email,
+                first_name=first_name,
+                last_name=last_name,
+                password_hash=hash_password(password),
+                is_external=bool(role and role.is_external),
             )
-            if contact is not None and contact.agent_id is None:
-                contact.agent_id = agent.id
-            elif contact is None:
+            await self.db.flush()
+            if role and role.is_external and contact is not None:
+                contact.agent_id = agent.id  # legacy: contact linked, no agent yet
+            elif role and role.is_external:
+                # Fully-legacy external (no linked contact): create one; savepoint
+                # so a duplicate name never breaks the account creation.
                 try:
                     async with self.db.begin_nested():
                         self.db.add(
@@ -782,6 +808,9 @@ class AgenciesManager:
                         await self.db.flush()
                 except IntegrityError:
                     pass  # duplicate directory name — account works, entry deferred
+
+        invitation.status = InvitationStatus.ACCEPTED
+        invitation.accepted_at = now
 
         if not (role and role.is_external):
             await UsageManager(self.db).emit(

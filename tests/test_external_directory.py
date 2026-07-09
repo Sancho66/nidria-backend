@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from shared.models.activity import ActivityLog
 from shared.models.agent import Agent
+from shared.models.auth_tokens import PasswordResetToken
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.external_contact import ExternalContact
 from shared.models.invitation import AgentInvitation
@@ -680,3 +681,182 @@ async def test_accept_new_external_invitation_links_existing_contact(
         )
     ).scalar_one()
     assert agent_id_after is not None
+
+
+# --- agent_id at invite + access_state + the SECURITY gates ---------------------------
+
+
+async def _invite_provider(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    external_role: Role,
+    *,
+    name: str,
+    email_addr: str,
+) -> str:
+    """Invite a brand-new provider (creates the Agent at invite, PENDING).
+    Returns the invitation token."""
+    inv = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": name, "email": email_addr, "role_id": str(external_role.id)},
+    )
+    assert inv.status_code == 201, inv.text
+    return (
+        await db_session.execute(
+            select(AgentInvitation.token).where(AgentInvitation.id == uuid.UUID(inv.json()["id"]))
+        )
+    ).scalar_one()
+
+
+async def _row(client: AsyncClient, headers: dict[str, str], name: str) -> dict:
+    rows = (await client.get("/agencies/me/external-contacts", headers=headers)).json()
+    return next(r for r in rows if r["name"] == name)
+
+
+async def test_invite_poses_agent_id_and_invited_state_with_mail(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    external_role: Role,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    await _invite_provider(
+        client, db_session, headers, external_role, name="Notaire X", email_addr="nx@x.io"
+    )
+    row = await _row(client, headers, "Notaire X")
+    assert row["access_state"] == "invited"  # honest immediately, not a false "none"
+    assert row["agent_id"] is not None  # agent_id posed AT INVITE
+    assert row["invited_at"] is not None
+    assert any(m.to == "nx@x.io" for m in email.outbox)  # mail parti, un geste
+
+
+async def test_login_pending_provider_refused_indistinguishable(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    external_role: Role,
+    agent_headers: AuthHeaders,
+) -> None:
+    await _invite_provider(
+        client, db_session, agent_headers(admin), external_role, name="P", email_addr="p@x.io"
+    )
+    pending = await client.post(
+        "/auth/agent/login", json={"email": "p@x.io", "password": "whatever12"}
+    )
+    unknown = await client.post(
+        "/auth/agent/login", json={"email": "nobody@x.io", "password": "whatever12"}
+    )
+    assert pending.status_code == 401
+    # Indistinguishable from an unknown account / wrong password.
+    assert pending.status_code == unknown.status_code and pending.json() == unknown.json()
+
+
+async def test_forgot_password_pending_provider_sends_no_mail(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    external_role: Role,
+    agent_headers: AuthHeaders,
+) -> None:
+    await _invite_provider(
+        client, db_session, agent_headers(admin), external_role, name="Q", email_addr="q@x.io"
+    )
+    email.outbox.clear()  # drop the invite mail
+    pending = await client.post("/auth/agent/forgot-password", json={"email": "q@x.io"})
+    unknown = await client.post("/auth/agent/forgot-password", json={"email": "nobody@x.io"})
+    assert pending.status_code == 200 and pending.json() == unknown.json()  # identical
+    assert email.outbox == []  # PROVE no mail went out, not just the code
+
+
+async def test_reset_password_forced_token_pending_refused(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    external_role: Role,
+    agent_headers: AuthHeaders,
+) -> None:
+    await _invite_provider(
+        client, db_session, agent_headers(admin), external_role, name="R", email_addr="r@x.io"
+    )
+    agent = (await db_session.execute(select(Agent).where(Agent.email == "r@x.io"))).scalar_one()
+    tok = uuid.uuid4().hex
+    db_session.add(
+        PasswordResetToken(
+            actor_type="agent",
+            actor_id=agent.id,
+            token=tok,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    await db_session.commit()
+    r = await client.post(
+        "/auth/agent/reset-password", json={"token": tok, "password": "newpass123"}
+    )
+    assert r.status_code == 400  # a stray token cannot activate a pending provider
+
+
+async def test_accept_activates_reopens_login_and_forgot(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    external_role: Role,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(admin)
+    token = await _invite_provider(
+        client, db_session, headers, external_role, name="S", email_addr="s@x.io"
+    )
+    contact_id_before = (
+        await db_session.execute(select(ExternalContact.id).where(ExternalContact.name == "S"))
+    ).scalar_one()
+
+    acc = await client.post(
+        "/agencies/invitations/accept",
+        json={"token": token, "password": "realpass123", "first_name": "Sam", "last_name": "Pro"},
+    )
+    assert acc.status_code == 200, acc.text
+
+    row = await _row(client, headers, "S")
+    assert row["access_state"] == "active" and row["invited_at"] is None
+    assert uuid.UUID(row["id"]) == contact_id_before  # id NEVER changes
+
+    login = await client.post(
+        "/auth/agent/login", json={"email": "s@x.io", "password": "realpass123"}
+    )
+    assert login.status_code == 200, login.text  # login reopened
+
+    email.outbox.clear()
+    fp = await client.post("/auth/agent/forgot-password", json={"email": "s@x.io"})
+    assert fp.status_code == 200
+    assert any(m.to == "s@x.io" for m in email.outbox)  # forgot-password reopened
+
+
+async def test_internal_invite_has_no_pre_accept_hole(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Non-regression: the INTERNAL flow creates the Agent at ACCEPT, so before
+    acceptance NO account exists — forgot-password is silent, no mail, no hole.
+    (This is the answer to 'does internal allow forgot-password before accept':
+    no, because there is no account yet.)"""
+    inv = await client.post(
+        "/agencies/me/invitations",
+        headers=agent_headers(admin),
+        json={"email": "m@x.io", "role_id": str(system_roles["member"].id)},
+    )
+    assert inv.status_code == 201, inv.text
+    no_agent = (
+        await db_session.execute(select(Agent).where(Agent.email == "m@x.io"))
+    ).scalar_one_or_none()
+    assert no_agent is None  # NO agent before accept (unlike the external flow)
+
+    email.outbox.clear()
+    fp = await client.post("/auth/agent/forgot-password", json={"email": "m@x.io"})
+    assert fp.status_code == 200
+    assert email.outbox == []  # silent, no mail (no account to reset)

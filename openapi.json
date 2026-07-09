@@ -13364,28 +13364,43 @@
       },
       "AssignableProvider": {
         "properties": {
-          "agent_id": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "external"
+            ],
+            "title": "Type"
+          },
+          "id": {
             "type": "string",
             "format": "uuid",
-            "title": "Agent Id"
+            "title": "Id"
           },
           "name": {
             "type": "string",
             "title": "Name"
           },
           "role": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Role"
           }
         },
         "type": "object",
         "required": [
-          "agent_id",
-          "name",
-          "role"
+          "type",
+          "id",
+          "name"
         ],
         "title": "AssignableProvider",
-        "description": "An external provider of the agency the front can pick to fill a\nslot (`role` is its métier, the external role name)."
+        "description": "A provider of the agency the front can pick to fill a slot —\nPOLYMORPHIC: type='agent' (an is_external Agent, an ACCOUNT provider) or\ntype='external' (a directory external_contact with NO account, assignable\nexactly the same). `id` is the agent id or the contact id per type; `role`\nis the métier hint (the external role name, or the contact type)."
       },
       "AvailableColumn": {
         "properties": {
@@ -16257,6 +16272,27 @@
             ],
             "title": "Agent Role"
           },
+          "access_state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "invited",
+              "active"
+            ],
+            "title": "Access State"
+          },
+          "invited_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invited At"
+          },
           "used_in_steps": {
             "type": "integer",
             "title": "Used In Steps"
@@ -16271,10 +16307,12 @@
           "type",
           "agent_id",
           "agent_role",
+          "access_state",
+          "invited_at",
           "used_in_steps"
         ],
         "title": "DirectoryContactListItem",
-        "description": "One directory row for the agency table. `agent_id` DERIVES the nature\n(NULL = no access). `agent_role` names the designated account's role (NULL\nif none); `used_in_steps` = template step participations (what a delete\nwould SET NULL — the agency sees what it breaks)."
+        "description": "One directory row for the agency table. `access_state` (stable key, the\nfront never derives from text): 'none' (named, never invited) | 'invited'\n(agent_id posed, invitation PENDING, mail sent) | 'active' (invitation\naccepted, can log in). `invited_at` = when the pending invitation was\ncreated (NULL unless 'invited'). `agent_role` names the designated\naccount's role; `used_in_steps` = template step participations (what a\ndelete would SET NULL — the agency sees what it breaks)."
       },
       "DirectoryContactResponse": {
         "properties": {
@@ -18846,8 +18884,7 @@
             "anyOf": [
               {
                 "additionalProperties": {
-                  "type": "string",
-                  "format": "uuid"
+                  "$ref": "#/components/schemas/ProviderRef"
                 },
                 "type": "object"
               },
@@ -18863,7 +18900,7 @@
           "parcours"
         ],
         "title": "JourneyImportRequest",
-        "description": "POST /journeys/import — the ROOT JSON produced by the agency's own\nAI ({version, parcours}). `parcours` is validated by hand in the\nimport manager (never by pydantic) so every violation surfaces as an\nimport_ai.* catalog code with {chemin, valeur} params the front can\nrender in the agency's language.\n\n`provider_assignments` (point 6 Eric) resolves external SLOTS: a map\n{slot_job: external agent_id}. Optional (without it the slots stay\nreporting-only). An assigned job becomes a real external participant\non its steps and disappears from the preview's external_slots."
+        "description": "POST /journeys/import — the ROOT JSON produced by the agency's own\nAI ({version, parcours}). `parcours` is validated by hand in the\nimport manager (never by pydantic) so every violation surfaces as an\nimport_ai.* catalog code with {chemin, valeur} params the front can\nrender in the agency's language.\n\n`provider_assignments` (point 6 Eric) resolves external SLOTS: a map\n{slot_job: {type, id}} — POLYMORPHIC: type='agent' names an is_external\nAgent (account), type='external' names a directory external_contact\n(no account, exactly as assignable). Optional (without it the slots stay\nreporting-only). An assigned job becomes a real participant on its steps\nand disappears from the preview's external_slots."
       },
       "JourneySectionDetail": {
         "properties": {
@@ -20552,6 +20589,30 @@
         "type": "object",
         "title": "ProfileUpdateRequest",
         "description": "Partial PATCH of the actor's own names — both faces share the\nshape. For an EXPAT, first/last_name belong to the GLOBAL identity,\nshared across every agency holding a dossier: deliberate, the client\nmanages THEIR OWN identity (same rule as their email pivot)."
+      },
+      "ProviderRef": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "external"
+            ],
+            "title": "Type"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "ProviderRef",
+        "description": "A polymorphic provider reference in provider_assignments: an is_external\nAgent (account) OR a directory external_contact (no account)."
       },
       "RecipientType": {
         "type": "string",
