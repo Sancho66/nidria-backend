@@ -2,8 +2,9 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.currencies import is_supported
 from src.core.email import NormalizedEmailStr
 from src.core.enums import BillingCycle, ExternalContactType, SubscriptionPlan
 
@@ -210,6 +211,17 @@ class AgencyUpdateRequest(BaseModel):
     settings: dict[str, Any] | None = None
     # i18n fallback language for this agency's content (validated fr/en/es).
     default_language: Language | None = None
+    # ISO 4217 code for internal cost tracking. Strict: an EXACT uppercase code
+    # of a real currency (the iso4217 library is the source of truth) — "EURO",
+    # "eur", "XYZ" → 422. Changing it once costs exist is refused in the manager.
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def _valid_currency(cls, value: str | None) -> str | None:
+        if value is not None and not is_supported(value):
+            raise ValueError("Unknown ISO 4217 currency code.")
+        return value
 
 
 class AgencyMemberResponse(BaseModel):

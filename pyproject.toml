@@ -26,6 +26,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "pillow>=12.2.0",
     "pyotp>=2.10.0",
+    "iso4217>=1.16.20260101",
 ]
 
 [dependency-groups]

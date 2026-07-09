@@ -9,6 +9,7 @@ from shared.models.base import Base
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
+from shared.models.case_step_cost import CaseStepCost
 from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
@@ -52,6 +53,7 @@ __all__ = [
     "CaseExternalAssignment",
     "CaseInvitation",
     "CaseNote",
+    "CaseStepCost",
     "CaseStepParticipant",
     "CaseStepProgress",
     "CaseStepRequirement",

@@ -5655,6 +5655,276 @@
         ]
       }
     },
+    "/currencies": {
+      "get": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "List Currencies",
+        "operationId": "list_currencies_currencies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CurrencyResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Currencies Currencies Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/cases/{case_id}/costs": {
+      "get": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "List Costs",
+        "operationId": "list_costs_cases__case_id__costs_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseCostsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/steps/{progress_id}/costs": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Add Cost",
+        "operationId": "add_cost_cases__case_id__steps__progress_id__costs_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostLineCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostLineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/costs/{cost_id}": {
+      "patch": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Update Cost",
+        "operationId": "update_cost_cases__case_id__costs__cost_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "cost_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostLineUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostLineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Delete Cost",
+        "operationId": "delete_cost_cases__case_id__costs__cost_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "cost_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/external/cases": {
       "get": {
         "tags": [
@@ -13170,6 +13440,17 @@
               }
             ],
             "title": "Default Language"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           }
         },
         "type": "object",
@@ -13880,6 +14161,40 @@
           "y"
         ],
         "title": "CanvasNodePosition"
+      },
+      "CaseCostsResponse": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "total": {
+            "type": "string",
+            "title": "Total"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostLineResponse"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "total",
+          "lines"
+        ],
+        "title": "CaseCostsResponse",
+        "description": "All the cost lines of a dossier (across every step) + the total. The\ntotal is COMPUTED at read, never materialized. `currency` is the agency's\nISO-4217 code (drives the displayed decimals); None when the agency has not\nset it yet."
       },
       "CaseCreateRequest": {
         "properties": {
@@ -15525,6 +15840,161 @@
         "title": "ContactInviteRequest",
         "description": "Give an EXISTING directory contact an account. The contact id is\nunchanged; agent_id is set on acceptance."
       },
+      "CostLineCreateRequest": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Amount"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "incurred_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incurred On"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount",
+          "label"
+        ],
+        "title": "CostLineCreateRequest"
+      },
+      "CostLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "case_step_progress_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Step Progress Id"
+          },
+          "amount": {
+            "type": "string",
+            "title": "Amount"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "incurred_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incurred On"
+          },
+          "author_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Agent Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "case_step_progress_id",
+          "amount",
+          "label",
+          "incurred_on",
+          "author_agent_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CostLineResponse"
+      },
+      "CostLineUpdateRequest": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "incurred_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incurred On"
+          }
+        },
+        "type": "object",
+        "title": "CostLineUpdateRequest",
+        "description": "Partial correction — a cost line is a notebook entry, editable."
+      },
       "CreatedAdminResponse": {
         "properties": {
           "id": {
@@ -15652,6 +16122,30 @@
           "field_count"
         ],
         "title": "CrmSummary"
+      },
+      "CurrencyResponse": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "decimals": {
+            "type": "integer",
+            "title": "Decimals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "decimals"
+        ],
+        "title": "CurrencyResponse",
+        "description": "One selectable ISO 4217 currency. The front builds its selector from\nGET /currencies — never its own list (two lists always diverge). `name` is\nEnglish (the library's only locale)."
       },
       "CustomFieldDefinitionCreate": {
         "properties": {

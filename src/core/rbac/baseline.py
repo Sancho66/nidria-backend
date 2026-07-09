@@ -148,6 +148,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.cases.cases_router import BINDINGS as cases_bindings
     from src.comments.comments_router import BINDINGS as comments_bindings
     from src.consents.consents_router import BINDINGS as consents_bindings
+    from src.costs.costs_router import BINDINGS as costs_bindings
     from src.custom_fields.custom_fields_router import BINDINGS as custom_fields_bindings
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
     from src.documents.documents_router import BINDINGS as documents_bindings
@@ -185,6 +186,7 @@ def collect_bindings() -> list[RouteBinding]:
         *dashboard_bindings,
         *consents_bindings,
         *profile_bindings,
+        *costs_bindings,
     ]
 
 

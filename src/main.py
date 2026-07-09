@@ -30,6 +30,7 @@ from src.core.rbac.integrity import (
 )
 from src.core.rbac.permissions import sync_permissions
 from src.core.scheduler import build_scheduler, make_session_local
+from src.costs.costs_router import router as costs_router
 from src.custom_fields.custom_fields_router import router as custom_fields_router
 from src.dashboard.dashboard_router import router as dashboard_router
 from src.documents.documents_router import agent_router as documents_agent_router
@@ -136,6 +137,7 @@ app.include_router(documents_expat_router)
 app.include_router(comments_agent_router)
 app.include_router(comments_expat_router)
 app.include_router(consents_router)
+app.include_router(costs_router)
 app.include_router(external_router)
 app.include_router(external_agency_router)
 app.include_router(expat_portal_router)

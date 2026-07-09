@@ -30,6 +30,11 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # ISO 4217 currency (3 letters) for the agency's internal cost tracking.
+    # NULL = not set yet (existing agencies): the agency picks it before
+    # entering costs — never a fabricated default (EUR ≠ a Paraguay agency).
+    # It drives the DISPLAYED decimals; amounts are stored DECIMAL(18,4).
+    currency: Mapped[str | None] = mapped_column(String(3))
     # Trial model (usage trackers bloc 1): NULL = no trial running (or
     # converted). Set by the superadmin wizard at creation (now()+30d);
     # extension is a manual script operation, no endpoint by design.

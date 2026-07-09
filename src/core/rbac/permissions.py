@@ -28,6 +28,11 @@ class Permission(StrEnum):
     JOURNEY_CONFIGURE = "journey.configure"
     DOCUMENT_VALIDATE = "document.validate"
     NOTE_VIEW_CONFIDENTIAL = "note.view_confidential"
+    # Agency-internal cost tracking (Reside). Two distinct gestures: SEE the
+    # costs + total (cost.view) vs ENTER/correct/delete a line (cost.manage) —
+    # an associate consults, an assistant records. NEVER an external permission.
+    COST_VIEW = "cost.view"
+    COST_MANAGE = "cost.manage"
     AGENCY_MANAGE = "agency.manage"
     AGENT_MANAGE = "agent.manage"
     AGENT_IMPERSONATE = "agent.impersonate"
