@@ -53,6 +53,7 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from src.core.i18n import resolve_notification_lang_agent
 from src.core.images import process_cover, process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
@@ -173,7 +174,11 @@ class AgenciesManager:
             await self.db.refresh(admin)
             logger.exception("demo case seed failed for agency %s", agency.slug)
 
-        content = password_reset_email(reset_link, settings.onboarding_link_expires_minutes)
+        content = password_reset_email(
+            reset_link,
+            settings.onboarding_link_expires_minutes,
+            resolve_notification_lang_agent(agency.default_language),
+        )
         email = PendingEmail(
             to=payload.admin_email,
             subject=content.subject,
@@ -726,7 +731,12 @@ class AgenciesManager:
 
         agency = await self.get_my_agency(agent)
         link = f"{settings.frontend_url}/accept-invitation/{invitation.token}"
-        content = agent_invitation_email(agency.name, link, settings.agent_invitation_expires_days)
+        content = agent_invitation_email(
+            agency.name,
+            link,
+            settings.agent_invitation_expires_days,
+            resolve_notification_lang_agent(agency.default_language),
+        )
         await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
         return invitation
 

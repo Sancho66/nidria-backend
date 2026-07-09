@@ -154,36 +154,156 @@ def _render(
     return EmailContent(subject=subject, text="\n".join(text_parts), html=html)
 
 
-def password_reset_email(reset_link: str, expires_minutes: int) -> EmailContent:
-    # Long invitation windows read in hours ("24 heures", onboarding);
-    # the classic 60-minute reset keeps its historical wording.
-    if expires_minutes >= 120 and expires_minutes % 60 == 0:
-        validity = f"Ce lien expire dans {expires_minutes // 60} heures."
-    else:
-        validity = f"Ce lien expire dans {expires_minutes} minutes."
-    return _render(
-        subject="Nidria : Réinitialisez votre mot de passe",
-        title="Réinitialisez votre mot de passe",
-        intro=(
+# Agent-facing templates — rendered in the AGENT's language (agency default,
+# resolved by resolve_notification_lang_agent). Historically FR-only: an
+# Italian agent received French. Now six languages, strict parity.
+_PASSWORD_RESET = {
+    "fr": {
+        "subject": "Nidria : Réinitialisez votre mot de passe",
+        "title": "Réinitialisez votre mot de passe",
+        "intro": (
             "Une demande de réinitialisation de mot de passe a été faite pour votre compte Nidria."
         ),
-        button_label="Choisir un nouveau mot de passe",
+        "button": "Choisir un nouveau mot de passe",
+        "hours": "Ce lien expire dans {n} heures.",
+        "minutes": "Ce lien expire dans {n} minutes.",
+    },
+    "en": {
+        "subject": "Nidria: Reset your password",
+        "title": "Reset your password",
+        "intro": "A password reset was requested for your Nidria account.",
+        "button": "Choose a new password",
+        "hours": "This link expires in {n} hours.",
+        "minutes": "This link expires in {n} minutes.",
+    },
+    "es": {
+        "subject": "Nidria: Restablezca su contraseña",
+        "title": "Restablezca su contraseña",
+        "intro": "Se solicitó un restablecimiento de contraseña para su cuenta de Nidria.",
+        "button": "Elegir una nueva contraseña",
+        "hours": "Este enlace caduca en {n} horas.",
+        "minutes": "Este enlace caduca en {n} minutos.",
+    },
+    "ru": {
+        "subject": "Nidria: Сбросьте пароль",
+        "title": "Сбросьте пароль",
+        "intro": "Для вашей учётной записи Nidria запрошен сброс пароля.",
+        "button": "Выбрать новый пароль",
+        "hours": "Эта ссылка действительна {n} часов.",
+        "minutes": "Эта ссылка действительна {n} минут.",
+    },
+    "pt": {
+        "subject": "Nidria: Redefina a sua palavra-passe",
+        "title": "Redefina a sua palavra-passe",
+        "intro": "Foi solicitada uma redefinição de palavra-passe para a sua conta Nidria.",
+        "button": "Escolher uma nova palavra-passe",
+        "hours": "Este link expira em {n} horas.",
+        "minutes": "Este link expira em {n} minutos.",
+    },
+    "it": {
+        "subject": "Nidria: Reimposta la password",
+        "title": "Reimposta la password",
+        "intro": "È stata richiesta una reimpostazione della password per il tuo account Nidria.",
+        "button": "Scegliere una nuova password",
+        "hours": "Questo link scade tra {n} ore.",
+        "minutes": "Questo link scade tra {n} minuti.",
+    },
+}
+
+_AGENT_INVITATION = {
+    "fr": {
+        "subject": "Nidria : Vous êtes invité(e) à rejoindre {agency}",
+        "title": "Vous êtes invité(e) à rejoindre {agency} sur Nidria",
+        # ICP multi-métier: never "expatriation".
+        "intro": (
+            "{agency} vous invite à rejoindre son espace de travail sur Nidria "
+            "pour gérer ses dossiers."
+        ),
+        "button": "Accepter l'invitation",
+        "expires": "Ce lien expire dans {days} jours.",
+    },
+    "en": {
+        "subject": "Nidria: You are invited to join {agency}",
+        "title": "You are invited to join {agency} on Nidria",
+        "intro": ("{agency} invites you to join its workspace on Nidria to manage its cases."),
+        "button": "Accept the invitation",
+        "expires": "This link expires in {days} days.",
+    },
+    "es": {
+        "subject": "Nidria: Le invitan a unirse a {agency}",
+        "title": "Le invitan a unirse a {agency} en Nidria",
+        "intro": (
+            "{agency} le invita a unirse a su espacio de trabajo en Nidria para "
+            "gestionar sus expedientes."
+        ),
+        "button": "Aceptar la invitación",
+        "expires": "Este enlace caduca en {days} días.",
+    },
+    "ru": {
+        "subject": "Nidria: Вас приглашают присоединиться к {agency}",
+        "title": "Вас приглашают присоединиться к {agency} в Nidria",
+        "intro": (
+            "{agency} приглашает вас присоединиться к своему рабочему "
+            "пространству в Nidria для управления делами."
+        ),
+        "button": "Принять приглашение",
+        "expires": "Эта ссылка действительна {days} дней.",
+    },
+    "pt": {
+        "subject": "Nidria: Foi convidado(a) para se juntar a {agency}",
+        "title": "Foi convidado(a) para se juntar a {agency} na Nidria",
+        "intro": (
+            "{agency} convida-o(a) a juntar-se ao seu espaço de trabalho na "
+            "Nidria para gerir os seus processos."
+        ),
+        "button": "Aceitar o convite",
+        "expires": "Este link expira em {days} dias.",
+    },
+    "it": {
+        "subject": "Nidria: Sei invitato(a) a unirti a {agency}",
+        "title": "Sei invitato(a) a unirti a {agency} su Nidria",
+        "intro": (
+            "{agency} ti invita a unirti al suo spazio di lavoro su Nidria per "
+            "gestire le sue pratiche."
+        ),
+        "button": "Accettare l'invito",
+        "expires": "Questo link scade tra {days} giorni.",
+    },
+}
+
+
+def password_reset_email(reset_link: str, expires_minutes: int, lang: str = "fr") -> EmailContent:
+    """Rendered in the recipient language. Long invitation windows read in
+    hours ("24 heures", onboarding); the classic 60-minute reset in minutes."""
+    s = _pick(_PASSWORD_RESET, lang)
+    if expires_minutes >= 120 and expires_minutes % 60 == 0:
+        validity = s["hours"].format(n=expires_minutes // 60)
+    else:
+        validity = s["minutes"].format(n=expires_minutes)
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"],
+        button_label=s["button"],
         button_url=reset_link,
         validity=validity,
+        lang=lang,
     )
 
 
-def agent_invitation_email(agency_name: str, link: str, expires_days: int) -> EmailContent:
+def agent_invitation_email(
+    agency_name: str, link: str, expires_days: int, lang: str = "fr"
+) -> EmailContent:
+    """Rendered in the AGENT's language (agency default)."""
+    s = _pick(_AGENT_INVITATION, lang)
     return _render(
-        subject=f"Nidria : Vous êtes invité(e) à rejoindre {agency_name}",
-        title=f"Vous êtes invité(e) à rejoindre {agency_name} sur Nidria",
-        intro=(
-            f"{agency_name} vous invite à rejoindre son espace de travail "
-            "sur Nidria pour gérer ses dossiers."  # ICP multi-métier: never "expatriation"
-        ),
-        button_label="Accepter l'invitation",
+        subject=s["subject"].format(agency=agency_name),
+        title=s["title"].format(agency=agency_name),
+        intro=s["intro"].format(agency=agency_name),
+        button_label=s["button"],
         button_url=link,
-        validity=f"Ce lien expire dans {expires_days} jours.",
+        validity=s["expires"].format(days=expires_days),
+        lang=lang,
     )
 
 
@@ -430,6 +550,26 @@ _ESCALATION_PREFIX = {
         "in the app (no access). Please contact them directly. Original "
         "reminder:"
     ),
+    "es": (
+        "El proveedor {name} debe proporcionar los elementos siguientes, pero "
+        "es ilocalizable en la aplicación (sin acceso). Contáctelo "
+        "directamente. Recordatorio original:"
+    ),
+    "ru": (
+        "Поставщик {name} должен предоставить приведённые ниже элементы, но "
+        "недоступен в приложении (нет доступа). Свяжитесь с ним напрямую. "
+        "Исходное напоминание:"
+    ),
+    "pt": (
+        "O prestador {name} deve fornecer os elementos abaixo, mas está "
+        "inacessível na aplicação (sem acesso). Contacte-o diretamente. "
+        "Lembrete original:"
+    ),
+    "it": (
+        "Il fornitore {name} deve fornire gli elementi seguenti, ma è "
+        "irraggiungibile nell'applicazione (nessun accesso). Contattalo "
+        "direttamente. Promemoria originale:"
+    ),
 }
 
 
@@ -441,6 +581,28 @@ def reminder_escalation_email(
     the agent reads WHO must do WHAT and that the person has no app access."""
     prefix = _ESCALATION_PREFIX.get(lang, _ESCALATION_PREFIX["fr"]).format(name=contact_name)
     return reminder_email(agency_name, f"{prefix}\n\n{message_body}", None, lang)
+
+
+# Auto follow-up (J+N) body — SYSTEM-authored (not the agency's free text), so
+# it MUST reach the client in THEIR language, resolved like every other
+# notification. Same message, six languages, strict parity: a step has not
+# progressed for N days. `step` is the (agency-authored) step name, a variable.
+_AUTO_REMINDER_BODY = {
+    "fr": "Relance automatique : l'étape « {step} » n'a pas progressé depuis {days} jours.",
+    "en": "Automatic follow-up: the step “{step}” has not progressed for {days} days.",
+    "es": "Recordatorio automático: la etapa «{step}» no ha avanzado desde hace {days} días.",
+    "ru": "Автоматическое напоминание: этап «{step}» не продвигался {days} дней.",
+    "pt": "Lembrete automático: a etapa «{step}» não avança há {days} dias.",
+    "it": "Promemoria automatico: la fase «{step}» non è avanzata da {days} giorni.",
+}
+
+
+def auto_reminder_body(step_name: str, days: int, lang: str = "fr") -> str:
+    """The stored body of an auto follow-up reminder, in the recipient
+    (client) language. Kept as plain text — it flows through the same
+    reminder_email dispatch (chrome localized to the same lang)."""
+    template = _AUTO_REMINDER_BODY.get(lang, _AUTO_REMINDER_BODY["fr"])
+    return template.format(step=step_name, days=days)
 
 
 def _pick(catalog: dict[str, dict[str, str]], lang: str) -> dict[str, str]:

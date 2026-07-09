@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pyotp
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
@@ -31,6 +32,7 @@ from src.core.exceptions import (
     UnauthorizedError,
     ValidationError,
 )
+from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
 from src.core.security import (
     create_access_token,
     create_mfa_token,
@@ -287,8 +289,15 @@ class AuthManager:
             reset_link = self.create_reset_link(actor.id, audience)
             await self.db.commit()
             settings = get_settings()
+            # An EXPAT reads it in their preferred_lang; an AGENT in the agency
+            # default (agents carry no personal language).
+            if isinstance(actor, ExpatUser):
+                lang = resolve_notification_lang_client(actor.preferred_lang)
+            else:
+                agency = await self.db.get(Agency, actor.agency_id)
+                lang = resolve_notification_lang_agent(agency.default_language if agency else None)
             content = password_reset_email(
-                reset_link, settings.password_reset_token_expires_minutes
+                reset_link, settings.password_reset_token_expires_minutes, lang
             )
             await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
             logger.info("forgot-password: reset mail sent audience=%s to=%s", audience.value, email)

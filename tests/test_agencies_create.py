@@ -308,7 +308,9 @@ async def test_onboarding_link_lives_24_hours_and_is_single_use(
     lifetime = token.expires_at - token.created_at
     assert timedelta(hours=23) < lifetime < timedelta(hours=25)
     sent = next(m for m in email.outbox if m.to == "admin@reside-paraguay.com")
-    assert "24 heures" in sent.body
+    # The onboarding mail is rendered in the AGENCY's default language (es here)
+    # — "24 horas", not the old French-hardcoded "24 heures".
+    assert "24 horas" in sent.body
 
     # (c) single use: the link works once...
     ok = await agencies_client.post(

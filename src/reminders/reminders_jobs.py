@@ -27,7 +27,11 @@ from shared.models.journey import JourneyTemplateStep
 from shared.models.reminder import Reminder
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
-from src.core.email_templates import reminder_email, reminder_escalation_email
+from src.core.email_templates import (
+    auto_reminder_body,
+    reminder_email,
+    reminder_escalation_email,
+)
 from src.core.enums import (
     ActorType,
     RecipientType,
@@ -183,13 +187,16 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
             )
         )
         stmt = (
-            select(CaseStepProgress, JourneyTemplateStep, ClientCase, Agency)
+            select(CaseStepProgress, JourneyTemplateStep, ClientCase, Agency, ExpatUser)
             .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
             .join(Agency, Agency.id == ClientCase.agency_id)
             .join(
                 JourneyTemplateStep,
                 JourneyTemplateStep.id == CaseStepProgress.template_step_id,
             )
+            # The recipient (case principal) — its preferred_lang drives the
+            # SYSTEM-authored body's language.
+            .join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
             .where(
                 CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
                 # updated_at as the "last movement" proxy.
@@ -199,7 +206,7 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                 ~already,
             )
         )
-        for progress, step, case, agency in db.execute(stmt).all():
+        for progress, step, case, agency, expat in db.execute(stmt).all():
             if not (agency.settings or {}).get("auto_reminders_enabled", True):
                 continue
             if dry_run:
@@ -213,9 +220,12 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     scheduled_at=now,
                     status=ReminderStatus.TO_APPROVE.value,
                     recipient_type=RecipientType.EXPAT.value,
-                    message_body=(
-                        f"Automatic follow-up: step '{step.name}' has not "
-                        f"progressed for {threshold} days."
+                    # Translated into the CLIENT's language (resolved like the
+                    # dispatch chrome), not a hardcoded English string.
+                    message_body=auto_reminder_body(
+                        step.name,
+                        threshold,
+                        resolve_notification_lang_client(expat.preferred_lang),
                     ),
                     auto_threshold_days=threshold,
                 )
