@@ -722,21 +722,38 @@ class JourneysManager:
     async def delete_step(self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID) -> None:
         await self._get_template(agent, template_id)
         step = await self._get_step(template_id, step_id)
-        assigned = await self.repo.count_cases_using_template(template_id)
-        if assigned:
-            # Removing a step from a LIVE process is qualitatively
-            # different from adjusting it (instances would dangle);
-            # RESTRICT would block it anyway once instantiated — make
-            # it a clean, systematic 409 instead.
+        # ORDER MATTERS — guard, then purge, then delete:
+        # 1) GUARD on ACTIVE cases only. A soft-deleted case is no longer a
+        #    case; it must not block. Removing a step from a LIVE process is
+        #    qualitatively different (instances would dangle); RESTRICT would
+        #    block it anyway — make it a clean, systematic 409. When this
+        #    raises, NOTHING is purged (the guard runs before the purge).
+        active = await self.repo.count_active_cases_using_template(template_id)
+        if active:
             raise ConflictError(
-                f"Template is assigned to {assigned} case(s); its steps cannot be deleted.",
+                f"Template is assigned to {active} active case(s); its steps cannot be deleted.",
                 code="journey.step_in_use",
-                params={"count": assigned},
+                params={"count": active},
             )
-        await self.repo.delete_step(step)
-        await self.db.flush()
-        await self._renumber_dense(template_id)
-        await self.db.commit()
+        # 2) PURGE the ARCHIVED cases' dead instances of THIS step (frees the
+        #    case_step_progress.template_step_id RESTRICT), then 3) DELETE the
+        #    step and renumber — all in ONE transaction.
+        try:
+            await self.repo.purge_archived_progress_for_step(step_id)
+            await self.repo.delete_step(step)
+            await self.db.flush()
+            await self._renumber_dense(template_id)
+            await self.db.commit()
+        except IntegrityError as exc:
+            # Safety net for any FK we did not anticipate (e.g. a live case
+            # reassigned away from this template but still carrying this step's
+            # instance): a clean 409, never a bare RESTRICT 500. The whole tx
+            # rolls back — nothing is half-deleted.
+            await self.db.rollback()
+            raise ConflictError(
+                "This step is still in use and cannot be deleted.",
+                code="journey.step_still_referenced",
+            ) from exc
 
     # --- step participants ("Action à réaliser par", N — agency CRUD) --------------
 

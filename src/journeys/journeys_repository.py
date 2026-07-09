@@ -97,10 +97,6 @@ class JourneysRepository:
     async def delete_template(self, template: JourneyTemplate) -> None:
         await self.db.delete(template)
 
-    async def count_cases_using_template(self, template_id: uuid.UUID) -> int:
-        stmt = select(func.count()).where(ClientCase.journey_template_id == template_id)
-        return (await self.db.execute(stmt)).scalar_one()
-
     async def count_active_cases_using_template(self, template_id: uuid.UUID) -> int:
         """Cases ACTIVELY linked to this template (deleted_at IS NULL) — the
         only ones that block a template deletion."""
@@ -159,6 +155,26 @@ class JourneysRepository:
                 ClientCase.deleted_at.is_not(None),
             )
             .values(journey_template_id=None)
+        )
+
+    async def purge_archived_progress_for_step(self, step_id: uuid.UUID) -> None:
+        """Free the RESTRICT held by ARCHIVED (soft-deleted) cases' dead
+        instances of THIS step so it can be deleted. Deletes ONLY the
+        case_step_progress rows that (a) reference this step AND (b) belong to a
+        soft-deleted case (deleted_at IS NOT NULL). NEVER touches a live case's
+        instance (that case is the delete_step guard's job — it must block, not
+        be purged). CASCADE clears the purged rows' comments / participants /
+        requirements; documents & reminders SET NULL — no submitted response is
+        destroyed. Caller commits: one atomic tx with the delete; a failure
+        rolls the whole thing back."""
+        archived_case_ids = (
+            select(ClientCase.id).where(ClientCase.deleted_at.is_not(None)).scalar_subquery()
+        )
+        await self.db.execute(
+            delete(CaseStepProgress).where(
+                CaseStepProgress.template_step_id == step_id,
+                CaseStepProgress.case_id.in_(archived_case_ids),
+            )
         )
 
     # --- steps -------------------------------------------------------------------
