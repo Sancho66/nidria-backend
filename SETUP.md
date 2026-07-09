@@ -381,6 +381,38 @@ Checklist finale (les commandes du quotidien vivent dans le `Makefile` — `make
 
 ---
 
+## Invariant écosystème (garde-fou CI advisory)
+
+> **Ce que l'invariant protège.** Sept fichiers forment l'**écosystème de lecture cross-agence** — les contrats partagés par toutes les faces (liste/filtre/tri, KPI, vues, export PDF, portails expat & externe) et le point où se joue **l'isolation entre agences**. Toute modification y a un **rayon d'explosion large** : elle change silencieusement ce que chaque face lit, ou la façon dont les agences sont cloisonnées.
+>
+> | Fichier | Contrat |
+> |---|---|
+> | `src/cases/cases_repository.py` | tri / filtres des dossiers (scoping agence) |
+> | `src/cases/filter_builder.py` | construction des filtres partagés |
+> | `src/cases/case_export.py` | export PDF (contrat de lecture) |
+> | `src/views/views_schema.py` | colonnes exposées aux vues |
+> | `src/expat/expat_schema.py` | contrat de lecture face expat |
+> | `src/external/external_schema.py` | contrat de lecture face externe |
+> | `src/dashboard/` | KPI / agrégats pays (read-layer, dossier) |
+>
+> **Pourquoi il existe.** La règle de travail est « **diff logique nul** » sur ces sept points quand on livre une feature *ailleurs* : une vague qui ajoute un endpoint ne doit pas, par effet de bord, altérer un contrat de lecture ou l'isolation cross-agence. Historiquement l'invariant était vérifié **à la main** à chaque vague (`git diff --stat`) — un garde-fou humain, donc faillible.
+>
+> **Le garde-fou CI.** Workflow `.github/workflows/ecosystem-invariant.yml` (logique dans `.github/scripts/ecosystem_invariant.sh`). À chaque push (`main`/`dev`/`develop`) et PR vers `main`, il compare la plage push/PR à ces sept chemins. **Il n'est PAS bloquant** : c'est un workflow *séparé* de `ci.yml`, absent du `needs` du job `deploy` → un résultat rouge ne peut structurellement pas arrêter CI/deploy. **À NE PAS ajouter aux *required status checks*** — il avertit, il ne garde pas la porte.
+>   - **Aucun des 7 touché** → job vert, silencieux.
+>   - **Un des 7 touché sans aveu** → job **ROUGE visible** + une **annotation `warning` par fichier** (visible dans l'onglet *Files changed*) + le **diff complet** en log. Jamais un échec muet, jamais un blocage.
+>
+> **Comment l'assumer quand on doit vraiment y toucher.** Le franchissement est **explicite**, au choix :
+>   - poser le **label PR `touche-ecosysteme`**, ou
+>   - ajouter une ligne **`ECOSYSTEME: <raison>`** dans un message de commit du push / de la PR.
+>
+> Avec l'aveu, le job repasse **vert** (une `notice` trace la raison). Sans aveu, il **reste rouge** — pas pour bloquer, pour qu'aucune touche à ces contrats ne passe inaperçue.
+>
+> **Auto-vérification.** La liste des 7 chemins est en dur : si l'un est renommé/déplacé/supprimé, le job **crie** (`::error::` nommant le chemin manquant) au lieu de devenir aveugle en silence — remets alors la liste à jour dans `.github/scripts/ecosystem_invariant.sh` **et** dans ce tableau.
+>
+> **Branch protection : ne JAMAIS ajouter ce check aux _required status checks_. Il avertit, il ne bloque pas.**
+
+---
+
 ## RAPPELS
 
 - Rythme **AVANT / APRÈS** + « attends validation » à chaque étape.

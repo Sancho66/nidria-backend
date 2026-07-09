@@ -1,0 +1,37 @@
+name: Ecosystem invariant
+
+# Garde-fou advisory sur l'invariant "diff logique nul" des 7 contrats de
+# lecture ecosysteme (cross-agence + faces partagees). DELIBEREMENT un
+# workflow SEPARE de ci.yml : il n'est pas dans le `needs` du job deploy,
+# donc un resultat rouge ici NE PEUT PAS bloquer CI/deploy. Ne pas l'ajouter
+# aux "required status checks" — il avertit, il ne garde pas la porte.
+
+on:
+  push:
+    branches: [main, dev, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ecosystem-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ecosystem-invariant:
+    name: Ecosystem invariant (advisory, non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historique complet : la base du push / de la PR doit etre
+          # disponible localement pour le diff.
+          fetch-depth: 0
+
+      - name: Detect touches to the 7 ecosystem read-contracts
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'touche-ecosysteme') }}
+        run: bash .github/scripts/ecosystem_invariant.sh
