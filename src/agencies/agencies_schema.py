@@ -167,6 +167,10 @@ class AgencyResponse(BaseModel):
     # the images are served by their endpoints, never a raw storage URL.
     has_logo: bool = False
     has_cover: bool = False
+    # ISO 4217 currency for internal cost tracking — readable so the front can
+    # show the chosen code and detect "not set yet" (NULL) in Settings. It is
+    # writable via PATCH /agencies/me; a written field must be re-readable.
+    currency: str | None = None
     # Filled on GET /agencies/me only (the settings read); other call
     # sites leave it None.
     subscription: AgencySubscriptionInfo | None = None

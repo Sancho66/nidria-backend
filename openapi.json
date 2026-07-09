@@ -13332,6 +13332,17 @@
             "title": "Has Cover",
             "default": false
           },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
           "subscription": {
             "anyOf": [
               {

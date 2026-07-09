@@ -479,3 +479,27 @@ async def test_currencies_endpoint_is_agent_only(
     assert all({"code", "name", "decimals"} <= set(c) for c in body)
     # No anonymous access (agent face).
     assert (await costs_client.get("/currencies")).status_code in (401, 403)
+
+
+async def test_currency_is_readable_after_it_is_written(
+    costs_client: AsyncClient,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """A written field must be RE-READABLE: PATCH currency → GET /agencies/me
+    reflects it; a fresh agency reads null (so Settings can detect 'not set')."""
+    # A FRESH agency (no currency yet) reads null.
+    fresh = await make_agent(role=system_roles["admin"])
+    me_fresh = (await costs_client.get("/agencies/me", headers=agent_headers(fresh))).json()
+    assert me_fresh["currency"] is None
+    # PATCH sets it; GET reads exactly it back. (The spec said "BGN", but the
+    # iso4217 2026 edition retired BGN — Bulgaria adopted the euro on
+    # 2026-01-01 — so a still-active code proves the read/write round-trip.)
+    patched = await costs_client.patch(
+        "/agencies/me", headers=agent_headers(admin), json={"currency": "USD"}
+    )
+    assert patched.status_code == 200, patched.text
+    me = (await costs_client.get("/agencies/me", headers=agent_headers(admin))).json()
+    assert me["currency"] == "USD"
