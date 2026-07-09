@@ -29,6 +29,13 @@ class AgentInvitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     invited_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agent.id", ondelete="SET NULL")
     )
+    # For an EXTERNAL (provider) invitation: the directory external_contact
+    # created at invite time. On acceptance the Agent is created and this
+    # contact's agent_id is set — the contact id NEVER changes, no assignment
+    # is repointed. NULL for internal invitations (and legacy external ones).
+    external_contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("external_contact.id", ondelete="SET NULL")
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

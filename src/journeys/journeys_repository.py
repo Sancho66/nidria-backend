@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.external_contact import ExternalContact
 from shared.models.journey import (
     JourneySection,
     JourneyStepAttachment,
@@ -290,6 +291,24 @@ class JourneysRepository:
         row = JourneyStepParticipant(**kwargs)
         self.db.add(row)
         return row
+
+    async def get_agency_directory_contact(
+        self, agency_id: uuid.UUID, contact_id: uuid.UUID
+    ) -> ExternalContact | None:
+        stmt = select(ExternalContact).where(
+            ExternalContact.id == contact_id,
+            ExternalContact.agency_id == agency_id,
+            ExternalContact.case_id.is_(None),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def external_contact_names(self, contact_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not contact_ids:
+            return {}
+        stmt = select(ExternalContact.id, ExternalContact.name).where(
+            ExternalContact.id.in_(contact_ids)
+        )
+        return {cid: name for cid, name in (await self.db.execute(stmt)).all()}
 
     async def delete_step_participant(self, row: JourneyStepParticipant) -> None:
         await self.db.delete(row)

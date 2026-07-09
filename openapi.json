@@ -1881,6 +1881,35 @@
       }
     },
     "/agencies/me/external-contacts": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "List Directory Contacts",
+        "description": "The agency provider directory (case_id IS NULL). Each row derives its\nnature from agent_id (NULL = no access) and reports the designated role +\nthe template step participations a delete would break.",
+        "operationId": "list_directory_contacts_agencies_me_external_contacts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DirectoryContactListItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Directory Contacts Agencies Me External Contacts Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "agencies"
@@ -1927,18 +1956,78 @@
         ]
       }
     },
+    "/agencies/me/external-contacts/{contact_id}/invite": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Invite Directory Contact",
+        "description": "Give an EXISTING directory contact an account: creates the invitation,\nlinked to the contact. The contact id is unchanged; agent_id is set on\nacceptance. 409 if it already has an account or the email is taken.",
+        "operationId": "invite_directory_contact_agencies_me_external_contacts__contact_id__invite_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contact Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactInviteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInvitationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/external-invitations": {
       "post": {
         "tags": [
           "agencies"
         ],
         "summary": "Create External Invitation",
+        "description": "Invite a NEW provider: creates the directory external_contact (name) AND\nthe invitation, linked. agent_id is set on acceptance.",
         "operationId": "create_external_invitation_agencies_me_external_invitations_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentInvitationCreateRequest"
+                "$ref": "#/components/schemas/ExternalInvitationCreateRequest"
               }
             }
           },
@@ -15400,6 +15489,27 @@
         "title": "ConsentDocumentType",
         "description": "Legal documents subject to BLOCKING consent (point 16). The two\nagency documents bind the AGENCY and are accepted once per agency\nadmin; the two client documents bind the client PER AGENCY (the\nagency is the data controller, Nidria the processor); the external\ndocument binds a PROVIDER for the agency whose portal they enter."
       },
+      "ContactInviteRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "role_id"
+        ],
+        "title": "ContactInviteRequest",
+        "description": "Give an EXISTING directory contact an account. The contact id is\nunchanged; agent_id is set on acceptance."
+      },
       "CreatedAdminResponse": {
         "properties": {
           "id": {
@@ -16086,6 +16196,85 @@
         ],
         "title": "DirectoryContactCreateRequest",
         "description": "Create an AGENCY DIRECTORY external contact (case_id NULL): a\nprovider named ONCE, reusable across the agency's cases and journey\ntemplates. NO login, NO invitation, NO seat — a named role only.\n`name` is mandatory (the sole human identifier; email is nullable)."
+      },
+      "DirectoryContactListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "agent_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Role"
+          },
+          "used_in_steps": {
+            "type": "integer",
+            "title": "Used In Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "phone",
+          "type",
+          "agent_id",
+          "agent_role",
+          "used_in_steps"
+        ],
+        "title": "DirectoryContactListItem",
+        "description": "One directory row for the agency table. `agent_id` DERIVES the nature\n(NULL = no access). `agent_role` names the designated account's role (NULL\nif none); `used_in_steps` = template step participations (what a delete\nwould SET NULL — the agency sees what it breaks)."
       },
       "DirectoryContactResponse": {
         "properties": {
@@ -17439,6 +17628,34 @@
         ],
         "title": "ExternalDocumentResponse",
         "description": "Provider-facing document — no internal UUID (no uploaded_by_id):\n`uploaded_by_type` + `is_mine` (the provider's own uploads)."
+      },
+      "ExternalInvitationCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "role_id"
+        ],
+        "title": "ExternalInvitationCreateRequest",
+        "description": "Invite a NEW provider: a directory external_contact (name, mandatory —\nthe stable label until the account exists) + an invitation (email, role)."
       },
       "ExternalParticipantResponse": {
         "properties": {
@@ -21756,6 +21973,18 @@
             ],
             "title": "Agent Id"
           },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
           "role": {
             "$ref": "#/components/schemas/StepParticipantRole"
           }
@@ -21766,7 +21995,7 @@
           "role"
         ],
         "title": "StepParticipantCreateRequest",
-        "description": "Add a participant on a template step. `expat` ⟹ no agent; `agent`\n(internal OR durable external) ⟹ agent_id required. `role` cannot be\n`validator` (closed enum — validation stays on the validator field)."
+        "description": "Add a participant on a template step. Exactly one person id, coherent\nwith `type`: `expat` ⟹ neither; `agent` ⟹ agent_id (or NULL = the agency\nin general); `external` ⟹ external_id (a directory contact). agent_id AND\nexternal_id together → 422 (never a raw 500). `role` cannot be `validator`."
       },
       "StepParticipantResponse": {
         "properties": {
@@ -22653,6 +22882,29 @@
             ],
             "title": "Agent Id"
           },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "role": {
             "type": "string",
             "title": "Role"
@@ -22666,7 +22918,7 @@
           "role"
         ],
         "title": "TemplateStepParticipantResponse",
-        "description": "A template participant (\"Action à réaliser par\", N). The editor\nresolves the name client-side from its member lists (like the\nresponsible). type ∈ {expat, agent}; role is a StepParticipantRole."
+        "description": "A template participant (\"Action à réaliser par\", N). type ∈ {expat,\nagent, external}. For agent/expat the editor resolves the name client-side\n(member lists); for `external` the server resolves the directory contact\nname (`name`), since a contact is not in the member lists."
       },
       "TemplateStepResponse": {
         "properties": {

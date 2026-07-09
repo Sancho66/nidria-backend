@@ -27,6 +27,7 @@ from src.agencies.agencies_schema import (
     AgencySubscriptionInfo,
     AgencyUpdateRequest,
     DirectoryContactCreateRequest,
+    DirectoryContactListItem,
     OnboardingResponse,
     OnboardingStepState,
     SeatUsage,
@@ -518,9 +519,37 @@ class AgenciesManager:
         return await self.repo.list_external_agents(agent.agency_id)
 
     async def create_external_invitation(
-        self, agent: Agent, email: str, role_id: uuid.UUID
+        self, agent: Agent, name: str, email: str, role_id: uuid.UUID
     ) -> AgentInvitation:
-        return await self._create_invitation(agent, email, role_id, external=True)
+        """Invite a NEW provider: create the directory external_contact (name)
+        AND the invitation, linked. agent_id is set on acceptance."""
+        return await self._create_invitation(agent, email, role_id, external=True, name=name)
+
+    async def invite_directory_contact(
+        self, agent: Agent, contact_id: uuid.UUID, email: str, role_id: uuid.UUID
+    ) -> AgentInvitation:
+        """Invite an EXISTING directory contact: the invitation links THIS
+        contact; on acceptance its agent_id is set. The contact id never
+        changes; no assignment is repointed. 409 if it already has an account."""
+        return await self._create_invitation(
+            agent, email, role_id, external=True, existing_contact_id=contact_id
+        )
+
+    async def list_directory_contacts(self, agent: Agent) -> list[DirectoryContactListItem]:
+        rows = await self.repo.list_directory_contacts(agent.agency_id)
+        return [
+            DirectoryContactListItem(
+                id=r.id,
+                name=r.name,
+                email=r.email,
+                phone=r.phone,
+                type=r.type,
+                agent_id=r.agent_id,
+                agent_role=r.agent_role,
+                used_in_steps=r.used_in_steps,
+            )
+            for r in rows
+        ]
 
     async def create_directory_contact(
         self, agent: Agent, payload: DirectoryContactCreateRequest
@@ -555,7 +584,14 @@ class AgenciesManager:
         return await self._create_invitation(agent, email, role_id, external=False)
 
     async def _create_invitation(
-        self, agent: Agent, email: str, role_id: uuid.UUID, *, external: bool
+        self,
+        agent: Agent,
+        email: str,
+        role_id: uuid.UUID,
+        *,
+        external: bool,
+        name: str | None = None,
+        existing_contact_id: uuid.UUID | None = None,
     ) -> AgentInvitation:
         # Role validated AT CREATION (not only at accept): system role
         # OR a role of THIS agency — never another agency's role.
@@ -607,6 +643,44 @@ class AgenciesManager:
         if await self.repo.get_pending_invitation(agent.agency_id, email, now) is not None:
             raise ConflictError("An invitation is already pending for this email.")
 
+        # The directory external_contact this invitation designates (external
+        # only): an EXISTING one (invite a named contact) or a NEW one created
+        # here (invite a brand-new provider — name mandatory). agent_id is set
+        # on acceptance; the contact id never changes.
+        external_contact_id: uuid.UUID | None = None
+        if external:
+            if existing_contact_id is not None:
+                contact = await self.repo.get_directory_contact(
+                    agent.agency_id, existing_contact_id
+                )
+                if contact is None:
+                    raise NotFoundError(
+                        "Directory contact not found.", code="external_contact.not_found"
+                    )
+                if contact.agent_id is not None:
+                    raise ConflictError(
+                        "This contact already has an account.",
+                        code="external_contact.already_invited",
+                    )
+                external_contact_id = contact.id
+            else:
+                new_contact = self.repo.add_directory_contact(
+                    agency_id=agent.agency_id,
+                    name=name or "",
+                    email=email,
+                    phone=None,
+                    type=ExternalContactType.OTHER.value,
+                )
+                try:
+                    await self.db.flush()
+                except IntegrityError as exc:
+                    await self.db.rollback()
+                    raise ConflictError(
+                        f"A directory contact named '{name}' already exists.",
+                        code="external_contact.duplicate_name",
+                    ) from exc
+                external_contact_id = new_contact.id
+
         settings = get_settings()
         invitation = self.repo.add_invitation(
             agency_id=agent.agency_id,
@@ -615,6 +689,7 @@ class AgenciesManager:
             token=secrets.token_urlsafe(24),
             expires_at=now + timedelta(days=settings.agent_invitation_expires_days),
             invited_by_agent_id=agent.id,
+            external_contact_id=external_contact_id,
         )
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
@@ -680,25 +755,33 @@ class AgenciesManager:
         invitation.accepted_at = now
 
         if role and role.is_external:
-            # Unification: an account provider is ALSO a directory
-            # external_contact (agent_id set from the start). The directory is
-            # a list of external_contact with a STABLE id; the nature is
-            # derived (agent_id IS NULL = no access). Savepoint so a duplicate
-            # directory name never breaks the account creation.
-            try:
-                async with self.db.begin_nested():
-                    self.db.add(
-                        ExternalContact(
-                            agency_id=agent.agency_id,
-                            case_id=None,
-                            name=f"{first_name} {last_name}".strip(),
-                            agent_id=agent.id,
-                            type=ExternalContactType.OTHER.value,
+            # DESIGNATION: link the directory external_contact created at
+            # invite time — set agent_id, the contact id NEVER changes and NO
+            # assignment is repointed. Fallback (legacy invite with no linked
+            # contact): create one, savepoint so a name collision can't break
+            # the account creation.
+            contact = (
+                await self.db.get(ExternalContact, invitation.external_contact_id)
+                if invitation.external_contact_id is not None
+                else None
+            )
+            if contact is not None and contact.agent_id is None:
+                contact.agent_id = agent.id
+            elif contact is None:
+                try:
+                    async with self.db.begin_nested():
+                        self.db.add(
+                            ExternalContact(
+                                agency_id=agent.agency_id,
+                                case_id=None,
+                                name=f"{first_name} {last_name}".strip(),
+                                agent_id=agent.id,
+                                type=ExternalContactType.OTHER.value,
+                            )
                         )
-                    )
-                    await self.db.flush()
-            except IntegrityError:
-                pass  # duplicate directory name — account works, entry deferred
+                        await self.db.flush()
+                except IntegrityError:
+                    pass  # duplicate directory name — account works, entry deferred
 
         if not (role and role.is_external):
             await UsageManager(self.db).emit(

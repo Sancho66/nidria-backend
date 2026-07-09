@@ -34,6 +34,39 @@ class DirectoryContactResponse(BaseModel):
     type: str
 
 
+class DirectoryContactListItem(BaseModel):
+    """One directory row for the agency table. `agent_id` DERIVES the nature
+    (NULL = no access). `agent_role` names the designated account's role (NULL
+    if none); `used_in_steps` = template step participations (what a delete
+    would SET NULL — the agency sees what it breaks)."""
+
+    id: uuid.UUID
+    name: str
+    email: str | None
+    phone: str | None
+    type: str
+    agent_id: uuid.UUID | None
+    agent_role: str | None
+    used_in_steps: int
+
+
+class ExternalInvitationCreateRequest(BaseModel):
+    """Invite a NEW provider: a directory external_contact (name, mandatory —
+    the stable label until the account exists) + an invitation (email, role)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    email: NormalizedEmailStr
+    role_id: uuid.UUID
+
+
+class ContactInviteRequest(BaseModel):
+    """Give an EXISTING directory contact an account. The contact id is
+    unchanged; agent_id is set on acceptance."""
+
+    email: NormalizedEmailStr
+    role_id: uuid.UUID
+
+
 class OnboardingStepState(BaseModel):
     """One activation gesture: create_journey | open_case |
     view_as_client."""

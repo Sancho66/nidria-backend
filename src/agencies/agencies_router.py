@@ -19,9 +19,12 @@ from src.agencies.agencies_schema import (
     AgentInvitationCreateRequest,
     AgentInvitationResponse,
     AiUsageResponse,
+    ContactInviteRequest,
     CreatedAdminResponse,
     DirectoryContactCreateRequest,
+    DirectoryContactListItem,
     DirectoryContactResponse,
+    ExternalInvitationCreateRequest,
     OnboardingResponse,
     RoleResponse,
     SubscriptionUpdateRequest,
@@ -99,9 +102,16 @@ BINDINGS = [
     RouteBinding(
         "POST", "/agencies/me/external-invitations", Audience.AGENT, Permission.AGENT_MANAGE
     ),
-    # Agency DIRECTORY contact (named provider, no account) — same gate as
+    # Agency DIRECTORY contacts (named provider, no account) — same gate as
     # the external picker/invitations.
+    RouteBinding("GET", "/agencies/me/external-contacts", Audience.AGENT, Permission.AGENT_MANAGE),
     RouteBinding("POST", "/agencies/me/external-contacts", Audience.AGENT, Permission.AGENT_MANAGE),
+    RouteBinding(
+        "POST",
+        "/agencies/me/external-contacts/{contact_id}/invite",
+        Audience.AGENT,
+        Permission.AGENT_MANAGE,
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -291,6 +301,14 @@ async def list_external_members(agent: AgentDep, db: DbDep) -> list[AgencyMember
     return [_member_response(member) for member in members]
 
 
+@router.get("/me/external-contacts", response_model=list[DirectoryContactListItem])
+async def list_directory_contacts(agent: AgentDep, db: DbDep) -> list[DirectoryContactListItem]:
+    """The agency provider directory (case_id IS NULL). Each row derives its
+    nature from agent_id (NULL = no access) and reports the designated role +
+    the template step participations a delete would break."""
+    return await AgenciesManager(db).list_directory_contacts(agent)
+
+
 @router.post("/me/external-contacts", response_model=DirectoryContactResponse, status_code=201)
 async def create_directory_contact(
     body: DirectoryContactCreateRequest, agent: AgentDep, db: DbDep
@@ -301,12 +319,31 @@ async def create_directory_contact(
     return DirectoryContactResponse.model_validate(contact)
 
 
+@router.post(
+    "/me/external-contacts/{contact_id}/invite",
+    response_model=AgentInvitationResponse,
+    status_code=201,
+)
+async def invite_directory_contact(
+    contact_id: uuid.UUID, body: ContactInviteRequest, agent: AgentDep, db: DbDep
+) -> AgentInvitationResponse:
+    """Give an EXISTING directory contact an account: creates the invitation,
+    linked to the contact. The contact id is unchanged; agent_id is set on
+    acceptance. 409 if it already has an account or the email is taken."""
+    invitation = await AgenciesManager(db).invite_directory_contact(
+        agent, contact_id, body.email, body.role_id
+    )
+    return AgentInvitationResponse.model_validate(invitation)
+
+
 @router.post("/me/external-invitations", response_model=AgentInvitationResponse, status_code=201)
 async def create_external_invitation(
-    body: AgentInvitationCreateRequest, agent: AgentDep, db: DbDep
+    body: ExternalInvitationCreateRequest, agent: AgentDep, db: DbDep
 ) -> AgentInvitationResponse:
+    """Invite a NEW provider: creates the directory external_contact (name) AND
+    the invitation, linked. agent_id is set on acceptance."""
     invitation = await AgenciesManager(db).create_external_invitation(
-        agent, body.email, body.role_id
+        agent, body.name, body.email, body.role_id
     )
     return AgentInvitationResponse.model_validate(invitation)
 

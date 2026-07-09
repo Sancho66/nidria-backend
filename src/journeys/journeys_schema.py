@@ -232,25 +232,30 @@ class StepAttachmentResponse(BaseModel):
 
 
 class TemplateStepParticipantResponse(BaseModel):
-    """A template participant ("Action à réaliser par", N). The editor
-    resolves the name client-side from its member lists (like the
-    responsible). type ∈ {expat, agent}; role is a StepParticipantRole."""
+    """A template participant ("Action à réaliser par", N). type ∈ {expat,
+    agent, external}. For agent/expat the editor resolves the name client-side
+    (member lists); for `external` the server resolves the directory contact
+    name (`name`), since a contact is not in the member lists."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     type: str
     agent_id: uuid.UUID | None
+    external_id: uuid.UUID | None = None
+    name: str | None = None  # resolved contact name for type=external
     role: str
 
 
 class StepParticipantCreateRequest(BaseModel):
-    """Add a participant on a template step. `expat` ⟹ no agent; `agent`
-    (internal OR durable external) ⟹ agent_id required. `role` cannot be
-    `validator` (closed enum — validation stays on the validator field)."""
+    """Add a participant on a template step. Exactly one person id, coherent
+    with `type`: `expat` ⟹ neither; `agent` ⟹ agent_id (or NULL = the agency
+    in general); `external` ⟹ external_id (a directory contact). agent_id AND
+    external_id together → 422 (never a raw 500). `role` cannot be `validator`."""
 
-    type: ResponsibleType  # validated in the manager: external is not a template type
+    type: ResponsibleType
     agent_id: uuid.UUID | None = None
+    external_id: uuid.UUID | None = None
     role: StepParticipantRole
 
 

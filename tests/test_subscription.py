@@ -147,7 +147,11 @@ async def test_plan_cap_blocks_past_max_and_allows_billed_seats(
         provider = await client.post(
             "/agencies/me/external-invitations",
             headers=headers,
-            json={"email": "avocat@example.com", "role_id": str(external_role.id)},
+            json={
+                "name": "Avocat",
+                "email": "avocat@example.com",
+                "role_id": str(external_role.id),
+            },
         )
         assert provider.status_code == 201, provider.text
 

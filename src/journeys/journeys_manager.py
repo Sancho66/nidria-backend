@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from collections import defaultdict
+from typing import Any
 
 from fastapi import UploadFile
 from sqlalchemy import select
@@ -134,6 +135,19 @@ def _reconcile_validator(
     return StepValidatorType.AGENT.value, CompletionMode.AGENCY_VALIDATION.value
 
 
+def _participant_response(p: Any, names: dict[uuid.UUID, str]) -> TemplateStepParticipantResponse:
+    """Project a template participant row, resolving the directory contact
+    name server-side for type=external (agent/expat names stay client-side)."""
+    return TemplateStepParticipantResponse(
+        id=p.id,
+        type=p.type,
+        agent_id=p.agent_id,
+        external_id=p.external_id,
+        name=names.get(p.external_id) if p.external_id is not None else None,
+        role=p.role,
+    )
+
+
 class JourneysManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -246,13 +260,14 @@ class JourneysManager:
             attach_by_step[a.step_id].append(StepAttachmentResponse.model_validate(a))
         # "Action à réaliser par" — template participants, batched (no N+1).
         participants = await self.repo.list_step_participants_for_steps([s.id for s in steps])
+        p_names = await self.repo.external_contact_names(
+            [p.external_id for p in participants if p.external_id is not None]
+        )
         participants_by_step: dict[uuid.UUID, list[TemplateStepParticipantResponse]] = defaultdict(
             list
         )
         for p in participants:
-            participants_by_step[p.step_id].append(
-                TemplateStepParticipantResponse.model_validate(p)
-            )
+            participants_by_step[p.step_id].append(_participant_response(p, p_names))
         return JourneyTemplateDetailResponse(
             id=template.id,
             name=resolve_i18n(template.name_i18n, lang, agency_default, template.name),
@@ -731,7 +746,10 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
         rows = await self.repo.list_step_participants_for_steps([step_id])
-        return [TemplateStepParticipantResponse.model_validate(r) for r in rows]
+        names = await self.repo.external_contact_names(
+            [r.external_id for r in rows if r.external_id is not None]
+        )
+        return [_participant_response(r, names) for r in rows]
 
     async def add_step_participant(
         self,
@@ -740,37 +758,69 @@ class JourneysManager:
         step_id: uuid.UUID,
         payload: StepParticipantCreateRequest,
     ) -> TemplateStepParticipantResponse:
-        """Add a participant on a template step. type ∈ {expat, agent} —
-        an external_contact is case-scoped, not addressable at the template
-        (same limit as the responsible). `agent` (internal OR durable
-        external) requires an agent of this agency; `expat` carries no agent.
-        Does NOT touch the responsible, the validator, or live dossiers
-        (snapshot: only new cases inherit; edit per-case stays per-case)."""
+        """Add a participant on a template step. Exactly one person id,
+        coherent with type: expat (neither), agent (agent_id OR NULL = the
+        agency in general), external (a directory external_contact — a durable
+        provider that may never have an account). agent_id AND external_id
+        together → 422, a READABLE error, never a raw IntegrityError 500.
+        Does NOT touch the responsible, the validator, or live dossiers."""
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
-        if payload.type is ResponsibleType.EXTERNAL:
+        if payload.agent_id is not None and payload.external_id is not None:
             raise ValidationError(
-                "A template participant is 'expat' or 'agent' "
-                "(name a durable external as 'agent').",
-                code="journey.participant_type_invalid",
+                "A participant carries agent_id OR external_id, never both.",
+                code="journey.participant_both_ids",
             )
+        agent_id: uuid.UUID | None = None
+        external_id: uuid.UUID | None = None
+        name: str | None = None
         if payload.type is ResponsibleType.EXPAT:
-            if payload.agent_id is not None:
+            if payload.agent_id is not None or payload.external_id is not None:
                 raise ValidationError(
-                    "An 'expat' participant carries no agent.",
-                    code="journey.participant_expat_no_agent",
+                    "An 'expat' participant carries no id.",
+                    code="journey.participant_expat_no_id",
                 )
-            agent_id = None
+        elif payload.type is ResponsibleType.EXTERNAL:
+            if payload.external_id is None:
+                raise ValidationError(
+                    "An 'external' participant requires external_id.",
+                    code="journey.participant_external_required",
+                )
+            contact = await self.repo.get_agency_directory_contact(
+                agent.agency_id, payload.external_id
+            )
+            if contact is None:
+                raise ValidationError(
+                    "Directory contact not found in this agency.",
+                    code="journey.participant_contact_unknown",
+                )
+            external_id, name = contact.id, contact.name
         else:  # AGENT — a named member, OR agent_id NULL = "the agency in general"
+            if payload.external_id is not None:
+                raise ValidationError(
+                    "An 'agent' participant carries no external_id.",
+                    code="journey.participant_agent_no_external",
+                )
             if payload.agent_id is not None:
                 await self._validate_default_responsible_agent(agent, payload.agent_id)
             agent_id = payload.agent_id
         row = self.repo.add_step_participant(
-            step_id=step_id, type=payload.type.value, agent_id=agent_id, role=payload.role.value
+            step_id=step_id,
+            type=payload.type.value,
+            agent_id=agent_id,
+            external_id=external_id,
+            role=payload.role.value,
         )
         await self.db.commit()
         await self.db.refresh(row)
-        return TemplateStepParticipantResponse.model_validate(row)
+        return TemplateStepParticipantResponse(
+            id=row.id,
+            type=row.type,
+            agent_id=row.agent_id,
+            external_id=row.external_id,
+            name=name,
+            role=row.role,
+        )
 
     async def delete_step_participant(
         self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, participant_id: uuid.UUID

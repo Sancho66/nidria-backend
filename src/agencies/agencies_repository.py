@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import Row, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,7 +13,12 @@ from shared.models.client_case import ClientCase
 from shared.models.document import Document
 from shared.models.external_contact import ExternalContact
 from shared.models.invitation import AgentInvitation
-from shared.models.journey import JourneyStepAttachment, JourneyTemplate, JourneyTemplateStep
+from shared.models.journey import (
+    JourneyStepAttachment,
+    JourneyStepParticipant,
+    JourneyTemplate,
+    JourneyTemplateStep,
+)
 from shared.models.mfa import MfaChallenge, MfaTotp
 from shared.models.rbac import Role
 from src.core.enums import ActorType, InvitationStatus
@@ -255,6 +261,7 @@ class AgenciesRepository:
         token: str,
         expires_at: datetime,
         invited_by_agent_id: uuid.UUID,
+        external_contact_id: uuid.UUID | None = None,
     ) -> AgentInvitation:
         invitation = AgentInvitation(
             agency_id=agency_id,
@@ -263,9 +270,50 @@ class AgenciesRepository:
             token=token,
             expires_at=expires_at,
             invited_by_agent_id=invited_by_agent_id,
+            external_contact_id=external_contact_id,
         )
         self.db.add(invitation)
         return invitation
+
+    async def get_directory_contact(
+        self, agency_id: uuid.UUID, contact_id: uuid.UUID
+    ) -> ExternalContact | None:
+        stmt = select(ExternalContact).where(
+            ExternalContact.id == contact_id,
+            ExternalContact.agency_id == agency_id,
+            ExternalContact.case_id.is_(None),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def list_directory_contacts(self, agency_id: uuid.UUID) -> list[Row[Any]]:
+        """Directory rows (case_id IS NULL) + the designated account's role
+        name (NULL if no account) + the count of TEMPLATE step participations
+        (what a delete would SET NULL). ONE query, no N+1."""
+        participations = (
+            select(func.count())
+            .select_from(JourneyStepParticipant)
+            .where(JourneyStepParticipant.external_id == ExternalContact.id)
+            .correlate(ExternalContact)
+            .scalar_subquery()
+        )
+        stmt = (
+            select(
+                ExternalContact.id,
+                ExternalContact.name,
+                ExternalContact.email,
+                ExternalContact.phone,
+                ExternalContact.type,
+                ExternalContact.agent_id,
+                Role.name.label("agent_role"),
+                participations.label("used_in_steps"),
+            )
+            .select_from(ExternalContact)
+            .outerjoin(Agent, Agent.id == ExternalContact.agent_id)
+            .outerjoin(Role, Role.id == Agent.role_id)
+            .where(ExternalContact.agency_id == agency_id, ExternalContact.case_id.is_(None))
+            .order_by(func.lower(ExternalContact.name))
+        )
+        return list((await self.db.execute(stmt)).all())
 
     def add_agent(
         self,

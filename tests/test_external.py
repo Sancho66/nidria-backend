@@ -101,7 +101,7 @@ async def test_external_invite_accept_creates_external_agent(
     invited = await ext_client.post(
         "/agencies/me/external-invitations",
         headers=ah,
-        json={"email": "notaire@ext.com", "role_id": role_id},
+        json={"name": "Notaire Ext", "email": "notaire@ext.com", "role_id": role_id},
     )
     assert invited.status_code == 201, invited.text
 
@@ -230,7 +230,7 @@ async def test_external_invite_rejects_internal_role(
     resp = await ext_client.post(
         "/agencies/me/external-invitations",
         headers=agent_headers(admin),
-        json={"email": "y@ext.com", "role_id": str(system_roles["member"].id)},
+        json={"name": "X", "email": "y@ext.com", "role_id": str(system_roles["member"].id)},
     )
     assert resp.status_code == 422  # internal role not invitable via the external flow
 
