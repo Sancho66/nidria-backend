@@ -551,3 +551,111 @@ def test_impersonation_denylist_boot_check() -> None:
 
     with pytest.raises(StartupError, match="Enforcement route entries"):
         assert_impersonation_denylist_declared(FastAPI())
+
+
+# --- pending-invitation principal: impersonation reads, login stays shut -----------
+# The activated_at gate protects LOGIN, not impersonation. An agent may "see as"
+# a client who has NOT accepted the invitation (activated_at NULL); the dossier
+# space exists. The exemption is keyed on impersonator_id — a SIGNED claim
+# (decode_access_token verifies the HMAC), unforgeable without the expat secret.
+
+
+async def test_impersonate_non_activated_principal_opens_the_dossier(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Eric's bug dies here: the principal's invitation is still pending
+    (activated_at NULL); 'see as client' opens the dossier timeline."""
+    pending = await make_expat_user(activated=False)
+    case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=pending.id)
+    token = await _impersonate_expat_token(imp_client, agent_headers(admin), pending.id)
+    listing = await imp_client.get("/expat/cases", headers=_bearer(token))
+    assert listing.status_code == 200, listing.text
+    assert any(c["id"] == str(case.id) for c in listing.json())
+    detail = await imp_client.get(f"/expat/cases/{case.id}", headers=_bearer(token))
+    assert detail.status_code == 200, detail.text
+
+
+async def test_non_activated_expat_normal_login_stays_401(
+    imp_client: AsyncClient,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Non-regression — the gate's original purpose. A non-activated expat
+    cannot log in normally (no impersonator_id anywhere): 401. Anti-enum: the
+    message is the generic 'Invalid credentials.', not 'Account not activated'
+    (login is PUBLIC and never reaches the token gate)."""
+    pending = await make_expat_user(activated=False)
+    resp = await imp_client.post(
+        "/auth/expat/login", json={"email": pending.email, "password": "not-a-real-password"}
+    )
+    assert resp.status_code == 401, resp.text
+
+
+async def test_non_activated_expat_token_without_impersonator_id_is_401(
+    imp_client: AsyncClient,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """A validly SIGNED expat token WITHOUT impersonator_id, for a
+    non-activated account, is still rejected at the token gate — the exemption
+    is strictly keyed on the impersonation claim, not on non-activation."""
+    pending = await make_expat_user(activated=False)
+    forged = create_access_token(str(pending.id), Audience.EXPAT)  # no extra_claims
+    resp = await imp_client.get("/expat/cases", headers=_bearer(forged))
+    assert resp.status_code == 401, resp.text
+    assert resp.json()["detail"] == "Account not activated."
+
+
+async def test_impersonate_activated_principal_unchanged(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """An ACTIVATED principal's impersonation is unchanged — the fix only
+    relaxes the NULL-activated branch."""
+    active = await make_expat_user(activated=True)
+    await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=active.id)
+    token = await _impersonate_expat_token(imp_client, agent_headers(admin), active.id)
+    assert (await imp_client.get("/expat/cases", headers=_bearer(token))).status_code == 200
+
+
+async def test_impersonation_write_mask_holds_activated_and_not(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The read-only mask holds under impersonation for BOTH a non-activated
+    and an activated principal — the fix opens reads, never writes."""
+    write_method, write_url = "PUT", f"/expat/cases/{_U}/requirements/{_U}"
+    for activated in (False, True):
+        expat = await make_expat_user(activated=activated)
+        await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+        token = await _impersonate_expat_token(imp_client, agent_headers(admin), expat.id)
+        resp = await imp_client.request(write_method, write_url, headers=_bearer(token), json={})
+        assert resp.status_code == 403, (activated, resp.text)
+        assert resp.json()["code"] == "impersonation.read_only", activated
+
+
+async def test_cross_agency_impersonation_denied_activated_or_not(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Agency scoping is unchanged: an agent cannot impersonate a principal of
+    ANOTHER agency, activated or not — 404 at the mint
+    (expat_is_principal_in_agency, which the fix never touches)."""
+    for activated in (False, True):
+        foreign = await make_expat_user(activated=activated)
+        await make_client_case(principal_expat_user_id=foreign.id)  # a DIFFERENT agency
+        resp = await imp_client.post(
+            f"/expat-users/{foreign.id}/impersonate", headers=agent_headers(admin)
+        )
+        assert resp.status_code == 404, (activated, resp.text)

@@ -200,7 +200,12 @@ async def _resolve_expat(request: Request, db: AsyncSession) -> tuple[ExpatUser,
     expat = await db.get(ExpatUser, token_subject(payload))
     if expat is None:
         raise UnauthorizedError("User not found.")
-    if expat.activated_at is None:
+    # The activated_at gate protects LOGIN, not impersonation: a non-activated
+    # expat may never hold a self-minted token, but an agent MAY "see as" a
+    # not-yet-activated principal (its dossier space exists). `impersonator_id`
+    # is a SIGNED claim (decode_access_token verified the HMAC), unforgeable
+    # without the expat secret; the read-only mask still applies downstream.
+    if expat.activated_at is None and payload.get("impersonator_id") is None:
         raise UnauthorizedError("Account not activated.")
     return expat, payload
 

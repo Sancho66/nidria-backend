@@ -100,7 +100,9 @@ async def get_current_expat(
 
     Same `request.state.actor` reuse as `get_current_agent`. A
     non-activated account is rejected — it cannot hold a token in the
-    normal flow, so one here means something is off.
+    normal flow — UNLESS the token is an impersonation one (`impersonator_id`,
+    a signature-verified claim): an agent may "see as" a not-yet-activated
+    principal. Mirrors the same exemption in enforcement._resolve_expat.
     """
     actor = getattr(request.state, "actor", None)
     if isinstance(actor, ExpatUser):
@@ -108,6 +110,6 @@ async def get_current_expat(
     expat = await db.get(ExpatUser, token_subject(payload))
     if expat is None:
         raise UnauthorizedError("User not found.")
-    if expat.activated_at is None:
+    if expat.activated_at is None and payload.get("impersonator_id") is None:
         raise UnauthorizedError("Account not activated.")
     return expat
