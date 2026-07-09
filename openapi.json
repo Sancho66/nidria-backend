@@ -16619,6 +16619,15 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "viewer_role": {
+            "type": "string",
+            "enum": [
+              "principal",
+              "member"
+            ],
+            "title": "Viewer Role",
+            "default": "principal"
+          },
           "referent": {
             "anyOf": [
               {
@@ -16714,6 +16723,15 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "viewer_role": {
+            "type": "string",
+            "enum": [
+              "principal",
+              "member"
+            ],
+            "title": "Viewer Role",
+            "default": "principal"
           }
         },
         "type": "object",
@@ -19955,6 +19973,18 @@
             "minLength": 1,
             "title": "Relationship"
           },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
           "custom_fields": {
             "additionalProperties": true,
             "type": "object",
@@ -19967,7 +19997,7 @@
           "relationship"
         ],
         "title": "PersonCreateRequest",
-        "description": "Creates a FAMILY member (the PRINCIPAL exists with the case)."
+        "description": "Creates a FAMILY member (the PRINCIPAL exists with the case).\n\n`email` is OPTIONAL: when given, the agency invites the member — the\nmember gets a read-only account (linked-or-created expat_user by email,\nthe same global pivot as the principal) and sees the dossier's progress\nplus their OWN fields/documents. When absent, the member stays what they\nare today: a person on the dossier with no login. Nothing changes for them."
       },
       "PersonResponse": {
         "properties": {
