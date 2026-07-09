@@ -1090,6 +1090,104 @@
         }
       }
     },
+    "/admin/agencies": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Agencies",
+        "description": "The superadmin agencies table: paginated, searchable (name/slug),\nsortable (created_at|name|cases_count), with derived status + seat and\ncase counts. TWO constant queries, no N+1.",
+        "operationId": "list_agencies_admin_agencies_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "created_at",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "desc",
+              "title": "Order"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgenciesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies": {
       "get": {
         "tags": [
@@ -12408,6 +12506,134 @@
         ],
         "title": "ActivityResponse",
         "description": "GET /dashboard/activity - the agency-wide client pulse: 14\nsliding days, 15 aggregated items max, newest first. Demo cases\nnever appear; agent gestures never appear (the agency would watch\nitself)."
+      },
+      "AdminAgenciesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAgencyRow"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "AdminAgenciesResponse"
+      },
+      "AdminAgencyRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "seats_used": {
+            "type": "integer",
+            "title": "Seats Used"
+          },
+          "seats_limit": {
+            "type": "integer",
+            "title": "Seats Limit"
+          },
+          "is_founding": {
+            "type": "boolean",
+            "title": "Is Founding"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "trial_days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Days Remaining"
+          },
+          "cases_count": {
+            "type": "integer",
+            "title": "Cases Count"
+          },
+          "members_count": {
+            "type": "integer",
+            "title": "Members Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "logo_url",
+          "plan",
+          "seats_used",
+          "seats_limit",
+          "is_founding",
+          "status",
+          "trial_days_remaining",
+          "cases_count",
+          "members_count",
+          "created_at"
+        ],
+        "title": "AdminAgencyRow",
+        "description": "One agency row of the superadmin \"Gérer les agences\" table.\n\n`status` is DERIVED from the model (no status/suspended column):\nactive (converted_at set, tested FIRST — it beats an unexpired trial),\ntrial (unconverted + future trial_ends_at, with trial_days_remaining),\nexpired (unconverted + past trial_ends_at), unknown (neither set — an\nout-of-wizard/legacy anomaly the table exists to surface, never folded\ninto expired). `seats_used` = INTERNAL members (seat consumers);\n`members_count` = ALL agents — the front derives externals by\nsubtraction. `cases_count` = live non-demo cases."
       },
       "AgencyCreateRequest": {
         "properties": {

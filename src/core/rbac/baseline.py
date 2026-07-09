@@ -142,6 +142,7 @@ def collect_bindings() -> list[RouteBinding]:
     step appends its router as endpoints land.
     """
     from src.activity.activity_router import BINDINGS as activity_bindings
+    from src.admin.admin_router import BINDINGS as admin_bindings
     from src.agencies.agencies_router import BINDINGS as agencies_bindings
     from src.auth.auth_router import BINDINGS as auth_bindings
     from src.cases.cases_router import BINDINGS as cases_bindings
@@ -165,6 +166,7 @@ def collect_bindings() -> list[RouteBinding]:
     return [
         *auth_bindings,
         *agencies_bindings,
+        *admin_bindings,
         *roles_bindings,
         *impersonation_bindings,
         *journeys_bindings,

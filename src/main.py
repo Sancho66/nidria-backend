@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.activity.activity_router import router as activity_router
+from src.admin.admin_router import router as admin_router
 from src.agencies.agencies_router import public_router as agencies_public_router
 from src.agencies.agencies_router import router as agencies_router
 from src.auth.auth_router import router as auth_router
@@ -121,6 +122,7 @@ register_exception_handlers(app)
 
 app.include_router(auth_router)
 app.include_router(activity_router)
+app.include_router(admin_router)
 app.include_router(agencies_router)
 app.include_router(agencies_public_router)
 # views BEFORE cases: GET /cases/columns (literal) must register ahead
