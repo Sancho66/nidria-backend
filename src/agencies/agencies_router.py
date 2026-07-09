@@ -20,6 +20,8 @@ from src.agencies.agencies_schema import (
     AgentInvitationResponse,
     AiUsageResponse,
     CreatedAdminResponse,
+    DirectoryContactCreateRequest,
+    DirectoryContactResponse,
     OnboardingResponse,
     RoleResponse,
     SubscriptionUpdateRequest,
@@ -97,6 +99,9 @@ BINDINGS = [
     RouteBinding(
         "POST", "/agencies/me/external-invitations", Audience.AGENT, Permission.AGENT_MANAGE
     ),
+    # Agency DIRECTORY contact (named provider, no account) — same gate as
+    # the external picker/invitations.
+    RouteBinding("POST", "/agencies/me/external-contacts", Audience.AGENT, Permission.AGENT_MANAGE),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -284,6 +289,16 @@ async def list_external_roles(agent: AgentDep, db: DbDep) -> list[RoleResponse]:
 async def list_external_members(agent: AgentDep, db: DbDep) -> list[AgencyMemberResponse]:
     members = await AgenciesManager(db).list_external_members(agent)
     return [_member_response(member) for member in members]
+
+
+@router.post("/me/external-contacts", response_model=DirectoryContactResponse, status_code=201)
+async def create_directory_contact(
+    body: DirectoryContactCreateRequest, agent: AgentDep, db: DbDep
+) -> DirectoryContactResponse:
+    """Create a NAMED provider in the agency directory (no account). Reusable
+    across the agency; can DESIGNATE a login later. Duplicate name → 409."""
+    contact = await AgenciesManager(db).create_directory_contact(agent, body)
+    return DirectoryContactResponse.model_validate(contact)
 
 
 @router.post("/me/external-invitations", response_model=AgentInvitationResponse, status_code=201)

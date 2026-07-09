@@ -741,7 +741,12 @@ class CasesManager:
         self, agent: Agent, case_id: uuid.UUID, payload: ExternalContactCreateRequest
     ) -> ExternalContact:
         case = await self._get_case(agent, case_id)
+        # A case-scoped contact's agency is the case's agency (unambiguous) —
+        # stamped so the row satisfies the NOT NULL agency_id introduced with
+        # the directory scope. (These /cases/.../external-contacts routes are
+        # orphaned by the front but stay open; closing them is a separate call.)
         contact = self.repo.add_external_contact(
+            agency_id=case.agency_id,
             case_id=case.id,
             name=payload.name,
             email=payload.email,

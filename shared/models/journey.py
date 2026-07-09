@@ -184,18 +184,27 @@ class JourneyStepParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """ "Action à réaliser par" at the TEMPLATE level (responsible refonte:
     1 → N participants with a role). Snapshot-copied to each case at
     assignment (like the responsible), so editing it never retro-changes a
-    live dossier. Polymorphic person calqué sur le responsable, but TEMPLATE
-    only supports {expat, agent} — an `external_contact` is case-scoped and
-    cannot exist before a case (same limit as default_responsible_*). The
+    live dossier. Polymorphic person calqué sur le responsable: {expat, agent,
+    external}. An `external` participant names a DIRECTORY external_contact
+    (agency-scoped, case_id NULL) — a durable provider that may never have an
+    account; it propagates to every case by REFERENCE at assignment. (This
+    supersedes the old "externals exist only at the case level" rule.) The
     `validator` role is NOT here: validation stays on validated_by_*."""
 
     __tablename__ = "journey_step_participant"
     __table_args__ = (
         # Polymorphic person: expat ⟹ no agent; agent ⟹ agent_id OPTIONAL —
-        # a named member sets it, NULL = "the agency in general" (symmetric to
-        # default_validated_by_type='agent' + agent_id NULL).
+        # Polymorphic person, CALQUÉ on the instance participant: exactly one
+        # of agent_id / external_id, coherent with type. agent ⟹ agent_id
+        # OPTIONAL (NULL = "the agency in general"); external ⟹ a directory
+        # external_contact — a NAMED provider that may never have an account
+        # (the case a template must express: Nicolas's notary, named once on
+        # the journey, no login). This WIDENS the former "externals exist only
+        # at the case level" rule, which a durable no-account provider invalidates.
         CheckConstraint(
-            "(type = 'expat' AND agent_id IS NULL) OR (type = 'agent')",
+            "(type = 'agent' AND external_id IS NULL)"
+            " OR (type = 'expat' AND agent_id IS NULL AND external_id IS NULL)"
+            " OR (type = 'external' AND external_id IS NOT NULL AND agent_id IS NULL)",
             name="participant_template_type_matches_fk",
         ),
     )
@@ -203,8 +212,11 @@ class JourneyStepParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     step_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("journey_template_step.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    type: Mapped[str] = mapped_column(String(20), nullable=False)  # expat | agent
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # expat | agent | external
     agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent.id", ondelete="SET NULL"))
+    external_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("external_contact.id", ondelete="SET NULL")
+    )
     role: Mapped[str] = mapped_column(String(30), nullable=False)  # StepParticipantRole
 
 

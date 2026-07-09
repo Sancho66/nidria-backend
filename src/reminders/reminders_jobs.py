@@ -8,6 +8,7 @@ WhatsApp mark-sent endpoint requires APPROVED too).
 """
 
 import logging
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
+from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
@@ -25,7 +27,7 @@ from shared.models.journey import JourneyTemplateStep
 from shared.models.reminder import Reminder
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
-from src.core.email_templates import reminder_email
+from src.core.email_templates import reminder_email, reminder_escalation_email
 from src.core.enums import (
     ActorType,
     RecipientType,
@@ -40,10 +42,27 @@ logger = logging.getLogger(__name__)
 LogFn = Callable[[str], None]
 
 
-def _recipient(db: Session, reminder: Reminder, agency: Agency) -> tuple[str, str] | None:
-    """(email, resolved language) of the reminder's recipient. EXPAT → their
-    stored preference (client rule); EXTERNAL contact → the agency default
-    (no stored language on a no-login contact)."""
+def _owner_delivery(db: Session, case_id: uuid.UUID, agency: Agency) -> tuple[str, str] | None:
+    """(email, lang) of the case owner (agency side) — the escalation target.
+    None only if the case has no owner (then the reminder cannot escalate)."""
+    row = db.execute(
+        select(Agent.email)
+        .join(ClientCase, ClientCase.owner_agent_id == Agent.id)
+        .where(ClientCase.id == case_id)
+    ).first()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0]), resolve_notification_lang_agent(agency.default_language)
+
+
+def _recipient(
+    db: Session, reminder: Reminder, agency: Agency
+) -> tuple[str, str, str | None] | None:
+    """(email, language, escalated_from). `escalated_from` is None for a
+    direct delivery; it carries the ORIGINAL contact's name when an EXTERNAL
+    recipient is unreachable (no email) and the reminder is re-routed to the
+    case owner — so a reminder NEVER dies in silence. Returns None only when
+    even the owner is missing (defensive)."""
     if reminder.recipient_type == RecipientType.EXPAT.value:
         row = db.execute(
             select(ExpatUser.email, ExpatUser.preferred_lang)
@@ -52,11 +71,18 @@ def _recipient(db: Session, reminder: Reminder, agency: Agency) -> tuple[str, st
         ).first()
         if row is None or row[0] is None:
             return None
-        return str(row[0]), resolve_notification_lang_client(row[1])
+        return str(row[0]), resolve_notification_lang_client(row[1]), None
+    if reminder.recipient_type == RecipientType.AGENT.value:  # already owner-directed
+        owner = _owner_delivery(db, reminder.case_id, agency)
+        return (owner[0], owner[1], None) if owner is not None else None
+    # EXTERNAL: deliver if reachable, else ESCALATE to the case owner.
     contact = db.get(ExternalContact, reminder.recipient_external_id)
-    if contact is None or contact.email is None:
+    if contact is not None and contact.email is not None:
+        return contact.email, resolve_notification_lang_agent(agency.default_language), None
+    owner = _owner_delivery(db, reminder.case_id, agency)
+    if owner is None:
         return None
-    return contact.email, resolve_notification_lang_agent(agency.default_language)
+    return owner[0], owner[1], (contact.name if contact is not None else "ce prestataire")
 
 
 def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
@@ -90,32 +116,45 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     settings = get_settings()
     sent = 0
     for reminder, agency in rows:
+        escalated_from: str | None = None
         if reminder.channel == ReminderChannel.MAIL.value:
             recipient = _recipient(db, reminder, agency)
             if recipient is None:
-                # Creation-time validation prevents this; defensive skip.
-                log(f"reminder {reminder.id}: no recipient email, left approved")
+                # No reachable recipient AND no owner to escalate to — the
+                # only case left approved (loud log, never a silent drop).
+                log(f"reminder {reminder.id}: no reachable recipient nor owner, left approved")
                 continue
-            to, lang = recipient
-            # The BRANDED client-space link — expat recipients only (an
-            # external contact has no client space to open).
-            link = (
-                space_link(settings.frontend_url, "/space", agency.slug)
-                if reminder.recipient_type == RecipientType.EXPAT.value
-                else None
-            )
-            content = reminder_email(agency.name, reminder.message_body, link, lang)
+            to, lang, escalated_from = recipient
+            if escalated_from is not None:
+                # Unreachable external → the reminder REMONTE to the case owner.
+                content = reminder_escalation_email(
+                    agency.name, escalated_from, reminder.message_body, lang
+                )
+                # Record that it now targets the owner (agent), no external FK.
+                reminder.recipient_type = RecipientType.AGENT.value
+                reminder.recipient_external_id = None
+            else:
+                # The BRANDED client-space link — expat recipients only.
+                link = (
+                    space_link(settings.frontend_url, "/space", agency.slug)
+                    if reminder.recipient_type == RecipientType.EXPAT.value
+                    else None
+                )
+                content = reminder_email(agency.name, reminder.message_body, link, lang)
             send_email(to, content.subject, content.text, content.html)
         # IN_APP: the SENT reminder itself IS the notification read by
         # the expat space (no notifications table).
         reminder.status = ReminderStatus.SENT.value
+        details: dict[str, Any] = {"reminder_id": str(reminder.id), "channel": reminder.channel}
+        if escalated_from is not None:
+            details["escalated_from"] = escalated_from
         db.add(
             ActivityLog(
                 case_id=reminder.case_id,
                 actor_type=ActorType.SYSTEM.value,
                 actor_id=None,
-                action_type="reminder.sent",
-                details={"reminder_id": str(reminder.id), "channel": reminder.channel},
+                action_type="reminder.escalated" if escalated_from else "reminder.sent",
+                details=details,
             )
         )
         sent += 1

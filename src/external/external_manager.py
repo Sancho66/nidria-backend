@@ -1,11 +1,13 @@
 import asyncio
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
+from shared.models.external_contact import ExternalContact
 from src.core import storage
 from src.core.enums import ActorType, ResponsibleType, StepStatus, StepValidatorType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -29,26 +31,44 @@ from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
 
 
-def _external_sees_content(step: StepProgressResponse, external: Agent) -> bool:
+def _external_sees_content(
+    step: StepProgressResponse, external: Agent, designated_contact_ids: set[uuid.UUID]
+) -> bool:
     """THE content verrou (Feature 2, RGPD). A provider sees a step's
     descending agency content (content_note + attachments) ONLY when it is
-    responsible for THIS step on THIS dossier.
+    responsible for THIS step on THIS dossier — by ONE of two CASE-INSTANCE
+    paths:
+    - directly, as the responsible is_external Agent (responsible_agent_id);
+    - by DESIGNATION, when the step's responsible external_contact
+      designates this Agent (its id is in `designated_contact_ids`, i.e.
+      external_contact.agent_id == external.id).
 
-    The visibility key is `responsible_agent_id` — a CASE-INSTANCE column
-    (case_step_progress), never the template. So the right lives on the
-    dossier while the content lives on the template: the same provider,
-    same template step, is allowed on dossier X and refused on dossier Z
-    purely by this column. See test_step_content_read (the X/Z crossing).
+    Both are case_step_progress columns → the right lives on the dossier,
+    never the template: the same provider, same template step, is allowed
+    on dossier X and refused on dossier Z purely by this column. See
+    test_step_content_read (the X/Z crossing).
 
-    ⚠️ FUTURE BLIND SPOT — the ONLY login-bearing assignment path today is
-    responsible_type=AGENT → responsible_agent_id (an is_external Agent). A
-    legacy `responsible_external_id` (external_contact) has NO login and so
-    cannot reach this code. IF the V2 backlog ever gives external_contact a
-    login (the planned `external_user` identity), THIS verrou must be
-    widened to cover that path too — otherwise wiring the login without
-    revisiting here opens a silent RGPD hole (a logged-in contact seeing
-    content it should not). Do not add a login path without updating this."""
-    return step.responsible_agent_id == external.id
+    This CLOSES the former blind spot: a directory contact that gains a
+    login via external_contact.agent_id now sees exactly its own steps —
+    and a contact WITHOUT agent_id designates no one (empty set)."""
+    if step.responsible_agent_id == external.id:
+        return True
+    return (
+        step.responsible_external_id is not None
+        and step.responsible_external_id in designated_contact_ids
+    )
+
+
+async def _designated_contact_ids(db: AsyncSession, external: Agent) -> set[uuid.UUID]:
+    """The external_contact ids this Agent is designated by (agent_id ==
+    external.id). Empty set for a plain assigned Agent — one query."""
+    return set(
+        (
+            await db.execute(
+                select(ExternalContact.id).where(ExternalContact.agent_id == external.id)
+            )
+        ).scalars()
+    )
 
 
 def _external_can_validate(step: StepProgressResponse, external: Agent) -> bool:
@@ -158,6 +178,7 @@ class ExternalPortalManager:
                 )
 
         internal_timeline = await ProgressManager(self.db).timeline_for_case(case, lang)
+        designated_ids = await _designated_contact_ids(self.db, external)
         timeline = [
             ExternalTimelineStepResponse(
                 progress_id=step.id,
@@ -190,9 +211,15 @@ class ExternalPortalManager:
                 # Feature 2 (RGPD): content only on steps this provider is
                 # responsible for — server-side filter, None/[] otherwise.
                 content_note=(
-                    step.content_note if _external_sees_content(step, external) else None
+                    step.content_note
+                    if _external_sees_content(step, external, designated_ids)
+                    else None
                 ),
-                attachments=(step.attachments if _external_sees_content(step, external) else []),
+                attachments=(
+                    step.attachments
+                    if _external_sees_content(step, external, designated_ids)
+                    else []
+                ),
                 can_validate=_external_can_validate(step, external),
             )
             for step in internal_timeline
@@ -228,7 +255,14 @@ class ExternalPortalManager:
         progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
         if progress is None:
             raise NotFoundError("Case step not found.")
-        if progress.responsible_agent_id != external.id:  # border 3 — THE verrou
+        # border 3 — THE verrou: responsible directly (agent) OR by designation
+        # (the responsible external_contact designates this Agent).
+        designated_ids = await _designated_contact_ids(self.db, external)
+        responsible = progress.responsible_agent_id == external.id or (
+            progress.responsible_external_id is not None
+            and progress.responsible_external_id in designated_ids
+        )
+        if not responsible:
             raise NotFoundError("Attachment not found.")
         attachment = await progress_repo.get_step_attachment_in_step(  # border 4
             progress.template_step_id, attachment_id

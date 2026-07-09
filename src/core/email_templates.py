@@ -416,6 +416,33 @@ def reminder_email(
     )
 
 
+# Escalation wrapper (working text — final wording to be validated by Eric):
+# a reminder whose EXTERNAL contact is unreachable is re-routed to the case
+# owner. It WRAPS the original message_body, never rewrites it.
+_ESCALATION_PREFIX = {
+    "fr": (
+        "Le prestataire {name} doit fournir les éléments ci-dessous, mais il "
+        "est injoignable dans l'application (aucun accès). Merci de le "
+        "contacter directement. Rappel d'origine :"
+    ),
+    "en": (
+        "The provider {name} must provide the items below but is unreachable "
+        "in the app (no access). Please contact them directly. Original "
+        "reminder:"
+    ),
+}
+
+
+def reminder_escalation_email(
+    agency_name: str, contact_name: str, message_body: str, lang: str = "fr"
+) -> EmailContent:
+    """A reminder targeted an UNREACHABLE external contact → re-routed to the
+    case owner. WRAPS message_body (never rewrites it), naming the contact so
+    the agent reads WHO must do WHAT and that the person has no app access."""
+    prefix = _ESCALATION_PREFIX.get(lang, _ESCALATION_PREFIX["fr"]).format(name=contact_name)
+    return reminder_email(agency_name, f"{prefix}\n\n{message_body}", None, lang)
+
+
 def _pick(catalog: dict[str, dict[str, str]], lang: str) -> dict[str, str]:
     """Select a template's strings for `lang`, falling back to FR. `lang` is
     already the resolved recipient language (BLOC NOTIF-1)."""

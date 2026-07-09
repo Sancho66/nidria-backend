@@ -103,7 +103,13 @@ async def make_case_person(db_session: AsyncSession) -> MakeCasePerson:
 @pytest_asyncio.fixture
 async def make_external_contact(db_session: AsyncSession) -> MakeExternalContact:
     async def _make(*, case: ClientCase, **overrides: Any) -> ExternalContact:
-        data = {"case_id": case.id, "name": "Maitre Dupont", "type": "notary", **overrides}
+        data = {
+            "case_id": case.id,
+            "agency_id": case.agency_id,
+            "name": "Maitre Dupont",
+            "type": "notary",
+            **overrides,
+        }
         contact = ExternalContact(**data)
         db_session.add(contact)
         await db_session.commit()

@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agency_deletion_log import AgencyDeletionLog
 from shared.models.agent import Agent
+from shared.models.external_contact import ExternalContact
 from shared.models.invitation import AgentInvitation
 from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
@@ -24,6 +26,7 @@ from src.agencies.agencies_schema import (
     AgencyDeleteRequest,
     AgencySubscriptionInfo,
     AgencyUpdateRequest,
+    DirectoryContactCreateRequest,
     OnboardingResponse,
     OnboardingStepState,
     SeatUsage,
@@ -36,7 +39,13 @@ from src.core import storage
 from src.core.config import get_settings
 from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
-from src.core.enums import ActorType, Audience, InvitationStatus, SubscriptionPlan
+from src.core.enums import (
+    ActorType,
+    Audience,
+    ExternalContactType,
+    InvitationStatus,
+    SubscriptionPlan,
+)
 from src.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -513,6 +522,31 @@ class AgenciesManager:
     ) -> AgentInvitation:
         return await self._create_invitation(agent, email, role_id, external=True)
 
+    async def create_directory_contact(
+        self, agent: Agent, payload: DirectoryContactCreateRequest
+    ) -> ExternalContact:
+        """A NAMED provider in the agency directory (no login, no seat, no
+        invitation): just a row. It can DESIGNATE a login later. Duplicate
+        name in the agency → 409 (the partial unique)."""
+        contact = self.repo.add_directory_contact(
+            agency_id=agent.agency_id,
+            name=payload.name,
+            email=payload.email,
+            phone=payload.phone,
+            type=payload.type.value,
+        )
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            await self.db.rollback()
+            raise ConflictError(
+                f"A directory contact named '{payload.name}' already exists.",
+                code="external_contact.duplicate_name",
+            ) from exc
+        await self.db.commit()
+        await self.db.refresh(contact)
+        return contact
+
     # --- agent invitations -------------------------------------------------------
 
     async def create_invitation(
@@ -644,6 +678,27 @@ class AgenciesManager:
         await self.db.flush()
         invitation.status = InvitationStatus.ACCEPTED
         invitation.accepted_at = now
+
+        if role and role.is_external:
+            # Unification: an account provider is ALSO a directory
+            # external_contact (agent_id set from the start). The directory is
+            # a list of external_contact with a STABLE id; the nature is
+            # derived (agent_id IS NULL = no access). Savepoint so a duplicate
+            # directory name never breaks the account creation.
+            try:
+                async with self.db.begin_nested():
+                    self.db.add(
+                        ExternalContact(
+                            agency_id=agent.agency_id,
+                            case_id=None,
+                            name=f"{first_name} {last_name}".strip(),
+                            agent_id=agent.id,
+                            type=ExternalContactType.OTHER.value,
+                        )
+                    )
+                    await self.db.flush()
+            except IntegrityError:
+                pass  # duplicate directory name — account works, entry deferred
 
         if not (role and role.is_external):
             await UsageManager(self.db).emit(

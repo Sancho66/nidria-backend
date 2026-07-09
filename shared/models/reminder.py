@@ -29,7 +29,10 @@ class Reminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "(recipient_type = 'expat' AND recipient_external_id IS NULL)"
-            " OR (recipient_type = 'external' AND recipient_external_id IS NOT NULL)",
+            " OR (recipient_type = 'external' AND recipient_external_id IS NOT NULL)"
+            # 'agent' = the case owner (escalation target), derived from
+            # client_case.owner_agent_id → no recipient FK.
+            " OR (recipient_type = 'agent' AND recipient_external_id IS NULL)",
             name="recipient_type_matches_fk",
         ),
         # The step-12 dispatcher polls approved reminders due for sending.

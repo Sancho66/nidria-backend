@@ -73,6 +73,10 @@ class RecipientType(StrEnum):
 
     EXPAT = "expat"
     EXTERNAL = "external"
+    # The case owner (agency side). Set ONLY by the dispatch escalation when
+    # an EXTERNAL recipient is unreachable — the owner is derived from
+    # client_case.owner_agent_id, so there is no recipient FK for it.
+    AGENT = "agent"
 
 
 class DocValidationStatus(StrEnum):

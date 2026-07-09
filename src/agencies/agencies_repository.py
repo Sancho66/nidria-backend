@@ -10,6 +10,7 @@ from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.client_case import ClientCase
 from shared.models.document import Document
+from shared.models.external_contact import ExternalContact
 from shared.models.invitation import AgentInvitation
 from shared.models.journey import JourneyStepAttachment, JourneyTemplate, JourneyTemplateStep
 from shared.models.mfa import MfaChallenge, MfaTotp
@@ -40,6 +41,18 @@ class AgenciesRepository:
         agency = Agency(name=name, slug=slug, default_language=default_language, settings={})
         self.db.add(agency)
         return agency
+
+    def add_directory_contact(
+        self, *, agency_id: uuid.UUID, name: str, email: str | None, phone: str | None, type: str
+    ) -> ExternalContact:
+        """An AGENCY DIRECTORY external contact: case_id NULL, agent_id NULL
+        (no login yet). The partial unique (agency_id, lower(name)) WHERE
+        case_id IS NULL guards duplicates at the DB level."""
+        contact = ExternalContact(
+            agency_id=agency_id, case_id=None, name=name, email=email, phone=phone, type=type
+        )
+        self.db.add(contact)
+        return contact
 
     # --- hard delete (Groupe C) ------------------------------------------------------
 

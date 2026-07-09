@@ -407,11 +407,15 @@ class ProgressManager:
         # topologically order the two inserts.
         await self.db.flush()
         for tp in template_participants:
+            # By REFERENCE: an external participant points to the shared
+            # directory external_contact (no per-case copy). A contact has no
+            # login, so — unlike an is_external agent — it gains NO case
+            # assignment (nothing to scope; the portal is account-only).
             self.repo.add_case_participant(
                 case_step_progress_id=progress.id,
                 type=tp.type,
                 agent_id=tp.agent_id,
-                external_id=None,  # template carries no external_contact (instance-only)
+                external_id=tp.external_id,
                 role=tp.role,
             )
             if (

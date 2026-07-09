@@ -5,11 +5,33 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.email import NormalizedEmailStr
-from src.core.enums import BillingCycle, SubscriptionPlan
+from src.core.enums import BillingCycle, ExternalContactType, SubscriptionPlan
 
 # The agency's default content language — the fallback for its i18n blobs.
 # Single source of truth: src.core.i18n (SUPPORTED_LANGUAGES / Language).
 from src.core.i18n import Language
+
+
+class DirectoryContactCreateRequest(BaseModel):
+    """Create an AGENCY DIRECTORY external contact (case_id NULL): a
+    provider named ONCE, reusable across the agency's cases and journey
+    templates. NO login, NO invitation, NO seat — a named role only.
+    `name` is mandatory (the sole human identifier; email is nullable)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    email: NormalizedEmailStr | None = None
+    phone: str | None = Field(default=None, max_length=50)
+    type: ExternalContactType = ExternalContactType.OTHER
+
+
+class DirectoryContactResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: str | None
+    phone: str | None
+    type: str
 
 
 class OnboardingStepState(BaseModel):

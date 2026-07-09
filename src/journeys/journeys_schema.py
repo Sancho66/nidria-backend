@@ -190,8 +190,9 @@ class TemplateStepCreateRequest(BaseModel):
     name_i18n: I18nBlob | None = None
     estimated_days: int | None = Field(default=None, ge=0)
     default_responsible_type: ResponsibleType | None = None
-    # Wave C: a named default responsible — a precise INTERNAL agent only
-    # (validated in the manager; externals exist only at the case level).
+    # Wave C legacy: a named default responsible — INTERNAL agent only, kept
+    # for compatibility (the editor now names "who does the step" via
+    # participants, incl. type=external for a no-account provider).
     default_responsible_agent_id: uuid.UUID | None = None
     # "Action validée par" (refonte). `validated_by_type` supersedes
     # `completion_mode`; both are accepted during the transition and the

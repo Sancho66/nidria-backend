@@ -1880,6 +1880,53 @@
         ]
       }
     },
+    "/agencies/me/external-contacts": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Create Directory Contact",
+        "description": "Create a NAMED provider in the agency directory (no account). Reusable\nacross the agency; can DESIGNATE a login later. Duplicate name → 409.",
+        "operationId": "create_directory_contact_agencies_me_external_contacts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryContactCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryContactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me/external-invitations": {
       "post": {
         "tags": [
@@ -15996,6 +16043,98 @@
         "title": "DeadlineCounter",
         "description": "Resolved days-remaining counter for a step, computed backend-side\nso both faces read the same number. `target_date` is the firm\n`due_at` if set (source=\"deadline\"), else started_at + estimated_days\n(source=\"estimated\"), else null (source=null → no gauge). The\ngreen/orange/red thresholds are a FRONT decision on `days_remaining`\n(negative = overdue)."
       },
+      "DirectoryContactCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ExternalContactType",
+            "default": "other"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "DirectoryContactCreateRequest",
+        "description": "Create an AGENCY DIRECTORY external contact (case_id NULL): a\nprovider named ONCE, reusable across the agency's cases and journey\ntemplates. NO login, NO invitation, NO seat — a named role only.\n`name` is mandatory (the sole human identifier; email is nullable)."
+      },
+      "DirectoryContactResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "phone",
+          "type"
+        ],
+        "title": "DirectoryContactResponse"
+      },
       "DocValidationStatus": {
         "type": "string",
         "enum": [
@@ -20201,7 +20340,8 @@
         "type": "string",
         "enum": [
           "expat",
-          "external"
+          "external",
+          "agent"
         ],
         "title": "RecipientType",
         "description": "Recipient of a reminder (`reminder.recipient_type`)."
