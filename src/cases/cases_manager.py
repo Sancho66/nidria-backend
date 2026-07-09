@@ -11,6 +11,7 @@ from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.custom_field import CustomFieldDefinition
+from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
@@ -664,20 +665,84 @@ class CasesManager:
         case = await self._get_case(agent, case_id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         custom = validate_and_merge(definitions, {}, payload.custom_fields)
+        # Optional account: an email GIVES the member a read-only login. The
+        # expat_user is the SAME global pivot as the principal — linked-or-
+        # created by email, NEVER a blind insert (the email is globally unique;
+        # an existing user of ANOTHER agency is reused, one login, both dossiers
+        # visible each in its own context).
+        expat: ExpatUser | None = None
+        if payload.email is not None:
+            expat = await self.repo.get_expat_by_email(payload.email)
+            if expat is None:
+                first, _, last = payload.full_name.partition(" ")
+                expat = self.repo.add_expat(
+                    first_name=first or payload.full_name,
+                    last_name=last,
+                    email=payload.email,
+                    preferred_lang=DEFAULT_LANG,
+                )
+                await self.db.flush()
         person = self.repo.add_person(
             case_id=case.id,
             kind=CasePersonKind.FAMILY.value,
             full_name=payload.full_name,
             relationship=payload.relationship,
+            expat_user_id=expat.id if expat is not None else None,
             custom_fields=custom,
         )
         self._apply_civil_fields(person, payload)
         await self.db.flush()
         self._log(case.id, agent, "person.added", {"person_id": str(person.id)})
+        mail = (
+            await self._prepare_member_invite(agent, case, payload.email, expat)
+            if expat is not None and payload.email is not None
+            else None
+        )
         await self.db.commit()
+        if mail is not None:
+            await asyncio.to_thread(send_email, *mail)  # best-effort, after commit
         reloaded = await self.repo.get_person(case.id, person.id)
         assert reloaded is not None
         return self._person_response(reloaded, definitions)
+
+    async def _prepare_member_invite(
+        self, agent: Agent, case: ClientCase, email: str, expat: ExpatUser
+    ) -> tuple[str, str, str, str]:
+        """Persist the member's case_invitation (in the current tx) and build
+        its mail — same infra as the principal: an activation link for a NEW
+        account, a 'a dossier awaits you' mail for an existing (activated) one.
+        The membership READ access is the case_person link; this invitation is
+        notification + activation path, never the write surface (a member has
+        none). Returns the (to, subject, text, html) to send AFTER commit."""
+        settings = get_settings()
+        invitation = self.repo.add_case_invitation(
+            case_id=case.id,
+            email=email,
+            token=secrets.token_urlsafe(24),
+            expires_at=datetime.now(UTC) + timedelta(days=settings.case_invitation_expires_days),
+        )
+        self._log(case.id, agent, "case.member_invited", {"email": email})
+        agency = await self.repo.get_agency(agent.agency_id)
+        agency_name = agency.name if agency else "Votre agence"
+        agency_slug = agency.slug if agency else None
+        lang = resolve_notification_lang_client(expat.preferred_lang)
+        agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
+        journey_name = await self._journey_name(agent, case, lang, agency_default)
+        if expat.activated_at is None:
+            link = space_link(
+                settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
+            )
+            content = expat_activation_email(
+                agency_name, link, settings.case_invitation_expires_days, journey_name, lang
+            )
+        else:
+            content = new_case_email(
+                agency_name,
+                space_link(settings.frontend_url, "/space/login", agency_slug),
+                journey_name,
+                lang,
+            )
+        return email, content.subject, content.text, content.html
 
     async def update_person(
         self,

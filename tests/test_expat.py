@@ -29,6 +29,9 @@ SUMMARY_KEYS = {
     "steps_total",
     "created_at",
     "updated_at",
+    # Member read-only feature: the viewer's role on this dossier (principal
+    # vs member) so the front hides every write affordance for a member.
+    "viewer_role",
 }
 DETAIL_KEYS = SUMMARY_KEYS | {"referent", "timeline", "custom_field_definitions"}
 STEP_KEYS = {

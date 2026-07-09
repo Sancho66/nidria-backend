@@ -42,6 +42,53 @@ class DocumentsRepository:
         stmt = select(Document).where(Document.id == document_id, Document.case_id == case_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    # --- member (person-scoped) document access, decision B (no migration) ---------
+    #
+    # A dossier MEMBER sees ONLY documents reachable through THEIR OWN
+    # requirements (case_step_requirement.document_id, person-keyed). A document
+    # not attached to one of their requirements is not theirs — including
+    # agency step attachments, which carry no person and never surface.
+
+    async def list_documents_for_person(
+        self, case_id: uuid.UUID, person_id: uuid.UUID
+    ) -> list[Document]:
+        stmt = (
+            select(Document)
+            .join(CaseStepRequirement, CaseStepRequirement.document_id == Document.id)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+            )
+            .where(
+                Document.case_id == case_id,
+                CaseStepProgress.case_id == case_id,
+                CaseStepRequirement.person_id == person_id,
+            )
+            .order_by(Document.created_at.desc())
+            .distinct()
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def get_document_for_person(
+        self, case_id: uuid.UUID, document_id: uuid.UUID, person_id: uuid.UUID
+    ) -> Document | None:
+        stmt = (
+            select(Document)
+            .join(CaseStepRequirement, CaseStepRequirement.document_id == Document.id)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+            )
+            .where(
+                Document.id == document_id,
+                Document.case_id == case_id,
+                CaseStepProgress.case_id == case_id,
+                CaseStepRequirement.person_id == person_id,
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalars().first()
+
     async def get_progress_in_case(
         self, case_id: uuid.UUID, progress_id: uuid.UUID
     ) -> CaseStepProgress | None:

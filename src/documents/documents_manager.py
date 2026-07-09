@@ -7,6 +7,7 @@ from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
@@ -47,9 +48,24 @@ class DocumentsManager:
             raise NotFoundError("Case not found.")
         return case
 
+    async def _viewer_case(
+        self, expat: ExpatUser, case_id: uuid.UUID
+    ) -> tuple[ClientCase, CasePerson | None, bool]:
+        """READ ownership for the client portal: principal OR dossier member.
+        Returns (case, viewing_person, is_member). Single source of truth for
+        viewer ownership = ExpatRepository (never duplicated). Used ONLY by the
+        document READS; upload/delete keep `_case_for_expat` (principal-only)."""
+        from src.expat.expat_repository import ExpatRepository
+
+        row = await ExpatRepository(self.db).get_case_for_viewer(expat.id, case_id)
+        if row is None:
+            raise NotFoundError("Case not found.")
+        case, _agency, viewing_person = row
+        return case, viewing_person, case.principal_expat_user_id != expat.id
+
     async def _case_for_expat(self, expat: ExpatUser, case_id: uuid.UUID) -> ClientCase:
-        # Strict ownership: 404, never 403 — a foreign case's existence
-        # must not be revealed.
+        # WRITE ownership: PRINCIPAL-ONLY, 404 — a member (not the principal)
+        # can never upload or delete (read-only is a property of the link).
         case = await self.repo.get_case_for_expat(expat.id, case_id)
         if case is None:
             raise NotFoundError("Case not found.")
@@ -226,10 +242,15 @@ class DocumentsManager:
     async def list_for_expat(
         self, expat: ExpatUser, case_id: uuid.UUID
     ) -> list[ExpatDocumentResponse]:
-        # The expat sees ALL documents of their case — the agency
-        # deposits pieces FOR the client (validated decision).
-        case = await self._case_for_expat(expat, case_id)
-        documents = await self.repo.list_documents(case.id)
+        # The PRINCIPAL sees ALL documents of their case (the agency deposits
+        # pieces FOR the client). A MEMBER sees ONLY documents reachable through
+        # their own requirements (decision B — step attachments never surface).
+        case, viewing_person, is_member = await self._viewer_case(expat, case_id)
+        documents = (
+            await self.repo.list_documents_for_person(case.id, viewing_person.id)
+            if is_member and viewing_person is not None
+            else await self.repo.list_documents(case.id)
+        )
         step_names, req_refs = await self._enrich(documents)
         return [
             ExpatDocumentResponse(
@@ -267,7 +288,17 @@ class DocumentsManager:
     async def download_for_expat(
         self, expat: ExpatUser, case_id: uuid.UUID, document_id: uuid.UUID
     ) -> tuple[Document, bytes]:
-        case = await self._case_for_expat(expat, case_id)
+        case, viewing_person, is_member = await self._viewer_case(expat, case_id)
+        if is_member and viewing_person is not None:
+            # A member downloads ONLY a document reachable via their own
+            # requirements — a foreign/agency document is 404 (never revealed).
+            document = await self.repo.get_document_for_person(
+                case.id, document_id, viewing_person.id
+            )
+            if document is None:
+                raise NotFoundError("Document not found.")
+            content = await asyncio.to_thread(storage.download, document.storage_path)
+            return document, content
         return await self._download(case, document_id)
 
     # --- external provider (wave B): every entry scoped by assignment ---------------

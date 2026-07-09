@@ -175,10 +175,18 @@ class PersonResponse(_CivilStatusFields):
 
 
 class PersonCreateRequest(_CivilStatusFields):
-    """Creates a FAMILY member (the PRINCIPAL exists with the case)."""
+    """Creates a FAMILY member (the PRINCIPAL exists with the case).
+
+    `email` is OPTIONAL: when given, the agency invites the member — the
+    member gets a read-only account (linked-or-created expat_user by email,
+    the same global pivot as the principal) and sees the dossier's progress
+    plus their OWN fields/documents. When absent, the member stays what they
+    are today: a person on the dossier with no login. Nothing changes for them.
+    """
 
     full_name: str = Field(min_length=1, max_length=200)
     relationship: str = Field(min_length=1, max_length=50)
+    email: NormalizedEmailStr | None = None
     custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 

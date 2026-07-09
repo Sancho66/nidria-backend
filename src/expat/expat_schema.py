@@ -8,7 +8,7 @@ semantics."""
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -42,6 +42,12 @@ class ExpatCaseSummaryResponse(BaseModel):
     steps_total: int
     created_at: datetime
     updated_at: datetime
+    # WHO is looking: "principal" (sees everything, the historical view — the
+    # default keeps every existing client backward-compatible) or "member"
+    # (family/associate: progress + their OWN fields/documents only, every
+    # write affordance hidden). A future viewer type is a new enum value, not
+    # a boolean that silently reads false — the read contract never breaks.
+    viewer_role: Literal["principal", "member"] = "principal"
 
 
 class ExpatReferentResponse(BaseModel):

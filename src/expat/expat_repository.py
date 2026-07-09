@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -45,6 +45,58 @@ class ExpatRepository:
         )
         row = (await self.db.execute(stmt)).first()
         return (row[0], row[1]) if row is not None else None
+
+    # --- viewer ownership (principal OR dossier member with an account) ------------
+    #
+    # A member = a case_person carrying an expat_user_id (the agency linked it
+    # when adding the member with an email). The PRINCIPAL is caught both by
+    # client_case.principal_expat_user_id AND its own principal case_person, so
+    # the OR is belt + braces (never miss a principal on legacy rows). READ
+    # ownership only — every WRITE path keeps its principal-only resolver.
+
+    async def list_cases_for_viewer(self, expat_id: uuid.UUID) -> list[tuple[ClientCase, Agency]]:
+        member_case_ids = select(CasePerson.case_id).where(CasePerson.expat_user_id == expat_id)
+        stmt = (
+            select(ClientCase, Agency)
+            .join(Agency, Agency.id == ClientCase.agency_id)
+            .where(
+                ClientCase.deleted_at.is_(None),
+                or_(
+                    ClientCase.principal_expat_user_id == expat_id,
+                    ClientCase.id.in_(member_case_ids),
+                ),
+            )
+            .order_by(ClientCase.created_at.desc(), ClientCase.id.desc())
+        )
+        return [(case, agency) for case, agency in (await self.db.execute(stmt)).all()]
+
+    async def get_case_for_viewer(
+        self, expat_id: uuid.UUID, case_id: uuid.UUID
+    ) -> tuple[ClientCase, Agency, CasePerson | None] | None:
+        """(case, agency, viewing_person). `viewing_person` is the viewer's own
+        case_person in this case — used to scope a MEMBER's projection to their
+        own requirements. None means the viewer is the principal (sees all)."""
+        stmt = (
+            select(ClientCase, Agency, CasePerson)
+            .join(Agency, Agency.id == ClientCase.agency_id)
+            .outerjoin(
+                CasePerson,
+                and_(
+                    CasePerson.case_id == ClientCase.id,
+                    CasePerson.expat_user_id == expat_id,
+                ),
+            )
+            .where(
+                ClientCase.id == case_id,
+                ClientCase.deleted_at.is_(None),
+                or_(
+                    ClientCase.principal_expat_user_id == expat_id,
+                    CasePerson.id.isnot(None),
+                ),
+            )
+        )
+        row = (await self.db.execute(stmt)).first()
+        return (row[0], row[1], row[2]) if row is not None else None
 
     async def step_counts(self, case_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[int, int]]:
         """{case_id: (done, total)} — python-side aggregation, a handful

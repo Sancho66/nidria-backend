@@ -87,9 +87,21 @@ class ExpatPortalManager:
     async def _get_owned_case(
         self, expat: ExpatUser, case_id: uuid.UUID
     ) -> tuple[ClientCase, Agency]:
-        # Strict ownership: 404, never 403 — a foreign case's existence
-        # must not be revealed.
+        # WRITE ownership: PRINCIPAL-ONLY, 404 (never reveal a foreign case).
+        # Every write path resolves through here, so a dossier MEMBER — who is
+        # not the principal — can never reach a write endpoint (read-only is a
+        # property of the link, enforced by this narrow resolver).
         row = await self.repo.get_case_for_expat(expat.id, case_id)
+        if row is None:
+            raise NotFoundError("Case not found.")
+        return row
+
+    async def _get_viewing_case(
+        self, expat: ExpatUser, case_id: uuid.UUID
+    ) -> tuple[ClientCase, Agency, CasePerson | None]:
+        # READ ownership: principal OR dossier member. `viewing_person` is the
+        # member's own case_person (None for the principal → sees all).
+        row = await self.repo.get_case_for_viewer(expat.id, case_id)
         if row is None:
             raise NotFoundError("Case not found.")
         return row
@@ -99,6 +111,8 @@ class ExpatPortalManager:
         case: ClientCase,
         agency: Agency,
         counts: dict[uuid.UUID, tuple[int, int]],
+        *,
+        is_member: bool,
     ) -> ExpatCaseSummaryResponse:
         done, total = counts.get(case.id, (0, 0))
         return ExpatCaseSummaryResponse(
@@ -117,18 +131,29 @@ class ExpatPortalManager:
             steps_total=total,
             created_at=case.created_at,
             updated_at=case.updated_at,
+            # The front hides every write affordance for a member (read-only).
+            viewer_role="member" if is_member else "principal",
         )
 
     async def list_my_cases(self, expat: ExpatUser) -> list[ExpatCaseSummaryResponse]:
-        rows = await self.repo.list_cases_for_expat(expat.id)
+        rows = await self.repo.list_cases_for_viewer(expat.id)
         counts = await self.repo.step_counts([case.id for case, _ in rows])
-        return [self._summary(case, agency, counts) for case, agency in rows]
+        return [
+            self._summary(case, agency, counts, is_member=case.principal_expat_user_id != expat.id)
+            for case, agency in rows
+        ]
 
     async def get_my_case(
         self, expat: ExpatUser, case_id: uuid.UUID, lang: str = DEFAULT_LANG
     ) -> ExpatCaseDetailResponse:
-        case, agency = await self._get_owned_case(expat, case_id)
+        case, agency, viewing_person = await self._get_viewing_case(expat, case_id)
         counts = await self.repo.step_counts([case.id])
+        is_member = case.principal_expat_user_id != expat.id
+        # A MEMBER sees the dossier PROGRESS and only THEIR OWN requirements;
+        # the principal (filter None) sees everything, exactly as before. The
+        # principal's civil fields (passport, DOB) live on the principal's
+        # requirements, so filtering by the member's person_id removes them.
+        filter_person_id = viewing_person.id if (is_member and viewing_person) else None
 
         referent: ExpatReferentResponse | None = None
         if case.owner_agent_id is not None:
@@ -160,11 +185,15 @@ class ExpatPortalManager:
                 # Feature 2: the client always sees the step's content on
                 # their own dossier.
                 content_note=step.content_note,
-                attachments=step.attachments,
-                # "Action validée par": the client can validate when it IS
-                # the step's validator and the step is active.
+                # A member never sees the agency's step attachments (they are
+                # case-scoped, not person-scoped — decision B, no migration).
+                attachments=(step.attachments if not is_member else []),
+                # "Action validée par": ONLY the principal validates (a member
+                # is read-only) — and only when it IS the step's validator and
+                # the step is active.
                 can_validate=(
-                    step.validated_by_type == StepValidatorType.EXPAT.value
+                    not is_member
+                    and step.validated_by_type == StepValidatorType.EXPAT.value
                     and step.status == StepStatus.IN_PROGRESS.value
                 ),
                 requirements=[
@@ -180,9 +209,12 @@ class ExpatPortalManager:
                         target=req.target,  # "case" → front routes to the case-req endpoint (C2)
                     )
                     # Archived custom-field requirements are not surfaced:
-                    # never ask the client to fill a retired field.
+                    # never ask the client to fill a retired field. And a MEMBER
+                    # sees ONLY their own requirements (person-scoped) — the
+                    # principal's civil fields/documents never surface.
                     for req in step.requirements
                     if not req.is_archived
+                    and (filter_person_id is None or req.person_id == filter_person_id)
                 ],
             )
             for step in internal_timeline
@@ -191,7 +223,7 @@ class ExpatPortalManager:
         # renders a custom_field requirement identically (no divergence).
         definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
         return ExpatCaseDetailResponse(
-            **self._summary(case, agency, counts).model_dump(),
+            **self._summary(case, agency, counts, is_member=is_member).model_dump(),
             referent=referent,
             timeline=timeline,
             custom_field_definitions=[
@@ -404,7 +436,7 @@ class ExpatPortalManager:
         """The logo of an agency holding at least one of MY live cases —
         same visibility rule as its name on my dossiers (404 otherwise,
         never revealing other agencies)."""
-        rows = await self.repo.list_cases_for_expat(expat.id)
+        rows = await self.repo.list_cases_for_viewer(expat.id)
         agency = next((a for _case, a in rows if a.id == agency_id), None)
         if agency is None:
             raise NotFoundError("Logo not found.")
@@ -413,7 +445,7 @@ class ExpatPortalManager:
     async def agency_cover(self, expat: ExpatUser, agency_id: uuid.UUID) -> tuple[bytes, str]:
         """Same visibility rule as the logo: only an agency holding at
         least one of MY live cases (404 otherwise)."""
-        rows = await self.repo.list_cases_for_expat(expat.id)
+        rows = await self.repo.list_cases_for_viewer(expat.id)
         agency = next((a for _case, a in rows if a.id == agency_id), None)
         if agency is None:
             raise NotFoundError("Cover not found.")
@@ -422,7 +454,7 @@ class ExpatPortalManager:
     async def list_notifications(
         self, expat: ExpatUser, case_id: uuid.UUID
     ) -> list[ExpatNotificationResponse]:
-        case, _ = await self._get_owned_case(expat, case_id)
+        case, _, _ = await self._get_viewing_case(expat, case_id)
         reminders = await self.repo.list_in_app_notifications(case.id)
         return [
             ExpatNotificationResponse(
