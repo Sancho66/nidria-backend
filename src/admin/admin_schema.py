@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from src.agencies.agencies_schema import OnboardingStepState
+
 
 class AdminAgencyRow(BaseModel):
     """One agency row of the superadmin "Gérer les agences" table.
@@ -29,6 +31,12 @@ class AdminAgencyRow(BaseModel):
     cases_count: int
     members_count: int
     created_at: datetime
+    # Adoption signals (Phase 2, Eric): the 3 activation gestures (SAME
+    # derivation as GET /agencies/me/onboarding), the S0/S1/S2 funnel state,
+    # and the login heartbeat (MAX of the agency's agents, NULL if none yet).
+    onboarding: list[OnboardingStepState]
+    usage_state: str  # S0 | S1 | S2
+    last_login_at: datetime | None
 
 
 class AdminAgenciesResponse(BaseModel):

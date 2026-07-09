@@ -119,6 +119,9 @@ class AuthManager:
         if challenge is not None:
             return challenge
         pair = self.issue_token_pair(agent.id, Audience.AGENT)
+        # LOGIN heartbeat (adoption dashboard). Only at a real login — NOT on a
+        # refresh (same session) nor impersonation (not the agent's own login).
+        agent.last_login_at = datetime.now(UTC)
         await self.db.commit()
         return pair
 
@@ -417,6 +420,9 @@ class AuthManager:
             raise ValidationError("Invalid authentication code.", code="auth.mfa_invalid_code")
         await self.repo.delete_mfa_challenge(challenge)
         pair = self.issue_token_pair(actor_id, audience)
+        # LOGIN heartbeat — 2FA step 2 IS the login completion (agents only).
+        if audience is Audience.AGENT:
+            await self.repo.set_agent_last_login(actor_id, datetime.now(UTC))
         await self.db.commit()
         return pair
 

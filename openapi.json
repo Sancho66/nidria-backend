@@ -1096,7 +1096,7 @@
           "admin"
         ],
         "summary": "List Agencies",
-        "description": "The superadmin agencies table: paginated, searchable (name/slug),\nsortable (created_at|name|cases_count), with derived status + seat and\ncase counts. TWO constant queries, no N+1.",
+        "description": "The superadmin agencies table: paginated, searchable (name/slug),\nsortable (created_at|name|cases_count), with derived status, seat/case\ncounts, the 3 onboarding gestures, the S0/S1/S2 state and the login\nheartbeat. Filters (combinable, applied in SQL BEFORE pagination):\n`trial_expiring_within_days`, `onboarding_incomplete` — Eric's \"who expires\nsoon and hasn't started\". A CONSTANT number of queries, no N+1.",
         "operationId": "list_agencies_admin_agencies_get",
         "security": [
           {
@@ -1161,6 +1161,33 @@
               "minimum": 1,
               "default": 20,
               "title": "Page Size"
+            }
+          },
+          {
+            "name": "trial_expiring_within_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trial Expiring Within Days"
+            }
+          },
+          {
+            "name": "onboarding_incomplete",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Onboarding Incomplete"
             }
           }
         ],
@@ -13089,6 +13116,29 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "onboarding": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingStepState"
+            },
+            "type": "array",
+            "title": "Onboarding"
+          },
+          "usage_state": {
+            "type": "string",
+            "title": "Usage State"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
           }
         },
         "type": "object",
@@ -13105,7 +13155,10 @@
           "trial_days_remaining",
           "cases_count",
           "members_count",
-          "created_at"
+          "created_at",
+          "onboarding",
+          "usage_state",
+          "last_login_at"
         ],
         "title": "AdminAgencyRow",
         "description": "One agency row of the superadmin \"Gérer les agences\" table.\n\n`status` is DERIVED from the model (no status/suspended column):\nactive (converted_at set, tested FIRST — it beats an unexpired trial),\ntrial (unconverted + future trial_ends_at, with trial_days_remaining),\nexpired (unconverted + past trial_ends_at), unknown (neither set — an\nout-of-wizard/legacy anomaly the table exists to surface, never folded\ninto expired). `seats_used` = INTERNAL members (seat consumers);\n`members_count` = ALL agents — the front derives externals by\nsubtraction. `cases_count` = live non-demo cases."

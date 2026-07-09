@@ -39,6 +39,7 @@ from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.enums import NurtureSendStatus
 from src.nurture.nurture_texts import needs_booking_url, render_mail
+from src.usage.usage_manager import classify_usage_state
 
 logger = logging.getLogger(__name__)
 
@@ -51,18 +52,14 @@ CATCHUP_WINDOW_DAYS = 7
 
 
 def _usage_state(db: Session, agency_id: Any) -> str:
-    """SYNC mirror of UsageManager.compute_usage_state (the manager is
-    async-only; the rule is 3 lines and pinned by the S0/S1/S2 tests)."""
+    """SYNC read of the agency's milestone keys → the SHARED classifier (one
+    source of truth with UsageManager.compute_usage_state and the dashboard)."""
     keys = set(
         db.execute(
             select(AgencyUsageMilestone.key).where(AgencyUsageMilestone.agency_id == agency_id)
         ).scalars()
     )
-    if "premier_client_compte_active" in keys:
-        return "S2"
-    if "premier_dossier_cree" in keys:
-        return "S1"
-    return "S0"
+    return classify_usage_state(keys)
 
 
 def _activation_anchor(db: Session, agency: Agency) -> datetime:

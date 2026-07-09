@@ -10,9 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.admin.admin_repository import AdminRepository
 from src.admin.admin_schema import AdminAgenciesResponse, AdminAgencyRow
 
-# Seat caps live with the subscription logic — reuse, never duplicate,
-# so the table can never drift from the invitation gate.
-from src.agencies.agencies_manager import SEATS_MAX_BY_PLAN, TRIAL_SEAT_LIMIT
+# Seat caps + the SINGLE onboarding-gesture derivation live with the agency
+# logic — reuse, never duplicate, so the table can never drift.
+from src.agencies.agencies_manager import (
+    SEATS_MAX_BY_PLAN,
+    TRIAL_SEAT_LIMIT,
+    onboarding_gestures,
+)
+from src.usage.usage_manager import classify_usage_state
 
 
 def _status(
@@ -42,20 +47,36 @@ class AdminManager:
         order: str,
         page: int,
         page_size: int,
+        trial_expiring_within_days: int | None = None,
+        onboarding_incomplete: bool = False,
     ) -> AdminAgenciesResponse:
-        rows, total = await AdminRepository(self.db).list_agencies_page(
-            search=search, sort=sort, order=order, page=page, page_size=page_size
-        )
         now = datetime.now(UTC)
+        repo = AdminRepository(self.db)
+        rows, total = await repo.list_agencies_page(
+            search=search,
+            sort=sort,
+            order=order,
+            page=page,
+            page_size=page_size,
+            now=now,
+            trial_expiring_within_days=trial_expiring_within_days,
+            onboarding_incomplete=onboarding_incomplete,
+        )
+        # ONE grouped batch for the page's agencies — never one query per row.
+        adoption = await repo.adoption_batch([r.id for r in rows])
         return AdminAgenciesResponse(
-            items=[self._row(r, now) for r in rows],
+            items=[self._row(r, now, adoption[r.id]) for r in rows],
             total=total,
             page=page,
             page_size=page_size,
         )
 
-    def _row(self, r: Row[Any], now: datetime) -> AdminAgencyRow:
+    def _row(self, r: Row[Any], now: datetime, adoption: dict[str, Any]) -> AdminAgencyRow:
         status, days = _status(r.trial_ends_at, r.converted_at, now)
+        milestones = adoption["milestones"]
+        # SAME derivation as GET /agencies/me/onboarding — journey_at resolves
+        # to the milestone or the first non-demo template.
+        journey_at = milestones.get("premier_parcours_cree") or adoption["journey_min"]
         return AdminAgencyRow(
             id=r.id,
             name=r.name,
@@ -71,4 +92,11 @@ class AdminManager:
             cases_count=r.cases_count,
             members_count=r.members_count,
             created_at=r.created_at,
+            onboarding=onboarding_gestures(
+                journey_at=journey_at,
+                premier_dossier=milestones.get("premier_dossier_cree"),
+                viewed=adoption["viewed_min"],
+            ),
+            usage_state=classify_usage_state(set(milestones)),
+            last_login_at=r.last_login_at,
         )

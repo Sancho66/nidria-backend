@@ -229,16 +229,29 @@ async def _count_queries(db_session: AsyncSession, page_size: int) -> int:
     return counter["n"]
 
 
-async def test_query_count_is_two_regardless_of_page_size(
+async def test_query_count_is_constant_for_3_and_25_agencies(
     db_session: AsyncSession,
     make_agency: MakeAgency,
     make_client_case: MakeClientCase,
     make_expat_user: MakeExpatUser,
 ) -> None:
+    """No N+1: the onboarding gestures, S0/S1/S2 and last_login are batched
+    (grouped queries on the page ids). The query count for 3 agencies on a page
+    equals the count for 25 — and is constant across page size."""
     expat = await make_expat_user(email="q@x.io")
-    for i in range(25):
+    for i in range(3):
         agency = await make_agency(name=f"Ag{i:02d}")
         await make_client_case(agency_id=agency.id, principal_expat_user_id=expat.id)
+    count_3 = await _count_queries(db_session, page_size=100)  # 3 rows on one page
 
-    assert await _count_queries(db_session, page_size=1) == 2  # main + count
-    assert await _count_queries(db_session, page_size=20) == 2  # same, sort=cases_count included
+    for i in range(3, 25):
+        agency = await make_agency(name=f"Ag{i:02d}")
+        await make_client_case(agency_id=agency.id, principal_expat_user_id=expat.id)
+    count_25 = await _count_queries(db_session, page_size=100)  # 25 rows on one page
+
+    # THE proof: 25 agencies cost the same as 3 — no per-agency query.
+    assert count_3 == count_25
+    # And constant across page size (the batch is grouped, never per-row).
+    assert await _count_queries(db_session, page_size=1) == count_25
+    # A small, fixed number (main + count + the batched adoption queries).
+    assert count_25 <= 6

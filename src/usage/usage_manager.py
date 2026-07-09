@@ -57,6 +57,18 @@ class UsageState:
     S2 = "S2"  # at least one client with an active account
 
 
+def classify_usage_state(milestone_keys: set[str]) -> str:
+    """THE adoption state from an agency's reached milestone keys — the single
+    source of truth. Reused by three feeders: the async manager below, the sync
+    nurture cron (nurture_job), and the batched superadmin dashboard. Extracting
+    it kills a latent bug: the rule used to live in two copies that could drift."""
+    if "premier_client_compte_active" in milestone_keys:
+        return UsageState.S2
+    if "premier_dossier_cree" in milestone_keys:
+        return UsageState.S1
+    return UsageState.S0
+
+
 class UsageManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -146,11 +158,7 @@ class UsageManager:
 
     async def compute_usage_state(self, agency_id: uuid.UUID) -> str:
         reached = await self.milestones(agency_id)
-        if "premier_client_compte_active" in reached:
-            return UsageState.S2
-        if "premier_dossier_cree" in reached:
-            return UsageState.S1
-        return UsageState.S0
+        return classify_usage_state(set(reached))
 
     async def counters(self, agency_id: uuid.UUID) -> dict[str, int]:
         """Live counts for the dashboard/health — demo cases excluded."""

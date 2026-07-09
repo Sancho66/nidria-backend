@@ -78,6 +78,24 @@ def _slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")[:100].strip("-")
 
 
+def onboarding_gestures(
+    *,
+    journey_at: datetime | None,
+    premier_dossier: datetime | None,
+    viewed: datetime | None,
+) -> list[OnboardingStepState]:
+    """The 3 activation gestures from the RESOLVED signals — the SINGLE
+    derivation, reused by GET /agencies/me/onboarding (self) and the superadmin
+    adoption dashboard (batched). `journey_at` is already 'premier_parcours OR
+    first non-demo template'; open_case falls back on the demo consultation."""
+    open_at = premier_dossier or viewed
+    return [
+        OnboardingStepState(key="create_journey", done=journey_at is not None, done_at=journey_at),
+        OnboardingStepState(key="open_case", done=open_at is not None, done_at=open_at),
+        OnboardingStepState(key="view_as_client", done=viewed is not None, done_at=viewed),
+    ]
+
+
 @dataclass(frozen=True)
 class AgencyCreated:
     """Result of POST /agencies — the persisted agency + first admin, plus
@@ -465,17 +483,12 @@ class AgenciesManager:
                 )
             )
         ).scalar_one_or_none()
-        open_at = firsts.get("premier_dossier_cree") or viewed_at
         return OnboardingResponse(
-            steps=[
-                OnboardingStepState(
-                    key="create_journey", done=journey_at is not None, done_at=journey_at
-                ),
-                OnboardingStepState(key="open_case", done=open_at is not None, done_at=open_at),
-                OnboardingStepState(
-                    key="view_as_client", done=viewed_at is not None, done_at=viewed_at
-                ),
-            ],
+            steps=onboarding_gestures(
+                journey_at=journey_at,
+                premier_dossier=firsts.get("premier_dossier_cree"),
+                viewed=viewed_at,
+            ),
             dismissed=agency.onboarding_dismissed_at is not None,
         )
 

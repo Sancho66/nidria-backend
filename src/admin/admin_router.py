@@ -40,10 +40,21 @@ async def list_agencies(
     order: str = "desc",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    trial_expiring_within_days: int | None = Query(None, ge=0),
+    onboarding_incomplete: bool = False,
 ) -> AdminAgenciesResponse:
     """The superadmin agencies table: paginated, searchable (name/slug),
-    sortable (created_at|name|cases_count), with derived status + seat and
-    case counts. TWO constant queries, no N+1."""
+    sortable (created_at|name|cases_count), with derived status, seat/case
+    counts, the 3 onboarding gestures, the S0/S1/S2 state and the login
+    heartbeat. Filters (combinable, applied in SQL BEFORE pagination):
+    `trial_expiring_within_days`, `onboarding_incomplete` — Eric's "who expires
+    soon and hasn't started". A CONSTANT number of queries, no N+1."""
     return await AdminManager(db).list_agencies(
-        search=search, sort=sort, order=order, page=page, page_size=page_size
+        search=search,
+        sort=sort,
+        order=order,
+        page=page,
+        page_size=page_size,
+        trial_expiring_within_days=trial_expiring_within_days,
+        onboarding_incomplete=onboarding_incomplete,
     )

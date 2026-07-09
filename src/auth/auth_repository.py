@@ -32,6 +32,11 @@ class AuthRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def set_agent_last_login(self, agent_id: uuid.UUID, when: datetime) -> None:
+        """Stamp the LOGIN heartbeat (2FA step 2 path — the caller only reaches
+        here on a real login, never a refresh)."""
+        await self.db.execute(update(Agent).where(Agent.id == agent_id).values(last_login_at=when))
+
     async def has_pending_external_invitation(self, agent_id: uuid.UUID) -> bool:
         """True when this Agent was created by a still-PENDING external
         invitation — the account exists (agent_id posed at invite) but is NOT

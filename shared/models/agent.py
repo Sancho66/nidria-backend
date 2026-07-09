@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, text
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.models.base import Base, PersonNameMixin, TimestampMixin, UUIDPrimaryKeyMixin
@@ -28,6 +29,11 @@ class Agent(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
     # Profile picture (bloc 1) — private-bucket storage path, served by the
     # backend only (never a direct Supabase URL). NULL = initials fallback.
     avatar_path: Mapped[str | None] = mapped_column(String(500))
+    # Last LOGIN (token issuance), posed by auth_manager — NEVER a refresh
+    # (same session continuing) nor impersonation (not the agent's own login).
+    # The adoption dashboard reads MAX per agency: the heartbeat that tells an
+    # agency reflecting apart from an agency that abandoned.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Denormalized from the role's kind at creation (an external agent =
     # a provider, lawyer/notary/…): the CHEAP filter read by enforce() on
     # every request and by every "agents of the agency" listing to keep
