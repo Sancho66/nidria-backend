@@ -63,9 +63,32 @@ jobs:
       # on GH's 2-core runners; larger gain locally.
       - run: uv run pytest tests/ -x -q -n auto
 
+  openapi:
+    name: OpenAPI up-to-date
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      # Contract-first (CLAUDE.md rule #12): the committed openapi.json IS the
+      # front's source of truth for its schema.d.ts. A stale export is a DEAD
+      # contract that passes every other check — the front codes against it
+      # without knowing. Regenerate and fail on ANY drift, exactly like the
+      # front's check:i18n: silent drift is only visible at CI.
+      - run: uv run python scripts/export_openapi.py
+      - name: openapi.json must be up to date
+        run: |
+          if ! git diff --quiet -- openapi.json; then
+            echo "::error::openapi.json est perime, regenere-le et commite-le (make openapi)."
+            git --no-pager diff -- openapi.json
+            exit 1
+          fi
+          echo "openapi.json a jour."
+
   deploy:
     name: Deploy to Fly.io
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, openapi]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
