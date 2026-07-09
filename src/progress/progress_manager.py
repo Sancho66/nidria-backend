@@ -483,6 +483,15 @@ class ProgressManager:
         reqs_by_progress: dict[uuid.UUID, list[RequirementStateResponse]] = defaultdict(list)
         met_by_progress: dict[uuid.UUID, bool] = {}
         for req in concrete:
+            # Defense in depth: an orphaned instance (step_requirement_id NULL —
+            # its template definition was deleted) is NEVER projected, on any of
+            # the 3 faces (all delegate here). The filter lives HERE, at the
+            # display fold, and NOT in list_case_requirements_for_progress_ids:
+            # that query also feeds _sync_missing_requirements' dedup, which must
+            # keep SEEING the orphan or it would re-materialize it and collide on
+            # uq_case_step_requirement.
+            if req.step_requirement_id is None:
+                continue
             person = persons_by_id.get(req.person_id)
             provided = is_provided(req, person) if person is not None else False
             is_archived = (

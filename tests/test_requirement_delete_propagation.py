@@ -20,7 +20,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -30,6 +30,7 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import Role
+from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -525,3 +526,130 @@ async def test_deletion_is_isolated_across_agencies(
         )
     ).scalar_one()
     assert b_instances == 1  # B's instance survived A's deletion
+
+
+# --- defense in depth: an orphan instance is never displayed --------------------------
+
+
+async def test_orphan_instance_is_hidden_on_all_three_faces(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    external: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """A `case_step_requirement` with step_requirement_id IS NULL (a legacy
+    orphan, or a future propagation leak) must never surface — on agent,
+    expat OR provider. A normal sibling requirement stays visible."""
+    headers = agent_headers(admin)
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    sid = (
+        await client.post(
+            f"/journeys/{tid}/steps",
+            headers=headers,
+            json={"name": "Collecte", "completion_mode": "agency_validation"},
+        )
+    ).json()["id"]
+    for ref in ("passport_number", "nationality"):
+        await client.post(
+            f"/journeys/{tid}/fields",
+            headers=headers,
+            json={"kind": "base_field", "reference": ref},
+        )
+        await client.post(
+            f"/journeys/{tid}/steps/{sid}/requirements",
+            headers=headers,
+            json={"kind": "base_field", "reference": ref, "scope": "principal"},
+        )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(client, headers, str(case.id), tid)
+    await client.post(
+        f"/cases/{case.id}/external-assignments",
+        headers=headers,
+        json={"agent_id": str(external.id)},
+    )
+    await client.put(
+        f"/cases/{case.id}/steps/{pid}/responsible",
+        headers=headers,
+        json={"responsible_type": "agent", "responsible_agent_id": str(external.id)},
+    )
+
+    # Orphan the passport_number instance (simulate the legacy behaviour).
+    await db_session.execute(
+        update(CaseStepRequirement)
+        .where(
+            CaseStepRequirement.reference == "passport_number",
+            CaseStepRequirement.step_requirement_id.is_not(None),
+        )
+        .values(step_requirement_id=None)
+    )
+    await db_session.commit()
+
+    async def expat_refs() -> list[str]:
+        d = (await client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))).json()
+        return [r["reference"] for s in d["timeline"] for r in s["requirements"]]
+
+    async def external_refs() -> list[str]:
+        d = (await client.get(f"/external/cases/{case.id}", headers=agent_headers(external))).json()
+        return [r["reference"] for s in d["timeline"] for r in s["requirements"]]
+
+    for refs in (
+        await _agent_refs(client, headers, str(case.id)),
+        await expat_refs(),
+        await external_refs(),
+    ):
+        assert "passport_number" not in refs  # the orphan is hidden
+        assert "nationality" in refs  # the normal requirement still shows
+
+
+async def test_sync_missing_requirements_does_not_rematerialize_an_orphan(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """THE test that protects the nuance: the display filter lives at the
+    projection, NOT in list_case_requirements_for_progress_ids. That query
+    feeds _sync_missing_requirements' dedup — if it stopped returning the
+    orphan, the still-present definition would be re-materialized and
+    collide on uq_case_step_requirement. Here the orphan stays seen, so
+    the diff-materialization creates nothing."""
+    headers = agent_headers(admin)
+    tid, sid, _req = await _field_template(client, headers, scope="principal")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(client, headers, str(case.id), tid)
+
+    # Orphan the instance while its template definition still exists.
+    await db_session.execute(
+        update(CaseStepRequirement)
+        .where(CaseStepRequirement.reference == "passport_number")
+        .values(step_requirement_id=None)
+    )
+    await db_session.commit()
+
+    progress = (
+        await db_session.execute(
+            select(CaseStepProgress).where(CaseStepProgress.id == uuid.UUID(pid))
+        )
+    ).scalar_one()
+    created = await ProgressManager(db_session)._sync_missing_requirements(progress)
+    await db_session.flush()  # would raise IntegrityError here if it collided
+
+    assert created == 0  # nothing re-materialized (the orphan is deduped)
+    count = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(CaseStepRequirement)
+            .where(CaseStepRequirement.reference == "passport_number")
+        )
+    ).scalar_one()
+    assert count == 1  # still the single orphaned row — no duplicate, no collision
