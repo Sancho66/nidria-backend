@@ -76,7 +76,18 @@ jobs:
       # contract that passes every other check — the front codes against it
       # without knowing. Regenerate and fail on ANY drift, exactly like the
       # front's check:i18n: silent drift is only visible at CI.
-      - run: uv run python scripts/export_openapi.py
+      # Building the app instantiates Settings (5 required fields). The export
+      # only reads route/schema definitions — never a DB or a real secret — so
+      # placeholders suffice and keep the output deterministic (same as the
+      # committed contract). Mirrors tests/conftest.py.
+      - name: Regenerate openapi.json
+        env:
+          DATABASE_URL: postgresql+asyncpg://placeholder/placeholder
+          DATABASE_URL_SYNC: postgresql+psycopg2://placeholder/placeholder
+          JWT_AGENT_SECRET: ci-openapi-agent
+          JWT_EXPAT_SECRET: ci-openapi-expat
+          JWT_REFRESH_SECRET: ci-openapi-refresh
+        run: uv run python scripts/export_openapi.py
       - name: openapi.json must be up to date
         run: |
           if ! git diff --quiet -- openapi.json; then
