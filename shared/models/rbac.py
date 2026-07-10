@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -44,6 +45,16 @@ class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     cloned_from_role_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("role.id", ondelete="SET NULL"), index=True
+    )
+    # The agency's LAST MATRIX DECISION on this role: set at creation (a clone
+    # copies the full system matrix then), bumped ONLY by set_role_permissions
+    # — a rename is not a matrix decision and never touches it (that is why
+    # this is a dedicated column, not updated_at: the semantics must not
+    # depend on which other field happened to bump a shared timestamp). The
+    # seed's clone catch-up fills a permission iff it was BORN after this
+    # moment (ignorance); one that existed before is a decision, untouched.
+    permissions_reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     permissions: Mapped[list[Permission]] = relationship(Permission, secondary="role_permission")

@@ -259,6 +259,53 @@ async def seed_system_roles(db: AsyncSession) -> None:
     await db.commit()
 
 
+async def propagate_new_permissions_to_clones(db: AsyncSession) -> None:
+    """Close the copy-on-write blind spot: a CLONE freezes its system role's
+    matrix as of the agency's LAST MATRIX DECISION — `permissions_reviewed_at`,
+    set at creation and bumped ONLY by set_role_permissions (a rename never
+    touches it). A permission born AFTER that moment was never SEEN by the
+    agency: its absence is ignorance, not a choice — the seed closes the gap,
+    additively, at every boot. A permission that already EXISTED at decision
+    time and is absent WAS removed (or left out) by the agency: a decision,
+    NEVER overridden here.
+
+    The birth date is `permission.created_at` (sync_permissions is insert-only,
+    so it is the true first appearance in THIS database). Strictly additive —
+    never deletes a row, so it can neither lock out nor undo an agency grant —
+    and idempotent: once propagated, the permission is present and the clone is
+    skipped on the next boot. Plain custom roles (cloned_from NULL) are the
+    agency's own composition from scratch: never touched."""
+    clones = (
+        (await db.execute(select(Role).where(Role.cloned_from_role_id.is_not(None))))
+        .scalars()
+        .all()
+    )
+    if not clones:
+        return
+    born_at = {
+        row.id: row.created_at for row in (await db.execute(select(PermissionRow))).scalars()
+    }
+    # The WHERE guarantees cloned_from is set; the map keeps the typer honest.
+    origin_of: dict[uuid.UUID, uuid.UUID] = {
+        c.id: c.cloned_from_role_id for c in clones if c.cloned_from_role_id is not None
+    }
+    role_ids = set(origin_of) | set(origin_of.values())
+    matrix: dict[uuid.UUID, set[uuid.UUID]] = {rid: set() for rid in role_ids}
+    granted_rows = (
+        (await db.execute(select(RolePermission).where(RolePermission.role_id.in_(role_ids))))
+        .scalars()
+        .all()
+    )
+    for rp in granted_rows:
+        matrix[rp.role_id].add(rp.permission_id)
+    for clone in clones:
+        decided_at = clone.permissions_reviewed_at
+        for pid in matrix[origin_of[clone.id]] - matrix[clone.id]:
+            if born_at[pid] > decided_at:
+                db.add(RolePermission(role_id=clone.id, permission_id=pid))
+    await db.commit()
+
+
 async def seed_bindings(db: AsyncSession, bindings: Iterable[RouteBinding]) -> None:
     """Declarative upsert by (method, path): missing rows inserted,
     existing rows realigned on audience/permission (the code declares
@@ -287,7 +334,11 @@ async def seed_bindings(db: AsyncSession, bindings: Iterable[RouteBinding]) -> N
 
 
 async def seed_rbac_baseline(db: AsyncSession, bindings: Iterable[RouteBinding] = ()) -> None:
-    """Catalogue + system roles + bindings, in dependency order."""
+    """Catalogue + system roles + clone catch-up + bindings, in dependency
+    order. Runs at EVERY deployment (start.sh → scripts/seed.py), so a
+    permission added in a release reaches the system roles AND their
+    copy-on-write clones without any manual script."""
     await sync_permissions(db)
     await seed_system_roles(db)
+    await propagate_new_permissions_to_clones(db)
     await seed_bindings(db, bindings)

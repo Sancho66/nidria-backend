@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -167,6 +168,11 @@ class RolesManager:
         new_keys = {p.key for p in permissions}
         await self._assert_agency_keeps_manager(actor.agency_id, edited_role=(role.id, new_keys))
         await self.repo.replace_role_permissions(role.id, [p.id for p in permissions])
+        # This matrix write IS the agency's decision moment — and the ONLY
+        # gesture that stamps it (a rename never does). The seed's clone
+        # catch-up (propagate_new_permissions_to_clones) only adds permissions
+        # born AFTER this timestamp: an explicit removal is never overridden.
+        role.permissions_reviewed_at = datetime.now(UTC)
         await self.db.commit()
         # Explicit refresh: with expire_on_commit=False the identity map
         # would hand back the stale pre-edit collection.
