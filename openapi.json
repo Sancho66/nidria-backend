@@ -16229,6 +16229,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "variance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variance",
+            "readOnly": true
           }
         },
         "type": "object",
@@ -16242,7 +16254,8 @@
           "author_agent_id",
           "source_template_cost_id",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "variance"
         ],
         "title": "CostLineResponse"
       },

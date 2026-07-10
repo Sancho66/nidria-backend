@@ -37,3 +37,14 @@ def check_amount_decimals(amount: Decimal, currency: str) -> None:
             f"{currency} allows at most {allowed} decimal place(s).",
             code="cost.amount_decimals",
         )
+
+
+def line_variance(amount: Decimal | None, planned_amount: Decimal | None) -> Decimal | None:
+    """The écart of ONE cost line: real − planned, SIGNED, and ONLY when the line
+    has BOTH — an unpaid line (no real) or an unplanned débours (no plan) has no
+    écart (None). THE single rule: the total's variance is the sum of the lines'
+    non-None variances, so the per-line view and the total can never diverge. The
+    front never subtracts — the écart is served, not computed."""
+    if amount is None or planned_amount is None:
+        return None
+    return amount - planned_amount

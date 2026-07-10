@@ -290,6 +290,53 @@ async def test_three_totals_exact_on_mixed_case(
     assert Decimal(body["variance"]) == Decimal("10")
 
 
+# --- INVARIANT: Σ des variances de ligne (non nulles) == variance du total ----------
+
+
+async def test_per_line_variance_sums_to_the_total_variance(
+    pc_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The contract invariant: the sum of the lines' non-null variances equals
+    the total's variance. One rule (line_variance) behind both views, so they
+    can never diverge. Also proves the per-line écart is SIGNED (a real below
+    plan → negative) and null when a line lacks one of the two amounts."""
+    h = agent_headers(admin)
+    tid = await _template(pc_client, h)
+    s0 = await _add_step(pc_client, h, tid, "S0")
+    await _add_planned(pc_client, h, tid, s0, "100.00", "P1")
+    await _add_planned(pc_client, h, tid, s0, "200.00", "P2")  # stays unpaid
+    case_id, pids = await _assign(pc_client, h, make_client_case, admin.agency_id, tid)
+
+    lines = {line["label"]: line for line in (await _costs(pc_client, h, case_id))["lines"]}
+    # Pay P1 BELOW its plan → a signed, negative écart. P2 stays unpaid (null).
+    r = await pc_client.patch(
+        f"/cases/{case_id}/costs/{lines['P1']['id']}", headers=h, json={"amount": "90.00"}
+    )
+    assert r.status_code == 200, r.text
+    # An unplanned manual débours (no plan → null écart).
+    r = await pc_client.post(
+        f"/cases/{case_id}/steps/{pids[0]}/costs", headers=h, json={"amount": "50.00", "label": "M"}
+    )
+    assert r.status_code == 201, r.text
+
+    body = await _costs(pc_client, h, case_id)
+    by = {line["label"]: line for line in body["lines"]}
+    assert isinstance(by["P1"]["variance"], str)
+    assert Decimal(by["P1"]["variance"]) == Decimal("-10")  # signed: real below plan
+    assert by["P2"]["variance"] is None  # unpaid line → no écart
+    assert by["M"]["variance"] is None  # unplanned débours → no écart
+
+    # THE invariant — the two views of the same number are identical.
+    line_sum = sum(
+        (Decimal(line["variance"]) for line in body["lines"] if line["variance"] is not None),
+        Decimal(0),
+    )
+    assert line_sum == Decimal(body["variance"]) == Decimal("-10")
+
+
 # --- 7. an expat never sees a planned cost, on ANY route (comprehension) -------------
 
 

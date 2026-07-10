@@ -12,7 +12,7 @@ from src.cases.cases_repository import CasesRepository
 from src.core.enums import ActorType
 from src.core.exceptions import NotFoundError
 from src.costs.costs_repository import CostsRepository
-from src.costs.costs_rules import check_amount_decimals, require_agency_currency
+from src.costs.costs_rules import check_amount_decimals, line_variance, require_agency_currency
 from src.costs.costs_schema import (
     CaseCostsResponse,
     CostLineCreateRequest,
@@ -72,11 +72,13 @@ class CostsManager:
             Decimal(0),
         )
         real_total = sum((line.amount for line in lines if line.amount is not None), Decimal(0))
+        # The total's variance IS the sum of the lines' per-line écarts (same
+        # line_variance rule) — the invariant that keeps both views identical.
         variance = sum(
             (
-                line.amount - line.planned_amount
+                v
                 for line in lines
-                if line.amount is not None and line.planned_amount is not None
+                if (v := line_variance(line.amount, line.planned_amount)) is not None
             ),
             Decimal(0),
         )

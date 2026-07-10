@@ -2,7 +2,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
+
+from src.costs.costs_rules import line_variance
 
 # DECIMAL end to end — never a float. Storage is NUMERIC(18,4); the agency
 # currency drives the DISPLAYED decimals (guaraní 0, euro 2). We accept up to
@@ -57,6 +59,15 @@ class CostLineResponse(BaseModel):
     @field_serializer("amount", "planned_amount")
     def _ser_money(self, value: Decimal | None) -> str | None:
         return str(value) if value is not None else None
+
+    # The per-line écart, SERVED not computed: signed (real − planned) when the
+    # line has both, null otherwise. SAME rule as the total (line_variance), so
+    # the front never subtracts and the two views can't diverge.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def variance(self) -> str | None:
+        v = line_variance(self.amount, self.planned_amount)
+        return str(v) if v is not None else None
 
 
 class CaseCostsResponse(BaseModel):
