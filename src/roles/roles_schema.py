@@ -2,12 +2,20 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.rbac.permissions import Permission
+
 
 class PermissionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    key: str
+    # ENUM in the contract, generated from the in-code catalogue (never a
+    # hand-kept mirror): every new permission changes the openapi, the CI
+    # openapi check forces the regen, the front's generated types carry the
+    # new key — the whole chain is mechanical. A rogue DB key (impossible via
+    # sync_permissions, insert-only from the enum) would fail LOUDLY here
+    # instead of silently reaching the front as an unknown string.
+    key: Permission
     label: str | None
     category: str | None
 

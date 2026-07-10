@@ -779,3 +779,24 @@ async def test_migration_backfill_picks_most_privileged_role(
     await db_session.refresh(multi)
     # case_manager (largest matrix among the held roles) wins.
     assert multi.role_id == system_roles["case_manager"].id
+
+
+# --- the contract enumerates the permission keys (no hand-kept mirror) ---------------
+
+
+def test_openapi_permission_enum_mirrors_the_catalogue() -> None:
+    """The openapi `Permission` component IS the in-code catalogue: every key,
+    exactly, generated — never a hand-kept mirror (the front derives its
+    PermissionKey from it). A new permission changes this enum, the CI openapi
+    check forces the regen, the chain stays mechanical end to end."""
+    from src.main import app
+
+    schema = app.openapi()["components"]["schemas"]["Permission"]
+    assert schema["enum"] == [p.value for p in Permission]
+    # And the three read surfaces reference the enum, not a bare string.
+    ref = "#/components/schemas/Permission"
+    components = app.openapi()["components"]["schemas"]
+    assert components["PermissionResponse"]["properties"]["key"]["$ref"] == ref
+    assert (
+        components["AgentMeResponse"]["properties"]["effective_permissions"]["items"]["$ref"] == ref
+    )

@@ -3,6 +3,7 @@ import uuid
 from pydantic import BaseModel, Field
 
 from src.core.email import NormalizedEmailStr
+from src.core.rbac.permissions import Permission
 
 
 class LoginRequest(BaseModel):
@@ -48,7 +49,10 @@ class AgentMeResponse(BaseModel):
     # agent at creation, never crosses on role reassignment). The front
     # routes the audience on THIS fact, not on a permission proxy.
     is_external: bool
-    effective_permissions: list[str]
+    # Typed on the catalogue ENUM (not bare strings): the openapi enumerates
+    # every key, so the front's generated types — and its PermissionKey —
+    # derive mechanically instead of being a hand-kept mirror that drifts.
+    effective_permissions: list[Permission]
     has_avatar: bool = False
     impersonator: ImpersonatorInfo | None = None
 

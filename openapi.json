@@ -13822,7 +13822,7 @@
           },
           "effective_permissions": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Permission"
             },
             "type": "array",
             "title": "Effective Permissions"
@@ -20671,6 +20671,37 @@
         "title": "PendingDocumentResponse",
         "description": "An active document awaiting acceptance. `content` is content_md\nwith the {agency_name} token resolved; `content_hash` covers the RAW\ntext (what the acceptance will carry)."
       },
+      "Permission": {
+        "type": "string",
+        "enum": [
+          "case.view",
+          "case.edit",
+          "case.delete",
+          "case.comment",
+          "step.complete",
+          "reminder.create",
+          "reminder.approve",
+          "journey.configure",
+          "document.validate",
+          "note.view_confidential",
+          "cost.view",
+          "cost.manage",
+          "agency.manage",
+          "agent.manage",
+          "agent.impersonate",
+          "role.manage",
+          "job.manage",
+          "field.manage",
+          "import.manage",
+          "agency.create",
+          "external.case.view",
+          "external.document.upload",
+          "external.case.comment",
+          "external.step.validate"
+        ],
+        "title": "Permission",
+        "description": "The permission catalogue — the ONLY hardcoded piece of the RBAC\nengine (typo-safe, autocompleted, refactorable). Synced to the\n`permission` table at boot; bindings and role assignments live in\ndata. A permission means nothing unless a binding checks it:\nadding a guarded action = one line here + one binding."
+      },
       "PermissionResponse": {
         "properties": {
           "id": {
@@ -20679,8 +20710,7 @@
             "title": "Id"
           },
           "key": {
-            "type": "string",
-            "title": "Key"
+            "$ref": "#/components/schemas/Permission"
           },
           "label": {
             "anyOf": [
