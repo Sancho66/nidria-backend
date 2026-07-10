@@ -1,4 +1,5 @@
 import uuid
+from collections import defaultdict
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,12 +13,13 @@ from src.cases.cases_repository import CasesRepository
 from src.core.enums import ActorType
 from src.core.exceptions import NotFoundError
 from src.costs.costs_repository import CostsRepository
-from src.costs.costs_rules import check_amount_decimals, line_variance, require_agency_currency
+from src.costs.costs_rules import check_amount_decimals, line_variance, resolve_cost_currency
 from src.costs.costs_schema import (
     CaseCostsResponse,
     CostLineCreateRequest,
     CostLineResponse,
     CostLineUpdateRequest,
+    CurrencyTotals,
 )
 
 
@@ -39,13 +41,6 @@ class CostsManager:
             raise NotFoundError("Case not found.")
         return case
 
-    async def _require_currency(self, agent: Agent) -> str:
-        # One rule, one code — shared with template planned costs (costs_rules).
-        return await require_agency_currency(self.db, agent.agency_id)
-
-    def _check_decimals(self, amount: Decimal, currency: str) -> None:
-        check_amount_decimals(amount, currency)
-
     def _log(self, case_id: uuid.UUID, agent: Agent, action: str, line: CaseStepCost) -> None:
         self.activity.log_action(
             case_id=case_id,
@@ -57,6 +52,7 @@ class CostsManager:
                 "step_progress_id": str(line.case_step_progress_id),
                 # A planned-but-unpaid line has no real amount yet.
                 "amount": str(line.amount) if line.amount is not None else None,
+                "currency": line.currency,
                 "label": line.label,
             },
         )
@@ -64,30 +60,46 @@ class CostsManager:
     async def list_costs(self, agent: Agent, case_id: uuid.UUID) -> CaseCostsResponse:
         case = await self._case(agent, case_id)
         lines = await self.repo.list_for_case(case.id)
-        # THREE totals, all computed at READ, never materialized. Decimal sums —
-        # no float ever. planned ignores lines without a plan; real ignores
-        # unpaid lines; variance sums (real − planned) only where BOTH exist.
-        planned_total = sum(
-            (line.planned_amount for line in lines if line.planned_amount is not None),
-            Decimal(0),
-        )
-        real_total = sum((line.amount for line in lines if line.amount is not None), Decimal(0))
-        # The total's variance IS the sum of the lines' per-line écarts (same
-        # line_variance rule) — the invariant that keeps both views identical.
-        variance = sum(
-            (
-                v
-                for line in lines
-                if (v := line_variance(line.amount, line.planned_amount)) is not None
-            ),
-            Decimal(0),
-        )
+        # Totals GROUPED BY CURRENCY, computed at read, never summed across
+        # currencies (no rate). planned by planned_currency, real by (real)
+        # currency; variance sums the per-line écarts (line_variance), which
+        # exist only when a line's two currencies match — the invariant that
+        # keeps the per-line and per-currency-total views identical.
+        planned_by: defaultdict[str, Decimal] = defaultdict(Decimal)
+        real_by: defaultdict[str, Decimal] = defaultdict(Decimal)
+        var_by: defaultdict[str, Decimal] = defaultdict(Decimal)
+        # Per planned-currency: lines planned here but PAID in another currency —
+        # they lower this currency's real_total without being unpaid.
+        cross_by: defaultdict[str, int] = defaultdict(int)
+        currencies: set[str] = set()
+        for line in lines:
+            if line.planned_amount is not None and line.planned_currency is not None:
+                planned_by[line.planned_currency] += line.planned_amount
+                currencies.add(line.planned_currency)
+                if line.amount is not None and line.currency != line.planned_currency:
+                    cross_by[line.planned_currency] += 1
+            if line.amount is not None:
+                real_by[line.currency] += line.amount
+                currencies.add(line.currency)
+            v = line_variance(
+                line.amount, line.currency, line.planned_amount, line.planned_currency
+            )
+            if v is not None:
+                var_by[line.currency] += v  # currency == planned_currency here
+        totals = [
+            CurrencyTotals(
+                currency=c,
+                planned_total=planned_by[c],
+                real_total=real_by[c],
+                variance=var_by[c],
+                planned_paid_in_other_currency=cross_by[c],
+            )
+            for c in sorted(currencies)
+        ]
         agency = await self.db.get(Agency, agent.agency_id)
         return CaseCostsResponse(
-            currency=agency.currency if agency else None,
-            planned_total=planned_total,
-            real_total=real_total,
-            variance=variance,
+            default_currency=agency.currency if agency else None,
+            totals=totals,
             lines=[CostLineResponse.model_validate(line) for line in lines],
         )
 
@@ -99,14 +111,17 @@ class CostsManager:
         payload: CostLineCreateRequest,
     ) -> CostLineResponse:
         case = await self._case(agent, case_id)
-        currency = await self._require_currency(agent)
-        self._check_decimals(payload.amount, currency)
+        # The line's currency: chosen, else the agency default; 409 if neither.
+        currency = await resolve_cost_currency(self.db, agent.agency_id, payload.currency)
+        check_amount_decimals(payload.amount, currency)
         progress = await self.repo.get_progress_in_case(case.id, progress_id)
         if progress is None:
             raise NotFoundError("Case step not found.")
+        # A manual débours: real amount + its currency, NO plan (planned_* NULL).
         line = self.repo.add_line(
             case_step_progress_id=progress.id,
             amount=payload.amount,
+            currency=currency,
             label=payload.label,
             incurred_on=payload.incurred_on,
             author_agent_id=agent.id,
@@ -125,10 +140,15 @@ class CostsManager:
         if line is None:
             raise NotFoundError("Cost line not found.")
         data = payload.model_dump(exclude_unset=True)
-        if "amount" in data and data["amount"] is not None:
-            self._check_decimals(data["amount"], await self._require_currency(agent))
-            line.amount = data["amount"]
-        if "label" in data and data["label"] is not None:
+        # Resolve the effective (amount, currency) and VALIDATE before mutating —
+        # a currency change can invalidate an already-entered amount's decimals.
+        new_currency = data["currency"] if data.get("currency") is not None else line.currency
+        new_amount = data["amount"] if data.get("amount") is not None else line.amount
+        if new_amount is not None:
+            check_amount_decimals(new_amount, new_currency)
+        line.currency = new_currency
+        line.amount = new_amount
+        if data.get("label") is not None:
             line.label = data["label"]
         if "incurred_on" in data:
             line.incurred_on = data["incurred_on"]

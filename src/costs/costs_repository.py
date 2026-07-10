@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.case_step_cost import CaseStepCost
 from shared.models.case_step_progress import CaseStepProgress
-from shared.models.client_case import ClientCase
 
 
 class CostsRepository:
@@ -46,15 +45,3 @@ class CostsRepository:
         line = CaseStepCost(**kwargs)
         self.db.add(line)
         return line
-
-    async def agency_has_costs(self, agency_id: uuid.UUID) -> bool:
-        """Any recorded cost line for the agency (via progress → case). Gates
-        the 'currency is frozen once costs exist' rule."""
-        stmt = (
-            select(CaseStepCost.id)
-            .join(CaseStepProgress, CaseStepProgress.id == CaseStepCost.case_step_progress_id)
-            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
-            .where(ClientCase.agency_id == agency_id)
-            .limit(1)
-        )
-        return (await self.db.execute(stmt)).first() is not None

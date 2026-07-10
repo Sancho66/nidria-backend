@@ -74,13 +74,18 @@ async def _case_with_steps(
 
 
 async def _add_cost(
-    client: AsyncClient, headers: dict, case_id: uuid.UUID, pid: str, amount: str, label: str
+    client: AsyncClient,
+    headers: dict,
+    case_id: uuid.UUID,
+    pid: str,
+    amount: str,
+    label: str,
+    currency: str | None = None,
 ) -> dict:
-    r = await client.post(
-        f"/cases/{case_id}/steps/{pid}/costs",
-        headers=headers,
-        json={"amount": amount, "label": label},
-    )
+    body: dict = {"amount": amount, "label": label}
+    if currency is not None:
+        body["currency"] = currency
+    r = await client.post(f"/cases/{case_id}/steps/{pid}/costs", headers=headers, json=body)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -113,17 +118,19 @@ async def test_total_is_exact_over_three_steps_six_lines(
         await _add_cost(costs_client, headers, case_id, pids[i % 3], amount, f"L{i}")
 
     body = (await costs_client.get(f"/cases/{case_id}/costs", headers=headers)).json()
-    assert body["currency"] == currency
+    assert body["default_currency"] == currency
     assert len(body["lines"]) == 6
-    # total + every amount are STRINGS (never a JSON float) — reconstruct exact
-    # Decimals and compare by value.
+    # Every amount + total are STRINGS (never a JSON float). Each manual line
+    # took the agency default currency; all 6 share it → ONE totals entry.
     assert all(isinstance(line["amount"], str) for line in body["lines"])
-    # Manual débours are REAL and unplanned: real_total sums them; planned_total
-    # and variance are zero (no line carries a plan).
-    assert isinstance(body["real_total"], str)
-    assert Decimal(body["real_total"]) == sum(Decimal(a) for a in amounts)
-    assert Decimal(body["planned_total"]) == 0
-    assert Decimal(body["variance"]) == 0
+    assert all(line["currency"] == currency for line in body["lines"])
+    assert len(body["totals"]) == 1
+    entry = body["totals"][0]
+    assert entry["currency"] == currency and isinstance(entry["real_total"], str)
+    assert Decimal(entry["real_total"]) == sum(Decimal(a) for a in amounts)
+    # Manual débours are REAL and unplanned: no plan, no écart.
+    assert Decimal(entry["planned_total"]) == 0
+    assert Decimal(entry["variance"]) == 0
     assert all(line["planned_amount"] is None for line in body["lines"])
 
 
@@ -393,30 +400,30 @@ async def test_invalid_currency_is_422(
     assert resp.status_code == 422
 
 
-async def test_changing_currency_with_costs_is_409(
+async def test_changing_agency_currency_leaves_recorded_lines_untouched(
     costs_client: AsyncClient,
     admin: Agent,
     make_client_case: MakeClientCase,
     agent_headers: AuthHeaders,
 ) -> None:
+    """The agency currency is now ONLY a default (prefill): changing it
+    reconverts nothing and touches no recorded line's amount or currency. The
+    old 409 cost.currency_change_forbidden no longer exists."""
     headers = agent_headers(admin)  # agency currency = EUR (fixture)
     case_id, pids = await _case_with_steps(
         costs_client, admin.agency_id, make_client_case, headers, 1
     )
-    await _add_cost(costs_client, headers, case_id, pids[0], "10", "seed")
+    line = await _add_cost(costs_client, headers, case_id, pids[0], "10.00", "seed")
+    assert line["currency"] == "EUR"  # took the agency default at creation
+
+    # Changing the default even WITH costs recorded is now allowed (no 409).
     resp = await costs_client.patch("/agencies/me", headers=headers, json={"currency": "USD"})
-    assert resp.status_code == 409
-    assert resp.json()["code"] == "cost.currency_change_forbidden"
-
-
-async def test_changing_currency_without_costs_is_200(
-    costs_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
-) -> None:
-    # EUR set (fixture), no cost recorded → changing to USD is allowed.
-    resp = await costs_client.patch(
-        "/agencies/me", headers=agent_headers(admin), json={"currency": "USD"}
-    )
     assert resp.status_code == 200
+
+    body = (await costs_client.get(f"/cases/{case_id}/costs", headers=headers)).json()
+    kept = body["lines"][0]
+    assert kept["currency"] == "EUR" and Decimal(kept["amount"]) == Decimal("10")  # unmoved
+    assert body["default_currency"] == "USD"  # only the prefill moved
 
 
 async def test_zero_decimal_currency_rejects_a_decimal_amount(
@@ -458,6 +465,59 @@ async def test_three_decimal_currency_accepts_120_505(
         json={"amount": "120.505", "label": "x"},
     )
     assert resp.status_code == 201
+
+
+# --- per-line currency: decimals follow the LINE, totals group by currency ----------
+
+
+async def test_per_line_currency_drives_decimals_same_case(
+    costs_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The LINE's currency drives its accepted decimals, not the agency's: a PYG
+    line refuses 120.50 while an EUR line accepts it — same case, same step."""
+    headers = agent_headers(admin)  # agency default EUR
+    case_id, pids = await _case_with_steps(
+        costs_client, admin.agency_id, make_client_case, headers, 1
+    )
+    pyg = await costs_client.post(
+        f"/cases/{case_id}/steps/{pids[0]}/costs",
+        headers=headers,
+        json={"amount": "120.50", "label": "pyg", "currency": "PYG"},
+    )
+    assert pyg.status_code == 422 and pyg.json()["code"] == "cost.amount_decimals"
+    eur = await _add_cost(costs_client, headers, case_id, pids[0], "120.50", "eur", currency="EUR")
+    assert eur["currency"] == "EUR"
+
+
+async def test_two_currencies_yield_two_total_entries_never_summed(
+    costs_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A dossier with two currencies returns TWO total entries, never a single
+    cross-currency sum (converting would fabricate a number)."""
+    headers = agent_headers(admin)
+    case_id, pids = await _case_with_steps(
+        costs_client, admin.agency_id, make_client_case, headers, 2
+    )
+    await _add_cost(costs_client, headers, case_id, pids[0], "100.00", "a", currency="EUR")
+    await _add_cost(costs_client, headers, case_id, pids[1], "900000", "b", currency="PYG")
+
+    body = (await costs_client.get(f"/cases/{case_id}/costs", headers=headers)).json()
+    totals = {t["currency"]: t for t in body["totals"]}
+    assert set(totals) == {"EUR", "PYG"}
+    assert Decimal(totals["EUR"]["real_total"]) == Decimal("100")
+    assert Decimal(totals["PYG"]["real_total"]) == Decimal("900000")
+    # Both are manual débours (no plan) → no line planned-here-paid-elsewhere.
+    assert totals["EUR"]["planned_paid_in_other_currency"] == 0
+    assert totals["PYG"]["planned_paid_in_other_currency"] == 0
+    # The totals are a per-currency LIST — there is no single scalar total to sum.
+    assert isinstance(body["totals"], list)
+    assert "real_total" not in body and "variance" not in body
 
 
 def test_currency_catalog_excludes_pseudo_currencies_and_is_pinned() -> None:

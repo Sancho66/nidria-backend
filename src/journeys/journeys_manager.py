@@ -49,7 +49,7 @@ from src.core.i18n import (
 )
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
-from src.costs.costs_rules import check_amount_decimals, require_agency_currency
+from src.costs.costs_rules import check_amount_decimals, resolve_cost_currency
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.field_catalog import FIELD_PRESETS
 from src.journeys.journeys_repository import JourneysRepository
@@ -353,13 +353,16 @@ class JourneysManager:
         payload: PlannedCostCreateRequest,
     ) -> PlannedCostResponse:
         await self._get_template(agent, template_id)
-        # Currency guard BEFORE the step lookup — same order as real costs.
-        currency = await require_agency_currency(self.db, agent.agency_id)
+        # The line's currency: chosen, else the agency default; 409 if neither.
+        # Resolved BEFORE the step lookup — same order as real costs.
+        currency = await resolve_cost_currency(self.db, agent.agency_id, payload.currency)
         check_amount_decimals(payload.amount, currency)
         step = await self.repo.get_step_in_template(template_id, step_id)
         if step is None:
             raise NotFoundError("Journey step not found.", code="journey.step_not_found")
-        row = self.repo.add_step_cost(step_id=step.id, amount=payload.amount, label=payload.label)
+        row = self.repo.add_step_cost(
+            step_id=step.id, amount=payload.amount, currency=currency, label=payload.label
+        )
         await self.db.commit()
         await self.db.refresh(row)
         return PlannedCostResponse.model_validate(row)
@@ -376,11 +379,14 @@ class JourneysManager:
         if row is None:
             raise NotFoundError("Planned cost not found.", code="cost.not_found")
         data = payload.model_dump(exclude_unset=True)
-        if data.get("amount") is not None:
-            check_amount_decimals(
-                data["amount"], await require_agency_currency(self.db, agent.agency_id)
-            )
-            row.amount = data["amount"]
+        # Effective (amount, currency), VALIDATED before mutating: a currency
+        # change can invalidate the existing amount's decimals. A planned cost
+        # always has an amount (NOT NULL), so the check always applies.
+        new_currency = data["currency"] if data.get("currency") is not None else row.currency
+        new_amount = data["amount"] if data.get("amount") is not None else row.amount
+        check_amount_decimals(new_amount, new_currency)
+        row.amount = new_amount
+        row.currency = new_currency
         if data.get("label") is not None:
             row.label = data["label"]
         await self.db.commit()
@@ -517,7 +523,12 @@ class JourneysManager:
         if not source.is_sample:
             for pc in await self.repo.list_step_costs_for_steps([s.id for s in src_steps]):
                 self.db.add(
-                    JourneyStepCost(step_id=step_map[pc.step_id], amount=pc.amount, label=pc.label)
+                    JourneyStepCost(
+                        step_id=step_map[pc.step_id],
+                        amount=pc.amount,
+                        currency=pc.currency,
+                        label=pc.label,
+                    )
                 )
 
         for pr in src_prereqs:

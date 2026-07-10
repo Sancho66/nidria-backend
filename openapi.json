@@ -14420,7 +14420,7 @@
       },
       "CaseCostsResponse": {
         "properties": {
-          "currency": {
+          "default_currency": {
             "anyOf": [
               {
                 "type": "string"
@@ -14429,19 +14429,14 @@
                 "type": "null"
               }
             ],
-            "title": "Currency"
+            "title": "Default Currency"
           },
-          "planned_total": {
-            "type": "string",
-            "title": "Planned Total"
-          },
-          "real_total": {
-            "type": "string",
-            "title": "Real Total"
-          },
-          "variance": {
-            "type": "string",
-            "title": "Variance"
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyTotals"
+            },
+            "type": "array",
+            "title": "Totals"
           },
           "lines": {
             "items": {
@@ -14453,14 +14448,12 @@
         },
         "type": "object",
         "required": [
-          "currency",
-          "planned_total",
-          "real_total",
-          "variance",
+          "default_currency",
+          "totals",
           "lines"
         ],
         "title": "CaseCostsResponse",
-        "description": "All the cost lines of a dossier (across every step) + the THREE totals,\neach COMPUTED at read, never materialized:\n- `planned_total` — Σ planned_amount over lines that HAVE a plan.\n- `real_total` — Σ amount over lines actually PAID (amount set).\n- `variance` — Σ (amount − planned_amount) over lines that have BOTH (the\n  honest écart: unpaid-planned and unplanned-débours never distort it).\n`currency` is the agency's ISO-4217 code (drives the displayed decimals);\nNone when the agency has not set it yet."
+        "description": "A dossier's cost lines + its totals GROUPED BY CURRENCY (one entry per\ncurrency present, never a cross-currency sum — converting would fabricate a\nnumber). `default_currency` is the agency's prefill for a new line's currency\n(None if the agency has not set one)."
       },
       "CaseCreateRequest": {
         "properties": {
@@ -16126,6 +16119,17 @@
             "minLength": 1,
             "title": "Label"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
           "incurred_on": {
             "anyOf": [
               {
@@ -16169,6 +16173,10 @@
             ],
             "title": "Amount"
           },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
           "planned_amount": {
             "anyOf": [
               {
@@ -16179,6 +16187,17 @@
               }
             ],
             "title": "Planned Amount"
+          },
+          "planned_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Currency"
           },
           "label": {
             "type": "string",
@@ -16248,7 +16267,9 @@
           "id",
           "case_step_progress_id",
           "amount",
+          "currency",
           "planned_amount",
+          "planned_currency",
           "label",
           "incurred_on",
           "author_agent_id",
@@ -16289,6 +16310,17 @@
             ],
             "title": "Label"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
           "incurred_on": {
             "anyOf": [
               {
@@ -16304,7 +16336,7 @@
         },
         "type": "object",
         "title": "CostLineUpdateRequest",
-        "description": "Partial correction — a cost line is a notebook entry, editable."
+        "description": "Partial correction — a cost line is a notebook entry, editable. `currency`\nlets the agency record that it paid in another money than planned."
       },
       "CreatedAdminResponse": {
         "properties": {
@@ -16457,6 +16489,40 @@
         ],
         "title": "CurrencyResponse",
         "description": "One selectable ISO 4217 currency. The front builds its selector from\nGET /currencies — never its own list (two lists always diverge). `name` is\nEnglish (the library's only locale)."
+      },
+      "CurrencyTotals": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "planned_total": {
+            "type": "string",
+            "title": "Planned Total"
+          },
+          "real_total": {
+            "type": "string",
+            "title": "Real Total"
+          },
+          "variance": {
+            "type": "string",
+            "title": "Variance"
+          },
+          "planned_paid_in_other_currency": {
+            "type": "integer",
+            "title": "Planned Paid In Other Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "planned_total",
+          "real_total",
+          "variance",
+          "planned_paid_in_other_currency"
+        ],
+        "title": "CurrencyTotals",
+        "description": "The three totals FOR ONE currency — planned, real, écart — each computed\nat read, never materialized, NEVER summed across currencies (no rate).\n\n`planned_paid_in_other_currency` disambiguates the honest-but-misleading case:\na line PLANNED in this currency but PAID in another adds to `planned_total`\nyet NOT to `real_total` here, so the entry can read \"planned 120, real 0\" as\nif unpaid. This counter (lines planned here, actually paid, in another\ncurrency) lets the front annotate — \"1 line paid in another currency\" —\ninstead of the front re-scanning every line to notice (it cannot otherwise)."
       },
       "CustomFieldDefinitionCreate": {
         "properties": {
@@ -21223,6 +21289,17 @@
             "maxLength": 200,
             "minLength": 1,
             "title": "Label"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           }
         },
         "type": "object",
@@ -21231,7 +21308,7 @@
           "label"
         ],
         "title": "PlannedCostCreateRequest",
-        "description": "A planned cost line on a template step — same shape as a real cost\n(amount + label). DECIMAL(18,4); the agency currency drives decimals."
+        "description": "A planned cost line on a template step — same shape as a real cost\n(amount + label + currency). DECIMAL(18,4); the LINE's currency drives\ndecimals. `currency` omitted → the agency default; neither → 409."
       },
       "PlannedCostResponse": {
         "properties": {
@@ -21248,6 +21325,10 @@
           "amount": {
             "type": "string",
             "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
           },
           "label": {
             "type": "string",
@@ -21269,6 +21350,7 @@
           "id",
           "step_id",
           "amount",
+          "currency",
           "label",
           "created_at",
           "updated_at"
@@ -21304,6 +21386,17 @@
               }
             ],
             "title": "Label"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           }
         },
         "type": "object",

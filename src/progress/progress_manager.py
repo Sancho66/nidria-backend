@@ -286,11 +286,16 @@ class ProgressManager:
                 # inserts, so flush the progress row before its cost lines FK it.
                 await self.db.flush()
                 for pc in planned:
+                    # The line inherits the planned cost's currency: frozen as
+                    # planned_currency AND as the initial real currency (the agency
+                    # changes the latter if it paid in another money).
                     self.repo.add_case_step_cost(
                         id=uuid.uuid4(),
                         case_step_progress_id=progress.id,
                         amount=None,
+                        currency=pc.currency,
                         planned_amount=pc.amount,
+                        planned_currency=pc.currency,
                         label=pc.label,
                         author_agent_id=agent.id,
                         source_template_cost_id=pc.id,

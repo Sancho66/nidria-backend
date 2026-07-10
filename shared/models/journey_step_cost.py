@@ -29,4 +29,8 @@ class JourneyStepCost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("journey_template_step.id", ondelete="CASCADE"), index=True, nullable=False
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # Currency the planned amount is quoted in (ISO 4217, filtered catalogue) —
+    # "the timbre always costs 120 EUR". Frozen onto the case line at
+    # instantiation (as its planned_currency AND its initial real currency).
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
     label: Mapped[str] = mapped_column(String(200), nullable=False)

@@ -57,7 +57,6 @@ from src.core.i18n import resolve_notification_lang_agent
 from src.core.images import process_cover, process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.security import hash_password
-from src.costs.costs_repository import CostsRepository
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
@@ -510,20 +509,10 @@ class AgenciesManager:
         if payload.default_language is not None:
             agency.default_language = payload.default_language
         if payload.currency is not None:
-            # Changing an EXISTING currency once costs are recorded is refused:
-            # already-entered amounts do not reconvert (a 300 stays 300 — its
-            # unit must not silently change). Setting it (from NULL) or keeping
-            # the same code is always fine.
-            if (
-                agency.currency is not None
-                and agency.currency != payload.currency
-                and await CostsRepository(self.db).agency_has_costs(agency.id)
-            ):
-                raise ConflictError(
-                    "This agency already has recorded costs; its currency "
-                    "can no longer be changed.",
-                    code="cost.currency_change_forbidden",
-                )
+            # The agency currency is now only the DEFAULT for a new cost line (a
+            # prefill). Each line carries its OWN currency, so changing this
+            # default reconverts NOTHING and is always allowed — the old
+            # cost.currency_change_forbidden guard is gone.
             agency.currency = payload.currency
         await self.db.commit()
         await self.db.refresh(agency)

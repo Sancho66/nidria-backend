@@ -64,13 +64,18 @@ async def _add_step(client: AsyncClient, headers: dict, tid: str, name: str) -> 
 
 
 async def _add_planned(
-    client: AsyncClient, headers: dict, tid: str, sid: str, amount: str, label: str
+    client: AsyncClient,
+    headers: dict,
+    tid: str,
+    sid: str,
+    amount: str,
+    label: str,
+    currency: str | None = None,
 ) -> dict:
-    r = await client.post(
-        f"/journeys/{tid}/steps/{sid}/planned-costs",
-        headers=headers,
-        json={"amount": amount, "label": label},
-    )
+    body: dict = {"amount": amount, "label": label}
+    if currency is not None:
+        body["currency"] = currency
+    r = await client.post(f"/journeys/{tid}/steps/{sid}/planned-costs", headers=headers, json=body)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -102,6 +107,14 @@ async def _costs(client: AsyncClient, headers: dict, case_id: uuid.UUID) -> dict
     return r.json()
 
 
+def _entry(body: dict, currency: str) -> dict:
+    """The totals entry for a currency (zeros if that currency carries no line)."""
+    for t in body["totals"]:
+        if t["currency"] == currency:
+            return t
+    return {"currency": currency, "planned_total": "0", "real_total": "0", "variance": "0"}
+
+
 # --- 1. instantiation produces a line with planned_amount set and amount empty -------
 
 
@@ -123,12 +136,13 @@ async def test_planned_cost_instantiates_a_line_planned_set_amount_empty(
     line = body["lines"][0]
     assert Decimal(line["planned_amount"]) == Decimal("120")  # frozen from the template
     assert line["amount"] is None  # real is EMPTY until the agency pays
+    assert line["currency"] == "EUR" and line["planned_currency"] == "EUR"  # inherited
     assert line["label"] == "Timbre fiscal"
     assert line["source_template_cost_id"] is not None  # a trace to the origin
-    # planned_total counts it; real_total ignores an unpaid line; no variance yet.
-    assert Decimal(body["planned_total"]) == Decimal("120")
-    assert Decimal(body["real_total"]) == 0
-    assert Decimal(body["variance"]) == 0
+    e = _entry(body, "EUR")  # planned counts it; real ignores an unpaid line
+    assert Decimal(e["planned_total"]) == Decimal("120")
+    assert Decimal(e["real_total"]) == 0
+    assert Decimal(e["variance"]) == 0
 
 
 # --- 2. the agency enters the real: the variance appears -----------------------------
@@ -153,9 +167,10 @@ async def test_entering_the_real_amount_surfaces_the_variance(
     assert patched.status_code == 200, patched.text
 
     body = await _costs(pc_client, h, case_id)
-    assert Decimal(body["planned_total"]) == Decimal("100")
-    assert Decimal(body["real_total"]) == Decimal("130")
-    assert Decimal(body["variance"]) == Decimal("30")  # 130 − 100, the line has both
+    e = _entry(body, "EUR")
+    assert Decimal(e["planned_total"]) == Decimal("100")
+    assert Decimal(e["real_total"]) == Decimal("130")
+    assert Decimal(e["variance"]) == Decimal("30")  # 130 − 100, same currency
 
 
 # --- 3. NO propagation: editing a planned cost touches no existing case --------------
@@ -209,7 +224,7 @@ async def test_deleting_a_planned_cost_leaves_case_lines_intact(
     line = body["lines"][0]
     assert Decimal(line["planned_amount"]) == Decimal("100")
     assert line["source_template_cost_id"] is None  # SET NULL on template delete
-    assert Decimal(body["planned_total"]) == Decimal("100")
+    assert Decimal(_entry(body, "EUR")["planned_total"]) == Decimal("100")
 
 
 # --- 5. a manual line has planned_amount NULL; planned_total ignores it --------------
@@ -238,10 +253,12 @@ async def test_manual_line_has_no_plan_and_is_ignored_by_planned_total(
     body = await _costs(pc_client, h, case_id)
     line = body["lines"][0]
     assert line["planned_amount"] is None  # no plan, no origin
+    assert line["planned_currency"] is None
     assert line["source_template_cost_id"] is None
     assert Decimal(line["amount"]) == Decimal("40")
-    assert Decimal(body["planned_total"]) == 0  # ignored by the planned total
-    assert Decimal(body["real_total"]) == Decimal("40")
+    e = _entry(body, "EUR")
+    assert Decimal(e["planned_total"]) == 0  # ignored by the planned total
+    assert Decimal(e["real_total"]) == Decimal("40")
 
 
 # --- 6. the three totals exact: 3 steps, 6 lines, 2 unplanned, 1 unpaid --------------
@@ -285,9 +302,10 @@ async def test_three_totals_exact_on_mixed_case(
 
     body = await _costs(pc_client, h, case_id)
     assert len(body["lines"]) == 6
-    assert Decimal(body["planned_total"]) == Decimal("430")
-    assert Decimal(body["real_total"]) == Decimal("425")
-    assert Decimal(body["variance"]) == Decimal("10")
+    e = _entry(body, "EUR")  # all lines EUR → a single currency entry
+    assert Decimal(e["planned_total"]) == Decimal("430")
+    assert Decimal(e["real_total"]) == Decimal("425")
+    assert Decimal(e["variance"]) == Decimal("10")
 
 
 # --- INVARIANT: Σ des variances de ligne (non nulles) == variance du total ----------
@@ -329,12 +347,74 @@ async def test_per_line_variance_sums_to_the_total_variance(
     assert by["P2"]["variance"] is None  # unpaid line → no écart
     assert by["M"]["variance"] is None  # unplanned débours → no écart
 
-    # THE invariant — the two views of the same number are identical.
+    # THE invariant — the two views of the same number are identical (one
+    # currency here, so the total is the single EUR entry's variance).
     line_sum = sum(
         (Decimal(line["variance"]) for line in body["lines"] if line["variance"] is not None),
         Decimal(0),
     )
-    assert line_sum == Decimal(body["variance"]) == Decimal("-10")
+    assert line_sum == Decimal(_entry(body, "EUR")["variance"]) == Decimal("-10")
+
+
+# --- per-line currency: inheritance at instantiation, no écart across currencies ----
+
+
+async def test_instantiated_line_inherits_the_planned_cost_currency(
+    pc_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A planned cost in a currency OTHER than the agency default instantiates a
+    line in the PLAN's currency — inherited from the plan, not the agency."""
+    h = agent_headers(admin)  # agency default EUR
+    tid = await _template(pc_client, h)
+    sid = await _add_step(pc_client, h, tid, "Step")
+    pc = await _add_planned(pc_client, h, tid, sid, "120.00", "Fee", currency="USD")
+    assert pc["currency"] == "USD"
+    case_id, _pids = await _assign(pc_client, h, make_client_case, admin.agency_id, tid)
+
+    line = (await _costs(pc_client, h, case_id))["lines"][0]
+    assert line["currency"] == "USD" and line["planned_currency"] == "USD"
+
+
+async def test_variance_is_null_when_paid_in_another_currency(
+    pc_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Planned in EUR, paid in PYG: no écart (a cross-currency variance would need
+    a rate we refuse to fabricate). The line's variance is null, and the two
+    currencies land in SEPARATE total entries — never summed."""
+    h = agent_headers(admin)
+    tid = await _template(pc_client, h)
+    sid = await _add_step(pc_client, h, tid, "Step")
+    await _add_planned(pc_client, h, tid, sid, "120.00", "Timbre", currency="EUR")
+    case_id, _pids = await _assign(pc_client, h, make_client_case, admin.agency_id, tid)
+
+    cost_id = (await _costs(pc_client, h, case_id))["lines"][0]["id"]
+    # Pay it in PYG — change the line's real currency + enter the real amount.
+    r = await pc_client.patch(
+        f"/cases/{case_id}/costs/{cost_id}",
+        headers=h,
+        json={"amount": "900000", "currency": "PYG"},
+    )
+    assert r.status_code == 200, r.text
+
+    body = await _costs(pc_client, h, case_id)
+    line = body["lines"][0]
+    assert line["planned_currency"] == "EUR" and line["currency"] == "PYG"
+    assert line["variance"] is None  # different currencies → no écart
+    # Planned lands in EUR, real in PYG — two entries, neither with an écart.
+    assert Decimal(_entry(body, "EUR")["planned_total"]) == Decimal("120")
+    assert Decimal(_entry(body, "PYG")["real_total"]) == Decimal("900000")
+    assert Decimal(_entry(body, "EUR")["variance"]) == 0
+    assert Decimal(_entry(body, "PYG")["variance"]) == 0
+    # The EUR entry reads "planned 120, real 0" — the counter tells the front it
+    # is NOT unpaid: 1 line planned here was paid in another currency.
+    assert _entry(body, "EUR")["planned_paid_in_other_currency"] == 1
+    assert _entry(body, "PYG")["planned_paid_in_other_currency"] == 0
 
 
 # --- 7. an expat never sees a planned cost, on ANY route (comprehension) -------------
@@ -442,7 +522,9 @@ async def test_cloning_a_sample_creates_no_planned_cost(
     db_session.add(sample)
     step = JourneyTemplateStep(id=uuid.uuid4(), template_id=sample.id, name="S", position=0)
     db_session.add(step)
-    db_session.add(JourneyStepCost(step_id=step.id, amount=Decimal("77.00"), label="LEAK"))
+    db_session.add(
+        JourneyStepCost(step_id=step.id, amount=Decimal("77.00"), currency="EUR", label="LEAK")
+    )
     await db_session.commit()
 
     h = agent_headers(admin)

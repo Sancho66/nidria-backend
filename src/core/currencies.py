@@ -12,8 +12,10 @@ translation. The `decimals` drive input validation AND display.
 """
 
 from dataclasses import dataclass
+from typing import Annotated
 
 import iso4217
+from pydantic import AfterValidator
 
 
 @dataclass(frozen=True)
@@ -44,3 +46,14 @@ def decimals_for(code: str) -> int:
 
 def list_supported() -> list[CurrencyInfo]:
     return sorted(_SUPPORTED.values(), key=lambda c: c.code)
+
+
+def _validate_currency_code(value: str) -> str:
+    if not is_supported(value):
+        raise ValueError("Unknown ISO 4217 currency code.")
+    return value
+
+
+# A request-schema currency field: an exact ISO-4217 code of a real currency, or
+# 422. Shared by every cost/planned-cost request (one catalogue, one validator).
+CurrencyCode = Annotated[str, AfterValidator(_validate_currency_code)]

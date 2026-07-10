@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from src.core.currencies import CurrencyCode
 from src.core.enums import (
     CompletionMode,
     ResponsibleType,
@@ -535,10 +536,12 @@ class JourneyCloneRequest(BaseModel):
 
 class PlannedCostCreateRequest(BaseModel):
     """A planned cost line on a template step — same shape as a real cost
-    (amount + label). DECIMAL(18,4); the agency currency drives decimals."""
+    (amount + label + currency). DECIMAL(18,4); the LINE's currency drives
+    decimals. `currency` omitted → the agency default; neither → 409."""
 
     amount: Decimal = Field(max_digits=18, decimal_places=4)
     label: str = Field(min_length=1, max_length=200)
+    currency: CurrencyCode | None = None
 
 
 class PlannedCostUpdateRequest(BaseModel):
@@ -546,6 +549,7 @@ class PlannedCostUpdateRequest(BaseModel):
 
     amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     label: str | None = Field(default=None, min_length=1, max_length=200)
+    currency: CurrencyCode | None = None
 
 
 class PlannedCostResponse(BaseModel):
@@ -554,6 +558,7 @@ class PlannedCostResponse(BaseModel):
     id: uuid.UUID
     step_id: uuid.UUID
     amount: Decimal
+    currency: str
     label: str
     created_at: datetime
     updated_at: datetime
