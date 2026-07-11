@@ -34,13 +34,14 @@ async def _slug(db_session: AsyncSession, agency_id: uuid.UUID) -> str:
     return agency.slug
 
 
-def _case_payload(email_addr: str) -> dict[str, str]:
+def _case_payload(email_addr: str, journey_template_id: str) -> dict[str, str]:
     return {
         "first_name": "Jean",
         "last_name": "Martin",
         "email": email_addr,
         "origin_country": "FR",
         "dest_country": "PY",
+        "journey_template_id": journey_template_id,
     }
 
 
@@ -53,10 +54,11 @@ async def test_activation_and_new_case_links_carry_slug(
 ) -> None:
     headers = agent_headers(admin)
     slug = await _slug(db_session, admin.agency_id)
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
 
     # New expat → activation mail, branded activation link.
     created = await client.post(
-        "/cases", headers=headers, json=_case_payload("brand-new@example.com")
+        "/cases", headers=headers, json=_case_payload("brand-new@example.com", tid)
     )
     assert created.status_code == 201, created.text
     invitation = (
@@ -72,7 +74,7 @@ async def test_activation_and_new_case_links_carry_slug(
     # Existing ACTIVATED expat → "new case" mail, branded login link.
     existing = await make_expat_user(email="already-here@example.com")
     email.outbox.clear()
-    created = await client.post("/cases", headers=headers, json=_case_payload(existing.email))
+    created = await client.post("/cases", headers=headers, json=_case_payload(existing.email, tid))
     assert created.status_code == 201
     sent = next(m for m in email.outbox if m.to == existing.email)
     assert f"/space/login?agency={slug}" in sent.body
@@ -90,6 +92,7 @@ async def test_step_mail_carries_slug(
     the reopen mail."""
     headers = agent_headers(admin)
     slug = await _slug(db_session, admin.agency_id)
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     sid = (await client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "S"})).json()[
         "id"
@@ -127,6 +130,7 @@ async def test_comment_mail_carries_slug(
 ) -> None:
     headers = agent_headers(admin)
     slug = await _slug(db_session, admin.agency_id)
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     await client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "S"})
     expat = await make_expat_user(email="commentmail@example.com")

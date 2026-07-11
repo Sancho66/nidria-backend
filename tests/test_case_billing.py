@@ -45,10 +45,13 @@ async def admin(
 
 
 async def _create_case(client: AsyncClient, headers: dict, **extra: object) -> dict:
+    # journey_template_id is required at creation (product rule 2026-07-11).
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     payload: dict = {
         "first_name": "Jean",
         "last_name": "Martin",
         "email": f"client-{uuid.uuid4().hex[:8]}@x.io",
+        "journey_template_id": tid,
         **extra,
     }
     r = await client.post("/cases", headers=headers, json=payload)
@@ -279,6 +282,7 @@ async def test_billed_without_any_currency_is_409(
 ) -> None:
     fresh = await make_agent(role=system_roles["admin"])  # agency without a currency
     h = agent_headers(fresh)
+    tid = (await billing_client.post("/journeys", headers=h, json={"name": "T"})).json()["id"]
     r = await billing_client.post(
         "/cases",
         headers=h,
@@ -286,6 +290,7 @@ async def test_billed_without_any_currency_is_409(
             "first_name": "J",
             "last_name": "M",
             "email": "j@x.io",
+            "journey_template_id": tid,
             "billed_amount": "10.00",
         },
     )

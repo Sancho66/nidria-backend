@@ -14836,15 +14836,8 @@
             "title": "Owner Agent Id"
           },
           "journey_template_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "uuid",
             "title": "Journey Template Id"
           },
           "custom_fields": {
@@ -14895,10 +14888,11 @@
         "required": [
           "first_name",
           "last_name",
-          "email"
+          "email",
+          "journey_template_id"
         ],
         "title": "CaseCreateRequest",
-        "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\nWave 2 (transactional creation): an OPTIONAL journey_template_id and\nthe principal's OPTIONAL values (the inherited civil-status fields +\ncustom_fields) arrive in the same POST. All defaulted → the nu-case\ncall (just identity + case meta) is byte-for-byte unchanged."
+        "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\n`journey_template_id` is REQUIRED (product decision 2026-07-11): a case\nwithout a journey is an empty shell — no steps, no timeline, nothing in\nthe worklist, an empty client space. \"I'll assign later\" produced dead\ndossiers. Missing → an explicit 422. The CRM import composes this same\nschema and always injects its (already mandatory) template per row —\nexempt by construction; existing journey-less cases keep assign_journey."
       },
       "CaseDetailResponse": {
         "properties": {

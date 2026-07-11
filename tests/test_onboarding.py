@@ -64,6 +64,7 @@ async def test_real_gestures_check_their_keys(
 
     created = await client.post("/journeys", headers=headers, json={"name": "Mon parcours"})
     assert created.status_code == 201
+    tid = created.json()["id"]
     steps = _by_key(await _state(client, headers))
     assert steps["create_journey"]["done"] is True
     assert steps["create_journey"]["done_at"] is not None
@@ -72,7 +73,12 @@ async def test_real_gestures_check_their_keys(
     made = await client.post(
         "/cases",
         headers=headers,
-        json={"first_name": "Jean", "last_name": "Client", "email": "jean@example.com"},
+        json={
+            "first_name": "Jean",
+            "last_name": "Client",
+            "email": "jean@example.com",
+            "journey_template_id": tid,
+        },
     )
     assert made.status_code == 201
     steps = _by_key(await _state(client, headers))

@@ -85,22 +85,17 @@ async def _template_with_case_field(
 # --- strict retrocompat --------------------------------------------------------------
 
 
-async def test_create_case_nu_unchanged(
+async def test_create_case_without_journey_is_422(
     w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """The current call (no journey, no values) behaves exactly as before:
-    nu case, principal with only identity, no progress."""
+    """Product decision 2026-07-11: a case without a journey is a dead shell
+    — the nu call (no journey_template_id) is now an EXPLICIT 422 naming the
+    missing field. Existing journey-less cases keep assign_journey."""
     headers = agent_headers(admin)
     resp = await w2_client.post("/cases", headers=headers, json=_payload("nu@example.com"))
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["journey_template_id"] is None
-
-    detail = (await w2_client.get(f"/cases/{body['id']}", headers=headers)).json()
-    assert detail["progress"] == []
-    principal = next(p for p in detail["persons"] if p["kind"] == "principal")
-    assert principal["passport_number"] is None
-    assert principal["custom_fields"] == {}
+    assert resp.status_code == 422, resp.text
+    locs = {str(err["loc"][-1]) for err in resp.json()["detail"]}
+    assert "journey_template_id" in locs
 
 
 # --- enriched creation ---------------------------------------------------------------
@@ -158,10 +153,12 @@ async def test_create_case_invalid_value_is_atomic_no_orphan(
         )
     ).scalar_one()
 
+    tid = (await w2_client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     resp = await w2_client.post(
         "/cases",
         headers=headers,
-        json=_payload("orphan@example.com", custom_fields={"ghost": "x"}),  # unknown key
+        # unknown custom key — the journey is valid, the VALUE fails
+        json=_payload("orphan@example.com", journey_template_id=tid, custom_fields={"ghost": "x"}),
     )
     assert resp.status_code == 422
 
@@ -214,19 +211,6 @@ async def test_required_at_creation_no_longer_blocks(
         json=_payload("req2@example.com", journey_template_id=tid, passport_number="X1"),
     )
     assert ok.status_code == 201
-
-
-async def test_required_at_creation_not_enforced_without_journey(
-    w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
-) -> None:
-    """A template flags a field required, but no journey is assigned on
-    this POST → no enforcement (retrocompat: a nu case requires nothing)."""
-    headers = agent_headers(admin)
-    await _template_with_field(
-        w2_client, headers, kind="base_field", reference="passport_number", required=True
-    )
-    resp = await w2_client.post("/cases", headers=headers, json=_payload("nojourney@example.com"))
-    assert resp.status_code == 201
 
 
 async def test_required_at_creation_archived_custom_does_not_block(
@@ -343,19 +327,6 @@ async def test_required_case_field_with_country_creates_and_persists(
     assert case.origin_country == "FR"
 
 
-async def test_required_case_field_not_enforced_without_journey(
-    w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
-) -> None:
-    """A template requires origin_country, but no journey is assigned on
-    this POST → no enforcement (retrocompat)."""
-    headers = agent_headers(admin)
-    await _template_with_case_field(w2_client, headers, case_field="origin_country", required=True)
-    resp = await w2_client.post(
-        "/cases", headers=headers, json=_payload("nojourney-ctry@example.com", origin_country=None)
-    )
-    assert resp.status_code == 201
-
-
 # --- full address case-fields (vague B) ----------------------------------------------
 
 
@@ -368,10 +339,16 @@ async def test_create_case_writes_address_value_to_client_case(
     """An address value (origin_city) passed at creation lands on
     client_case via the existing top-level key — no new write path."""
     headers = agent_headers(admin)
+    tid = (await w2_client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     resp = await w2_client.post(
         "/cases",
         headers=headers,
-        json=_payload("addr@example.com", origin_city="Paris", origin_street="1 rue de Rivoli"),
+        json=_payload(
+            "addr@example.com",
+            journey_template_id=tid,
+            origin_city="Paris",
+            origin_street="1 rue de Rivoli",
+        ),
     )
     assert resp.status_code == 201, resp.text
     case = (

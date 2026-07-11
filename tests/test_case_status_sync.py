@@ -23,6 +23,8 @@ from shared.models.rbac import Role
 from shared.models.usage import UsageEvent
 from src.views.views_schema import CASE_COLUMNS
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
+from tests.plugins.case_plugin import MakeClientCase
+from tests.plugins.expat_plugin import MakeExpatUser
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
 
@@ -78,12 +80,25 @@ async def _status(client: AsyncClient, headers: dict[str, str], case_id: str) ->
 
 
 async def test_list_and_detail_expose_current_step(
-    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
 ) -> None:
     headers = agent_headers(admin)
     journey_id = await _make_journey(client, headers, ["Kickoff", "Dépôt", "Décision"])
     with_journey, pids = await _make_case(client, headers, "a@example.com", journey_id)
-    without_journey, _ = await _make_case(client, headers, "b@example.com", None)
+    # A journey-less dossier can no longer be CREATED (rule 2026-07-11) but
+    # LEGACY ones exist — seeded directly in DB, exactly their prod state.
+    legacy_principal = await make_expat_user(email="b@example.com")
+    without_journey = str(
+        (
+            await make_client_case(
+                agency_id=admin.agency_id, principal_expat_user_id=legacy_principal.id
+            )
+        ).id
+    )
 
     # Step 1 validated → the current step is #2 of 3.
     await _patch_step(client, headers, with_journey, pids[0], "in_progress")
@@ -198,10 +213,22 @@ async def test_manual_status_holds_until_next_step_event(
 
 
 async def test_no_journey_status_never_touched(
-    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
 ) -> None:
     headers = agent_headers(admin)
-    case_id, _ = await _make_case(client, headers, "f@example.com", None)
+    # LEGACY journey-less dossier (no longer creatable via the API).
+    legacy_principal = await make_expat_user(email="f@example.com")
+    case_id = str(
+        (
+            await make_client_case(
+                agency_id=admin.agency_id, principal_expat_user_id=legacy_principal.id
+            )
+        ).id
+    )
     assert await _status(client, headers, case_id) == "prospect"
     touched = await client.patch(f"/cases/{case_id}", headers=headers, json={"origin_city": "Lyon"})
     assert touched.status_code == 200

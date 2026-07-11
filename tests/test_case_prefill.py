@@ -45,9 +45,12 @@ def _payload(**overrides: object) -> dict:
     }
 
 
-async def _create_source(
-    client: AsyncClient, headers: dict[str, str], *, with_journey: bool = True
-) -> str:
+async def _target_tid(client: AsyncClient, headers: dict[str, str]) -> str:
+    """The mandatory journey of a TARGET create (rule 2026-07-11)."""
+    return (await client.post("/journeys", headers=headers, json={"name": "Cible"})).json()["id"]
+
+
+async def _create_source(client: AsyncClient, headers: dict[str, str]) -> str:
     """First dossier: filled civil fields + custom field + a family
     member + (optionally) an assigned journey."""
     created = await client.post(
@@ -56,13 +59,11 @@ async def _create_source(
         json={"key": "budget", "label": "Budget", "field_type": "text"},
     )
     assert created.status_code in (201, 409)  # idempotent across helpers
-    journey_id = None
-    if with_journey:
-        journey = await client.post("/journeys", headers=headers, json={"name": "Résidence"})
-        await client.post(
-            f"/journeys/{journey.json()['id']}/steps", headers=headers, json={"name": "Dossier"}
-        )
-        journey_id = journey.json()["id"]
+    journey = await client.post("/journeys", headers=headers, json={"name": "Résidence"})
+    await client.post(
+        f"/journeys/{journey.json()['id']}/steps", headers=headers, json={"name": "Dossier"}
+    )
+    journey_id = journey.json()["id"]
     case = await client.post(
         "/cases",
         headers=headers,
@@ -71,7 +72,7 @@ async def _create_source(
             nationality="Française",
             profession="Physicienne",
             custom_fields={"budget": "10k"},
-            **({"journey_template_id": journey_id} if journey_id else {}),
+            journey_template_id=journey_id,
         ),
     )
     assert case.status_code == 201, case.text
@@ -114,7 +115,12 @@ async def test_prefill_copies_persons_and_nothing_else(
     assert candidate["journey_name"] == "Résidence"
 
     created = await client.post(
-        "/cases", headers=headers, json=_payload(prefill_from_case_id=source_id)
+        "/cases",
+        headers=headers,
+        json=_payload(
+            prefill_from_case_id=source_id,
+            journey_template_id=await _target_tid(client, headers),
+        ),
     )
     assert created.status_code == 201, created.text
     new_id = created.json()["id"]
@@ -131,10 +137,14 @@ async def test_prefill_copies_persons_and_nothing_else(
     assert family.nationality == "Française"
     assert family.custom_fields == {"budget": "n/a"}
 
-    # The new dossier itself starts FRESH.
+    # The new dossier itself starts FRESH — its journey is its OWN mandatory
+    # one (rule 2026-07-11), NEVER the source's.
     case = await db_session.get(ClientCase, uuid.UUID(new_id))
     assert case is not None
-    assert case.journey_template_id is None
+    assert case.journey_template_id is not None
+    source = await db_session.get(ClientCase, uuid.UUID(source_id))
+    assert source is not None
+    assert case.journey_template_id != source.journey_template_id
     assert case.status == "prospect" and case.tags == []
     progress = (
         await db_session.execute(
@@ -159,7 +169,7 @@ async def test_cross_agency_source_rejected_and_never_listed(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    source_id = await _create_source(client, agent_headers(admin), with_journey=False)
+    source_id = await _create_source(client, agent_headers(admin))
 
     other_admin = await make_agent(role=system_roles["admin"])
     other_headers = agent_headers(other_admin)
@@ -176,7 +186,12 @@ async def test_cross_agency_source_rejected_and_never_listed(
 
     # And using the foreign id directly is a 422.
     rejected = await client.post(
-        "/cases", headers=other_headers, json=_payload(prefill_from_case_id=source_id)
+        "/cases",
+        headers=other_headers,
+        json=_payload(
+            prefill_from_case_id=source_id,
+            journey_template_id=await _target_tid(client, other_headers),
+        ),
     )
     assert rejected.status_code == 422, rejected.text
     assert rejected.json()["code"] == "case.prefill_source_invalid"
@@ -201,7 +216,12 @@ async def test_demo_case_never_a_source(
     picker = await client.get(f"/cases/prefill-source?email={EMAIL}", headers=headers)
     assert picker.json() == []
     rejected = await client.post(
-        "/cases", headers=headers, json=_payload(prefill_from_case_id=str(demo.id))
+        "/cases",
+        headers=headers,
+        json=_payload(
+            prefill_from_case_id=str(demo.id),
+            journey_template_id=await _target_tid(client, headers),
+        ),
     )
     assert rejected.status_code == 422
 
@@ -213,13 +233,14 @@ async def test_wizard_fields_override_the_copy(
     client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
     headers = agent_headers(admin)
-    source_id = await _create_source(client, headers, with_journey=False)
+    source_id = await _create_source(client, headers)
 
     created = await client.post(
         "/cases",
         headers=headers,
         json=_payload(
             prefill_from_case_id=source_id,
+            journey_template_id=await _target_tid(client, headers),
             phone="+595 999 000",
             custom_fields={"budget": "20k"},
         ),
@@ -238,9 +259,12 @@ async def test_no_prefill_behaves_as_before(
     client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
     headers = agent_headers(admin)
-    await _create_source(client, headers, with_journey=False)
+    await _create_source(client, headers)
 
-    created = await client.post("/cases", headers=headers, json=_payload(email="fresh@example.com"))
+    tid = (await client.post("/journeys", headers=headers, json={"name": "Cible"})).json()["id"]
+    created = await client.post(
+        "/cases", headers=headers, json=_payload(email="fresh@example.com", journey_template_id=tid)
+    )
     assert created.status_code == 201, created.text
     persons = await _persons(db_session, created.json()["id"])
     assert set(persons) == {"principal"}  # no family copied

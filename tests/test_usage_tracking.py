@@ -49,13 +49,14 @@ async def _milestones(db: AsyncSession, agency_id: uuid.UUID) -> dict[str, Agenc
     return {m.key: m for m in (await db.execute(stmt)).scalars()}
 
 
-def _case_payload(email_addr: str) -> dict[str, str]:
+def _case_payload(email_addr: str, journey_template_id: str) -> dict[str, str]:
     return {
         "first_name": "Jean",
         "last_name": "Martin",
         "email": email_addr,
         "origin_country": "FR",
         "dest_country": "PY",
+        "journey_template_id": journey_template_id,
     }
 
 
@@ -112,13 +113,12 @@ async def test_emitters_write_their_events(
         },
     )
     # Case + journey + step worked to DONE; comment, reminder, status, export.
-    created = await client.post("/cases", headers=headers, json=_case_payload("track@example.com"))
+    created = await client.post(
+        "/cases", headers=headers, json=_case_payload("track@example.com", tid)
+    )
     case_id = created.json()["id"]
-    pid = (
-        await client.post(
-            f"/cases/{case_id}/journey", headers=headers, json={"journey_template_id": tid}
-        )
-    ).json()[0]["id"]
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    pid = detail["progress"][0]["id"]
     await client.patch(
         f"/cases/{case_id}/steps/{pid}", headers=headers, json={"status": "in_progress"}
     )
@@ -189,11 +189,12 @@ async def test_first_at_immutable_count_increments(
 ) -> None:
     headers = agent_headers(admin)
     agency_id = admin.agency_id
-    await client.post("/cases", headers=headers, json=_case_payload("one@example.com"))
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    await client.post("/cases", headers=headers, json=_case_payload("one@example.com", tid))
     first = (await _milestones(db_session, agency_id))["premier_dossier_cree"]
     original_first_at, original_count = first.first_at, first.count
 
-    await client.post("/cases", headers=headers, json=_case_payload("two@example.com"))
+    await client.post("/cases", headers=headers, json=_case_payload("two@example.com", tid))
     db_session.expire_all()
     second = (await _milestones(db_session, agency_id))["premier_dossier_cree"]
     assert second.first_at == original_first_at
@@ -207,8 +208,9 @@ async def test_replay_matches_incremental(
     client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
     headers = agent_headers(admin)
-    await client.post("/cases", headers=headers, json=_case_payload("rp1@example.com"))
-    await client.post("/cases", headers=headers, json=_case_payload("rp2@example.com"))
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    await client.post("/cases", headers=headers, json=_case_payload("rp1@example.com", tid))
+    await client.post("/cases", headers=headers, json=_case_payload("rp2@example.com", tid))
     incremental = {
         k: (m.first_at, m.count)
         for k, m in (await _milestones(db_session, admin.agency_id)).items()
@@ -316,8 +318,9 @@ async def test_usage_state_progression(
     usage = UsageManager(db_session)
     assert await usage.compute_usage_state(agency_id) == "S0"
 
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
     created = await client.post(
-        "/cases", headers=headers, json=_case_payload("journey-client@example.com")
+        "/cases", headers=headers, json=_case_payload("journey-client@example.com", tid)
     )
     assert created.status_code == 201
     assert await usage.compute_usage_state(agency_id) == "S1"

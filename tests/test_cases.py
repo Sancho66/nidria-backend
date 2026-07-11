@@ -14,6 +14,7 @@ from shared.models.activity import ActivityLog
 from shared.models.agent import Agent
 from shared.models.expat_user import ExpatUser
 from shared.models.invitation import CaseInvitation
+from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
 from src.core import email
 from src.core.config import get_settings
@@ -64,8 +65,15 @@ async def test_create_case_new_expat_full_flow(
     member: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
+    # A member holds case.edit but NOT journey.configure: the mandatory
+    # template is seeded in DB (an admin's prior work, the normal setup).
+    template = JourneyTemplate(agency_id=member.agency_id, name="T")
+    db_session.add(template)
+    await db_session.commit()
     response = await cases_client.post(
-        "/cases", headers=agent_headers(member), json=_payload("new@example.com")
+        "/cases",
+        headers=agent_headers(member),
+        json=_payload("new@example.com", journey_template_id=str(template.id)),
     )
     assert response.status_code == 201
     body = response.json()
@@ -92,7 +100,9 @@ async def test_create_case_new_expat_full_flow(
     assert sent.html is not None and activation_link in sent.html
 
     types = await _activity_types(db_session, body["id"])
-    assert types == ["case.created", "case.invitation_sent"]
+    # journey_assigned joined the trail: creation now instantiates the
+    # mandatory journey in the same transaction (rule 2026-07-11).
+    assert types == ["case.journey_assigned", "case.created", "case.invitation_sent"]
 
 
 async def test_create_case_existing_activated_expat(
@@ -105,10 +115,18 @@ async def test_create_case_existing_activated_expat(
     existing = await make_expat_user(
         email="veteran@example.com", first_name="Vera", last_name="Original"
     )
+    template = JourneyTemplate(agency_id=member.agency_id, name="T")
+    db_session.add(template)
+    await db_session.commit()
     response = await cases_client.post(
         "/cases",
         headers=agent_headers(member),
-        json=_payload("veteran@example.com", first_name="Wrong", last_name="Payload"),
+        json=_payload(
+            "veteran@example.com",
+            first_name="Wrong",
+            last_name="Payload",
+            journey_template_id=str(template.id),
+        ),
     )
     assert response.status_code == 201
     body = response.json()

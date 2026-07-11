@@ -113,6 +113,9 @@ async def test_case_principal_email_lowercased_and_deduped(
     """A case created with 'CLIENT@X' links the EXISTING 'client@x'
     expat instead of minting a case-sensitive doppelganger."""
     existing = await make_expat_user(email="client@example.com")
+    tid = (await client.post("/journeys", headers=agent_headers(admin), json={"name": "T"})).json()[
+        "id"
+    ]
     response = await client.post(
         "/cases",
         headers=agent_headers(admin),
@@ -122,6 +125,7 @@ async def test_case_principal_email_lowercased_and_deduped(
             "email": "  CLIENT@Example.com ",
             "origin_country": "FR",
             "dest_country": "PY",
+            "journey_template_id": tid,
         },
     )
     assert response.status_code == 201, response.text
