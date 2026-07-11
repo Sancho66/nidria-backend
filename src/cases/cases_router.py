@@ -204,10 +204,17 @@ async def prefill_source(
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)
-async def get_case(
-    case_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
-) -> CaseDetailResponse:
-    return await CasesManager(db).get_case_detail(agent, case_id, lang)
+async def get_case(case_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang) -> Response:
+    detail = await CasesManager(db).get_case_detail(agent, case_id, lang)
+    # Without cost.view the `billing` KEY is ABSENT (not null-with-a-hint).
+    # Done HERE, on the single endpoint returning this model: a
+    # @model_serializer on CaseDetailResponse blinded the openapi export
+    # (schema exported as {} — the 2026-07-11 front bug), so the model stays
+    # plain and the key omission is a serialization concern of this route.
+    payload = detail.model_dump(
+        mode="json", exclude={"billing"} if detail.billing is None else None
+    )
+    return Response(content=json.dumps(payload), media_type="application/json")
 
 
 @router.patch("/{case_id}", response_model=CaseResponse)

@@ -14900,7 +14900,280 @@
         "title": "CaseCreateRequest",
         "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\nWave 2 (transactional creation): an OPTIONAL journey_template_id and\nthe principal's OPTIONAL values (the inherited civil-status fields +\ncustom_fields) arrive in the same POST. All defaulted → the nu-case\ncall (just identity + case meta) is byte-for-byte unchanged."
       },
-      "CaseDetailResponse": {},
+      "CaseDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agency Id"
+          },
+          "principal_expat_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Principal Expat User Id"
+          },
+          "owner_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Agent Id"
+          },
+          "journey_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Template Id"
+          },
+          "origin_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Country"
+          },
+          "origin_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Street"
+          },
+          "origin_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin City"
+          },
+          "origin_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Postal Code"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "dest_street": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Street"
+          },
+          "dest_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest City"
+          },
+          "dest_postal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Postal Code"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
+          },
+          "current_step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Name"
+          },
+          "current_step_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Position"
+          },
+          "billing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseBillingInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "persons": {
+            "items": {
+              "$ref": "#/components/schemas/PersonResponse"
+            },
+            "type": "array",
+            "title": "Persons"
+          },
+          "principal_person_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Principal Person Id"
+          },
+          "custom_field_definitions": {
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldDefinitionInline"
+            },
+            "type": "array",
+            "title": "Custom Field Definitions"
+          },
+          "external_contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalContactResponse"
+            },
+            "type": "array",
+            "title": "External Contacts"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/CaseNoteResponse"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "progress": {
+            "items": {
+              "$ref": "#/components/schemas/StepProgressResponse"
+            },
+            "type": "array",
+            "title": "Progress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agency_id",
+          "principal_expat_user_id",
+          "owner_agent_id",
+          "journey_template_id",
+          "origin_country",
+          "origin_street",
+          "origin_city",
+          "origin_postal_code",
+          "dest_country",
+          "dest_street",
+          "dest_city",
+          "dest_postal_code",
+          "status",
+          "source",
+          "tags",
+          "created_at",
+          "updated_at",
+          "persons",
+          "principal_person_id",
+          "custom_field_definitions",
+          "external_contacts",
+          "notes",
+          "progress"
+        ],
+        "title": "CaseDetailResponse"
+      },
       "CaseFieldCreateRequest": {
         "properties": {
           "case_field": {

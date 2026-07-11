@@ -3,15 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    EmailStr,
-    Field,
-    SerializerFunctionWrapHandler,
-    field_serializer,
-    model_serializer,
-)
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 
 from src.cases.filter_schema import AdvancedFilters
 from src.core.currencies import CurrencyCode
@@ -307,17 +299,12 @@ class CaseDetailResponse(CaseResponse):
     current_step_name: str | None = None
     current_step_position: str | None = None
     # Billed price + margin — present (an object) ONLY for a cost.view
-    # holder; the model serializer drops the KEY entirely otherwise, so an
-    # agent without the permission reads the dossier with no trace of it.
+    # holder. The KEY is dropped entirely for the others AT THE ROUTER (the
+    # single endpoint returning this model): a @model_serializer here would
+    # blind the openapi export — Pydantic derives the serialization schema
+    # from the serializer's return annotation, and CaseDetailResponse
+    # exported as {} (the 2026-07-11 front bug). Never re-add one.
     billing: CaseBillingInfo | None = None
-
-    @model_serializer(mode="wrap")
-    def _omit_hidden_billing(self, handler: SerializerFunctionWrapHandler) -> Any:
-        data = handler(self)
-        if isinstance(data, dict) and self.billing is None:
-            data.pop("billing", None)
-        return data
-
     # Unified list: principal (kind=principal) + family, one shape. The
     # principal is findable in O(1) via principal_person_id (invariant:
     # exactly one kind=principal person per case).
