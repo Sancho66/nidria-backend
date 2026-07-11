@@ -204,10 +204,16 @@ class PersonCreateRequest(_CivilStatusFields):
 class PersonUpdateRequest(_CivilStatusFields):
     """Edits any person. For FAMILY, full_name/relationship are editable;
     for PRINCIPAL they are ignored (its name lives on expat_user).
-    `custom_fields` is a partial MERGE keyed by definition key."""
+    `custom_fields` is a partial MERGE keyed by definition key.
+
+    `email` (Arthur): on a person WITHOUT an account, links (or creates) the
+    read-only member access — exactly the creation semantics. On a person who
+    ALREADY has one, a different email is a 409 (remove the access, then
+    re-invite); empty ("" or null) or identical → clean no-op."""
 
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
     relationship: str | None = Field(default=None, min_length=1, max_length=50)
+    email: NormalizedEmailStr | Literal[""] | None = None
     custom_fields: dict[str, Any] | None = None
 
 

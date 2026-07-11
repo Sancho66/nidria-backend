@@ -42,7 +42,7 @@ from src.core.config import get_settings
 from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
-from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
@@ -748,29 +748,35 @@ class CasesManager:
                 # Enums (sex, marital_status) → store their .value.
                 setattr(person, field, value.value if hasattr(value, "value") else value)
 
+    async def _get_or_create_member_account(self, email: str, full_name: str) -> ExpatUser:
+        """The member-account pivot, ONE implementation for creation AND email
+        edition (Arthur): linked-or-created expat_user by email, NEVER a blind
+        insert — the email is globally unique, an existing user of ANOTHER
+        agency is reused (one login, every dossier in its own context)."""
+        expat = await self.repo.get_expat_by_email(email)
+        if expat is None:
+            first, _, last = full_name.partition(" ")
+            expat = self.repo.add_expat(
+                first_name=first or full_name,
+                last_name=last,
+                email=email,
+                preferred_lang=DEFAULT_LANG,
+            )
+            await self.db.flush()
+        return expat
+
     async def add_person(
         self, agent: Agent, case_id: uuid.UUID, payload: PersonCreateRequest
     ) -> PersonResponse:
         case = await self._get_case(agent, case_id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         custom = validate_and_merge(definitions, {}, payload.custom_fields)
-        # Optional account: an email GIVES the member a read-only login. The
-        # expat_user is the SAME global pivot as the principal — linked-or-
-        # created by email, NEVER a blind insert (the email is globally unique;
-        # an existing user of ANOTHER agency is reused, one login, both dossiers
-        # visible each in its own context).
+        # Optional account: an email GIVES the member a read-only login —
+        # the same shared semantics as the email EDITION (Arthur), one
+        # function (_get_or_create_member_account), never a copy.
         expat: ExpatUser | None = None
         if payload.email is not None:
-            expat = await self.repo.get_expat_by_email(payload.email)
-            if expat is None:
-                first, _, last = payload.full_name.partition(" ")
-                expat = self.repo.add_expat(
-                    first_name=first or payload.full_name,
-                    last_name=last,
-                    email=payload.email,
-                    preferred_lang=DEFAULT_LANG,
-                )
-                await self.db.flush()
+            expat = await self._get_or_create_member_account(payload.email, payload.full_name)
         person = self.repo.add_person(
             case_id=case.id,
             kind=CasePersonKind.FAMILY.value,
@@ -851,6 +857,29 @@ class CasesManager:
         progress = ProgressManager(self.db)
         before = await progress.snapshot_active_completion(case)
         provided = payload.model_dump(exclude_unset=True)
+        # Email (Arthur): giving an email to a person WITHOUT an account links
+        # (or creates) the SAME pivot as at creation — one function, one
+        # semantics, read-only access included. A person who ALREADY has an
+        # access cannot have their email changed here: a silent re-link would
+        # transfer the read history to another account — an access transfer
+        # disguised as a field edit → 409, remove the access then re-invite.
+        # Empty or identical email: a clean no-op.
+        invite_mail: tuple[str, str, str, str] | None = None
+        if provided.get("email"):
+            new_email = provided["email"]
+            if person.expat_user_id is None:
+                expat = await self._get_or_create_member_account(
+                    new_email, person.full_name or new_email
+                )
+                person.expat_user_id = expat.id
+                invite_mail = await self._prepare_member_invite(agent, case, new_email, expat)
+            else:
+                current = await self.db.get(ExpatUser, person.expat_user_id)
+                if current is None or current.email != new_email:
+                    raise ConflictError(
+                        "This person already has an access; remove it, then re-invite.",
+                        code="person.email_change_forbidden",
+                    )
         # full_name / relationship are FAMILY-only; the PRINCIPAL's name
         # lives on expat_user and is never set here.
         if person.kind == CasePersonKind.FAMILY.value:
@@ -870,6 +899,8 @@ class CasesManager:
         # agency_validation step ready to validate — recompute now.
         pending = await progress.recompute_active(case, before)
         await self.db.commit()
+        if invite_mail is not None:
+            await asyncio.to_thread(send_email, *invite_mail)  # best-effort, after commit
         await progress.send_pending(pending)
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None

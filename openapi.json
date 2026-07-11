@@ -21452,6 +21452,22 @@
             ],
             "title": "Relationship"
           },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "string",
+                "const": ""
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
           "custom_fields": {
             "anyOf": [
               {
@@ -21467,7 +21483,7 @@
         },
         "type": "object",
         "title": "PersonUpdateRequest",
-        "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key."
+        "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key.\n\n`email` (Arthur): on a person WITHOUT an account, links (or creates) the\nread-only member access — exactly the creation semantics. On a person who\nALREADY has one, a different email is a 409 (remove the access, then\nre-invite); empty (\"\" or null) or identical → clean no-op."
       },
       "PlannedCostCreateRequest": {
         "properties": {

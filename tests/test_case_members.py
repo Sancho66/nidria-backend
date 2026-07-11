@@ -10,6 +10,7 @@ No 4th entity, no migration.
 """
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -347,6 +348,168 @@ async def test_get_or_create_reuses_the_pivot_across_agencies(
     by_id = {c["id"]: c for c in listing}
     assert by_id[str(case_a)]["viewer_role"] == "member"  # member in agency A
     assert by_id[str(case_b.id)]["viewer_role"] == "principal"  # principal in agency B
+
+    # EDITION leg (Arthur): agency C names the member WITHOUT email, then adds
+    # the email by PATCH — the SAME pivot function, so STILL one expat_user
+    # row, and the single login sees the third dossier too. No crossing.
+    admin_c = await make_agent(role=system_roles["admin"])
+    principal_c = await make_expat_user(email="principal-c@x.io")
+    case_c = await make_client_case(
+        agency_id=admin_c.agency_id,
+        principal_expat_user_id=principal_c.id,
+        owner_agent_id=admin_c.id,
+    )
+    hc = agent_headers(admin_c)
+    created = await mem_client.post(
+        f"/cases/{case_c.id}/persons",
+        headers=hc,
+        json={"full_name": "Marie Dupont", "relationship": "spouse"},
+    )
+    assert created.status_code == 201, created.text
+    patched = await mem_client.patch(
+        f"/cases/{case_c.id}/persons/{created.json()['id']}",
+        headers=hc,
+        json={"email": "shared@x.io"},
+    )
+    assert patched.status_code == 200, patched.text
+    ids = (
+        (await db_session.execute(select(ExpatUser.id).where(ExpatUser.email == "shared@x.io")))
+        .scalars()
+        .all()
+    )
+    assert ids == [shared.id]  # the edition reused the pivot — no second row
+    listing = (await mem_client.get("/expat/cases", headers=expat_headers(shared))).json()
+    by_id = {c["id"]: c for c in listing}
+    assert set(by_id) == {str(case_a), str(case_b.id), str(case_c.id)}
+    assert by_id[str(case_c.id)]["viewer_role"] == "member"
+
+
+# --- Arthur: giving an email to an EXISTING member links the account ------------------
+
+
+async def test_arthur_adding_email_to_existing_member_grants_access(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Arthur's case: the member was named at creation WITHOUT email (no
+    account); the agency adds the email afterwards on the EDIT form → the
+    account is linked (get-or-create, creation semantics) with read access."""
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-arthur@x.io")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    created = await mem_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Arthur Martin", "relationship": "son"},
+    )
+    assert created.status_code == 201, created.text
+    person_id = created.json()["id"]
+    row = await db_session.get(CasePerson, uuid.UUID(person_id))
+    assert row is not None and row.expat_user_id is None  # named, no account
+
+    patched = await mem_client.patch(
+        f"/cases/{case.id}/persons/{person_id}", headers=headers, json={"email": "arthur@x.io"}
+    )
+    assert patched.status_code == 200, patched.text
+    db_session.expire_all()
+    row = await db_session.get(CasePerson, uuid.UUID(person_id))
+    assert row is not None and row.expat_user_id is not None  # linked
+    expat = await db_session.get(ExpatUser, row.expat_user_id)
+    assert expat is not None and expat.email == "arthur@x.io"
+
+
+async def test_email_change_on_an_already_linked_member_is_409(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A member who ALREADY has an access keeps it: a different email is an
+    ACCESS TRANSFER disguised as a field edit → 409. Identical or empty
+    email: clean no-op."""
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-409@x.io")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    created = await mem_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Marie Dupont", "relationship": "spouse", "email": "marie@x.io"},
+    )
+    assert created.status_code == 201, created.text
+    person_id = created.json()["id"]
+    linked_before = (await db_session.get(CasePerson, uuid.UUID(person_id))).expat_user_id
+    assert linked_before is not None
+
+    url = f"/cases/{case.id}/persons/{person_id}"
+    denied = await mem_client.patch(url, headers=headers, json={"email": "autre@x.io"})
+    assert denied.status_code == 409
+    assert denied.json()["code"] == "person.email_change_forbidden"
+
+    # Identical, empty and null emails: clean no-ops, the link never moves.
+    for body in ({"email": "marie@x.io"}, {"email": ""}, {"email": None}):
+        ok = await mem_client.patch(url, headers=headers, json=body)
+        assert ok.status_code == 200, (body, ok.text)
+    db_session.expire_all()
+    assert (await db_session.get(CasePerson, uuid.UUID(person_id))).expat_user_id == linked_before
+
+
+async def test_member_sees_the_timeline_after_the_email_edit(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """End of Arthur's path: once the email is added, the member's login sees
+    the dossier's timeline (read-only member view)."""
+    headers = agent_headers(admin)
+    tid = (await mem_client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    await mem_client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "Collecte"})
+    principal = await make_expat_user(email="principal-tl@x.io")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    assign = await mem_client.post(
+        f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": tid}
+    )
+    assert assign.status_code == 201, assign.text
+    created = await mem_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Arthur Martin", "relationship": "son"},
+    )
+    person_id = created.json()["id"]
+    patched = await mem_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"email": "arthur-tl@x.io"},
+    )
+    assert patched.status_code == 200, patched.text
+
+    member = (
+        await db_session.execute(select(ExpatUser).where(ExpatUser.email == "arthur-tl@x.io"))
+    ).scalar_one()
+    # Arthur clicks his invitation link and activates (the PATCH sent the
+    # same activation mail as creation) — simulated by stamping activated_at.
+    member.activated_at = datetime.now(UTC)
+    await db_session.commit()
+    detail = await mem_client.get(f"/expat/cases/{case.id}", headers=expat_headers(member))
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["viewer_role"] == "member"
+    assert [s["name"] for s in body["timeline"]] == ["Collecte"]
 
 
 # --- non-regression: the member filter touches the EXPAT face ONLY -------------------
