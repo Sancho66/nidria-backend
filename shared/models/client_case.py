@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, text
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +54,15 @@ class ClientCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     source: Mapped[str | None] = mapped_column(String(100))
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # The price the agency bills for THIS dossier (optional, editable) — ONE
+    # price per case, not a ledger (the costs are the detail). With the real
+    # costs it yields the margin ("what is left at the end"), computed at
+    # read, never stored, and only when every real cost shares the price's
+    # currency (no conversion, ever). Written under cost.manage, read under
+    # cost.view — the same financial intimacy as the costs; STRUCTURALLY
+    # absent from the expat/external faces (their schemas never carry it).
+    billed_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    billed_currency: Mapped[str | None] = mapped_column(String(3))
     # Demo flag (usage trackers bloc 1, sample-case bloc 2): a seeded
     # example dossier. Excluded from EVERY usage signal (events,
     # milestones, backfill, counters) so the nurture never mistakes the

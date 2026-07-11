@@ -4,6 +4,7 @@ nothing here ever converts between currencies (a rate is a fabricated number).""
 
 import uuid
 from decimal import Decimal
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +45,28 @@ def check_amount_decimals(amount: Decimal, currency: str) -> None:
             f"{currency} allows at most {allowed} decimal place(s).",
             code="cost.amount_decimals",
         )
+
+
+MarginUnavailableReason = Literal["mixed_currencies"]
+
+
+def case_margin(
+    billed_amount: Decimal | None,
+    billed_currency: str | None,
+    real_costs: list[tuple[Decimal, str]],
+) -> tuple[Decimal | None, MarginUnavailableReason | None]:
+    """The dossier's margin: billed − Σ(real costs), SERVED never front-computed,
+    and ONLY when the price and EVERY real cost share THE SAME currency — a
+    cross-currency margin would need a rate we refuse to fabricate (a wrong
+    margin is worse than none). Returns (margin, unavailable_reason):
+    - no price → (None, None): nothing to explain;
+    - any real cost in another currency → (None, "mixed_currencies");
+    - else → (billed − sum, None). No real cost at all = a full margin."""
+    if billed_amount is None or billed_currency is None:
+        return None, None
+    if any(currency != billed_currency for _, currency in real_costs):
+        return None, "mixed_currencies"
+    return billed_amount - sum((amount for amount, _ in real_costs), Decimal(0)), None
 
 
 def line_variance(

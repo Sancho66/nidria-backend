@@ -18,6 +18,7 @@ from src.cases.case_export import build_case_pdf
 from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
 from src.cases.cases_schema import (
     BulkActionResponse,
+    CaseBillingInfo,
     CaseCreateRequest,
     CaseDetailResponse,
     CaseFilters,
@@ -45,6 +46,8 @@ from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
+from src.costs.costs_repository import CostsRepository
+from src.costs.costs_rules import case_margin, check_amount_decimals, resolve_cost_currency
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge, visible_values
 from src.journeys.journeys_repository import JourneysRepository
@@ -165,6 +168,14 @@ class CasesManager:
             source=payload.source,
             tags=payload.tags,
         )
+        # Optional billed price at creation — same gate and money rules as the
+        # PATCH (cost.manage, currency resolution, decimals), one code path.
+        if payload.billed_amount is not None or payload.billed_currency is not None:
+            billing_data: dict[str, Any] = {
+                "billed_amount": payload.billed_amount,
+                "billed_currency": payload.billed_currency,
+            }
+            await self._apply_billing(agent, case, billing_data)
         await self.db.flush()
 
         # The PRINCIPAL person — civil-status carrier linked to the
@@ -396,7 +407,13 @@ class CasesManager:
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         journey_names = await self._resolve_journey_names(agent, [case], lang)
         current = (await self._resolve_current_steps(agent, [case], lang)).get(case.id, {})
+        # Billing block (cost.view only): the margin needs the REAL cost lines.
+        real_costs: list[tuple[Any, str]] = []
+        if Permission.COST_VIEW.value in effective_permissions(agent):
+            lines = await CostsRepository(self.db).list_for_case(case.id)
+            real_costs = [(line.amount, line.currency) for line in lines if line.amount is not None]
         return CaseDetailResponse(
+            billing=self._billing_block(agent, case, real_costs),
             **CaseResponse.model_validate(case).model_dump(),
             journey_name=journey_names.get(case.id),
             current_step_name=current.get("current_step_name"),
@@ -417,6 +434,74 @@ class CasesManager:
             progress=await ProgressManager(self.db).timeline_for_case(case, lang),
         )
 
+    # --- billing (the price the agency bills the dossier) ---------------------------
+
+    async def _apply_billing(
+        self, agent: Agent, case: ClientCase, data: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
+        """Apply billed_amount/billed_currency from an exclude_unset payload
+        dict (keys POPPED — the generic setattr loop must never see them).
+        cost.manage gates the write (same financial intimacy as the costs);
+        same money rules as the costs, reused: line/agency currency
+        resolution (409 cost.currency_required) + per-currency decimals.
+        billed_amount=null clears the price (both fields); billed_currency
+        alone re-denominates an existing price. Returns old/new changes for
+        the activity log."""
+        amount_present = "billed_amount" in data
+        currency_present = "billed_currency" in data
+        amount = data.pop("billed_amount", None)
+        currency = data.pop("billed_currency", None)
+        if not amount_present and not currency_present:
+            return {}
+        if Permission.COST_MANAGE.value not in effective_permissions(agent):
+            raise ForbiddenError("Missing permission: cost.manage.")
+        new_amount = amount if amount_present else case.billed_amount
+        if new_amount is None:
+            # Clearing (or never set): a currency without an amount is
+            # meaningless — refuse rather than store half a price.
+            if currency is not None:
+                raise ValidationError(
+                    "A billed currency without a billed amount is meaningless.",
+                    code="case.billed_currency_without_amount",
+                )
+            new_currency = None
+        else:
+            requested = currency if currency is not None else case.billed_currency
+            new_currency = await resolve_cost_currency(self.db, agent.agency_id, requested)
+            # An ENTERED amount is checked raw (same discipline as the cost
+            # lines); a STORED one being re-denominated is normalized first —
+            # NUMERIC(18,4) pads trailing zeros the agency never typed.
+            check_amount_decimals(
+                new_amount if amount_present else new_amount.normalize(), new_currency
+            )
+        changes: dict[str, dict[str, Any]] = {}
+        if new_amount != case.billed_amount:
+            changes["billed_amount"] = {
+                "old": str(case.billed_amount) if case.billed_amount is not None else None,
+                "new": str(new_amount) if new_amount is not None else None,
+            }
+            case.billed_amount = new_amount
+        if new_currency != case.billed_currency:
+            changes["billed_currency"] = {"old": case.billed_currency, "new": new_currency}
+            case.billed_currency = new_currency
+        return changes
+
+    def _billing_block(
+        self, agent: Agent, case: ClientCase, real_costs: list[tuple[Any, str]]
+    ) -> CaseBillingInfo | None:
+        """The cost.view-gated billing block of the agent detail: None (the
+        serializer drops the KEY) without the permission; otherwise price +
+        margin via the shared case_margin rule."""
+        if Permission.COST_VIEW.value not in effective_permissions(agent):
+            return None
+        margin, reason = case_margin(case.billed_amount, case.billed_currency, real_costs)
+        return CaseBillingInfo(
+            billed_amount=case.billed_amount,
+            billed_currency=case.billed_currency,
+            margin=margin,
+            margin_unavailable_reason=reason,
+        )
+
     # --- update --------------------------------------------------------------------
 
     async def update_case(
@@ -424,6 +509,9 @@ class CasesManager:
     ) -> ClientCase:
         case = await self._get_case(agent, case_id)
         data = payload.model_dump(exclude_unset=True)
+        # Billed price first: pops its keys (cost.manage + money rules live in
+        # _apply_billing) so the generic setattr loop never touches them.
+        billing_changes = await self._apply_billing(agent, case, data)
         # Sections chantier (vague C): an address/country edit can satisfy a
         # case-level step requirement → recompute active steps (auto→DONE /
         # ready-to-validate) after the write, like the person PATCH. Snapshot
@@ -470,6 +558,7 @@ class CasesManager:
             if new_value != old_value:
                 changes[field] = {"old": old_value, "new": new_value}
                 setattr(case, field, new_value)
+        changes.update(billing_changes)
         if changes:
             self._log(case.id, agent, "case.updated", {"changes": changes})
 

@@ -1,10 +1,20 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_serializer,
+    model_serializer,
+)
 
 from src.cases.filter_schema import AdvancedFilters
+from src.core.currencies import CurrencyCode
 from src.core.email import NormalizedEmailStr
 from src.core.enums import CaseStatus, ExternalContactType, MaritalStatus, Sex
 from src.progress.progress_schema import StepProgressResponse
@@ -66,6 +76,10 @@ class CaseCreateRequest(_CivilStatusFields):
     # SAME agency. The new case itself starts fresh (no journey/steps/
     # documents/tags/status/notes), and wizard-provided fields WIN.
     prefill_from_case_id: uuid.UUID | None = None
+    # Billed price (optional at creation; cost.manage enforced in the
+    # manager). Currency omitted → the agency default; neither → 409.
+    billed_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
+    billed_currency: CurrencyCode | None = None
 
 
 class PrefillSourceResponse(BaseModel):
@@ -90,6 +104,11 @@ class CaseUpdateRequest(BaseModel):
     source: str | None = Field(default=None, max_length=100)
     tags: list[str] | None = None
     owner_agent_id: uuid.UUID | None = None
+    # Billed price (cost.manage enforced in the manager). exclude_unset
+    # semantics: billed_amount=null CLEARS the price (both fields);
+    # billed_currency alone re-denominates an existing price.
+    billed_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
+    billed_currency: CurrencyCode | None = None
 
 
 class CaseResponse(BaseModel):
@@ -263,6 +282,23 @@ class CustomFieldDefinitionInline(BaseModel):
     position: int
 
 
+class CaseBillingInfo(BaseModel):
+    """The dossier's billed price + margin, agent face ONLY, cost.view-gated
+    at the MANAGER (the block is entirely ABSENT from the payload without the
+    permission — not null-with-a-hint). Money as strings, never a JSON float;
+    `margin` is SERVED (billed − real costs), only when every real cost shares
+    the price's currency — otherwise null with the reason."""
+
+    billed_amount: Decimal | None
+    billed_currency: str | None
+    margin: Decimal | None
+    margin_unavailable_reason: Literal["mixed_currencies"] | None
+
+    @field_serializer("billed_amount", "margin")
+    def _ser_money(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
+
+
 class CaseDetailResponse(CaseResponse):
     # Resolved journey name (same rule as the list); NULL when no journey.
     journey_name: str | None = None
@@ -270,6 +306,18 @@ class CaseDetailResponse(CaseResponse):
     # all validated).
     current_step_name: str | None = None
     current_step_position: str | None = None
+    # Billed price + margin — present (an object) ONLY for a cost.view
+    # holder; the model serializer drops the KEY entirely otherwise, so an
+    # agent without the permission reads the dossier with no trace of it.
+    billing: CaseBillingInfo | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_hidden_billing(self, handler: SerializerFunctionWrapHandler) -> Any:
+        data = handler(self)
+        if isinstance(data, dict) and self.billing is None:
+            data.pop("billing", None)
+        return data
+
     # Unified list: principal (kind=principal) + family, one shape. The
     # principal is findable in O(1) via principal_person_id (invariant:
     # exactly one kind=principal person per case).

@@ -613,3 +613,5 @@ def test_client_schemas_never_reference_cost_or_planned() -> None:
     for path in ("src/expat/expat_schema.py", "src/external/external_schema.py"):
         src = Path(path).read_text(encoding="utf-8").lower()
         assert "cost" not in src and "planned" not in src, path
+        # The billed price and its margin are agent-only words too.
+        assert "billed" not in src and "margin" not in src, path

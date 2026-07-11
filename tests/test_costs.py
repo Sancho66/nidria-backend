@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.client_case import ClientCase
 from shared.models.rbac import Role
 from src.core.rbac.permissions import Permission
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -26,6 +27,10 @@ from tests.plugins.expat_plugin import MakeExpatUser
 # Two decimals so it is valid under the default test currency (EUR).
 SENTINEL = "COUTSECRETXYZ"
 SENTINEL_AMOUNT = "987654.32"
+# The dossier's BILLED price — same blindness contract as the costs: the
+# comprehension sweeps below plant it on the case and prove no client or
+# provider route ever carries it (value OR field name).
+SENTINEL_BILLED = "66554433.21"
 
 
 @pytest.fixture
@@ -88,6 +93,16 @@ async def _add_cost(
     r = await client.post(f"/cases/{case_id}/steps/{pid}/costs", headers=headers, json=body)
     assert r.status_code == 201, r.text
     return r.json()
+
+
+async def _set_billed(db: AsyncSession, case_id: uuid.UUID) -> None:
+    """Plant the billed-price sentinel on the case for the blindness sweeps."""
+    await db.execute(
+        update(ClientCase)
+        .where(ClientCase.id == case_id)
+        .values(billed_amount=Decimal(SENTINEL_BILLED), billed_currency="EUR")
+    )
+    await db.commit()
 
 
 # --- total exact, three steps, six lines, PYG (0 dec) and EUR (2 dec), no float ------
@@ -250,6 +265,7 @@ async def test_external_full_read_carries_no_cost(
         costs_client, admin.agency_id, make_client_case, headers, 1, principal_id=expat.id
     )
     await _add_cost(costs_client, headers, case_id, pids[0], SENTINEL_AMOUNT, SENTINEL)
+    await _set_billed(db_session, case_id)
 
     ext_role = (
         await db_session.execute(
@@ -267,6 +283,9 @@ async def test_external_full_read_carries_no_cost(
         url = _fill_path(path, case_id)
         resp = await costs_client.get(url, headers=eh)
         assert SENTINEL not in resp.text and SENTINEL_AMOUNT not in resp.text, (path, resp.text)
+        # The billed price is invisible too — value AND field names.
+        assert SENTINEL_BILLED not in resp.text, (path, resp.text)
+        assert "billed_amount" not in resp.text and '"margin"' not in resp.text, (path, resp.text)
 
 
 # --- an expat never sees a cost, on ANY expat route (by comprehension) ---------------
@@ -287,6 +306,7 @@ async def test_expat_never_sees_a_cost_on_any_route(
         costs_client, admin.agency_id, make_client_case, headers, 1, principal_id=expat.id
     )
     await _add_cost(costs_client, headers, case_id, pids[0], SENTINEL_AMOUNT, SENTINEL)
+    await _set_billed(db_session, case_id)
 
     h = expat_headers(expat)
     routes = _routes_with_prefix("/expat/")
@@ -297,6 +317,9 @@ async def test_expat_never_sees_a_cost_on_any_route(
         # Whatever the status, the cost never appears — the expat face is blind
         # to it by construction (own table, own schema).
         assert SENTINEL not in resp.text and SENTINEL_AMOUNT not in resp.text, (path, resp.text)
+        # The billed price is invisible too — value AND field names.
+        assert SENTINEL_BILLED not in resp.text, (path, resp.text)
+        assert "billed_amount" not in resp.text and '"margin"' not in resp.text, (path, resp.text)
 
 
 # --- case_export (one of the 7) carries NO cost — proof the 7 stay intact ------------
@@ -314,11 +337,14 @@ async def test_case_export_contains_no_cost(
         costs_client, admin.agency_id, make_client_case, headers, 1
     )
     await _add_cost(costs_client, headers, case_id, pids[0], SENTINEL_AMOUNT, SENTINEL)
+    await _set_billed(db_session, case_id)
 
     resp = await costs_client.get(f"/cases/{case_id}/export", headers=headers)
     assert resp.status_code == 200
     assert SENTINEL.encode() not in resp.content
     assert SENTINEL_AMOUNT.encode() not in resp.content
+    # The billed price stays out of the export too (one of the 7, untouched).
+    assert SENTINEL_BILLED.encode() not in resp.content
 
 
 # --- helpers: route enumeration (comprehension) --------------------------------------

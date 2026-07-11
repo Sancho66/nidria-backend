@@ -14418,6 +14418,64 @@
         ],
         "title": "CanvasNodePosition"
       },
+      "CaseBillingInfo": {
+        "properties": {
+          "billed_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Amount"
+          },
+          "billed_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Currency"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin"
+          },
+          "margin_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "mixed_currencies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin Unavailable Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "billed_amount",
+          "billed_currency",
+          "margin",
+          "margin_unavailable_reason"
+        ],
+        "title": "CaseBillingInfo",
+        "description": "The dossier's billed price + margin, agent face ONLY, cost.view-gated\nat the MANAGER (the block is entirely ABSENT from the payload without the\npermission — not null-with-a-hint). Money as strings, never a JSON float;\n`margin` is SERVED (billed − real costs), only when every real cost shares\nthe price's currency — otherwise null with the reason."
+      },
       "CaseCostsResponse": {
         "properties": {
           "default_currency": {
@@ -14430,6 +14488,51 @@
               }
             ],
             "title": "Default Currency"
+          },
+          "billed_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Amount"
+          },
+          "billed_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Currency"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin"
+          },
+          "margin_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "mixed_currencies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin Unavailable Reason"
           },
           "totals": {
             "items": {
@@ -14449,11 +14552,15 @@
         "type": "object",
         "required": [
           "default_currency",
+          "billed_amount",
+          "billed_currency",
+          "margin",
+          "margin_unavailable_reason",
           "totals",
           "lines"
         ],
         "title": "CaseCostsResponse",
-        "description": "A dossier's cost lines + its totals GROUPED BY CURRENCY (one entry per\ncurrency present, never a cross-currency sum — converting would fabricate a\nnumber). `default_currency` is the agency's prefill for a new line's currency\n(None if the agency has not set one)."
+        "description": "A dossier's cost lines + its totals GROUPED BY CURRENCY (one entry per\ncurrency present, never a cross-currency sum — converting would fabricate a\nnumber). `default_currency` is the agency's prefill for a new line's currency\n(None if the agency has not set one).\n\nBilled price + margin (the \"what is left at the end\"): `margin` = billed −\nΣ(real costs), SERVED, only when the price and EVERY real cost share the\nsame currency — otherwise null with `margin_unavailable_reason` saying why\n(never a conversion, never an approximate margin)."
       },
       "CaseCreateRequest": {
         "properties": {
@@ -14756,6 +14863,32 @@
               }
             ],
             "title": "Prefill From Case Id"
+          },
+          "billed_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Amount"
+          },
+          "billed_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Currency"
           }
         },
         "type": "object",
@@ -14767,270 +14900,7 @@
         "title": "CaseCreateRequest",
         "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\nWave 2 (transactional creation): an OPTIONAL journey_template_id and\nthe principal's OPTIONAL values (the inherited civil-status fields +\ncustom_fields) arrive in the same POST. All defaulted → the nu-case\ncall (just identity + case meta) is byte-for-byte unchanged."
       },
-      "CaseDetailResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "agency_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Agency Id"
-          },
-          "principal_expat_user_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Principal Expat User Id"
-          },
-          "owner_agent_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Agent Id"
-          },
-          "journey_template_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Journey Template Id"
-          },
-          "origin_country": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Origin Country"
-          },
-          "origin_street": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Origin Street"
-          },
-          "origin_city": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Origin City"
-          },
-          "origin_postal_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Origin Postal Code"
-          },
-          "dest_country": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Country"
-          },
-          "dest_street": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Street"
-          },
-          "dest_city": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest City"
-          },
-          "dest_postal_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Postal Code"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Tags"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "journey_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Journey Name"
-          },
-          "current_step_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Step Name"
-          },
-          "current_step_position": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Step Position"
-          },
-          "persons": {
-            "items": {
-              "$ref": "#/components/schemas/PersonResponse"
-            },
-            "type": "array",
-            "title": "Persons"
-          },
-          "principal_person_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Principal Person Id"
-          },
-          "custom_field_definitions": {
-            "items": {
-              "$ref": "#/components/schemas/CustomFieldDefinitionInline"
-            },
-            "type": "array",
-            "title": "Custom Field Definitions"
-          },
-          "external_contacts": {
-            "items": {
-              "$ref": "#/components/schemas/ExternalContactResponse"
-            },
-            "type": "array",
-            "title": "External Contacts"
-          },
-          "notes": {
-            "items": {
-              "$ref": "#/components/schemas/CaseNoteResponse"
-            },
-            "type": "array",
-            "title": "Notes"
-          },
-          "progress": {
-            "items": {
-              "$ref": "#/components/schemas/StepProgressResponse"
-            },
-            "type": "array",
-            "title": "Progress"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "agency_id",
-          "principal_expat_user_id",
-          "owner_agent_id",
-          "journey_template_id",
-          "origin_country",
-          "origin_street",
-          "origin_city",
-          "origin_postal_code",
-          "dest_country",
-          "dest_street",
-          "dest_city",
-          "dest_postal_code",
-          "status",
-          "source",
-          "tags",
-          "created_at",
-          "updated_at",
-          "persons",
-          "principal_person_id",
-          "custom_field_definitions",
-          "external_contacts",
-          "notes",
-          "progress"
-        ],
-        "title": "CaseDetailResponse"
-      },
+      "CaseDetailResponse": {},
       "CaseFieldCreateRequest": {
         "properties": {
           "case_field": {
@@ -15880,6 +15750,32 @@
               }
             ],
             "title": "Owner Agent Id"
+          },
+          "billed_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Amount"
+          },
+          "billed_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Currency"
           }
         },
         "type": "object",

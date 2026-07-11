@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
@@ -107,8 +108,21 @@ class CaseCostsResponse(BaseModel):
     """A dossier's cost lines + its totals GROUPED BY CURRENCY (one entry per
     currency present, never a cross-currency sum — converting would fabricate a
     number). `default_currency` is the agency's prefill for a new line's currency
-    (None if the agency has not set one)."""
+    (None if the agency has not set one).
+
+    Billed price + margin (the "what is left at the end"): `margin` = billed −
+    Σ(real costs), SERVED, only when the price and EVERY real cost share the
+    same currency — otherwise null with `margin_unavailable_reason` saying why
+    (never a conversion, never an approximate margin)."""
 
     default_currency: str | None
+    billed_amount: Decimal | None
+    billed_currency: str | None
+    margin: Decimal | None
+    margin_unavailable_reason: Literal["mixed_currencies"] | None
     totals: list[CurrencyTotals]
     lines: list[CostLineResponse]
+
+    @field_serializer("billed_amount", "margin")
+    def _ser_billed(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None

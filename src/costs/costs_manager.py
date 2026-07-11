@@ -13,7 +13,12 @@ from src.cases.cases_repository import CasesRepository
 from src.core.enums import ActorType
 from src.core.exceptions import NotFoundError
 from src.costs.costs_repository import CostsRepository
-from src.costs.costs_rules import check_amount_decimals, line_variance, resolve_cost_currency
+from src.costs.costs_rules import (
+    case_margin,
+    check_amount_decimals,
+    line_variance,
+    resolve_cost_currency,
+)
 from src.costs.costs_schema import (
     CaseCostsResponse,
     CostLineCreateRequest,
@@ -97,8 +102,18 @@ class CostsManager:
             for c in sorted(currencies)
         ]
         agency = await self.db.get(Agency, agent.agency_id)
+        # Billed price + margin — same shared rule as the case detail block.
+        margin, margin_reason = case_margin(
+            case.billed_amount,
+            case.billed_currency,
+            [(line.amount, line.currency) for line in lines if line.amount is not None],
+        )
         return CaseCostsResponse(
             default_currency=agency.currency if agency else None,
+            billed_amount=case.billed_amount,
+            billed_currency=case.billed_currency,
+            margin=margin,
+            margin_unavailable_reason=margin_reason,
             totals=totals,
             lines=[CostLineResponse.model_validate(line) for line in lines],
         )
