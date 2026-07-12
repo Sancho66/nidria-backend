@@ -14,6 +14,7 @@ from src.admin.admin_router import router as admin_router
 from src.agencies.agencies_router import public_router as agencies_public_router
 from src.agencies.agencies_router import router as agencies_router
 from src.auth.auth_router import router as auth_router
+from src.billing.billing_router import router as billing_router
 from src.cases.cases_router import router as cases_router
 from src.comments.comments_router import agent_router as comments_agent_router
 from src.comments.comments_router import expat_router as comments_expat_router
@@ -122,6 +123,7 @@ app = FastAPI(
 register_exception_handlers(app)
 
 app.include_router(auth_router)
+app.include_router(billing_router)
 app.include_router(activity_router)
 app.include_router(admin_router)
 app.include_router(agencies_router)

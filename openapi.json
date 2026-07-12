@@ -1000,6 +1000,73 @@
         }
       }
     },
+    "/billing/webhooks/paddle": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Paddle Webhook",
+        "operationId": "paddle_webhook_billing_webhooks_paddle_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAck"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/billing/checkout": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Create Checkout",
+        "operationId": "create_checkout_billing_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/{case_id}/activity": {
       "get": {
         "tags": [
@@ -1188,6 +1255,23 @@
               "type": "boolean",
               "default": false,
               "title": "Onboarding Incomplete"
+            }
+          },
+          {
+            "name": "billing_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(active|past_due|canceled)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Billing Status"
             }
           }
         ],
@@ -13281,6 +13365,21 @@
             "type": "boolean",
             "title": "Is Founding"
           },
+          "billing_mode": {
+            "type": "string",
+            "title": "Billing Mode"
+          },
+          "billing_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Status"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -13343,6 +13442,8 @@
           "seats_used",
           "seats_limit",
           "is_founding",
+          "billing_mode",
+          "billing_status",
           "status",
           "trial_days_remaining",
           "cases_count",
@@ -16067,6 +16168,42 @@
         ],
         "title": "ChangePasswordRequest",
         "description": "Logged-in password change (bloc 1). The CURRENT password check is\nwhat distinguishes this flow from the email reset; the new password\nfollows the same strength policy as the reset."
+      },
+      "CheckoutCreateRequest": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/SubscriptionPlan"
+          },
+          "billing_cycle": {
+            "$ref": "#/components/schemas/BillingCycle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "billing_cycle"
+        ],
+        "title": "CheckoutCreateRequest",
+        "description": "POST /billing/checkout — the agency picks its plan and cycle; the seat\nquantity is DERIVED from the real member count, never chosen here."
+      },
+      "CheckoutCreateResponse": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "title": "Transaction Id"
+          },
+          "paddle_env": {
+            "type": "string",
+            "title": "Paddle Env"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "paddle_env"
+        ],
+        "title": "CheckoutCreateResponse",
+        "description": "What the front needs to open the hosted overlay\n(Paddle.Checkout.open({transactionId})): the transaction id, and the\nPaddle environment to initialise Paddle.js with."
       },
       "CommentCreateRequest": {
         "properties": {
@@ -24734,6 +24871,20 @@
         ],
         "title": "ValidatorUpdateRequest",
         "description": "\"Action validée par\" — designate the validator on the DOSSIER\n(gate case.edit), symmetric to the responsible assignment. `none`/`expat`\ncarry no agent; `agent` takes an optional INTERNAL member (NULL = any\nmember); `external` REQUIRES a provider (is_external Agent) assigned to\nthe case — enforced in the Manager."
+      },
+      "WebhookAck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "WebhookAck",
+        "description": "Always 200 for a VERIFIED event (Paddle stops re-delivering); `status`\nsays what happened: processed | duplicate | ignored."
       },
       "WorklistItem": {
         "properties": {

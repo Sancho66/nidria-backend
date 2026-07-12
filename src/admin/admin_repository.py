@@ -105,6 +105,7 @@ class AdminRepository:
         now: datetime,
         trial_expiring_within_days: int | None = None,
         onboarding_incomplete: bool = False,
+        billing_status: str | None = None,
     ) -> tuple[Sequence[Row[Any]], int]:
         cases_count = self._cases_count().label("cases_count")
         members_count = self._members_count().label("members_count")
@@ -118,6 +119,8 @@ class AdminRepository:
             Agency.logo_path,
             Agency.plan,
             Agency.is_founding,
+            Agency.billing_mode,
+            Agency.billing_status,
             Agency.trial_ends_at,
             Agency.converted_at,
             Agency.created_at,
@@ -129,6 +132,8 @@ class AdminRepository:
         count_stmt = select(func.count()).select_from(Agency)
 
         predicates = []
+        if billing_status is not None:
+            predicates.append(Agency.billing_status == billing_status)
         if search:
             like = f"%{search}%"
             predicates.append(or_(Agency.name.ilike(like), Agency.slug.ilike(like)))

@@ -42,6 +42,7 @@ async def list_agencies(
     page_size: int = Query(20, ge=1, le=100),
     trial_expiring_within_days: int | None = Query(None, ge=0),
     onboarding_incomplete: bool = False,
+    billing_status: str | None = Query(None, pattern="^(active|past_due|canceled)$"),
 ) -> AdminAgenciesResponse:
     """The superadmin agencies table: paginated, searchable (name/slug),
     sortable (created_at|name|cases_count), with derived status, seat/case
@@ -57,4 +58,5 @@ async def list_agencies(
         page_size=page_size,
         trial_expiring_within_days=trial_expiring_within_days,
         onboarding_incomplete=onboarding_incomplete,
+        billing_status=billing_status,
     )

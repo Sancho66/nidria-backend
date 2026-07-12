@@ -66,15 +66,34 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Founding offer (first 20 agencies): up to 3 free seats on top of
     # the included ones.
     founding_free_seats: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    # DEPRECATED (2026-07-12) — informationnel, la vérité tarifaire vit chez
+    # Paddle (PRICE_IDS) ; ne jamais servir sans re-valider. Colonnes dormantes
+    # (lues nulle part) : le défaut 99 est FAUX pour Agence (129) depuis la
+    # grille 2026-07, et n'est volontairement pas corrigé — corriger une
+    # grille en dur re-créerait ce qu'on vient de sortir.
     base_price_eur: Mapped[int] = mapped_column(default=99, server_default=text("99"))
-    # 35 (cabinet) | 25 (agence), billed from the 4th seat; set with the
-    # plan at conversion.
+    # DEPRECATED (2026-07-12) — même statut : posé à la conversion (35/25),
+    # informationnel seulement ; la vérité vit chez Paddle (PRICE_IDS).
     seat_price_eur: Mapped[int | None] = mapped_column()
     # Annual/founding promise: price locked until this date (or as long
     # as the subscription stays continuous - Eric's call, not enforced).
     price_locked_until: Mapped[date | None] = mapped_column(Date)
     is_founding: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Paddle (Merchant of Record, self-serve). billing_mode drives WHO writes
+    # the subscription state: "manual" (default — the superadmin's PATCH, the
+    # only writer, Nicolas & large accounts forever) or "paddle" (the signed
+    # webhooks write; the manual PATCH refuses plan/cycle/converted_at).
+    # NEVER hand-editable towards "paddle": only the subscription.activated
+    # webhook poses it (the event is the proof of the self-serve checkout).
+    billing_mode: Mapped[str] = mapped_column(
+        String(10), default="manual", server_default=text("'manual'"), nullable=False
+    )
+    # active | past_due | canceled — informational (admin table + filter);
+    # any product lockout is a separate, explicit decision.
+    billing_status: Mapped[str | None] = mapped_column(String(20))
+    paddle_customer_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    paddle_subscription_id: Mapped[str | None] = mapped_column(String(64), unique=True)
 
     @property
     def has_logo(self) -> bool:

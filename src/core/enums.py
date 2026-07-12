@@ -236,9 +236,10 @@ class RequirementStatus(StrEnum):
 
 
 class SubscriptionPlan(StrEnum):
-    """Structure F (pricing Eric 2026-07-07): 99 EUR base INCLUDING 3
-    seats, extra seats billed from the 4th. Values are the product plan
-    names as Eric bills them (manual billing at first)."""
+    """Structure F: the base plan INCLUDES 3 seats, extra seats billed
+    from the 4th. Values are the product plan names. The AMOUNTS live in
+    Paddle (PRICE_IDS env) — never in code; see the deprecated
+    base_price_eur/seat_price_eur columns on agency."""
 
     CABINET = "cabinet"  # +35 EUR per extra seat, up to 5 members
     AGENCE = "agence"  # +25 EUR per extra seat, up to 10 members

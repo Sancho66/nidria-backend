@@ -111,6 +111,22 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     supabase_storage_bucket: str = "documents"
 
+    # Paddle (Merchant of Record, self-serve billing). Optional so the app
+    # boots without them (billing_mode="manual" everywhere works Paddle-less);
+    # the billing endpoints error explicitly at first use if missing.
+    # paddle_env drives the API base URL; the LIVE account does not exist yet
+    # (KYB in progress) — everything is built against sandbox.
+    paddle_env: str = "sandbox"  # sandbox | live
+    paddle_api_key: str | None = None
+    paddle_webhook_secret: str | None = None
+    # The 8 price ids, JSON env (they DIFFER between sandbox and live). Keys
+    # follow the enum values (plan + French cycle, structure F vocabulary):
+    # {"cabinet_mensuel": "pri_...", "cabinet_annuel": ..., "agence_mensuel":
+    #  ..., "agence_annuel": ..., "seat_cabinet_mensuel": ...,
+    #  "seat_cabinet_annuel": ..., "seat_agence_mensuel": ...,
+    #  "seat_agence_annuel": ...}
+    paddle_price_ids: dict[str, str] = {}
+
     @field_validator("cors_origins", "allowed_document_extensions", mode="before")
     @classmethod
     def _parse_comma_list(cls, v: str | list[str]) -> list[str]:

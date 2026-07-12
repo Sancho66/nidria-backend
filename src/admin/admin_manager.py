@@ -49,6 +49,7 @@ class AdminManager:
         page_size: int,
         trial_expiring_within_days: int | None = None,
         onboarding_incomplete: bool = False,
+        billing_status: str | None = None,
     ) -> AdminAgenciesResponse:
         now = datetime.now(UTC)
         repo = AdminRepository(self.db)
@@ -61,6 +62,7 @@ class AdminManager:
             now=now,
             trial_expiring_within_days=trial_expiring_within_days,
             onboarding_incomplete=onboarding_incomplete,
+            billing_status=billing_status,
         )
         # ONE grouped batch for the page's agencies — never one query per row.
         adoption = await repo.adoption_batch([r.id for r in rows])
@@ -87,6 +89,8 @@ class AdminManager:
             seats_used=r.seats_used,
             seats_limit=SEATS_MAX_BY_PLAN.get(r.plan or "", TRIAL_SEAT_LIMIT),
             is_founding=r.is_founding,
+            billing_mode=r.billing_mode,
+            billing_status=r.billing_status,
             status=status,
             trial_days_remaining=days,
             cases_count=r.cases_count,

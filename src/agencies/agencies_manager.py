@@ -63,9 +63,11 @@ logger = logging.getLogger(__name__)
 
 _EMAIL_TAKEN = "This email already has an agent account."
 
-# Structure F (pricing Eric 2026-07-07). Seats bill from the 4th; the
-# cap is a hard product limit per plan. An unconverted agency (trial)
+# Structure F. Seats bill from the 4th; the caps are hard PRODUCT limits
+# per plan (not prices — they stay in code). An unconverted agency (trial)
 # is capped at the 3 included seats of the future base plan.
+# SEAT_PRICES_EUR feeds the DEPRECATED informational seat_price_eur column
+# only — la vérité tarifaire vit chez Paddle (PRICE_IDS).
 SEAT_PRICES_EUR = {SubscriptionPlan.CABINET.value: 35, SubscriptionPlan.AGENCE.value: 25}
 SEATS_MAX_BY_PLAN = {SubscriptionPlan.CABINET.value: 5, SubscriptionPlan.AGENCE.value: 10}
 TRIAL_SEAT_LIMIT = 3
@@ -406,6 +408,20 @@ class AgenciesManager:
         agency = await self.repo.get_agency(agency_id)
         if agency is None:
             raise NotFoundError("Agency not found.")
+        # A paddle-billed agency's plan/cycle/conversion are written by the
+        # WEBHOOKS only — the manual hand is refused to keep one writer per
+        # mode (the founding fields below stay OUR concepts, still editable).
+        if agency.billing_mode == "paddle" and (
+            payload.plan is not None
+            or payload.billing_cycle is not None
+            or payload.converted_at is not None
+        ):
+            raise ConflictError(
+                "This agency's subscription is managed by Paddle; plan, cycle "
+                "and conversion cannot be edited by hand.",
+                code="subscription.managed_by_paddle",
+            )
+        founding_seats_changed = False
         if payload.is_founding is not None:
             agency.is_founding = payload.is_founding
         if payload.founding_free_seats is not None:
@@ -414,33 +430,76 @@ class AgenciesManager:
                     "Free seats are reserved for founding agencies.",
                     code="subscription.founding_seats_invalid",
                 )
+            founding_seats_changed = payload.founding_free_seats != agency.founding_free_seats
             agency.founding_free_seats = payload.founding_free_seats
-        if payload.plan is not None:
-            agency.plan = payload.plan.value
-            agency.seat_price_eur = SEAT_PRICES_EUR[payload.plan.value]
-        if payload.billing_cycle is not None:
-            agency.billing_cycle = payload.billing_cycle.value
         if payload.price_locked_until is not None:
             agency.price_locked_until = payload.price_locked_until
-        if payload.converted_at is not None:
+        if payload.converted_at is not None and payload.plan is None:
             agency.converted_at = payload.converted_at
-        elif payload.plan is not None and agency.converted_at is None:
-            agency.converted_at = datetime.now(UTC)
+        if payload.billing_cycle is not None and payload.plan is None:
+            agency.billing_cycle = payload.billing_cycle.value
         if payload.plan is not None:
-            await UsageManager(self.db).emit(
-                agency_id=agency.id,
-                event_type="agency.converted",
+            await self.apply_conversion(
+                agency,
+                plan=payload.plan.value,
+                billing_cycle=payload.billing_cycle.value if payload.billing_cycle else None,
+                converted_at=payload.converted_at,
                 actor_type=ActorType.AGENT,
                 actor_id=superadmin.id,
-                details={
-                    "plan": agency.plan,
-                    "billing_cycle": agency.billing_cycle,
-                    "is_founding": agency.is_founding,
-                },
             )
         await self.db.commit()
         await self.db.refresh(agency)
+        # Free seats change the DERIVED billed count → resync the Paddle
+        # quantity (no-op for manual agencies). Best-effort after commit.
+        if founding_seats_changed:
+            await self._sync_paddle_seats(agency.id, increase=False)
         return await self.subscription_info(agency)
+
+    async def apply_conversion(
+        self,
+        agency: Agency,
+        *,
+        plan: str,
+        billing_cycle: str | None,
+        converted_at: datetime | None,
+        actor_type: ActorType,
+        actor_id: uuid.UUID | None,
+    ) -> None:
+        """THE conversion gesture — the ONLY place `agency.converted` is
+        emitted, shared by the superadmin's manual PATCH and the Paddle
+        `subscription.activated` webhook, so the usage signal can never
+        diverge between the two billing modes (the classify_usage_state
+        lesson). NO commit: the caller owns the transaction. An explicit
+        converted_at wins; otherwise the first conversion stamps now()."""
+        agency.plan = plan
+        agency.seat_price_eur = SEAT_PRICES_EUR[plan]
+        if billing_cycle is not None:
+            agency.billing_cycle = billing_cycle
+        if converted_at is not None:
+            agency.converted_at = converted_at
+        elif agency.converted_at is None:
+            agency.converted_at = datetime.now(UTC)
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.converted",
+            actor_type=actor_type,
+            actor_id=actor_id,
+            details={
+                "plan": agency.plan,
+                "billing_cycle": agency.billing_cycle,
+                "is_founding": agency.is_founding,
+            },
+        )
+
+    async def _sync_paddle_seats(self, agency_id: uuid.UUID, *, increase: bool) -> None:
+        """Best-effort seat-quantity push (paddle agencies only) — a Paddle
+        hiccup must never break the member gesture that triggered it."""
+        from src.billing.billing_manager import BillingManager
+
+        try:
+            await BillingManager(self.db).sync_seat_quantity(agency_id, increase=increase)
+        except Exception:
+            logger.exception("paddle seat sync failed for agency %s", agency_id)
 
     # --- onboarding checklist (activation) ------------------------------------------
 
@@ -850,4 +909,9 @@ class AgenciesManager:
             )
         pair = AuthManager(self.db).issue_token_pair(agent.id, Audience.AGENT)
         await self.db.commit()
+        # A new INTERNAL member can cross the included-seats threshold: push
+        # the derived quantity to Paddle (no-op for manual agencies; external
+        # providers never consume a seat). Best-effort, after commit.
+        if not (role and role.is_external):
+            await self._sync_paddle_seats(invitation.agency_id, increase=True)
         return pair

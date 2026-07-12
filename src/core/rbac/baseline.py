@@ -145,6 +145,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.admin.admin_router import BINDINGS as admin_bindings
     from src.agencies.agencies_router import BINDINGS as agencies_bindings
     from src.auth.auth_router import BINDINGS as auth_bindings
+    from src.billing.billing_router import BINDINGS as billing_bindings
     from src.cases.cases_router import BINDINGS as cases_bindings
     from src.comments.comments_router import BINDINGS as comments_bindings
     from src.consents.consents_router import BINDINGS as consents_bindings
@@ -166,6 +167,7 @@ def collect_bindings() -> list[RouteBinding]:
 
     return [
         *auth_bindings,
+        *billing_bindings,
         *agencies_bindings,
         *admin_bindings,
         *roles_bindings,

@@ -1,0 +1,575 @@
+"""Paddle billing (Merchant of Record) — the merge conditions. Everything is
+webhook-driven (no cron); the Paddle client is MOCKED everywhere (zero network
+call); the signature is real HMAC over the raw body; handlers converge on
+out-of-order deliveries and a manual agency is never written by a webhook."""
+
+import hashlib
+import hmac
+import json
+import time
+import uuid
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from shared.models.agency import Agency
+from shared.models.agent import Agent
+from shared.models.invitation import AgentInvitation
+from shared.models.paddle_event import PaddleWebhookEvent
+from shared.models.rbac import Role
+from shared.models.usage import UsageEvent
+from src.core.config import get_settings
+from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
+
+pytestmark = pytest.mark.usefixtures("rbac_baseline")
+
+SECRET = "test-webhook-secret"
+PRICE_IDS = {
+    "cabinet_mensuel": "pri_base_cab_m",
+    "cabinet_annuel": "pri_base_cab_a",
+    "agence_mensuel": "pri_base_age_m",
+    "agence_annuel": "pri_base_age_a",
+    "seat_cabinet_mensuel": "pri_seat_cab_m",
+    "seat_cabinet_annuel": "pri_seat_cab_a",
+    "seat_agence_mensuel": "pri_seat_age_m",
+    "seat_agence_annuel": "pri_seat_age_a",
+}
+
+
+@pytest.fixture(autouse=True)
+def paddle_settings(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PADDLE_ENV", "sandbox")
+    monkeypatch.setenv("PADDLE_API_KEY", "test-api-key")
+    monkeypatch.setenv("PADDLE_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("PADDLE_PRICE_IDS", json.dumps(PRICE_IDS))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest_asyncio.fixture
+async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
+    return await make_agent(role=system_roles["admin"])
+
+
+def _sign(raw: bytes, *, secret: str = SECRET, ts: int | None = None) -> str:
+    ts = ts or int(time.time())
+    digest = hmac.new(secret.encode(), f"{ts}:".encode() + raw, hashlib.sha256).hexdigest()
+    return f"ts={ts};h1={digest}"
+
+
+def _envelope(
+    event_type: str,
+    *,
+    agency_id: uuid.UUID | None,
+    occurred_at: datetime | None = None,
+    items: list[dict[str, Any]] | None = None,
+    status: str | None = None,
+    subscription_id: str = "sub_123",
+    event_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "event_id": event_id or f"evt_{uuid.uuid4().hex[:12]}",
+        "event_type": event_type,
+        "occurred_at": (occurred_at or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
+        "data": {
+            "id": subscription_id,
+            "customer_id": "ctm_123",
+            "status": status,
+            "custom_data": {"agency_id": str(agency_id)} if agency_id else {},
+            "items": items
+            if items is not None
+            else [{"price": {"id": PRICE_IDS["cabinet_mensuel"]}, "quantity": 1}],
+        },
+    }
+
+
+async def _post(client: AsyncClient, envelope: dict[str, Any], *, signature: str | None = "auto"):
+    raw = json.dumps(envelope).encode()
+    headers = {"content-type": "application/json"}
+    if signature == "auto":
+        headers["Paddle-Signature"] = _sign(raw)
+    elif signature is not None:
+        headers["Paddle-Signature"] = signature
+    return await client.post("/billing/webhooks/paddle", content=raw, headers=headers)
+
+
+async def _agency(db: AsyncSession, agency_id: uuid.UUID) -> Agency:
+    db.expire_all()
+    agency = await db.get(Agency, agency_id)
+    assert agency is not None
+    return agency
+
+
+async def _event_count(db: AsyncSession) -> int:
+    return (await db.execute(select(func.count()).select_from(PaddleWebhookEvent))).scalar_one()
+
+
+# --- signature invalide -> 401, rien d'ecrit ------------------------------------------
+
+
+async def test_invalid_signature_is_401_and_writes_nothing(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    aid = admin.agency_id
+    envelope = _envelope("subscription.activated", agency_id=aid)
+    raw = json.dumps(envelope).encode()
+
+    # No header, wrong secret, and a stale (replayed) timestamp: all 401.
+    assert (await _post(client, envelope, signature=None)).status_code == 401
+    assert (await _post(client, envelope, signature=_sign(raw, secret="wrong"))).status_code == 401
+    assert (
+        await _post(client, envelope, signature=_sign(raw, ts=int(time.time()) - 3600))
+    ).status_code == 401
+    assert await _event_count(db_session) == 0  # nothing stored
+    agency = await _agency(db_session, aid)
+    assert agency.converted_at is None and agency.billing_mode == "manual"
+
+
+# --- event_id rejoue -> no-op 200 ------------------------------------------------------
+
+
+async def test_replayed_event_id_is_a_noop(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    aid = admin.agency_id
+    envelope = _envelope("subscription.activated", agency_id=aid)
+    first = await _post(client, envelope)
+    assert first.status_code == 200 and first.json()["status"] == "processed"
+    replay = await _post(client, envelope)  # same event_id, valid signature
+    assert replay.status_code == 200 and replay.json()["status"] == "duplicate"
+    assert await _event_count(db_session) == 1  # stored exactly once
+
+
+# --- agence inconnue -> 200 + alerte, aucune creation ----------------------------------
+
+
+async def test_unknown_agency_is_stored_alerted_never_created(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, caplog: pytest.LogCaptureFixture
+) -> None:
+    before = (await db_session.execute(select(func.count()).select_from(Agency))).scalar_one()
+    envelope = _envelope("subscription.activated", agency_id=uuid.uuid4())  # unknown
+    with caplog.at_level("ERROR"):
+        resp = await _post(client, envelope)
+    assert resp.status_code == 200 and resp.json()["status"] == "ignored"
+    assert any("UNKNOWN agency" in r.message for r in caplog.records)  # the alert
+    after = (await db_session.execute(select(func.count()).select_from(Agency))).scalar_one()
+    assert after == before  # no implicit creation
+    row = (await db_session.execute(select(PaddleWebhookEvent))).scalar_one()
+    assert row.agency_id is None  # audited all the same
+
+
+# --- billing_mode=manual + webhook -> no-op + alerte -----------------------------------
+
+
+async def test_manual_agency_is_never_written_by_webhooks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    aid = admin.agency_id
+    # A manually-CONVERTED agency (Nicolas): even `activated` must not write.
+    await db_session.execute(
+        update(Agency)
+        .where(Agency.id == aid)
+        .values(plan="cabinet", billing_cycle="mensuel", converted_at=datetime.now(UTC))
+    )
+    await db_session.commit()
+    manual_converted_at = (await _agency(db_session, aid)).converted_at
+
+    with caplog.at_level("ERROR"):
+        for event_type in (
+            "subscription.updated",
+            "subscription.canceled",
+            "subscription.activated",
+        ):
+            resp = await _post(client, _envelope(event_type, agency_id=aid))
+            assert resp.status_code == 200 and resp.json()["status"] == "ignored"
+    assert any("MANUAL agency" in r.message for r in caplog.records)
+    agency = await _agency(db_session, aid)
+    assert agency.billing_mode == "manual"  # the superadmin keeps the hand
+    assert agency.billing_status is None
+    assert agency.converted_at == manual_converted_at
+
+
+# --- activated : conversion par LE geste unique ----------------------------------------
+
+
+async def test_activated_converts_via_the_single_gesture(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    aid = admin.agency_id
+    occurred = datetime.now(UTC) - timedelta(minutes=5)
+    resp = await _post(
+        client,
+        _envelope("subscription.activated", agency_id=aid, occurred_at=occurred),
+    )
+    assert resp.status_code == 200 and resp.json()["status"] == "processed"
+
+    agency = await _agency(db_session, aid)
+    assert agency.converted_at == occurred  # Paddle's clock, not ours
+    assert agency.plan == "cabinet" and agency.billing_cycle == "mensuel"
+    assert agency.seat_price_eur == 35
+    assert agency.billing_mode == "paddle" and agency.billing_status == "active"
+    assert agency.paddle_subscription_id == "sub_123"
+    assert agency.paddle_customer_id == "ctm_123"
+
+    # The SAME gesture as the manual PATCH emitted the usage signal…
+    emitted = (
+        (
+            await db_session.execute(
+                select(UsageEvent).where(
+                    UsageEvent.agency_id == aid,
+                    UsageEvent.event_type == "agency.converted",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(emitted) == 1 and emitted[0].actor_type == "system"
+    # …and it is the ONLY emission point in the whole codebase (structural).
+    hits = [
+        p
+        for p in Path("src").rglob("*.py")
+        if '"agency.converted"' in p.read_text(encoding="utf-8")
+    ]
+    assert hits == [Path("src/agencies/agencies_manager.py")], hits
+
+
+# --- activated rejoue / converted_at deja pose -> jamais ecrase ------------------------
+
+
+async def test_activated_never_overwrites_converted_at(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    aid = admin.agency_id
+    first_at = datetime.now(UTC) - timedelta(days=2)
+    resp = await _post(
+        client,
+        _envelope("subscription.activated", agency_id=aid, occurred_at=first_at),
+    )
+    assert resp.json()["status"] == "processed"
+    # A re-delivery variant (new event_id, later occurred_at): no overwrite.
+    resp = await _post(client, _envelope("subscription.activated", agency_id=aid))
+    assert resp.status_code == 200
+    agency = await _agency(db_session, aid)
+    assert agency.converted_at == first_at
+    # And the usage signal was emitted ONCE, not per delivery.
+    count = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(UsageEvent)
+            .where(
+                UsageEvent.agency_id == aid,
+                UsageEvent.event_type == "agency.converted",
+            )
+        )
+    ).scalar_one()
+    assert count == 1
+
+
+# --- updated avec quantity divergente -> alerte, rien d'ecrit --------------------------
+
+
+async def test_updated_with_diverging_quantity_alerts_and_writes_nothing(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    aid = admin.agency_id
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    # billed is 0 (1 member, 3 included) — an echo claiming 4 paid seats lies.
+    envelope = _envelope(
+        "subscription.updated",
+        agency_id=aid,
+        items=[
+            {"price": {"id": PRICE_IDS["agence_mensuel"]}, "quantity": 1},
+            {"price": {"id": PRICE_IDS["seat_agence_mensuel"]}, "quantity": 4},
+        ],
+        status="active",
+    )
+    with caplog.at_level("ERROR"):
+        resp = await _post(client, envelope)
+    assert resp.json()["status"] == "ignored"
+    assert any("diverges from billed" in r.message for r in caplog.records)
+    agency = await _agency(db_session, aid)
+    assert agency.plan == "cabinet"  # the lying update changed NOTHING
+
+
+# --- PATCH /subscription : paddle -> 409, manual -> inchange ---------------------------
+
+
+async def test_manual_patch_is_409_on_paddle_agency_unchanged_on_manual(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    aid = admin.agency_id
+    superadmin = await make_agent(role=system_roles["superadmin"], email="root@platform.io")
+    sh = agent_headers(superadmin)
+
+    # paddle agency → plan/cycle/converted_at are refused by hand…
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    denied = await client.patch(
+        f"/agencies/{aid}/subscription", headers=sh, json={"plan": "agence"}
+    )
+    assert denied.status_code == 409
+    assert denied.json()["code"] == "subscription.managed_by_paddle"
+    # …but the founding fields stay OUR concepts, editable.
+    ok = await client.patch(f"/agencies/{aid}/subscription", headers=sh, json={"is_founding": True})
+    assert ok.status_code == 200, ok.text
+
+    # manual agency → the superadmin path works exactly as before.
+    other = await make_agent(role=system_roles["admin"])
+    converted = await client.patch(
+        f"/agencies/{other.agency_id}/subscription",
+        headers=sh,
+        json={"plan": "agence", "billing_cycle": "annuel"},
+    )
+    assert converted.status_code == 200, converted.text
+    manual = await _agency(db_session, other.agency_id)
+    assert manual.plan == "agence" and manual.billing_mode == "manual"
+
+
+# --- billing_mode jamais editable vers "paddle" a la main ------------------------------
+
+
+async def test_billing_mode_is_never_hand_editable(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    from src.agencies.agencies_schema import AgencyUpdateRequest, SubscriptionUpdateRequest
+
+    # Structural: NO request schema carries billing_mode — there is no door.
+    assert "billing_mode" not in SubscriptionUpdateRequest.model_fields
+    assert "billing_mode" not in AgencyUpdateRequest.model_fields
+
+    superadmin = await make_agent(role=system_roles["superadmin"], email="root2@platform.io")
+    target = await make_agent(role=system_roles["admin"])
+    # Sending it anyway is inert (unknown fields are ignored, mode unmoved).
+    resp = await client.patch(
+        f"/agencies/{target.agency_id}/subscription",
+        headers=agent_headers(superadmin),
+        json={"billing_mode": "paddle"},
+    )
+    assert resp.status_code == 200
+    assert (await _agency(db_session, target.agency_id)).billing_mode == "manual"
+
+
+# --- 3 -> 5 sieges : quantity 2 poussee sur l'item sieges (client mocke) ---------------
+
+
+async def test_member_growth_pushes_seat_quantity(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aid = admin.agency_id
+    from src.billing import paddle_client
+
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+
+    # A paddle agency at 3 internal members (billed 0)…
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    for _ in range(2):
+        await make_agent(agency_id=aid, role=system_roles["member"])
+    h = agent_headers(admin)
+
+    # …accepting two more invitations crosses to 5 members → billed 2.
+    for i in range(2):
+        invited = await client.post(
+            "/agencies/me/invitations",
+            headers=h,
+            json={"email": f"seat{i}@x.io", "role_id": str(system_roles["member"].id)},
+        )
+        assert invited.status_code == 201, invited.text
+        token = (
+            await db_session.execute(
+                select(AgentInvitation.token).where(AgentInvitation.email == f"seat{i}@x.io")
+            )
+        ).scalar_one()
+        accepted = await client.post(
+            "/agencies/invitations/accept",
+            json={
+                "token": token,
+                "password": "pw12345678",
+                "first_name": "New",
+                "last_name": f"Member{i}",
+            },
+        )
+        assert accepted.status_code == 200, accepted.text
+
+    assert push.await_count == 2  # one push per acceptance
+    sub_id, kwargs = push.await_args.args[0], push.await_args.kwargs
+    assert sub_id == "sub_123"
+    assert kwargs["proration_billing_mode"] == "prorated_immediately"
+    seat_item = next(
+        i for i in kwargs["items"] if i["price_id"] == PRICE_IDS["seat_cabinet_mensuel"]
+    )
+    assert seat_item["quantity"] == 2  # 5 members − 3 included
+
+
+# --- canceled conserve plan et converted_at --------------------------------------------
+
+
+async def test_canceled_keeps_plan_and_converted_at(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    aid = admin.agency_id
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    converted_at = (await _agency(db_session, aid)).converted_at
+
+    resp = await _post(client, _envelope("subscription.canceled", agency_id=aid))
+    assert resp.json()["status"] == "processed"
+    agency = await _agency(db_session, aid)
+    assert agency.billing_status == "canceled"
+    assert agency.plan == "cabinet"  # historical facts survive
+    assert agency.converted_at == converted_at
+
+
+# --- desordre : canceled AVANT activated converge --------------------------------------
+
+
+async def test_out_of_order_canceled_before_activated_converges(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    aid = admin.agency_id
+    t1 = datetime.now(UTC) - timedelta(hours=2)  # activation instant (older)
+    t2 = datetime.now(UTC) - timedelta(hours=1)  # cancellation instant (newer)
+
+    # Paddle delivers the CANCELLATION first…
+    first = await _post(
+        client,
+        _envelope("subscription.canceled", agency_id=aid, occurred_at=t2),
+    )
+    # (manual guard: canceled alone cannot establish the link → ignored)
+    assert first.json()["status"] == "ignored"
+    # …then the older activation arrives.
+    second = await _post(
+        client,
+        _envelope("subscription.activated", agency_id=aid, occurred_at=t1),
+    )
+    assert second.json()["status"] == "processed"
+    agency = await _agency(db_session, aid)
+    # Converged: the conversion facts are posed…
+    assert agency.billing_mode == "paddle"
+    assert agency.converted_at == t1
+    assert agency.plan == "cabinet"
+    # …and the STALE activated did not resurrect an "active" status over the
+    # newer cancellation event already on file.
+    assert agency.billing_status != "active"
+
+
+# --- checkout : custom_data porte agency_id (client mocke) -----------------------------
+
+
+async def test_checkout_builds_transaction_with_agency_custom_data(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aid = admin.agency_id
+    from src.billing import paddle_client
+
+    create = AsyncMock(return_value={"id": "txn_42"})
+    monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", create)
+
+    resp = await client.post(
+        "/billing/checkout",
+        headers=agent_headers(admin),
+        json={"plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body == {"transaction_id": "txn_42", "paddle_env": "sandbox"}
+    kwargs = create.await_args.kwargs
+    assert kwargs["custom_data"] == {"agency_id": str(aid)}
+    assert kwargs["items"][0] == {"price_id": PRICE_IDS["cabinet_mensuel"], "quantity": 1}
+
+
+# --- plafonds par plan : jamais une quantity au-dela du cap ----------------------------
+
+
+async def test_seat_sync_never_pushes_beyond_the_plan_cap(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defense in depth: the invitation seat gate blocks growth beyond the
+    cap, but even a DB-grown roster (support gesture, bug) must never push a
+    beyond-cap quantity to Paddle — alert, no call."""
+    from src.billing import paddle_client
+    from src.billing.billing_manager import BillingManager
+
+    aid = admin.agency_id
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    # 6 internal members on a cabinet plan (cap 5) — grown OUTSIDE the gate.
+    for _ in range(5):
+        await make_agent(agency_id=aid, role=system_roles["member"])
+
+    with caplog.at_level("ERROR"):
+        await BillingManager(db_session).sync_seat_quantity(aid, increase=True)
+    push.assert_not_awaited()
+    assert any("exceed" in r.message for r in caplog.records)
+
+
+async def test_checkout_refuses_a_plan_below_current_members(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    create = AsyncMock(return_value={"id": "txn_1"})
+    monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", create)
+    for _ in range(5):  # 6 members > cabinet cap (5)
+        await make_agent(agency_id=aid, role=system_roles["member"])
+
+    resp = await client.post(
+        "/billing/checkout",
+        headers=agent_headers(admin),
+        json={"plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "billing.plan_capacity_exceeded"
+    create.assert_not_awaited()
+    # The larger plan (cap 10) takes them fine.
+    ok = await client.post(
+        "/billing/checkout",
+        headers=agent_headers(admin),
+        json={"plan": "agence", "billing_cycle": "mensuel"},
+    )
+    assert ok.status_code == 200, ok.text

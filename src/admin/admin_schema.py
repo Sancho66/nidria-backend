@@ -26,6 +26,11 @@ class AdminAgencyRow(BaseModel):
     seats_used: int
     seats_limit: int
     is_founding: bool
+    # Paddle lot: who writes the subscription (manual | paddle) and the
+    # payment health (active | past_due | canceled, NULL pre-checkout) —
+    # past_due invisible alerts nobody, hence the ?billing_status= filter.
+    billing_mode: str
+    billing_status: str | None
     status: str  # active | trial | expired | unknown
     trial_days_remaining: int | None
     cases_count: int
