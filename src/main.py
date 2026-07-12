@@ -68,6 +68,7 @@ logging.basicConfig(
 sqla_logger = logging.getLogger("sqlalchemy.engine")
 sqla_logger.propagate = False
 
+boot_logger = logging.getLogger("nidria.boot")
 settings = get_settings()
 
 
@@ -99,6 +100,28 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         # predating the event layer get their milestones from REAL data
         # (existing rows are never touched, no fake event is fabricated).
         await backfill_usage_milestones(session)
+    # Paddle catalog check (LIGHT): do the env price_ids exist in Paddle and
+    # carry their declared stable keys? Divergence → log ERROR, NEVER crash
+    # (manual billing must survive a Paddle outage). Skipped when Paddle is
+    # not configured (tests/CI: no key, no network — the app boots Paddle-less).
+    settings_boot = get_settings()
+    if settings_boot.paddle_api_key and settings_boot.paddle_price_ids:
+        try:
+            from src.billing.catalog_provisioning import verify_catalog_env
+            from src.billing.paddle_client import PaddleClient
+
+            problems = await verify_catalog_env(
+                client=PaddleClient(), price_ids=settings_boot.paddle_price_ids
+            )
+            for problem in problems:
+                boot_logger.error("paddle catalog check: %s", problem)
+            if not problems:
+                boot_logger.info(
+                    "paddle catalog check: %s price ids verified",
+                    len(settings_boot.paddle_price_ids),
+                )
+        except Exception:
+            boot_logger.exception("paddle catalog check failed (non-blocking)")
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()
     scheduler = None

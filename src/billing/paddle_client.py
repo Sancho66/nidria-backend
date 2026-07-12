@@ -12,6 +12,16 @@ import httpx
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError
 
+
+class PaddleApiError(Exception):
+    """A Paddle API error, SANITIZED: carries the HTTP status and Paddle's
+    response body only — never the outgoing request or its headers."""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        self.status_code = status_code
+        super().__init__(f"Paddle API error {status_code}: {body}")
+
+
 _BASE_URLS = {
     "sandbox": "https://sandbox-api.paddle.com",
     "live": "https://api.paddle.com",
@@ -29,12 +39,33 @@ class PaddleClient:
         self._base = _BASE_URLS[settings.paddle_env]
         self._headers = {"Authorization": f"Bearer {settings.paddle_api_key}"}
 
-    async def _request(self, method: str, path: str, json: dict[str, Any]) -> dict[str, Any]:
+    async def _request(
+        self, method: str, path: str, json: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         async with httpx.AsyncClient(base_url=self._base, timeout=15) as client:
             response = await client.request(method, path, json=json, headers=self._headers)
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # SANITIZED error: status + Paddle's error body only — never
+                # the request (whose Authorization header carries the API
+                # key); a key leaking in a stacktrace is a leaked key.
+                raise PaddleApiError(response.status_code, response.text[:500])
             data: dict[str, Any] = response.json()["data"]
             return data
+
+    async def _request_page(self, path: str) -> list[dict[str, Any]]:
+        """GET a paginated collection, following `meta.pagination.next`."""
+        items: list[dict[str, Any]] = []
+        url: str | None = path
+        async with httpx.AsyncClient(base_url=self._base, timeout=15) as client:
+            while url:
+                response = await client.get(url, headers=self._headers)
+                if response.status_code >= 400:
+                    raise PaddleApiError(response.status_code, response.text[:500])
+                body = response.json()
+                items.extend(body["data"])
+                pagination = (body.get("meta") or {}).get("pagination") or {}
+                url = pagination.get("next") if pagination.get("has_more") else None
+        return items
 
     async def create_transaction(
         self, *, items: list[dict[str, Any]], custom_data: dict[str, str]
@@ -60,4 +91,45 @@ class PaddleClient:
             "PATCH",
             f"/subscriptions/{subscription_id}",
             {"items": items, "proration_billing_mode": proration_billing_mode},
+        )
+
+    # --- catalog (provisioning script + boot check) --------------------------------
+
+    async def list_products(self) -> list[dict[str, Any]]:
+        return await self._request_page("/products?per_page=200&status=active")
+
+    async def list_prices(self) -> list[dict[str, Any]]:
+        return await self._request_page("/prices?per_page=200&status=active")
+
+    async def create_product(self, *, name: str, custom_data: dict[str, str]) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/products",
+            {"name": name, "tax_category": "standard", "custom_data": custom_data},
+        )
+
+    async def create_price(
+        self,
+        *,
+        product_id: str,
+        name: str,
+        amount_cents: int,
+        currency: str,
+        interval: str,
+        quantity_min: int,
+        quantity_max: int,
+        custom_data: dict[str, str],
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/prices",
+            {
+                "product_id": product_id,
+                "description": name,
+                "name": name,
+                "unit_price": {"amount": str(amount_cents), "currency_code": currency},
+                "billing_cycle": {"interval": interval, "frequency": 1},
+                "quantity": {"minimum": quantity_min, "maximum": quantity_max},
+                "custom_data": custom_data,
+            },
         )
