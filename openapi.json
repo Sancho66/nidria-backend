@@ -23891,7 +23891,7 @@
           "agence"
         ],
         "title": "SubscriptionPlan",
-        "description": "Structure F (pricing Eric 2026-07-07): 99 EUR base INCLUDING 3\nseats, extra seats billed from the 4th. Values are the product plan\nnames as Eric bills them (manual billing at first)."
+        "description": "Structure F: the base plan INCLUDES 3 seats, extra seats billed\nfrom the 4th. Values are the product plan names. The AMOUNTS live in\nPaddle (PRICE_IDS env) — never in code; see the deprecated\nbase_price_eur/seat_price_eur columns on agency."
       },
       "SubscriptionUpdateRequest": {
         "properties": {
