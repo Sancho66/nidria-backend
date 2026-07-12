@@ -158,3 +158,37 @@ class PaddleClient:
                 "subscribed_events": events,
             },
         )
+
+    # --- subscription management (in-app page) --------------------------------------
+
+    async def get_subscription(self, subscription_id: str) -> dict[str, Any]:
+        """The FULL subscription: items (with unit prices), next_billed_at,
+        scheduled_change, and the next transaction's totals — ONE call feeds
+        the whole management page (cached short by the manager)."""
+        return await self._request(
+            "GET", f"/subscriptions/{subscription_id}?include=next_transaction", None
+        )
+
+    async def cancel_subscription_at_period_end(self, subscription_id: str) -> dict[str, Any]:
+        """Cancel at the END of the paid period — the commercial default (the
+        client paid their month, they keep it). Immediate cancel is never
+        exposed. Returns the subscription carrying scheduled_change."""
+        return await self._request(
+            "POST",
+            f"/subscriptions/{subscription_id}/cancel",
+            {"effective_from": "next_billing_period"},
+        )
+
+    async def remove_scheduled_change(self, subscription_id: str) -> dict[str, Any]:
+        """Undo a scheduled cancellation while the period runs — the gesture
+        that saves the regrets."""
+        return await self._request(
+            "PATCH", f"/subscriptions/{subscription_id}", {"scheduled_change": None}
+        )
+
+    async def get_payment_method_update_transaction(self, subscription_id: str) -> dict[str, Any]:
+        """Paddle's special transaction for updating the payment method — the
+        front opens the overlay on it (the past_due gesture)."""
+        return await self._request(
+            "GET", f"/subscriptions/{subscription_id}/update-payment-method-transaction", None
+        )

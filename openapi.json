@@ -1067,6 +1067,110 @@
         ]
       }
     },
+    "/billing/subscription": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get Subscription State",
+        "operationId": "get_subscription_state_billing_subscription_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionStateResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/billing/subscription/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Cancel Subscription",
+        "operationId": "cancel_subscription_billing_subscription_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionCancelResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/billing/subscription/resume": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Resume Subscription",
+        "operationId": "resume_subscription_billing_subscription_resume_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionStateResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/billing/payment-method/update": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Payment Method Update",
+        "operationId": "payment_method_update_billing_payment_method_update_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethodUpdateResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/{case_id}/activity": {
       "get": {
         "tags": [
@@ -20942,6 +21046,25 @@
         "title": "OnboardingStepState",
         "description": "One activation gesture: create_journey | open_case |\nview_as_client."
       },
+      "PaymentMethodUpdateResponse": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "title": "Transaction Id"
+          },
+          "paddle_env": {
+            "type": "string",
+            "title": "Paddle Env"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "paddle_env"
+        ],
+        "title": "PaymentMethodUpdateResponse",
+        "description": "POST /billing/payment-method/update — the special Paddle transaction\nthe front opens the overlay on (the past_due gesture)."
+      },
       "PendingDocumentResponse": {
         "properties": {
           "type": {
@@ -23884,6 +24007,21 @@
         "title": "StepValidatorType",
         "description": "\"Action validée par\" — who closes a journey step (symmetric to the\nresponsible: a TYPE at the template, the precise person at the dossier).\nReuses the responsible actor strings so both mechanisms read alike, plus\n`none` = \"validated by no one\" = the former `auto` self-completion.\n\n- `none`     → self-completes when all requirements are met (ex-`auto`).\n- `expat`    → the case principal (client) clicks validate.\n- `agent`    → the agency closes (a NAMED internal member, or — agent_id\n               NULL — any member; ex-`agency_validation`, the default).\n- `external` → a DESIGNATED provider (an is_external Agent, stored in\n               `validated_by_agent_id` like the content-wave responsible —\n               a validator must be able to log in and click, so it is an\n               Agent, never a no-login external_contact)."
       },
+      "SubscriptionCancelResponse": {
+        "properties": {
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ends At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ends_at"
+        ],
+        "title": "SubscriptionCancelResponse",
+        "description": "POST /billing/subscription/cancel — cancellation at PERIOD END (the\ncommercial default): the date the access actually ends."
+      },
       "SubscriptionPlan": {
         "type": "string",
         "enum": [
@@ -23892,6 +24030,109 @@
         ],
         "title": "SubscriptionPlan",
         "description": "Structure F: the base plan INCLUDES 3 seats, extra seats billed\nfrom the 4th. Values are the product plan names. The AMOUNTS live in\nPaddle (PRICE_IDS env) — never in code; see the deprecated\nbase_price_eur/seat_price_eur columns on agency."
+      },
+      "SubscriptionStateResponse": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "title": "Billing Cycle"
+          },
+          "billing_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Status"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "seats_billed": {
+            "type": "integer",
+            "title": "Seats Billed"
+          },
+          "base_unit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Unit Price"
+          },
+          "seat_unit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Unit Price"
+          },
+          "next_billed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Billed At"
+          },
+          "next_payment_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Payment Amount"
+          },
+          "scheduled_cancel_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Cancel At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "billing_cycle",
+          "billing_status",
+          "currency",
+          "seats_billed",
+          "base_unit_price",
+          "seat_unit_price",
+          "next_billed_at",
+          "next_payment_amount",
+          "scheduled_cancel_at"
+        ],
+        "title": "SubscriptionStateResponse",
+        "description": "GET /billing/subscription — everything the management page shows, in\nONE response. Money as STRINGS (decimal euros), never a JSON float; the\nunit prices come from the live Paddle subscription items (one cached\ncall), so a price rotation is reflected without a deploy."
       },
       "SubscriptionUpdateRequest": {
         "properties": {

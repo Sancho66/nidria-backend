@@ -11,6 +11,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import exists, select
@@ -22,6 +23,9 @@ from shared.models.paddle_event import PaddleWebhookEvent
 from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
+    PaymentMethodUpdateResponse,
+    SubscriptionCancelResponse,
+    SubscriptionStateResponse,
     WebhookAck,
 )
 from src.billing.paddle_client import PaddleClient
@@ -31,6 +35,12 @@ from src.core.enums import ActorType
 from src.core.exceptions import ConflictError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
+
+# Short in-process cache for the Paddle subscription reads (the management
+# page can be polled; one call feeds it). Invalidated on our own mutations;
+# 60 s of staleness is acceptable for a display surface.
+_SUBSCRIPTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_SUBSCRIPTION_CACHE_TTL = 60.0
 
 # Events that carry a billing STATUS — their relative order matters, so a
 # stale one (older occurred_at than an already-processed status event) never
@@ -389,3 +399,140 @@ class BillingManager:
         if paddle_status in ("active", "past_due", "canceled"):
             agency.billing_status = paddle_status
         return "processed"
+
+    # --- in-app subscription management (agent face, agency.manage) -------------------
+
+    async def _paddle_managed_agency(self, agent: Agent) -> Agency:
+        """The three management endpoints exist ONLY for a paddle-billed
+        agency — a manual one gets an explicit 409, never an empty page."""
+        agency = await self.db.get(Agency, agent.agency_id)
+        assert agency is not None
+        if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
+            raise ConflictError(
+                "This agency is billed manually; there is no Paddle subscription to manage.",
+                code="billing.not_paddle_managed",
+            )
+        return agency
+
+    async def _fetch_subscription(self, subscription_id: str) -> dict[str, Any]:
+        import time as _time
+
+        cached = _SUBSCRIPTION_CACHE.get(subscription_id)
+        if cached is not None and _time.monotonic() - cached[0] < _SUBSCRIPTION_CACHE_TTL:
+            return cached[1]
+        subscription = await PaddleClient().get_subscription(subscription_id)
+        _SUBSCRIPTION_CACHE[subscription_id] = (_time.monotonic(), subscription)
+        return subscription
+
+    @staticmethod
+    def _invalidate_subscription_cache(subscription_id: str) -> None:
+        _SUBSCRIPTION_CACHE.pop(subscription_id, None)
+
+    @staticmethod
+    def _cents(amount: str | int | None) -> Decimal | None:
+        if amount is None:
+            return None
+        return Decimal(str(amount)) / 100
+
+    def _state_from(
+        self, agency: Agency, subscription: dict[str, Any], billed: int
+    ) -> SubscriptionStateResponse:
+        settings = get_settings()
+        seat_ids = {pid for k, pid in settings.paddle_price_ids.items() if k.startswith("seat_")}
+        base_price = seat_price = None
+        for item in subscription.get("items", []):
+            price = item.get("price") or {}
+            unit = self._cents((price.get("unit_price") or {}).get("amount"))
+            if price.get("id") in seat_ids:
+                seat_price = unit
+            else:
+                base_price = unit
+        next_txn = subscription.get("next_transaction") or {}
+        totals = ((next_txn.get("details") or {}).get("totals")) or {}
+        scheduled = subscription.get("scheduled_change") or {}
+        cancel_at = (
+            datetime.fromisoformat(scheduled["effective_at"].replace("Z", "+00:00"))
+            if scheduled.get("action") == "cancel" and scheduled.get("effective_at")
+            else None
+        )
+        next_billed = subscription.get("next_billed_at")
+        return SubscriptionStateResponse(
+            plan=agency.plan or "",
+            billing_cycle=agency.billing_cycle or "",
+            billing_status=agency.billing_status,
+            currency=subscription.get("currency_code") or "EUR",
+            seats_billed=billed,
+            base_unit_price=base_price if base_price is not None else self._cents("0"),
+            seat_unit_price=seat_price,
+            next_billed_at=(
+                datetime.fromisoformat(next_billed.replace("Z", "+00:00")) if next_billed else None
+            ),
+            next_payment_amount=self._cents(totals.get("grand_total") or totals.get("total")),
+            scheduled_cancel_at=cancel_at,
+        )
+
+    async def get_subscription_state(self, agent: Agent) -> SubscriptionStateResponse:
+        agency = await self._paddle_managed_agency(agent)
+        assert agency.paddle_subscription_id is not None
+        subscription = await self._fetch_subscription(agency.paddle_subscription_id)
+        from src.agencies.agencies_manager import AgenciesManager
+
+        usage = await AgenciesManager(self.db).seat_usage(agency)
+        return self._state_from(agency, subscription, usage.billed)
+
+    async def cancel_subscription(self, agent: Agent) -> SubscriptionCancelResponse:
+        """Cancellation at PERIOD END, the commercial default — the client
+        paid their month, they keep it. Immediate cancel is never exposed."""
+        agency = await self._paddle_managed_agency(agent)
+        assert agency.paddle_subscription_id is not None
+        subscription = await PaddleClient().cancel_subscription_at_period_end(
+            agency.paddle_subscription_id
+        )
+        self._invalidate_subscription_cache(agency.paddle_subscription_id)
+        scheduled = subscription.get("scheduled_change") or {}
+        ends_raw = scheduled.get("effective_at") or (
+            (subscription.get("current_billing_period") or {}).get("ends_at")
+        )
+        if not ends_raw:
+            raise ConflictError(
+                "Paddle did not schedule the cancellation.", code="billing.cancel_failed"
+            )
+        return SubscriptionCancelResponse(
+            ends_at=datetime.fromisoformat(ends_raw.replace("Z", "+00:00"))
+        )
+
+    async def resume_subscription(self, agent: Agent) -> SubscriptionStateResponse:
+        """Undo a scheduled cancellation while the period runs — the gesture
+        that saves the regrets. 409 when nothing is scheduled."""
+        from src.billing.paddle_client import PaddleApiError
+
+        agency = await self._paddle_managed_agency(agent)
+        assert agency.paddle_subscription_id is not None
+        try:
+            subscription = await PaddleClient().remove_scheduled_change(
+                agency.paddle_subscription_id
+            )
+        except PaddleApiError as exc:
+            if exc.status_code == 400:
+                raise ConflictError(
+                    "No scheduled cancellation to resume from.",
+                    code="billing.nothing_scheduled",
+                ) from exc
+            raise
+        self._invalidate_subscription_cache(agency.paddle_subscription_id)
+        from src.agencies.agencies_manager import AgenciesManager
+
+        usage = await AgenciesManager(self.db).seat_usage(agency)
+        return self._state_from(agency, subscription, usage.billed)
+
+    async def payment_method_update(self, agent: Agent) -> PaymentMethodUpdateResponse:
+        """The past_due gesture: Paddle's special transaction to update the
+        payment method — the front opens the overlay on it."""
+        agency = await self._paddle_managed_agency(agent)
+        assert agency.paddle_subscription_id is not None
+        transaction = await PaddleClient().get_payment_method_update_transaction(
+            agency.paddle_subscription_id
+        )
+        return PaymentMethodUpdateResponse(
+            transaction_id=transaction["id"], paddle_env=get_settings().paddle_env
+        )

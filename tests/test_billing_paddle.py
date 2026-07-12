@@ -573,3 +573,173 @@ async def test_checkout_refuses_a_plan_below_current_members(
         json={"plan": "agence", "billing_cycle": "mensuel"},
     )
     assert ok.status_code == 200, ok.text
+
+
+# --- gestion d'abonnement in-app (GET/cancel/resume/payment-method) --------------------
+
+
+def _paddle_subscription_payload(*, scheduled_cancel: str | None = None) -> dict[str, Any]:
+    """A realistic Paddle GET /subscriptions payload for the mocks."""
+    return {
+        "id": "sub_123",
+        "status": "active",
+        "currency_code": "EUR",
+        "next_billed_at": "2026-08-12T18:59:19Z",
+        "current_billing_period": {"ends_at": "2026-08-12T18:59:19Z"},
+        "scheduled_change": (
+            {"action": "cancel", "effective_at": scheduled_cancel} if scheduled_cancel else None
+        ),
+        "items": [
+            {
+                "quantity": 1,
+                "price": {"id": PRICE_IDS["cabinet_mensuel"], "unit_price": {"amount": "9900"}},
+            },
+            {
+                "quantity": 2,
+                "price": {
+                    "id": PRICE_IDS["seat_cabinet_mensuel"],
+                    "unit_price": {"amount": "3500"},
+                },
+            },
+        ],
+        "next_transaction": {"details": {"totals": {"grand_total": "16900"}}},
+    }
+
+
+async def _activate(client: AsyncClient, agency_id: uuid.UUID) -> None:
+    await _post(client, _envelope("subscription.activated", agency_id=agency_id))
+
+
+@pytest.fixture(autouse=True)
+def _clear_subscription_cache():
+    from src.billing import billing_manager
+
+    billing_manager._SUBSCRIPTION_CACHE.clear()
+    yield
+    billing_manager._SUBSCRIPTION_CACHE.clear()
+
+
+async def test_management_endpoints_are_409_on_a_manual_agency(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    h = agent_headers(admin)  # manual agency (never activated)
+    for method, url in (
+        ("GET", "/billing/subscription"),
+        ("POST", "/billing/subscription/cancel"),
+        ("POST", "/billing/subscription/resume"),
+        ("POST", "/billing/payment-method/update"),
+    ):
+        resp = await client.request(method, url, headers=h)
+        assert resp.status_code == 409, (url, resp.text)
+        assert resp.json()["code"] == "billing.not_paddle_managed", url
+
+
+async def test_subscription_state_is_assembled_from_one_cached_call(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    get_sub = AsyncMock(return_value=_paddle_subscription_payload())
+    monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", get_sub)
+
+    h = agent_headers(admin)
+    state = (await client.get("/billing/subscription", headers=h)).json()
+    assert state["plan"] == "cabinet" and state["billing_cycle"] == "mensuel"
+    assert state["billing_status"] == "active" and state["currency"] == "EUR"
+    assert state["seats_billed"] == 0  # 1 member, 3 included — derived live
+    assert state["base_unit_price"] == "99"  # money as strings, from Paddle items
+    assert state["seat_unit_price"] == "35"
+    assert state["next_billed_at"].startswith("2026-08-12")
+    assert state["next_payment_amount"] == "169"
+    assert state["scheduled_cancel_at"] is None
+
+    # Second read within the TTL: served from the cache, ONE Paddle call.
+    await client.get("/billing/subscription", headers=h)
+    assert get_sub.await_count == 1
+
+
+async def test_cancel_schedules_period_end_and_resume_erases_it(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    h = agent_headers(admin)
+    ends = "2026-08-12T18:59:19Z"
+
+    cancel = AsyncMock(return_value=_paddle_subscription_payload(scheduled_cancel=ends))
+    monkeypatch.setattr(paddle_client.PaddleClient, "cancel_subscription_at_period_end", cancel)
+    get_sub = AsyncMock(return_value=_paddle_subscription_payload(scheduled_cancel=ends))
+    monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", get_sub)
+
+    cancelled = await client.post("/billing/subscription/cancel", headers=h)
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["ends_at"].startswith("2026-08-12")  # "se termine le X"
+    cancel.assert_awaited_once_with("sub_123")
+
+    # The page now SHOWS the scheduled end (cache was invalidated by cancel).
+    state = (await client.get("/billing/subscription", headers=h)).json()
+    assert state["scheduled_cancel_at"].startswith("2026-08-12")
+
+    # Resume erases it — the gesture that saves the regrets.
+    resume = AsyncMock(return_value=_paddle_subscription_payload(scheduled_cancel=None))
+    monkeypatch.setattr(paddle_client.PaddleClient, "remove_scheduled_change", resume)
+    resumed = await client.post("/billing/subscription/resume", headers=h)
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["scheduled_cancel_at"] is None
+    resume.assert_awaited_once_with("sub_123")
+
+
+async def test_payment_method_update_returns_the_special_transaction(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    special = AsyncMock(return_value={"id": "txn_pmu_1"})
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_payment_method_update_transaction", special
+    )
+    resp = await client.post("/billing/payment-method/update", headers=agent_headers(admin))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"transaction_id": "txn_pmu_1", "paddle_env": "sandbox"}
+    special.assert_awaited_once_with("sub_123")
+
+
+async def test_updated_webhook_with_scheduled_change_flows_untouched(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent
+) -> None:
+    """subscription.updated already carries scheduled_change on a scheduled
+    cancellation — the handler processes it without breakage: status follows
+    the payload, conversion facts untouched (the page reads the schedule live
+    from Paddle, nothing to store)."""
+    aid = admin.agency_id
+    await _activate(client, aid)
+    envelope = _envelope(
+        "subscription.updated",
+        agency_id=aid,
+        items=[{"price": {"id": PRICE_IDS["cabinet_mensuel"]}, "quantity": 1}],
+        status="active",
+    )
+    envelope["data"]["scheduled_change"] = {
+        "action": "cancel",
+        "effective_at": "2026-08-12T18:59:19Z",
+    }
+    resp = await _post(client, envelope)
+    assert resp.status_code == 200 and resp.json()["status"] == "processed"
+    agency = await _agency(db_session, aid)
+    assert agency.billing_status == "active"  # still active until it takes effect
+    assert agency.plan == "cabinet" and agency.converted_at is not None

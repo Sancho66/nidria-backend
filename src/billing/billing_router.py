@@ -8,6 +8,9 @@ from src.billing.billing_manager import BillingManager
 from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
+    PaymentMethodUpdateResponse,
+    SubscriptionCancelResponse,
+    SubscriptionStateResponse,
     WebhookAck,
 )
 from src.core.dependencies import get_current_agent, get_db
@@ -23,6 +26,14 @@ BINDINGS = [
     RouteBinding("POST", "/billing/webhooks/paddle", Audience.PUBLIC),
     # Opening the checkout commits the agency financially → agency.manage.
     RouteBinding("POST", "/billing/checkout", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # In-app subscription management — same financial gate; each endpoint
+    # additionally 409s on a manual agency (billing.not_paddle_managed).
+    RouteBinding("GET", "/billing/subscription", Audience.AGENT, Permission.AGENCY_MANAGE),
+    RouteBinding("POST", "/billing/subscription/cancel", Audience.AGENT, Permission.AGENCY_MANAGE),
+    RouteBinding("POST", "/billing/subscription/resume", Audience.AGENT, Permission.AGENCY_MANAGE),
+    RouteBinding(
+        "POST", "/billing/payment-method/update", Audience.AGENT, Permission.AGENCY_MANAGE
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -41,3 +52,23 @@ async def create_checkout(
     body: CheckoutCreateRequest, agent: AgentDep, db: DbDep
 ) -> CheckoutCreateResponse:
     return await BillingManager(db).create_checkout(agent, body)
+
+
+@router.get("/subscription", response_model=SubscriptionStateResponse)
+async def get_subscription_state(agent: AgentDep, db: DbDep) -> SubscriptionStateResponse:
+    return await BillingManager(db).get_subscription_state(agent)
+
+
+@router.post("/subscription/cancel", response_model=SubscriptionCancelResponse)
+async def cancel_subscription(agent: AgentDep, db: DbDep) -> SubscriptionCancelResponse:
+    return await BillingManager(db).cancel_subscription(agent)
+
+
+@router.post("/subscription/resume", response_model=SubscriptionStateResponse)
+async def resume_subscription(agent: AgentDep, db: DbDep) -> SubscriptionStateResponse:
+    return await BillingManager(db).resume_subscription(agent)
+
+
+@router.post("/payment-method/update", response_model=PaymentMethodUpdateResponse)
+async def payment_method_update(agent: AgentDep, db: DbDep) -> PaymentMethodUpdateResponse:
+    return await BillingManager(db).payment_method_update(agent)
