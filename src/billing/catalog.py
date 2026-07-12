@@ -75,3 +75,18 @@ PRICES: tuple[PriceSpec, ...] = (
 )
 
 CURRENCY = "EUR"
+
+
+# --- Notification destination (webhook) — same declarative philosophy -----------
+# The URL comes from the ENV (PADDLE_WEBHOOK_URL: localhost tunnel today,
+# staging tomorrow, prod after) — the script knows no URL. The DESCRIPTION is
+# the stable identity (notification settings carry no custom_data): one
+# managed destination per Paddle account, matched by it, never by URL.
+WEBHOOK_DESCRIPTION = "nidria-backend (managed by provision_paddle_catalog)"
+WEBHOOK_EVENTS: tuple[str, ...] = (
+    "subscription.activated",
+    "subscription.updated",
+    "subscription.canceled",
+    "subscription.past_due",
+    "transaction.completed",
+)

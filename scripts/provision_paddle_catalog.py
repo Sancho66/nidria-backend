@@ -18,7 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.billing.catalog_provisioning import provision_catalog  # noqa: E402
+from src.billing.catalog_provisioning import (  # noqa: E402
+    provision_catalog,
+    provision_webhook_destination,
+)
 from src.billing.paddle_client import PaddleClient  # noqa: E402
 from src.core.config import get_settings  # noqa: E402
 
@@ -58,6 +61,32 @@ async def main() -> int:
     if not dry_run or report.is_noop:
         print("\nPADDLE_PRICE_IDS to paste into the env:")
         print(json.dumps(report.price_ids, indent=2, sort_keys=True))
+
+    # --- webhook destination (same philosophy; URL from the env only) ------------
+    if settings.paddle_webhook_url is None:
+        print("\nPADDLE_WEBHOOK_URL absent — destination webhook non geree (catalogue seul).")
+        return 0
+    destination = await provision_webhook_destination(
+        dry_run=dry_run, client=PaddleClient(), url=settings.paddle_webhook_url
+    )
+    if destination.divergences:
+        print("\nDESTINATION DIVERGENTE — rien n'a ete modifie (decision humaine) :")
+        for divergence in destination.divergences:
+            print(f"  !! {divergence}")
+        return 1
+    if destination.created and dry_run:
+        print(f"\ndestination webhook: WOULD CREATE -> {settings.paddle_webhook_url}")
+    elif destination.created:
+        print(f"\ndestination webhook: CREATED ({destination.setting_id})")
+        print("=" * 72)
+        print("SECRET — a poser dans PADDLE_WEBHOOK_SECRET, ne sera PLUS JAMAIS affiche:")
+        print(destination.secret)
+        print("=" * 72)
+    else:
+        print(
+            f"\ndestination webhook: existante, conforme ({destination.setting_id}) — "
+            "secret deja en ta possession, jamais relu."
+        )
     return 0
 
 

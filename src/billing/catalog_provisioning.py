@@ -11,7 +11,14 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.billing.catalog import CURRENCY, PRICES, PRODUCTS, PriceSpec
+from src.billing.catalog import (
+    CURRENCY,
+    PRICES,
+    PRODUCTS,
+    WEBHOOK_DESCRIPTION,
+    WEBHOOK_EVENTS,
+    PriceSpec,
+)
 from src.billing.paddle_client import PaddleClient
 
 logger = logging.getLogger(__name__)
@@ -125,3 +132,59 @@ async def verify_catalog_env(*, client: PaddleClient, price_ids: dict[str, str])
         elif _stable_key(remote) != key:
             problems.append(f"{key}: price {price_id} carries stable_key {_stable_key(remote)!r}")
     return problems
+
+
+@dataclass
+class DestinationReport:
+    """Outcome of the webhook-destination reconciliation. `secret` is set ONLY
+    when the destination was just created — the one and only time Paddle hands
+    it to us from our point of view; an existing destination NEVER has its
+    secret re-read (the operator already possesses it)."""
+
+    created: bool = False
+    setting_id: str | None = None
+    secret: str | None = None
+    divergences: list[str] = field(default_factory=list)
+
+    @property
+    def is_noop(self) -> bool:
+        return not self.created and not self.divergences
+
+
+async def provision_webhook_destination(
+    *, dry_run: bool, client: PaddleClient, url: str
+) -> DestinationReport:
+    """Get-or-create the managed notification destination, matched by its
+    STABLE DESCRIPTION (never the URL — the URL is env-dependent). Present and
+    conform → no-op; present and DIVERGENT (URL or event set) → explicit error,
+    never a silent update: a tunnel rotation or an event change is a human
+    decision (delete the destination in the dashboard, or fix the env)."""
+    report = DestinationReport()
+    existing = [
+        s
+        for s in await client.list_notification_settings()
+        if s.get("description") == WEBHOOK_DESCRIPTION
+    ]
+    if existing:
+        setting = existing[0]
+        report.setting_id = setting["id"]
+        if setting.get("destination") != url:
+            report.divergences.append(f"destination URL {setting.get('destination')} != env {url}")
+        remote_events = {
+            str(e.get("name") if isinstance(e, dict) else e)
+            for e in setting.get("subscribed_events", [])
+        }
+        if remote_events != set(WEBHOOK_EVENTS):
+            report.divergences.append(
+                f"subscribed events {sorted(remote_events)} != declared {sorted(WEBHOOK_EVENTS)}"
+            )
+        return report  # existing: the secret is NEVER re-read
+    report.created = True
+    if dry_run:
+        return report
+    created = await client.create_notification_setting(
+        url=url, description=WEBHOOK_DESCRIPTION, events=list(WEBHOOK_EVENTS)
+    )
+    report.setting_id = created["id"]
+    report.secret = created.get("endpoint_secret_key")
+    return report

@@ -164,3 +164,83 @@ def test_declared_grid_matches_the_public_pricing() -> None:
             for cycle in ("mensuel", "annuel")
         )
     )
+
+
+# --- webhook destination: get-or-create, no-op, divergence, secret une fois ----------
+
+
+class FakePaddleWithDestinations(FakePaddle):
+    def __init__(self) -> None:
+        super().__init__()
+        self.settings: list[dict[str, Any]] = []
+
+    async def list_notification_settings(self) -> list[dict[str, Any]]:
+        return list(self.settings)
+
+    async def create_notification_setting(
+        self, *, url: str, description: str, events: list[str]
+    ) -> dict[str, Any]:
+        self.create_calls += 1
+        setting = {
+            "id": f"ntfset_{len(self.settings)}",
+            "description": description,
+            "destination": url,
+            "subscribed_events": [{"name": e} for e in events],
+            # Paddle hands the secret at creation — from our point of view,
+            # the ONLY time we ever see it.
+            "endpoint_secret_key": "pdl_ntfset_secret_TEST",
+        }
+        self.settings.append({k: v for k, v in setting.items() if k != "endpoint_secret_key"})
+        return setting
+
+
+async def test_destination_created_then_noop_and_secret_never_reread() -> None:
+    from src.billing.catalog_provisioning import provision_webhook_destination
+
+    paddle = FakePaddleWithDestinations()
+    url = "https://tunnel.example/billing/webhooks/paddle"
+    first = await provision_webhook_destination(dry_run=False, client=paddle, url=url)  # type: ignore[arg-type]
+    assert first.created and first.secret == "pdl_ntfset_secret_TEST"
+
+    second = await provision_webhook_destination(dry_run=False, client=paddle, url=url)  # type: ignore[arg-type]
+    assert second.is_noop and not second.created
+    assert second.secret is None  # existing: NEVER re-read
+    assert second.setting_id == first.setting_id
+    assert paddle.create_calls == 1  # one creation, ever
+
+
+async def test_destination_divergence_is_an_error_never_an_update() -> None:
+    from src.billing.catalog import WEBHOOK_DESCRIPTION
+    from src.billing.catalog_provisioning import provision_webhook_destination
+
+    paddle = FakePaddleWithDestinations()
+    paddle.settings.append(
+        {
+            "id": "ntfset_old",
+            "description": WEBHOOK_DESCRIPTION,
+            "destination": "https://OLD-tunnel.example/billing/webhooks/paddle",
+            "subscribed_events": [{"name": "subscription.activated"}],  # incomplete too
+        }
+    )
+    report = await provision_webhook_destination(
+        dry_run=False,
+        client=paddle,  # type: ignore[arg-type]
+        url="https://NEW-tunnel.example/billing/webhooks/paddle",
+    )
+    assert len(report.divergences) == 2  # URL and event set, both named
+    assert any("OLD-tunnel" in d for d in report.divergences)
+    assert paddle.create_calls == 0  # nothing created, nothing updated
+    assert paddle.settings[0]["destination"].startswith("https://OLD-tunnel")  # untouched
+
+
+async def test_destination_dry_run_writes_nothing() -> None:
+    from src.billing.catalog_provisioning import provision_webhook_destination
+
+    paddle = FakePaddleWithDestinations()
+    report = await provision_webhook_destination(
+        dry_run=True,
+        client=paddle,
+        url="https://t.example/x",  # type: ignore[arg-type]
+    )
+    assert report.created and report.secret is None  # it says, it does not do
+    assert paddle.create_calls == 0

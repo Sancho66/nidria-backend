@@ -133,3 +133,28 @@ class PaddleClient:
                 "custom_data": custom_data,
             },
         )
+
+    # --- notification destinations (webhook provisioning) --------------------------
+
+    async def list_notification_settings(self) -> list[dict[str, Any]]:
+        return await self._request_page("/notification-settings?per_page=200")
+
+    async def create_notification_setting(
+        self, *, url: str, description: str, events: list[str]
+    ) -> dict[str, Any]:
+        """Create the webhook destination. The response carries
+        endpoint_secret_key ONCE from our point of view: the caller displays
+        it a single time and NEVER logs it anywhere else."""
+        return await self._request(
+            "POST",
+            "/notification-settings",
+            {
+                "description": description,
+                "destination": url,
+                "type": "url",
+                # "all": platform events AND dashboard/API simulations — the
+                # send-test smoke works on every environment.
+                "traffic_source": "all",
+                "subscribed_events": events,
+            },
+        )

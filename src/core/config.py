@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     #  "seat_cabinet_annuel": ..., "seat_agence_mensuel": ...,
     #  "seat_agence_annuel": ...}
     paddle_price_ids: dict[str, str] = {}
+    # The PUBLIC URL of our webhook endpoint, for the destination
+    # provisioning (localhost tunnel today, staging, then prod) — the
+    # script never knows a URL; only the env does.
+    paddle_webhook_url: str | None = None
 
     @field_validator("cors_origins", "allowed_document_extensions", mode="before")
     @classmethod
