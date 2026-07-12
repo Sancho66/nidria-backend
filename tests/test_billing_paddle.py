@@ -49,6 +49,9 @@ def paddle_settings(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PADDLE_API_KEY", "test-api-key")
     monkeypatch.setenv("PADDLE_WEBHOOK_SECRET", SECRET)
     monkeypatch.setenv("PADDLE_PRICE_IDS", json.dumps(PRICE_IDS))
+    # The offer is OPEN in this harness (closed by default in real life);
+    # the kill-switch tests close it explicitly.
+    monkeypatch.setenv("BILLING_CHECKOUT_ENABLED", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -717,6 +720,88 @@ async def test_payment_method_update_returns_the_special_transaction(
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"transaction_id": "txn_pmu_1", "paddle_env": "sandbox"}
     special.assert_awaited_once_with("sub_123")
+
+
+# --- kill switch d'offre : BILLING_CHECKOUT_ENABLED ------------------------------------
+
+
+def _close_checkout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BILLING_CHECKOUT_ENABLED", "false")
+    get_settings.cache_clear()
+
+
+async def test_disabled_checkout_is_409_without_any_paddle_call(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    create = AsyncMock(return_value={"id": "txn_never"})
+    monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", create)
+    _close_checkout(monkeypatch)
+
+    resp = await client.post(
+        "/billing/checkout",
+        headers=agent_headers(admin),
+        json={"plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "billing.checkout_disabled"
+    create.assert_not_awaited()  # the mock attests: Paddle was never reached
+
+
+async def test_disabled_checkout_keeps_management_open_for_a_converted_agency(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The switch closes the ENTRANCE, never the management of the existing:
+    a converted agency keeps state, cancel, resume and payment method — and
+    the webhook that converted it flowed while the offer was CLOSED (a living
+    subscription keeps living)."""
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    _close_checkout(monkeypatch)
+    await _activate(client, aid)  # webhooks stay live despite the switch
+    h = agent_headers(admin)
+    ends = "2026-08-12T18:59:19Z"
+
+    get_sub = AsyncMock(return_value=_paddle_subscription_payload())
+    monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", get_sub)
+    cancel = AsyncMock(return_value=_paddle_subscription_payload(scheduled_cancel=ends))
+    monkeypatch.setattr(paddle_client.PaddleClient, "cancel_subscription_at_period_end", cancel)
+    resume = AsyncMock(return_value=_paddle_subscription_payload(scheduled_cancel=None))
+    monkeypatch.setattr(paddle_client.PaddleClient, "remove_scheduled_change", resume)
+    special = AsyncMock(return_value={"id": "txn_pmu_2"})
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_payment_method_update_transaction", special
+    )
+
+    state = await client.get("/billing/subscription", headers=h)
+    assert state.status_code == 200, state.text
+    assert state.json()["checkout_enabled"] is False  # the front's "Arrive bientot"
+    assert (await client.post("/billing/subscription/cancel", headers=h)).status_code == 200
+    assert (await client.post("/billing/subscription/resume", headers=h)).status_code == 200
+    assert (await client.post("/billing/payment-method/update", headers=h)).status_code == 200
+
+
+async def test_subscription_state_exposes_the_checkout_flag(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    await _activate(client, admin.agency_id)
+    get_sub = AsyncMock(return_value=_paddle_subscription_payload())
+    monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", get_sub)
+    state = (await client.get("/billing/subscription", headers=agent_headers(admin))).json()
+    assert state["checkout_enabled"] is True  # open in this harness
 
 
 async def test_updated_webhook_with_scheduled_change_flows_untouched(

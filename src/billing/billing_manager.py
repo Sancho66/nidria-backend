@@ -105,6 +105,13 @@ class BillingManager:
         """Build the Paddle checkout transaction for the hosted overlay.
         custom_data.agency_id is THE link every webhook resolves by."""
         settings = get_settings()
+        # Offer kill switch — FIRST, before any lookup or Paddle call: a
+        # closed offer ("cable mais ferme") refuses at the door.
+        if not settings.billing_checkout_enabled:
+            raise ConflictError(
+                "Self-serve checkout is not open yet.",
+                code="billing.checkout_disabled",
+            )
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
         if agency.billing_mode == "paddle" and agency.paddle_subscription_id is not None:
@@ -469,6 +476,7 @@ class BillingManager:
             ),
             next_payment_amount=self._cents(totals.get("grand_total") or totals.get("total")),
             scheduled_cancel_at=cancel_at,
+            checkout_enabled=settings.billing_checkout_enabled,
         )
 
     async def get_subscription_state(self, agent: Agent) -> SubscriptionStateResponse:

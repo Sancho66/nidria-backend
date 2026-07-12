@@ -116,6 +116,13 @@ class Settings(BaseSettings):
     # the billing endpoints error explicitly at first use if missing.
     # paddle_env drives the API base URL; the LIVE account does not exist yet
     # (KYB in progress) — everything is built against sandbox.
+    # Offer kill switch, INDEPENDENT of the Paddle env: prod will run
+    # PADDLE_ENV=live from KYB on, but the offer opens only when Eric
+    # validates (legal docs, tested invoices). Default FALSE — closed by
+    # default, opened explicitly, never the reverse. Gates the checkout
+    # ENTRANCE only: an already-converted agency keeps full management,
+    # and webhooks stay live (a living subscription keeps living).
+    billing_checkout_enabled: bool = False
     paddle_env: str = "sandbox"  # sandbox | live
     paddle_api_key: str | None = None
     paddle_webhook_secret: str | None = None

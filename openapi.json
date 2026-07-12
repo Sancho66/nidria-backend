@@ -24116,6 +24116,10 @@
               }
             ],
             "title": "Scheduled Cancel At"
+          },
+          "checkout_enabled": {
+            "type": "boolean",
+            "title": "Checkout Enabled"
           }
         },
         "type": "object",
@@ -24129,7 +24133,8 @@
           "seat_unit_price",
           "next_billed_at",
           "next_payment_amount",
-          "scheduled_cancel_at"
+          "scheduled_cancel_at",
+          "checkout_enabled"
         ],
         "title": "SubscriptionStateResponse",
         "description": "GET /billing/subscription — everything the management page shows, in\nONE response. Money as STRINGS (decimal euros), never a JSON float; the\nunit prices come from the live Paddle subscription items (one cached\ncall), so a price rotation is reflected without a deploy."

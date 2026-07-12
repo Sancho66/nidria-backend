@@ -122,6 +122,19 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 )
         except Exception:
             boot_logger.exception("paddle catalog check failed (non-blocking)")
+    elif not settings_boot.billing_checkout_enabled:
+        # A closed prod without Paddle keys is a LEGITIMATE state today
+        # (wired but shut until Eric opens the offer) — INFO, not ERROR.
+        boot_logger.info(
+            "paddle catalog check skipped: checkout disabled and Paddle not configured"
+        )
+    else:
+        # Checkout OPEN but Paddle unconfigured: every checkout would 409 —
+        # that one deserves the alert.
+        boot_logger.error(
+            "paddle catalog check: BILLING_CHECKOUT_ENABLED is true but Paddle "
+            "keys/price ids are missing"
+        )
     assert_impersonation_denylist_declared(application)
     application.state.sync_session_local = make_session_local()
     scheduler = None

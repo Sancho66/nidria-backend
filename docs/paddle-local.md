@@ -43,6 +43,8 @@ PADDLE_WEBHOOK_URL="https://<tunnel>.ngrok-free.app/billing/webhooks/paddle" \
 Variables d'env attendues (`.env` local / secrets Fly ailleurs) :
 
 ```
+BILLING_CHECKOUT_ENABLED=true      # kill switch d'offre — FALSE par défaut :
+                                   # checkout fermé (409), gestion/webhooks intacts
 PADDLE_ENV=sandbox                 # sandbox | live
 PADDLE_API_KEY=...                 # ne JAMAIS logger, même tronquée
 PADDLE_PRICE_IDS={"cabinet_mensuel":"pri_...", ...}   # sortie du script

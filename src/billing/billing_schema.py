@@ -47,6 +47,10 @@ class SubscriptionStateResponse(BaseModel):
     next_payment_amount: Decimal | None
     # Scheduled cancellation ("se termine le X") — None when none is scheduled.
     scheduled_cancel_at: datetime | None
+    # Offer kill switch (BILLING_CHECKOUT_ENABLED): the front shows "Arrive
+    # bientot" instead of the checkout button when False. Gates the ENTRANCE
+    # only — this whole response existing proves management stays open.
+    checkout_enabled: bool
 
     @field_serializer("base_unit_price", "seat_unit_price", "next_payment_amount")
     def _ser_money(self, value: Decimal | None) -> str | None:
