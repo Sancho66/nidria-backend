@@ -10,6 +10,9 @@ prove the two halves of the security claim:
                  rejected — while the OWNER role (the backend) is unaffected.
 """
 
+import re
+from pathlib import Path
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -88,3 +91,61 @@ async def test_non_bypass_role_is_denied_all(
     finally:
         async with async_engine.begin() as conn:
             await conn.execute(text(_DROP_PROBE))
+
+
+# --- structural guard: every NEW table must be born with RLS ---------------------------
+#
+# The two tests above prove the POSTURE, but on the testcontainer that posture
+# comes from conftest (blanket ENABLE after create_all) — they can never catch
+# a MIGRATION that creates a table without RLS. This scan constrains the
+# migration files themselves: after the LAST dynamic sweep, any migration that
+# creates a table must enable RLS on it in the SAME file. This is exactly how
+# case_step_cost, journey_step_cost and paddle_webhook_event slipped through
+# (created after sweep a103249eb0a1, closed by sweep c4d8e2f6a1b3).
+
+_VERSIONS_DIR = Path("alembic/versions")
+
+
+def _revision_chain() -> list[tuple[str, str]]:
+    """The linear (revision, file text) chain, root → head."""
+    by_rev: dict[str, tuple[str | None, str]] = {}
+    for path in _VERSIONS_DIR.glob("*.py"):
+        body = path.read_text(encoding="utf-8")
+        rev_m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)[\"']", body, re.M)
+        down_m = re.search(r"^down_revision(?:[^=]+)?=\s*(.+)$", body, re.M)
+        assert rev_m and down_m, f"unparseable migration header: {path.name}"
+        down_raw = down_m.group(1).strip()
+        down = None if down_raw == "None" else down_raw.strip("\"'")
+        by_rev[rev_m.group(1)] = (down, body)
+    child_of = {down: rev for rev, (down, _) in by_rev.items()}
+    chain: list[tuple[str, str]] = []
+    cursor = child_of.get(None)
+    while cursor is not None:
+        chain.append((cursor, by_rev[cursor][1]))
+        cursor = child_of.get(cursor)
+    assert len(chain) == len(by_rev), "alembic chain is not linear or has orphans"
+    return chain
+
+
+def _is_sweep(body: str) -> bool:
+    """A dynamic sweep enumerates pg_tables and enables RLS on everything."""
+    return "FROM pg_tables" in body and "ENABLE ROW LEVEL SECURITY" in body
+
+
+def test_every_table_creating_migration_enables_rls() -> None:
+    chain = _revision_chain()
+    last_sweep = max(i for i, (_, body) in enumerate(chain) if _is_sweep(body))
+    naked: list[str] = []
+    for rev, body in chain[last_sweep + 1 :]:
+        for table in re.findall(r"create_table\(\s*[\"']([^\"']+)[\"']", body):
+            enable = re.compile(
+                rf"ALTER TABLE\s+(?:public\.)?\"?{re.escape(table)}\"?\s+"
+                rf"ENABLE ROW LEVEL SECURITY"
+            )
+            if not enable.search(body):
+                naked.append(f"{table} (revision {rev})")
+    assert naked == [], (
+        "tables created WITHOUT enabling RLS — add "
+        "op.execute('ALTER TABLE <table> ENABLE ROW LEVEL SECURITY') to the "
+        f"creating migration (Supabase PostgREST exposes naked tables): {naked}"
+    )
