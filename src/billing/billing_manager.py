@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import exists, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -120,12 +121,17 @@ class BillingManager:
             )
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
-        if agency.billing_mode == "paddle" and agency.paddle_subscription_id is not None:
-            raise ConflictError(
-                "This agency already has an active Paddle subscription.",
-                code="billing.already_subscribed",
-            )
-        if agency.plan is not None:
+        if agency.billing_mode == "paddle":
+            if agency.paddle_subscription_id is not None and agency.billing_status != "canceled":
+                raise ConflictError(
+                    "This agency already has an active Paddle subscription.",
+                    code="billing.already_subscribed",
+                )
+            # billing_status == "canceled": the subscription is DEAD — the
+            # re-subscription path is open (new transaction, new Paddle
+            # subscription, full new lifecycle). The kept plan/converted_at
+            # are historical facts, not a manual conversion.
+        elif agency.plan is not None:
             # Manually converted (Nicolas, large accounts): self-serve checkout
             # would double-bill — a support gesture, not a product path.
             raise ConflictError(
@@ -261,8 +267,46 @@ class BillingManager:
             await self.db.commit()
             return WebhookAck(status="ignored")
 
-        status = await self._dispatch(agency, event_type, occurred_at, data)
-        await self.db.commit()
+        # Plain ids before any rollback: it expires the instance, and a
+        # lazy reload on an expired object has no greenlet here.
+        agency_id, agency_slug = agency.id, agency.slug
+        try:
+            status = await self._dispatch(agency, event_type, occurred_at, data)
+            await self.db.commit()
+        except IntegrityError:
+            # NEVER a 500 on a webhook (it would loop Paddle's retries).
+            # Lived case: Paddle dedups customers BY EMAIL account-wide, so
+            # an agency paying with an email already billing ANOTHER agency
+            # re-uses its ctm_ — and the unique paddle_customer_id link
+            # (one customer = one agency, the right rule) fires. The case
+            # is a human's to settle: 200 + strong alert + ZERO write —
+            # the event is stored below, nothing is lost, replayable once
+            # the link is freed or the conversion posed manually.
+            await self.db.rollback()
+            logger.error(
+                "ALERT paddle webhook %s (%s) for agency %s VIOLATES a link constraint "
+                "(customer/subscription already bound to another agency) — stored, "
+                "NOTHING written, a human decides",
+                event_type,
+                event_id,
+                agency_slug,
+            )
+            self.db.add(
+                PaddleWebhookEvent(
+                    event_id=event_id,
+                    event_type=event_type,
+                    occurred_at=occurred_at,
+                    agency_id=agency_id,
+                    payload=envelope,
+                )
+            )
+            try:
+                await self.db.commit()
+            except IntegrityError:
+                # Concurrent delivery already stored this event_id.
+                await self.db.rollback()
+                return WebhookAck(status="duplicate")
+            return WebhookAck(status="ignored")
         return WebhookAck(status=status)
 
     async def _resolve_agency(self, data: dict[str, Any]) -> Agency | None:
@@ -365,7 +409,15 @@ class BillingManager:
     async def _on_activated(
         self, agency: Agency, occurred_at: datetime, data: dict[str, Any]
     ) -> str:
-        self._store_link(agency, data)
+        # ADOPT the ids, don't just fill them: a RE-subscription (canceled →
+        # new checkout) lands here with a NEW subscription id while the dead
+        # one still sits on the agency — the activated event is authoritative
+        # for ITS subscription (the old one keeps its history in
+        # paddle_webhook_event). A re-delivery carries the same ids: no-op.
+        if data.get("id"):
+            agency.paddle_subscription_id = data["id"]
+        if data.get("customer_id"):
+            agency.paddle_customer_id = data["customer_id"]
         agency.billing_mode = "paddle"  # the event IS the proof of self-serve
         if agency.converted_at is None:
             resolved = _plan_cycle_from_items(data.get("items", []))
@@ -388,6 +440,21 @@ class BillingManager:
                 actor_type=ActorType.SYSTEM,
                 actor_id=None,
             )
+        else:
+            # RE-subscription of an already-converted agency: converted_at is
+            # a HISTORICAL fact (never overwritten) and agency.converted is
+            # NOT re-emitted (Eric's stats would count double) — but the new
+            # subscription may sit on a DIFFERENT plan: refresh the
+            # commercial facts from the items.
+            resolved = _plan_cycle_from_items(data.get("items", []))
+            if resolved is not None:
+                plan, cycle = resolved
+                if plan != agency.plan or cycle != agency.billing_cycle:
+                    from src.agencies.agencies_manager import SEAT_PRICES_EUR
+
+                    agency.plan = plan
+                    agency.billing_cycle = cycle
+                    agency.seat_price_eur = SEAT_PRICES_EUR[plan]
         # Re-delivery / already-converted: converted_at is NEVER overwritten.
         if not await self._status_is_stale(agency.id, occurred_at):
             self._apply_status(agency, "active", occurred_at)
@@ -591,6 +658,14 @@ class BillingManager:
 
         agency = await self._paddle_managed_agency(agent)
         assert agency.paddle_subscription_id is not None
+        if agency.billing_status == "canceled":
+            # A DEAD subscription cannot be resumed (resume only undoes a
+            # SCHEDULED cancellation while the period runs) — distinct code
+            # so the front routes to the re-subscription path instead.
+            raise ConflictError(
+                "The subscription has ended; there is nothing to resume — subscribe again.",
+                code="billing.subscription_ended",
+            )
         try:
             subscription = await PaddleClient().remove_scheduled_change(
                 agency.paddle_subscription_id

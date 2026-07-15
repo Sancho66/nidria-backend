@@ -25,8 +25,11 @@ dashboard pour créer le catalogue ou la destination webhook :
 # 1. l'API locale
 uv run uvicorn src.main:app --port 8000
 
-# 2. le tunnel (voir piège n°1)
-ngrok http 8000
+# 2. le tunnel — TOUJOURS via le domaine statique (voir piège n°2 : trois
+#    sessions perdues sur l'URL éphémère, plus jamais). Le domaine gratuit
+#    se réclame UNE fois sur https://dashboard.ngrok.com/domains
+#    (bouton « claim your free static domain »). Celui du compte :
+ngrok http --url=worm-bursting-preferably.ngrok-free.app 8000
 
 # 3. provisionner catalogue + destination avec l'URL du tunnel
 PADDLE_WEBHOOK_URL="https://<tunnel>.ngrok-free.app/billing/webhooks/paddle" \
@@ -72,10 +75,13 @@ comportement attendu, pas un bug.
 1. **ngrok trop vieux** : les comptes récents exigent ≥ 3.20
    (`ERR_NGROK_121`) → `ngrok update`.
 2. **L'URL ngrok free tourne à chaque session** → le run suivant du script
-   sort `DIVERGENCE — destination URL ... != env ...` (c'est voulu). Deux
-   sorties : réserver le **domaine statique gratuit** ngrok
-   (`ngrok http --url=<domaine>.ngrok-free.app 8000`), ou supprimer la
-   destination dans le dashboard et re-provisionner (⚠️ nouveau secret).
+   sort `DIVERGENCE — destination URL ... != env ...` (c'est voulu), et la
+   remise en route coûte : suppression de la destination + re-provisioning +
+   **nouveau secret** + redémarrage du serveur. Payé TROIS fois (12/07,
+   15/07 ×2). La seule vraie sortie : le **domaine statique gratuit**
+   (réclamé une fois dans le dashboard → `ngrok http --url=<domaine> 8000`),
+   l'URL ne bouge plus jamais. ⚠️ Free ne permet PAS de choisir le nom
+   (`ERR_NGROK_313`) : c'est le domaine auto-assigné du compte ou rien.
 3. **`transaction_default_checkout_url_not_set` au checkout** : le compte
    Paddle doit avoir un **Default Payment Link** (dashboard → Checkout →
    Checkout settings). N'importe quelle URL en sandbox (ex.
@@ -93,6 +99,24 @@ comportement attendu, pas un bug.
    réponse Paddle uniquement, jamais la requête ni ses headers). Si une clé
    fuite quand même : révoquer immédiatement dans le dashboard, c'est deux
    minutes.
+7. **Le serveur zombie** : le receiver webhook (port 8000) lancé en nohup
+   survit des jours avec du VIEUX code et un VIEUX `.env`. Symptôme vécu :
+   webhooks livrés (tunnel OK) mais traités par un serveur d'il y a trois
+   jours. Après tout changement de code billing ou de secret : `kill
+   $(lsof -nP -iTCP:8000 -sTCP:LISTEN -t)` et relancer. Diagnostic express :
+   `ps -o lstart -p $(lsof -iTCP:8000 -sTCP:LISTEN -t)` — si la date
+   n'est pas d'aujourd'hui, c'est lui.
+8. **Paddle réutilise le customer par email** : un second checkout
+   avec le même email rattache le MÊME `ctm_...` — collision avec la
+   contrainte unique `agency.paddle_customer_id` si ce ctm est encore lié
+   à une autre agence. Depuis le fix « collision = décision humaine », le
+   webhook répond **200 + alerte ERROR + zéro écriture** (l'événement est
+   en table, rejouable) — plus jamais un 500 en boucle de retries. Mais
+   l'agence payée n'est PAS convertie tant qu'un humain ne tranche pas :
+   en local, libérer l'ancien lien (`UPDATE agency SET
+   paddle_customer_id=NULL, paddle_subscription_id=NULL,
+   billing_mode='manual', billing_status=NULL WHERE slug='<ancienne>'`)
+   ou payer avec un autre email, puis relivrer l'événement.
 
 ## Payer en sandbox
 

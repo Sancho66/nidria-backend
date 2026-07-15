@@ -727,6 +727,184 @@ async def test_payment_method_update_returns_the_special_transaction(
     special.assert_awaited_once_with("sub_123")
 
 
+# --- re-souscription d'une agence canceled ---------------------------------------------
+
+
+async def test_checkout_reopens_for_a_canceled_agency(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """canceled = dead subscription: the re-subscription path MUST open
+    (new transaction, full new lifecycle) — the kept plan/converted_at are
+    history, not a manual conversion; an ALIVE subscription still refuses."""
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    create = AsyncMock(return_value={"id": "txn_resub"})
+    monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", create)
+    h = agent_headers(admin)
+
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    # Alive: still refused.
+    alive = await client.post(
+        "/billing/checkout", headers=h, json={"plan": "cabinet", "billing_cycle": "mensuel"}
+    )
+    assert alive.status_code == 409 and alive.json()["code"] == "billing.already_subscribed"
+
+    await _post(client, _envelope("subscription.canceled", agency_id=aid))
+    # Dead: the door opens — a NEW transaction carrying the agency link.
+    resub = await client.post(
+        "/billing/checkout", headers=h, json={"plan": "cabinet", "billing_cycle": "mensuel"}
+    )
+    assert resub.status_code == 200, resub.text
+    assert resub.json()["transaction_id"] == "txn_resub"
+    assert create.await_args.kwargs["custom_data"] == {"agency_id": str(aid)}
+
+
+async def test_resubscription_activated_relinks_without_reemitting(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+) -> None:
+    """The activated of a RE-subscription on an already-converted agency:
+    status back to active, NEW subscription adopted, past_due erased,
+    converted_at NEVER overwritten, agency.converted NOT re-emitted (Eric's
+    stats would count double) — and the new plan's facts are refreshed."""
+    aid = admin.agency_id
+    t0 = datetime.now(UTC) - timedelta(days=90)
+
+    await _post(client, _envelope("subscription.activated", agency_id=aid, occurred_at=t0))
+    first_converted_at = (await _agency(db_session, aid)).converted_at
+    await _post(
+        client,
+        _envelope(
+            "subscription.past_due",
+            agency_id=aid,
+            occurred_at=t0 + timedelta(days=30),
+        ),
+    )
+    await _post(
+        client,
+        _envelope(
+            "subscription.canceled",
+            agency_id=aid,
+            occurred_at=t0 + timedelta(days=45),
+        ),
+    )
+
+    # Re-subscription: NEW subscription, DIFFERENT plan (agence, annual).
+    resub = await _post(
+        client,
+        _envelope(
+            "subscription.activated",
+            agency_id=aid,
+            subscription_id="sub_789",
+            items=[{"price": {"id": PRICE_IDS["agence_annuel"]}, "quantity": 1}],
+        ),
+    )
+    assert resub.json()["status"] == "processed"
+
+    agency = await _agency(db_session, aid)
+    assert agency.billing_status == "active"
+    assert agency.paddle_subscription_id == "sub_789"  # the DEAD sub let go
+    assert agency.past_due_since is None
+    assert agency.converted_at == first_converted_at  # history, untouched
+    assert agency.plan == "agence" and agency.billing_cycle == "annuel"  # facts refreshed
+    assert agency.seat_price_eur == 25
+    emitted = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(UsageEvent)
+            .where(UsageEvent.agency_id == aid, UsageEvent.event_type == "agency.converted")
+        )
+    ).scalar_one()
+    assert emitted == 1  # once per life, not per subscription
+
+
+async def test_resume_on_a_dead_subscription_is_a_distinct_409(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    remove = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "remove_scheduled_change", remove)
+
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    await _post(client, _envelope("subscription.canceled", agency_id=aid))
+
+    resp = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "billing.subscription_ended"  # not nothing_scheduled
+    remove.assert_not_awaited()  # refused BEFORE any Paddle call
+
+
+# --- collision de customer (piege n°8) : 200 + alerte + zero ecriture ------------------
+
+
+async def test_shared_customer_collision_is_200_alert_zero_write(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Paddle dedups customers BY EMAIL account-wide: a second agency paying
+    with the same billing email re-uses the ctm_ of the first. The unique
+    link (one customer = one agency — the right rule) fires; the handler
+    turns it into 200 + strong alert + ZERO write (never a 500, Paddle's
+    retries stop, the event is stored — a human decides)."""
+    first = admin.agency_id
+    other_admin = await make_agent(role=system_roles["admin"])
+    second = other_admin.agency_id
+
+    # Agency 1 converts and takes the customer.
+    await _post(client, _envelope("subscription.activated", agency_id=first))
+
+    # Agency 2 pays with the SAME email → same ctm_123, new subscription.
+    with caplog.at_level("ERROR"):
+        resp = await _post(
+            client,
+            _envelope("subscription.activated", agency_id=second, subscription_id="sub_456"),
+        )
+    assert resp.status_code == 200 and resp.json()["status"] == "ignored"
+    assert any("VIOLATES a link constraint" in r.message for r in caplog.records)
+
+    # ZERO write on agency 2: still a virgin manual trial.
+    agency = await _agency(db_session, second)
+    assert agency.billing_mode == "manual" and agency.converted_at is None
+    assert agency.paddle_customer_id is None and agency.paddle_subscription_id is None
+    assert agency.billing_status is None
+    # Its conversion signal was rolled back with everything else…
+    emitted = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(UsageEvent)
+            .where(UsageEvent.agency_id == second, UsageEvent.event_type == "agency.converted")
+        )
+    ).scalar_one()
+    assert emitted == 0
+    # …but the EVENT is in table (nothing lost, replayable once settled).
+    stored = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(PaddleWebhookEvent)
+            .where(PaddleWebhookEvent.agency_id == second)
+        )
+    ).scalar_one()
+    assert stored == 1
+    # And agency 1 kept its link untouched.
+    keeper = await _agency(db_session, first)
+    assert keeper.paddle_customer_id == "ctm_123"
+
+
 # --- catalog_prices : la grille publique servie a froid --------------------------------
 
 
