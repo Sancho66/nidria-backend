@@ -89,9 +89,14 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     billing_mode: Mapped[str] = mapped_column(
         String(10), default="manual", server_default=text("'manual'"), nullable=False
     )
-    # active | past_due | canceled — informational (admin table + filter);
-    # any product lockout is a separate, explicit decision.
+    # active | past_due | canceled — informational (admin table + filter),
+    # AND the input of the billing lock (billing_lock.blocking_reason).
     billing_status: Mapped[str | None] = mapped_column(String(20))
+    # First instant the subscription entered past_due (webhook clock) — the
+    # grace anchor of the billing lock (7 days by default). Posed at the
+    # FIRST past_due status write, kept across re-deliveries, cleared by
+    # any other status (active, canceled).
+    past_due_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     paddle_customer_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     paddle_subscription_id: Mapped[str | None] = mapped_column(String(64), unique=True)
 

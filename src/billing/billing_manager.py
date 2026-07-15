@@ -330,12 +330,25 @@ class BillingManager:
             return await self._on_updated(agency, occurred_at, data)
         if event_type in ("subscription.past_due", "subscription.canceled", "subscription.resumed"):
             if not await self._status_is_stale(agency.id, occurred_at):
-                agency.billing_status = _STATUS_BY_EVENT[event_type]
+                self._apply_status(agency, _STATUS_BY_EVENT[event_type], occurred_at)
             # canceled: plan and converted_at are KEPT — historical facts; any
             # product lockout is a separate, explicit decision.
             return "processed"
         logger.info("paddle webhook %s ignored (unhandled type)", event_type)
         return "ignored"
+
+    @staticmethod
+    def _apply_status(agency: Agency, status: str, occurred_at: datetime) -> None:
+        """The ONE status writer: also maintains past_due_since, the grace
+        anchor of the billing lock — posed at the FIRST past_due instant
+        (webhook clock, kept across re-deliveries), cleared by any other
+        status (a recovered payment or a cancellation ends the countdown)."""
+        agency.billing_status = status
+        if status == "past_due":
+            if agency.past_due_since is None:
+                agency.past_due_since = occurred_at
+        else:
+            agency.past_due_since = None
 
     def _store_link(self, agency: Agency, data: dict[str, Any]) -> None:
         if agency.paddle_subscription_id is None and data.get("id"):
@@ -371,7 +384,7 @@ class BillingManager:
             )
         # Re-delivery / already-converted: converted_at is NEVER overwritten.
         if not await self._status_is_stale(agency.id, occurred_at):
-            agency.billing_status = "active"
+            self._apply_status(agency, "active", occurred_at)
         return "processed"
 
     async def _on_updated(self, agency: Agency, occurred_at: datetime, data: dict[str, Any]) -> str:
@@ -404,7 +417,7 @@ class BillingManager:
                 agency.seat_price_eur = SEAT_PRICES_EUR[plan]
         paddle_status = data.get("status")
         if paddle_status in ("active", "past_due", "canceled"):
-            agency.billing_status = paddle_status
+            self._apply_status(agency, paddle_status, occurred_at)
         return "processed"
 
     # --- in-app subscription management (agent face, agency.manage) -------------------

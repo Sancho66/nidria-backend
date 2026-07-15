@@ -391,11 +391,16 @@ class AgenciesManager:
         )
 
     async def subscription_info(self, agency: Agency) -> AgencySubscriptionInfo:
+        from src.billing.billing_lock import blocking_reason
+
+        reason = blocking_reason(agency, now=datetime.now(UTC))
         return AgencySubscriptionInfo(
             plan=agency.plan,
             billing_cycle=agency.billing_cycle,
             is_founding=agency.is_founding,
             seats=await self.seat_usage(agency),
+            is_blocked=reason is not None,
+            blocked_reason=reason,
         )
 
     async def update_subscription(

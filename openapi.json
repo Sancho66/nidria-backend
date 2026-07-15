@@ -13844,6 +13844,22 @@
           },
           "seats": {
             "$ref": "#/components/schemas/SeatUsage"
+          },
+          "is_blocked": {
+            "type": "boolean",
+            "title": "Is Blocked",
+            "default": false
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
           }
         },
         "type": "object",

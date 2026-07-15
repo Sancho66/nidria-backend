@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -6,9 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import ProtectedResource, Role
+from src.billing.billing_lock import blocking_reason
 from src.core.database import get_db
 from src.core.dependencies import agent_oauth2_scheme, expat_oauth2_scheme
 from src.core.enums import Audience
@@ -155,6 +158,60 @@ EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("DELETE", "/external/cases/{case_id}/steps/{progress_id}/comments/{comment_id}"),
     }
 )
+
+
+# Agent-face writes that stay open on a BLOCKED agency (billing lock,
+# 4th stage). The lock's rule is on the HTTP METHOD — every future agent
+# write endpoint is born covered — and this allowlist is the ONLY way
+# out; justify every entry.
+BILLING_LOCK_WRITE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        # The payment path NEVER locks: it is the exit of the blockage.
+        ("POST", "/billing/checkout"),
+        ("POST", "/billing/subscription/cancel"),
+        ("POST", "/billing/subscription/resume"),
+        ("POST", "/billing/payment-method/update"),
+        # Session lifecycle & account security never lock.
+        ("POST", "/auth/agent/logout"),
+        ("POST", "/auth/agent/change-password"),
+        ("POST", "/auth/agent/2fa/setup"),
+        ("POST", "/auth/agent/2fa/enable"),
+        ("POST", "/auth/agent/2fa/disable"),
+        # The legal gate stays passable (the consent gate runs first).
+        ("POST", "/consents/agent/accept"),
+    }
+)
+
+
+async def _enforce_billing_lock(db: AsyncSession, agent: Agent, method: str, path: str) -> None:
+    """4th stage of the agent pipeline (after impersonation and consent):
+    a BLOCKED agency is READ-ONLY. Same construction as the impersonation
+    expat mask: the rule is on the METHOD, not on a route list, so every
+    future write endpoint is born covered (fail-closed).
+
+    Out of scope by decision: the superadmin (the human exit), external
+    providers and the whole expat face (their démarches, not the agency's
+    fault — and a commercial argument: deposits keep landing, read-only
+    agents watch them pile up until payment)."""
+    if method == "GET":  # HEAD is normalized upstream; OPTIONS never reaches deps
+        return
+    if (method, path) in BILLING_LOCK_WRITE_ALLOWLIST:
+        return
+    if agent.is_external:
+        return
+    role = agent.role
+    if role.is_system and role.name == "superadmin":
+        return
+    agency = await db.get(Agency, agent.agency_id)
+    assert agency is not None
+    reason = blocking_reason(agency, now=datetime.now(UTC))
+    if reason is not None:
+        raise ForbiddenError(
+            "The trial has ended or the subscription lapsed; "
+            "the workspace is read-only until payment.",
+            code="billing.subscription_required",
+            params={"reason": reason},
+        )
 
 
 async def resolve_binding(db: AsyncSession, method: str, route: str) -> ProtectedResource | None:
@@ -342,6 +399,10 @@ async def enforce(
             raise ForbiddenError("External providers have no access to this resource yet.")
         _enforce_impersonation(request, payload, Audience.AGENT, method, path)
         await _enforce_consent(request, db, Audience.AGENT, agent, method, path)
+        # 4th stage — billing lock: a blocked agency writes NOTHING
+        # (403 billing.subscription_required), before the permission
+        # check so the front gets ONE stable code whatever the role.
+        await _enforce_billing_lock(db, agent, method, path)
         # NULL permission on an AGENT binding = any authenticated agent
         # (identity endpoints: /me, /logout) — symmetric with EXPAT.
         if binding.permission is not None and binding.permission.key not in effective_permissions(

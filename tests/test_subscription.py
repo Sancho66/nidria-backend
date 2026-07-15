@@ -221,6 +221,9 @@ async def test_settings_expose_the_subscription_block(
         "billing_cycle": None,
         "is_founding": False,
         "seats": {"members": 1, "included": 3, "offered": 0, "billed": 0, "max": 3},
+        # Billing lock: a running trial is not blocked (the front's banner).
+        "is_blocked": False,
+        "blocked_reason": None,
     }
 
     await client.patch(

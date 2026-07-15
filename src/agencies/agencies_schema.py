@@ -122,6 +122,11 @@ class AgencySubscriptionInfo(BaseModel):
     billing_cycle: str | None
     is_founding: bool
     seats: SeatUsage
+    # Billing lock (read-only mode): the front's banner + greyed states.
+    # blocked_reason: "trial_expired" | "past_due" | "canceled" | None —
+    # the same value the 403 billing.subscription_required carries.
+    is_blocked: bool = False
+    blocked_reason: str | None = None
 
 
 class SubscriptionUpdateRequest(BaseModel):

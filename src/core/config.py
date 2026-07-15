@@ -123,6 +123,11 @@ class Settings(BaseSettings):
     # ENTRANCE only: an already-converted agency keeps full management,
     # and webhooks stay live (a living subscription keeps living).
     billing_checkout_enabled: bool = False
+    # Billing-lock grace after a subscription enters past_due: Paddle's
+    # dunning runs DURING past_due (it is posed at the FIRST failed
+    # payment), so we leave the innocent expired-card case time to recover
+    # before the workspace turns read-only.
+    billing_past_due_grace_days: int = 7
     paddle_env: str = "sandbox"  # sandbox | live
     paddle_api_key: str | None = None
     paddle_webhook_secret: str | None = None
