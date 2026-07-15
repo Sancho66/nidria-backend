@@ -30,6 +30,30 @@ class WebhookAck(BaseModel):
     status: str
 
 
+class PlanCyclePrices(BaseModel):
+    """Unit prices of ONE plan on ONE cycle — strings (decimal euros), the
+    costs rule everywhere. UNIT prices only: the front composes the display,
+    Paddle stays the sole judge of totals at payment."""
+
+    base: str
+    seat: str
+
+
+class PlanCatalogPrices(BaseModel):
+    monthly: PlanCyclePrices | None = None
+    annual: PlanCyclePrices | None = None
+
+
+class CatalogPrices(BaseModel):
+    """The whole public grid, from the LIVE Paddle catalog (PADDLE_PRICE_IDS),
+    long-cached in memory: Paddle prices are immutable — a rotation means new
+    ids, a new env deploy, a fresh cache by construction."""
+
+    currency: str
+    cabinet: PlanCatalogPrices
+    agence: PlanCatalogPrices
+
+
 class SubscriptionStateResponse(BaseModel):
     """GET /billing/subscription — everything the management page shows, in
     ONE response. Money as STRINGS (decimal euros), never a JSON float; the
@@ -51,6 +75,10 @@ class SubscriptionStateResponse(BaseModel):
     # bientot" instead of the checkout button when False. Gates the ENTRANCE
     # only — this whole response existing proves management stays open.
     checkout_enabled: bool
+    # The public grid for the plan cards, priced cold (no Paddle iframe).
+    # None when Paddle is unreachable: the front keeps its SWR/skeleton —
+    # never a 500 for display prices.
+    catalog_prices: CatalogPrices | None = None
 
     @field_serializer("base_unit_price", "seat_unit_price", "next_payment_amount")
     def _ser_money(self, value: Decimal | None) -> str | None:

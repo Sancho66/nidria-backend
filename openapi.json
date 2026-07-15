@@ -16269,6 +16269,28 @@
         "type": "object",
         "title": "CaseUpdateRequest"
       },
+      "CatalogPrices": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "cabinet": {
+            "$ref": "#/components/schemas/PlanCatalogPrices"
+          },
+          "agence": {
+            "$ref": "#/components/schemas/PlanCatalogPrices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "cabinet",
+          "agence"
+        ],
+        "title": "CatalogPrices",
+        "description": "The whole public grid, from the LIVE Paddle catalog (PADDLE_PRICE_IDS),\nlong-cached in memory: Paddle prices are immutable — a rotation means new\nids, a new env deploy, a fresh cache by construction."
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -21755,6 +21777,51 @@
         "title": "PersonUpdateRequest",
         "description": "Edits any person. For FAMILY, full_name/relationship are editable;\nfor PRINCIPAL they are ignored (its name lives on expat_user).\n`custom_fields` is a partial MERGE keyed by definition key.\n\n`email` (Arthur): on a person WITHOUT an account, links (or creates) the\nread-only member access — exactly the creation semantics. On a person who\nALREADY has one, a different email is a 409 (remove the access, then\nre-invite); empty (\"\" or null) or identical → clean no-op."
       },
+      "PlanCatalogPrices": {
+        "properties": {
+          "monthly": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCyclePrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "annual": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCyclePrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "PlanCatalogPrices"
+      },
+      "PlanCyclePrices": {
+        "properties": {
+          "base": {
+            "type": "string",
+            "title": "Base"
+          },
+          "seat": {
+            "type": "string",
+            "title": "Seat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base",
+          "seat"
+        ],
+        "title": "PlanCyclePrices",
+        "description": "Unit prices of ONE plan on ONE cycle — strings (decimal euros), the\ncosts rule everywhere. UNIT prices only: the front composes the display,\nPaddle stays the sole judge of totals at payment."
+      },
       "PlannedCostCreateRequest": {
         "properties": {
           "amount": {
@@ -24136,6 +24203,16 @@
           "checkout_enabled": {
             "type": "boolean",
             "title": "Checkout Enabled"
+          },
+          "catalog_prices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogPrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

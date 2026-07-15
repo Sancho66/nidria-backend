@@ -614,12 +614,17 @@ async def _activate(client: AsyncClient, agency_id: uuid.UUID) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _clear_subscription_cache():
-    from src.billing import billing_manager
+def _clear_subscription_cache(monkeypatch: pytest.MonkeyPatch):
+    from src.billing import billing_manager, paddle_client
 
     billing_manager._SUBSCRIPTION_CACHE.clear()
+    billing_manager._CATALOG_PRICES_CACHE = None
+    # The 409/TRIAL state now fetches the catalog: NO test may reach the
+    # network — empty catalog by default, tests that need prices remock.
+    monkeypatch.setattr(paddle_client.PaddleClient, "list_prices", AsyncMock(return_value=[]))
     yield
     billing_manager._SUBSCRIPTION_CACHE.clear()
+    billing_manager._CATALOG_PRICES_CACHE = None
 
 
 async def test_management_endpoints_are_409_on_a_manual_agency(
@@ -720,6 +725,113 @@ async def test_payment_method_update_returns_the_special_transaction(
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"transaction_id": "txn_pmu_1", "paddle_env": "sandbox"}
     special.assert_awaited_once_with("sub_123")
+
+
+# --- catalog_prices : la grille publique servie a froid --------------------------------
+
+
+def _paddle_prices_payload() -> list[dict[str, Any]]:
+    """The 8 catalog prices as GET /prices returns them (2026-07 grid)."""
+    amounts = {
+        "cabinet_mensuel": "9900",
+        "cabinet_annuel": "99000",
+        "agence_mensuel": "12900",
+        "agence_annuel": "129000",
+        "seat_cabinet_mensuel": "3500",
+        "seat_cabinet_annuel": "35000",
+        "seat_agence_mensuel": "2500",
+        "seat_agence_annuel": "25000",
+    }
+    return [
+        {"id": PRICE_IDS[key], "unit_price": {"amount": amount, "currency_code": "EUR"}}
+        for key, amount in amounts.items()
+    ]
+
+
+async def test_catalog_prices_block_served_from_one_long_cached_call(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    get_sub = AsyncMock(return_value=_paddle_subscription_payload())
+    monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", get_sub)
+    list_prices = AsyncMock(return_value=_paddle_prices_payload())
+    monkeypatch.setattr(paddle_client.PaddleClient, "list_prices", list_prices)
+
+    h = agent_headers(admin)
+    state = (await client.get("/billing/subscription", headers=h)).json()
+    catalog = state["catalog_prices"]
+    assert catalog["currency"] == "EUR"
+    # Unit prices as STRINGS (the costs rule everywhere), the whole grid.
+    assert catalog["cabinet"] == {
+        "monthly": {"base": "99", "seat": "35"},
+        "annual": {"base": "990", "seat": "350"},
+    }
+    assert catalog["agence"] == {
+        "monthly": {"base": "129", "seat": "25"},
+        "annual": {"base": "1290", "seat": "250"},
+    }
+    # LONG cache: a second read costs zero extra Paddle call (immutable
+    # prices — a rotation means new ids, new env, fresh cache).
+    await client.get("/billing/subscription", headers=h)
+    assert list_prices.await_count == 1
+
+
+async def test_catalog_prices_is_null_when_paddle_is_unreachable(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Display prices never cost a 500: the front keeps its SWR/skeleton."""
+    from src.billing import paddle_client
+    from src.billing.paddle_client import PaddleApiError
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "get_subscription",
+        AsyncMock(return_value=_paddle_subscription_payload()),
+    )
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "list_prices",
+        AsyncMock(side_effect=PaddleApiError(503, "down")),
+    )
+    resp = await client.get("/billing/subscription", headers=agent_headers(admin))
+    assert resp.status_code == 200, resp.text  # never a 500 for display prices
+    assert resp.json()["catalog_prices"] is None
+
+
+async def test_trial_409_carries_the_plan_card_material(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 409 IS the front's trial state: trial_ends_at, checkout_enabled
+    and the priced grid, so the pricing page renders cold."""
+    from src.billing import paddle_client
+
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "list_prices",
+        AsyncMock(return_value=_paddle_prices_payload()),
+    )
+    resp = await client.get("/billing/subscription", headers=agent_headers(admin))
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["code"] == "billing.not_paddle_managed"
+    params = body["params"]
+    assert set(params) == {"trial_ends_at", "checkout_enabled", "catalog_prices"}
+    assert params["checkout_enabled"] is True  # open in this harness
+    assert params["catalog_prices"]["cabinet"]["monthly"] == {"base": "99", "seat": "35"}
 
 
 # --- kill switch d'offre : BILLING_CHECKOUT_ENABLED ------------------------------------

@@ -42,6 +42,12 @@ logger = logging.getLogger(__name__)
 _SUBSCRIPTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _SUBSCRIPTION_CACHE_TTL = 60.0
 
+# LONG in-process cache for the catalog unit prices (no TTL): Paddle prices
+# are immutable — a rotation means new ids in PADDLE_PRICE_IDS, hence a new
+# env deploy, hence a fresh cache by construction. Only a SUCCESSFUL fetch
+# is cached: a Paddle hiccup serves null once and retries on the next need.
+_CATALOG_PRICES_CACHE: dict[str, Any] | None = None
+
 # Events that carry a billing STATUS — their relative order matters, so a
 # stale one (older occurred_at than an already-processed status event) never
 # writes the status.
@@ -422,15 +428,66 @@ class BillingManager:
 
     # --- in-app subscription management (agent face, agency.manage) -------------------
 
+    async def _catalog_prices(self) -> dict[str, Any] | None:
+        """The public grid, UNIT prices as strings, from the live Paddle
+        catalog — fetched at first need, then long-cached (see the cache
+        comment). None when Paddle is unreachable or unconfigured: display
+        prices never cost a 500 (the front keeps its SWR/skeleton)."""
+        global _CATALOG_PRICES_CACHE
+        if _CATALOG_PRICES_CACHE is not None:
+            return _CATALOG_PRICES_CACHE
+        price_ids = get_settings().paddle_price_ids
+        if not price_ids:
+            return None
+        try:
+            remote = {p["id"]: p for p in await PaddleClient().list_prices()}
+        except Exception:
+            logger.warning("paddle catalog prices unavailable; catalog_prices served as null")
+            return None
+
+        def _unit(key: str) -> str | None:
+            price = remote.get(price_ids.get(key, ""))
+            if price is None:
+                return None
+            amount = self._cents((price.get("unit_price") or {}).get("amount"))
+            return str(amount) if amount is not None else None
+
+        currency = "EUR"
+        for price in remote.values():
+            code = (price.get("unit_price") or {}).get("currency_code")
+            if code:
+                currency = code
+                break
+        catalog: dict[str, Any] = {"currency": currency}
+        for plan in ("cabinet", "agence"):
+            cycles: dict[str, Any] = {}
+            for cycle_out, cycle_key in (("monthly", "mensuel"), ("annual", "annuel")):
+                base = _unit(f"{plan}_{cycle_key}")
+                seat = _unit(f"seat_{plan}_{cycle_key}")
+                cycles[cycle_out] = {"base": base, "seat": seat} if base and seat else None
+            catalog[plan] = cycles
+        _CATALOG_PRICES_CACHE = catalog
+        return catalog
+
     async def _paddle_managed_agency(self, agent: Agent) -> Agency:
         """The three management endpoints exist ONLY for a paddle-billed
-        agency — a manual one gets an explicit 409, never an empty page."""
+        agency — a manual one gets an explicit 409, never an empty page.
+        The 409 IS the front's TRIAL state: it carries everything the plan
+        cards need (trial_ends_at, checkout_enabled, catalog_prices) so
+        the pricing page renders cold, without the Paddle iframe."""
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
         if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
             raise ConflictError(
                 "This agency is billed manually; there is no Paddle subscription to manage.",
                 code="billing.not_paddle_managed",
+                params={
+                    "trial_ends_at": (
+                        agency.trial_ends_at.isoformat() if agency.trial_ends_at else None
+                    ),
+                    "checkout_enabled": get_settings().billing_checkout_enabled,
+                    "catalog_prices": await self._catalog_prices(),
+                },
             )
         return agency
 
@@ -455,7 +512,11 @@ class BillingManager:
         return Decimal(str(amount)) / 100
 
     def _state_from(
-        self, agency: Agency, subscription: dict[str, Any], billed: int
+        self,
+        agency: Agency,
+        subscription: dict[str, Any],
+        billed: int,
+        catalog: dict[str, Any] | None,
     ) -> SubscriptionStateResponse:
         settings = get_settings()
         seat_ids = {pid for k, pid in settings.paddle_price_ids.items() if k.startswith("seat_")}
@@ -490,6 +551,7 @@ class BillingManager:
             next_payment_amount=self._cents(totals.get("grand_total") or totals.get("total")),
             scheduled_cancel_at=cancel_at,
             checkout_enabled=settings.billing_checkout_enabled,
+            catalog_prices=catalog,
         )
 
     async def get_subscription_state(self, agent: Agent) -> SubscriptionStateResponse:
@@ -499,7 +561,7 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        return self._state_from(agency, subscription, usage.billed)
+        return self._state_from(agency, subscription, usage.billed, await self._catalog_prices())
 
     async def cancel_subscription(self, agent: Agent) -> SubscriptionCancelResponse:
         """Cancellation at PERIOD END, the commercial default — the client
@@ -544,7 +606,7 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        return self._state_from(agency, subscription, usage.billed)
+        return self._state_from(agency, subscription, usage.billed, await self._catalog_prices())
 
     async def payment_method_update(self, agent: Agent) -> PaymentMethodUpdateResponse:
         """The past_due gesture: Paddle's special transaction to update the
