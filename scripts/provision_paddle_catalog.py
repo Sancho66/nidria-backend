@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.billing.catalog_provisioning import (  # noqa: E402
+    align_tax_mode,
     provision_catalog,
     provision_webhook_destination,
 )
@@ -33,10 +34,30 @@ async def main() -> int:
         action="store_true",
         help="Actually create the missing objects (default: dry-run, read-only).",
     )
+    parser.add_argument(
+        "--align-tax-mode",
+        action="store_true",
+        help=(
+            "PATCH ONLY the tax_mode of divergent prices to the declared value "
+            "(the one sanctioned update — the explicit human decision the "
+            "no-update rule reserves). Lists every patched price, touches "
+            "nothing else, then exits."
+        ),
+    )
     args = parser.parse_args()
     dry_run = not args.execute
 
     settings = get_settings()
+
+    if args.align_tax_mode:
+        print(f"Paddle env: {settings.paddle_env} | mode: ALIGN TAX_MODE (patches this field only)")
+        patched = await align_tax_mode(client=PaddleClient())
+        if not patched:
+            print("  nothing to align: every matched price already carries the declared tax_mode.")
+        for line in patched:
+            print(f"  PATCHED {line}")
+        return 0
+
     print(f"Paddle env: {settings.paddle_env} | mode: {'DRY-RUN' if dry_run else 'EXECUTE'}")
     report = await provision_catalog(dry_run=dry_run, client=PaddleClient())
 

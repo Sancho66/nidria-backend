@@ -138,6 +138,13 @@ class Settings(BaseSettings):
     # script never knows a URL; only the env does.
     paddle_webhook_url: str | None = None
 
+    @field_validator("paddle_webhook_url", mode="before")
+    @classmethod
+    def _empty_url_is_none(cls, v: str | None) -> str | None:
+        # An EMPTY env var means "absent" — it must override a .env value
+        # (e.g. a live run shadowing the local tunnel URL), not become "".
+        return v or None
+
     @field_validator("cors_origins", "allowed_document_extensions", mode="before")
     @classmethod
     def _parse_comma_list(cls, v: str | list[str]) -> list[str]:

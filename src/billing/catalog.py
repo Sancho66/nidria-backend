@@ -35,6 +35,11 @@ class PriceSpec:
     interval: str  # month | year
     quantity_min: int
     quantity_max: int
+    # "external" = TAX-EXCLUSIVE: the declared amount is the NET price, tax
+    # is ADDED on top at checkout. Paddle's default ("account_setting") gave
+    # tax-INCLUSIVE prices — we were absorbing the VAT: a French customer
+    # yielded 82.50 EUR where a Paraguayan yielded 99.
+    tax_mode: str = "external"
 
 
 def _base(plan: str, cycle_key: str, interval: str, cents: int, label: str) -> PriceSpec:

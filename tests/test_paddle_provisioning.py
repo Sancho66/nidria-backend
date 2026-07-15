@@ -36,6 +36,7 @@ def _remote_price(spec: Any, price_id: str) -> dict[str, Any]:
         "unit_price": {"amount": str(spec.amount_cents), "currency_code": CURRENCY},
         "billing_cycle": {"interval": spec.interval, "frequency": 1},
         "quantity": {"minimum": spec.quantity_min, "maximum": spec.quantity_max},
+        "tax_mode": spec.tax_mode,
     }
 
 
@@ -70,8 +71,15 @@ class FakePaddle:
             },
             "billing_cycle": {"interval": kwargs["interval"], "frequency": 1},
             "quantity": {"minimum": kwargs["quantity_min"], "maximum": kwargs["quantity_max"]},
+            "tax_mode": kwargs["tax_mode"],
         }
         self.prices.append(price)
+        return price
+
+    async def update_price_tax_mode(self, price_id: str, tax_mode: str) -> dict[str, Any]:
+        self.patch_calls = getattr(self, "patch_calls", 0) + 1
+        price = next(p for p in self.prices if p["id"] == price_id)
+        price["tax_mode"] = tax_mode
         return price
 
 
@@ -115,6 +123,39 @@ async def test_divergent_amount_is_an_explicit_error_never_an_update() -> None:
     assert paddle.prices[0]["unit_price"]["amount"] == "12345"
     # The script exits non-zero on divergences (report.is_noop is False).
     assert not report.is_noop
+
+
+async def test_divergent_tax_mode_is_flagged_like_any_divergence() -> None:
+    paddle = FakePaddle()
+    spec = PRICES[0]
+    remote = _remote_price(spec, "pri_inclusive")
+    remote["tax_mode"] = "account_setting"  # Paddle's tax-INCLUSIVE default
+    paddle.prices.append(remote)
+
+    report = await provision_catalog(dry_run=False, client=paddle)  # type: ignore[arg-type]
+    assert any(spec.stable_key in d and "tax_mode" in d for d in report.divergences)
+    assert paddle.prices[0]["tax_mode"] == "account_setting"  # never silently updated
+
+
+async def test_align_tax_mode_patches_only_that_field_and_lists_each() -> None:
+    from src.billing.catalog_provisioning import align_tax_mode
+
+    paddle = FakePaddle()
+    for index, spec in enumerate(PRICES):
+        remote = _remote_price(spec, f"pri_{index}")
+        remote["tax_mode"] = "account_setting"
+        paddle.prices.append(remote)
+    before_amounts = [p["unit_price"]["amount"] for p in paddle.prices]
+
+    patched = await align_tax_mode(client=paddle)  # type: ignore[arg-type]
+    assert len(patched) == 8 and all("-> external" in line for line in patched)
+    assert all(p["tax_mode"] == "external" for p in paddle.prices)
+    # ONLY tax_mode moved: amounts (and everything else) untouched, no create.
+    assert [p["unit_price"]["amount"] for p in paddle.prices] == before_amounts
+    assert paddle.create_calls == 0
+
+    # Second run: nothing left to align.
+    assert await align_tax_mode(client=paddle) == []  # type: ignore[arg-type]
 
 
 async def test_dry_run_writes_nothing() -> None:

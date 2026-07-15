@@ -118,6 +118,7 @@ class PaddleClient:
         interval: str,
         quantity_min: int,
         quantity_max: int,
+        tax_mode: str,
         custom_data: dict[str, str],
     ) -> dict[str, Any]:
         return await self._request(
@@ -130,9 +131,15 @@ class PaddleClient:
                 "unit_price": {"amount": str(amount_cents), "currency_code": currency},
                 "billing_cycle": {"interval": interval, "frequency": 1},
                 "quantity": {"minimum": quantity_min, "maximum": quantity_max},
+                "tax_mode": tax_mode,
                 "custom_data": custom_data,
             },
         )
+
+    async def update_price_tax_mode(self, price_id: str, tax_mode: str) -> dict[str, Any]:
+        """PATCH ONLY tax_mode — the one price field the provisioning may
+        align (--align-tax-mode); amounts stay immutable by principle."""
+        return await self._request("PATCH", f"/prices/{price_id}", {"tax_mode": tax_mode})
 
     # --- notification destinations (webhook provisioning) --------------------------
 

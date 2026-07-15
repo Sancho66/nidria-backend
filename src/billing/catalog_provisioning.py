@@ -43,8 +43,10 @@ def _stable_key(obj: dict[str, Any]) -> str | None:
 
 
 def _price_divergences(spec: PriceSpec, remote: dict[str, Any]) -> list[str]:
-    """Conformity: amount, currency, interval, quantity bounds."""
+    """Conformity: amount, currency, interval, quantity bounds, tax mode."""
     problems: list[str] = []
+    if remote.get("tax_mode") != spec.tax_mode:
+        problems.append(f"tax_mode {remote.get('tax_mode')} != declared {spec.tax_mode}")
     unit = remote.get("unit_price") or {}
     if str(unit.get("amount")) != str(spec.amount_cents):
         problems.append(f"amount {unit.get('amount')} != declared {spec.amount_cents}")
@@ -111,11 +113,32 @@ async def provision_catalog(*, dry_run: bool, client: PaddleClient) -> Provision
                 interval=spec.interval,
                 quantity_min=spec.quantity_min,
                 quantity_max=spec.quantity_max,
+                tax_mode=spec.tax_mode,
                 custom_data={"stable_key": spec.stable_key},
             )
             report.price_ids[spec.stable_key] = created["id"]
 
     return report
+
+
+async def align_tax_mode(*, client: PaddleClient) -> list[str]:
+    """The ONE sanctioned update: PATCH tax_mode (a patchable price field,
+    unlike the amount) to the declared value, on every matched price that
+    diverges on it — NOTHING else is touched. This is the explicit human
+    decision the no-update rule reserves (--align-tax-mode flag), not a
+    silent reconciliation. Returns one line per patched price."""
+    remote_prices = {k: p for p in await client.list_prices() if (k := _stable_key(p))}
+    patched: list[str] = []
+    for spec in PRICES:
+        remote = remote_prices.get(spec.stable_key)
+        if remote is None or remote.get("tax_mode") == spec.tax_mode:
+            continue
+        await client.update_price_tax_mode(remote["id"], spec.tax_mode)
+        patched.append(
+            f"{spec.stable_key} ({remote['id']}): "
+            f"tax_mode {remote.get('tax_mode')} -> {spec.tax_mode}"
+        )
+    return patched
 
 
 async def verify_catalog_env(*, client: PaddleClient, price_ids: dict[str, str]) -> list[str]:
