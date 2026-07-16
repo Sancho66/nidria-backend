@@ -62,7 +62,6 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # gesture), never by the agency.
     plan: Mapped[str | None] = mapped_column(String(20))  # SubscriptionPlan
     billing_cycle: Mapped[str | None] = mapped_column(String(10))  # BillingCycle
-    seats_included: Mapped[int] = mapped_column(default=3, server_default=text("3"))
     # Founding offer (first 20 agencies): up to 3 free seats on top of
     # the included ones.
     founding_free_seats: Mapped[int] = mapped_column(default=0, server_default=text("0"))

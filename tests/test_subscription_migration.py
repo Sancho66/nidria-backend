@@ -16,7 +16,6 @@ THIS = "f0c2e8a4b6d1"
 COLUMNS = (
     "plan",
     "billing_cycle",
-    "seats_included",
     "founding_free_seats",
     "base_price_eur",
     "seat_price_eur",

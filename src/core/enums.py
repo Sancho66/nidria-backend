@@ -236,13 +236,15 @@ class RequirementStatus(StrEnum):
 
 
 class SubscriptionPlan(StrEnum):
-    """Structure F: the base plan INCLUDES 3 seats, extra seats billed
-    from the 4th. Values are the product plan names. The AMOUNTS live in
-    Paddle (PRICE_IDS env) — never in code; see the deprecated
-    base_price_eur/seat_price_eur columns on agency."""
+    """Product plans (grid nidria.com/#tarifs). Included seats and caps
+    live in the SEATS_*/PROVIDERS_* constants (agencies_manager); the
+    AMOUNTS live in Paddle (PRICE_IDS env) — never in code."""
 
-    CABINET = "cabinet"  # +35 EUR per extra seat, up to 5 members
-    AGENCE = "agence"  # +25 EUR per extra seat, up to 10 members
+    CABINET = "cabinet"  # 3 seats included, cap 5; 10 providers included, cap 15
+    AGENCE = "agence"  # 6 seats included, cap 10; 15 providers included, cap 25
+    # Quote-based, manual billing (Eric's PATCH), NO caps: absent from the
+    # MAX dicts = unlimited. The self-serve checkout refuses it.
+    SUR_MESURE = "sur_mesure"
 
 
 class BillingCycle(StrEnum):

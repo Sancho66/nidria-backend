@@ -13845,6 +13845,9 @@
           "seats": {
             "$ref": "#/components/schemas/SeatUsage"
           },
+          "providers": {
+            "$ref": "#/components/schemas/ProviderUsage"
+          },
           "is_blocked": {
             "type": "boolean",
             "title": "Is Blocked",
@@ -13867,7 +13870,8 @@
           "plan",
           "billing_cycle",
           "is_founding",
-          "seats"
+          "seats",
+          "providers"
         ],
         "title": "AgencySubscriptionInfo",
         "description": "Read-only settings block: the agency SEES where it stands, never\nedits it - the conversion is Eric's post-closing gesture."
@@ -22200,6 +22204,37 @@
         "title": "ProviderRef",
         "description": "A polymorphic provider reference in provider_assignments: an is_external\nAgent (account) OR a directory external_contact (no account)."
       },
+      "ProviderUsage": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "included": {
+            "type": "integer",
+            "title": "Included"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "included",
+          "max"
+        ],
+        "title": "ProviderUsage",
+        "description": "Provider capacity (grid 2026-07), DERIVED live: `count` = external\nagents (the external flow pre-creates the Agent at invitation, so this\nIS actives + invitees); `included` = free tier (10 cabinet / 15 agence);\n`max` = the cap (15/25, 10 on trial) — None for sur_mesure (\"illimité\").\nBilling past the included tier is PHASE 2: nothing billed today."
+      },
       "RecipientType": {
         "type": "string",
         "enum": [
@@ -23304,7 +23339,14 @@
             "title": "Billed"
           },
           "max": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Max"
           }
         },
@@ -23317,7 +23359,7 @@
           "max"
         ],
         "title": "SeatUsage",
-        "description": "Seat capacity, DERIVED live (structure F): `billed` starts at the\n4th seat (past included + founding offered); `max` = 5 (cabinet),\n10 (agence), 3 on trial (the included seats of the future base)."
+        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = 5 (cabinet), 10 (agence), 3 on trial — and None for\nsur_mesure: NO cap, the front displays \"illimité\", never a blank."
       },
       "SectionCreateRequest": {
         "properties": {
@@ -24109,10 +24151,11 @@
         "type": "string",
         "enum": [
           "cabinet",
-          "agence"
+          "agence",
+          "sur_mesure"
         ],
         "title": "SubscriptionPlan",
-        "description": "Structure F: the base plan INCLUDES 3 seats, extra seats billed\nfrom the 4th. Values are the product plan names. The AMOUNTS live in\nPaddle (PRICE_IDS env) — never in code; see the deprecated\nbase_price_eur/seat_price_eur columns on agency."
+        "description": "Product plans (grid nidria.com/#tarifs). Included seats and caps\nlive in the SEATS_*/PROVIDERS_* constants (agencies_manager); the\nAMOUNTS live in Paddle (PRICE_IDS env) — never in code."
       },
       "SubscriptionStateResponse": {
         "properties": {

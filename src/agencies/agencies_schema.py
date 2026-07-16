@@ -103,15 +103,28 @@ class AiUsageResponse(BaseModel):
 
 
 class SeatUsage(BaseModel):
-    """Seat capacity, DERIVED live (structure F): `billed` starts at the
-    4th seat (past included + founding offered); `max` = 5 (cabinet),
-    10 (agence), 3 on trial (the included seats of the future base)."""
+    """Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`
+    starts past included (3 cabinet / 6 agence) + founding offered;
+    `max` = 5 (cabinet), 10 (agence), 3 on trial — and None for
+    sur_mesure: NO cap, the front displays "illimité", never a blank."""
 
     members: int  # active internal agents (externals never consume a seat)
     included: int
     offered: int  # founding free seats
     billed: int
-    max: int
+    max: int | None
+
+
+class ProviderUsage(BaseModel):
+    """Provider capacity (grid 2026-07), DERIVED live: `count` = external
+    agents (the external flow pre-creates the Agent at invitation, so this
+    IS actives + invitees); `included` = free tier (10 cabinet / 15 agence);
+    `max` = the cap (15/25, 10 on trial) — None for sur_mesure ("illimité").
+    Billing past the included tier is PHASE 2: nothing billed today."""
+
+    count: int
+    included: int
+    max: int | None
 
 
 class AgencySubscriptionInfo(BaseModel):
@@ -122,6 +135,7 @@ class AgencySubscriptionInfo(BaseModel):
     billing_cycle: str | None
     is_founding: bool
     seats: SeatUsage
+    providers: ProviderUsage
     # Billing lock (read-only mode): the front's banner + greyed states.
     # blocked_reason: "trial_expired" | "past_due" | "canceled" | None —
     # the same value the 403 billing.subscription_required carries.

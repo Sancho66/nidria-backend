@@ -182,7 +182,7 @@ async def test_superadmin_patch_poses_the_conversion(
     assert block["plan"] == "agence"
     assert block["billing_cycle"] == "annuel"
     assert block["is_founding"] is True
-    assert block["seats"] == {"members": 1, "included": 3, "offered": 2, "billed": 0, "max": 10}
+    assert block["seats"] == {"members": 1, "included": 6, "offered": 2, "billed": 0, "max": 10}
 
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
@@ -224,6 +224,8 @@ async def test_settings_expose_the_subscription_block(
         # Billing lock: a running trial is not blocked (the front's banner).
         "is_blocked": False,
         "blocked_reason": None,
+        # Providers (grid 2026-07): trial tier, nothing billed in phase 1.
+        "providers": {"count": 0, "included": 10, "max": 10},
     }
 
     await client.patch(
@@ -268,3 +270,202 @@ async def test_nurture_ignores_converted_agencies(
     await db_session.commit()
     stats = run_dry()
     assert stats["in_scope"] == 0 and stats["sent"] == 0  # converted: out, no mail
+
+
+# --- (f) grille 2026-07 : sieges inclus par plan, prestataires, sur-mesure -------------
+
+
+async def _external_role(db_session: AsyncSession) -> Role:
+    return (
+        await db_session.execute(select(Role).where(Role.is_external.is_(True)).limit(1))
+    ).scalar_one()
+
+
+async def _add_externals(
+    db_session: AsyncSession, agency_id: uuid.UUID, role: Role, count: int
+) -> None:
+    for i in range(count):
+        db_session.add(
+            Agent(
+                agency_id=agency_id,
+                role_id=role.id,
+                email=f"prov-{uuid.uuid4().hex[:10]}@example.com",
+                first_name="Prov",
+                last_name=f"N{i}",
+                password_hash=hash_password("ProviderPassword1!"),
+                is_external=True,
+            )
+        )
+    await db_session.commit()
+
+
+async def test_agence_plan_includes_six_seats(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    """SEATS_INCLUDED_BY_PLAN is the truth (the column is gone): agence
+    includes 6 — billed starts at the 7th, never negative below."""
+    await client.patch(
+        f"/agencies/{admin.agency_id}/subscription",
+        headers=agent_headers(superadmin),
+        json={"plan": "agence", "billing_cycle": "mensuel"},
+    )
+    await _add_members(db_session, admin.agency_id, system_roles["member"], 4)  # 5 members
+
+    seats = (await client.get("/agencies/me", headers=agent_headers(admin))).json()["subscription"][
+        "seats"
+    ]
+    assert seats == {"members": 5, "included": 6, "offered": 0, "billed": 0, "max": 10}
+
+    # 7 members: the 7th is the first billed one.
+    await _add_members(db_session, admin.agency_id, system_roles["member"], 2)
+    seats = (await client.get("/agencies/me", headers=agent_headers(admin))).json()["subscription"][
+        "seats"
+    ]
+    assert seats["billed"] == 1  # 7 − 6 included
+
+
+async def test_founding_seats_stay_cumulative_with_the_plan_included(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    await client.patch(
+        f"/agencies/{admin.agency_id}/subscription",
+        headers=agent_headers(superadmin),
+        json={
+            "plan": "agence",
+            "billing_cycle": "mensuel",
+            "is_founding": True,
+            "founding_free_seats": 2,
+        },
+    )
+    await _add_members(db_session, admin.agency_id, system_roles["member"], 7)  # 8 members
+    seats = (await client.get("/agencies/me", headers=agent_headers(admin))).json()["subscription"][
+        "seats"
+    ]
+    # 8 − 6 included − 2 offered = 0 billed (cumulative, never negative).
+    assert seats["billed"] == 0 and seats["included"] == 6 and seats["offered"] == 2
+
+
+async def test_provider_gate_blocks_at_the_cap_with_params(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Trial provider cap (10): actives + PENDING invitations count; the
+    gate answers 409 subscription.provider_limit with the cap in params."""
+    headers = agent_headers(admin)
+    role = await _external_role(db_session)
+    await _add_externals(db_session, admin.agency_id, role, 9)  # 9 active
+
+    # 10th provider: the INVITATION goes through (free up to the cap)…
+    tenth = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "Prestataire 10", "email": "p10@example.com", "role_id": str(role.id)},
+    )
+    assert tenth.status_code == 201, tenth.text
+
+    # …and now 9 active + 1 invited = 10 = the trial cap: blocked, message
+    # pointing past the plan (custom on a plan; trial says convert).
+    blocked = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "Prestataire 11", "email": "p11@example.com", "role_id": str(role.id)},
+    )
+    assert blocked.status_code == 409, blocked.text
+    body = blocked.json()
+    assert body["code"] == "subscription.provider_limit"
+    assert body["params"] == {"providers": 10, "max": 10, "plan": None}
+
+
+async def test_directory_contacts_never_count_as_providers(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A named directory contact (no login) costs nothing: the gate ignores
+    it entirely."""
+    headers = agent_headers(admin)
+    role = await _external_role(db_session)
+    for i in range(12):  # more directory rows than the trial cap
+        created = await client.post(
+            "/agencies/me/external-contacts",
+            headers=headers,
+            json={"name": f"Annuaire {i}"},
+        )
+        assert created.status_code == 201, created.text
+    # The provider invitation still goes through: the directory is free.
+    invited = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "Vrai prestataire", "email": "vrai@example.com", "role_id": str(role.id)},
+    )
+    assert invited.status_code == 201, invited.text
+
+
+async def test_sur_mesure_escapes_both_caps_and_checkout(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core.config import get_settings
+
+    # Open the kill switch so the checkout refusal exercised below is the
+    # sur_mesure one, not billing.checkout_disabled.
+    monkeypatch.setenv("BILLING_CHECKOUT_ENABLED", "true")
+    get_settings.cache_clear()
+    """Plan 3 (quote): absent from the MAX dicts = NO cap — members past 10
+    and providers past 25 both pass; max is served as null (the front shows
+    "illimité"); the self-serve checkout refuses it explicitly."""
+    headers = agent_headers(admin)
+    # The checkout refuses the quote-based plan PER SE (before any agency
+    # state is considered) — tested while still on trial.
+    checkout = await client.post(
+        "/billing/checkout",
+        headers=headers,
+        json={"plan": "sur_mesure", "billing_cycle": "mensuel"},
+    )
+    assert checkout.status_code == 409
+    assert checkout.json()["code"] == "billing.sur_mesure_is_a_quote"
+    # Close the switch and drop the cached settings NOW (not at teardown):
+    # nothing may leak into the next test.
+    monkeypatch.delenv("BILLING_CHECKOUT_ENABLED")
+    get_settings.cache_clear()
+    await client.patch(
+        f"/agencies/{admin.agency_id}/subscription",
+        headers=agent_headers(superadmin),
+        json={"plan": "sur_mesure", "billing_cycle": "mensuel"},
+    )
+    # max served as null, not a number.
+    seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
+    assert seats["max"] is None
+
+    # 12 members (past the agence cap of 10): the 13th invitation passes.
+    await _add_members(db_session, admin.agency_id, system_roles["member"], 11)
+    allowed = await _invite(client, headers, system_roles["member"], "m13@example.com")
+    assert allowed.status_code == 201, allowed.text
+
+    # 26 providers (past the agence cap of 25): the 27th passes too.
+    role = await _external_role(db_session)
+    await _add_externals(db_session, admin.agency_id, role, 26)
+    provider = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "P27", "email": "p27@example.com", "role_id": str(role.id)},
+    )
+    assert provider.status_code == 201, provider.text

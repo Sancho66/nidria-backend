@@ -30,6 +30,7 @@ from src.agencies.agencies_schema import (
     DirectoryContactListItem,
     OnboardingResponse,
     OnboardingStepState,
+    ProviderUsage,
     SeatUsage,
     SubscriptionUpdateRequest,
 )
@@ -69,8 +70,37 @@ _EMAIL_TAKEN = "This email already has an agent account."
 # SEAT_PRICES_EUR feeds the DEPRECATED informational seat_price_eur column
 # only — la vérité tarifaire vit chez Paddle (PRICE_IDS).
 SEAT_PRICES_EUR = {SubscriptionPlan.CABINET.value: 35, SubscriptionPlan.AGENCE.value: 25}
+# Grid nidria.com/#tarifs (2026-07). THE single truth for included seats —
+# the former agency.seats_included column is DROPPED (a per-row copy of a
+# plan property was a second truth waiting to diverge). Semantics of the
+# MAX dicts: a CONVERTED plan absent from them (sur_mesure) = NO cap
+# (unlimited, gates skip); no plan at all = the trial limits.
+SEATS_INCLUDED_BY_PLAN = {SubscriptionPlan.CABINET.value: 3, SubscriptionPlan.AGENCE.value: 6}
 SEATS_MAX_BY_PLAN = {SubscriptionPlan.CABINET.value: 5, SubscriptionPlan.AGENCE.value: 10}
 TRIAL_SEAT_LIMIT = 3
+TRIAL_SEATS_INCLUDED = 3
+# Providers WITH access (external agents, active + invited). The directory
+# (external_contact, no login) costs nothing. Phase 1: free up to the CAP,
+# blocked at the cap (409 pointing to sur-mesure); billing past the
+# included tier (5 EUR/month) is PHASE 2.
+PROVIDERS_INCLUDED_BY_PLAN = {SubscriptionPlan.CABINET.value: 10, SubscriptionPlan.AGENCE.value: 15}
+PROVIDERS_MAX_BY_PLAN = {SubscriptionPlan.CABINET.value: 15, SubscriptionPlan.AGENCE.value: 25}
+TRIAL_PROVIDER_LIMIT = 10
+TRIAL_PROVIDERS_INCLUDED = 10
+
+
+def seats_max_for(plan: str | None) -> int | None:
+    """None = unlimited (a converted plan absent from the MAX dict:
+    sur_mesure); no plan = trial limit."""
+    if plan == SubscriptionPlan.SUR_MESURE.value:
+        return None
+    return SEATS_MAX_BY_PLAN.get(plan or "", TRIAL_SEAT_LIMIT)
+
+
+def providers_max_for(plan: str | None) -> int | None:
+    if plan == SubscriptionPlan.SUR_MESURE.value:
+        return None
+    return PROVIDERS_MAX_BY_PLAN.get(plan or "", TRIAL_PROVIDER_LIMIT)
 
 
 def _slugify(name: str) -> str:
@@ -382,13 +412,29 @@ class AgenciesManager:
                 )
             )
         ).scalar_one()
+        included = SEATS_INCLUDED_BY_PLAN.get(agency.plan or "", TRIAL_SEATS_INCLUDED)
         return SeatUsage(
             members=members,
-            included=agency.seats_included,
+            included=included,
             offered=agency.founding_free_seats,
-            billed=max(0, members - agency.seats_included - agency.founding_free_seats),
-            max=SEATS_MAX_BY_PLAN.get(agency.plan or "", TRIAL_SEAT_LIMIT),
+            billed=max(0, members - included - agency.founding_free_seats),
+            max=seats_max_for(agency.plan),
         )
+
+    async def _providers_with_access(self, agency_id: uuid.UUID) -> int:
+        """Providers WITH access = external Agent rows. The external flow
+        pre-creates the Agent AT INVITATION (access_state 'invited' in the
+        directory), so this single count IS "actives + invitées" without
+        double-counting. Known wart (predates this lot, separate fix): a
+        CANCELLED external invitation leaves its pre-created agent behind,
+        which keeps counting — in the client's disfavor, flagged."""
+        return (
+            await self.db.execute(
+                select(func.count(Agent.id)).where(
+                    Agent.agency_id == agency_id, Agent.is_external.is_(True)
+                )
+            )
+        ).scalar_one()
 
     async def subscription_info(self, agency: Agency) -> AgencySubscriptionInfo:
         from src.billing.billing_lock import blocking_reason
@@ -399,6 +445,13 @@ class AgenciesManager:
             billing_cycle=agency.billing_cycle,
             is_founding=agency.is_founding,
             seats=await self.seat_usage(agency),
+            providers=ProviderUsage(
+                count=await self._providers_with_access(agency.id),
+                included=PROVIDERS_INCLUDED_BY_PLAN.get(
+                    agency.plan or "", TRIAL_PROVIDERS_INCLUDED
+                ),
+                max=providers_max_for(agency.plan),
+            ),
             is_blocked=reason is not None,
             blocked_reason=reason,
         )
@@ -477,7 +530,9 @@ class AgenciesManager:
         lesson). NO commit: the caller owns the transaction. An explicit
         converted_at wins; otherwise the first conversion stamps now()."""
         agency.plan = plan
-        agency.seat_price_eur = SEAT_PRICES_EUR[plan]
+        # .get: sur_mesure has no seat price (a quote) — the DEPRECATED
+        # informational column stays NULL for it.
+        agency.seat_price_eur = SEAT_PRICES_EUR.get(plan)
         if billing_cycle is not None:
             agency.billing_cycle = billing_cycle
         if converted_at is not None:
@@ -717,7 +772,8 @@ class AgenciesManager:
         if not external:
             agency = await self.get_my_agency(agent)
             usage = await self.seat_usage(agency)
-            if usage.members >= usage.max:
+            # usage.max is None = sur_mesure = no cap (gate skips).
+            if usage.max is not None and usage.members >= usage.max:
                 message = (
                     f"The {agency.plan} plan is capped at {usage.max} members."
                     if agency.plan
@@ -727,6 +783,32 @@ class AgenciesManager:
                     message,
                     code="subscription.seat_limit",
                     params={"members": usage.members, "max": usage.max, "plan": agency.plan},
+                )
+        else:
+            # PROVIDER GATE (grid 2026-07), the seat gate's mirror at the
+            # SAME single point. Counting rule (Alexandre's, stricter than
+            # seats): active external agents + PENDING external invitations
+            # — a provider invitation IS an access being handed out; the
+            # directory (external_contact, no login) costs nothing. Free up
+            # to the cap in phase 1 (billing past the included tier is
+            # phase 2); at the cap, the way out is the custom plan.
+            agency = await self.get_my_agency(agent)
+            providers = await self._providers_with_access(agency.id)
+            cap = providers_max_for(agency.plan)
+            if cap is not None and providers >= cap:
+                message = (
+                    f"The {agency.plan} plan is capped at {cap} providers; "
+                    "contact us for a custom plan."
+                    if agency.plan
+                    else (
+                        f"The trial is capped at {cap} providers; "
+                        "converting to a plan unlocks more."
+                    )
+                )
+                raise ConflictError(
+                    message,
+                    code="subscription.provider_limit",
+                    params={"providers": providers, "max": cap, "plan": agency.plan},
                 )
 
         # One human = one agent account = one agency at MVP

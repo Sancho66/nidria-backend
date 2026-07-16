@@ -32,7 +32,7 @@ from src.billing.billing_schema import (
 from src.billing.paddle_client import PaddleClient
 from src.billing.paddle_signature import verify_paddle_signature
 from src.core.config import get_settings
-from src.core.enums import ActorType
+from src.core.enums import ActorType, SubscriptionPlan
 from src.core.exceptions import ConflictError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
@@ -119,6 +119,13 @@ class BillingManager:
                 "Self-serve checkout is not open yet.",
                 code="billing.checkout_disabled",
             )
+        if payload.plan == SubscriptionPlan.SUR_MESURE:
+            # A quote, not a checkout — invalid per se, whatever the agency
+            # state: the custom plan goes through Eric's manual PATCH.
+            raise ConflictError(
+                "The custom plan is quote-based; contact us instead of checking out.",
+                code="billing.sur_mesure_is_a_quote",
+            )
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
         if agency.billing_mode == "paddle":
@@ -199,8 +206,10 @@ class BillingManager:
         usage = await AgenciesManager(self.db).seat_usage(agency)
         # Plan cap guard (defense in depth — the invitation seat gate already
         # blocks growth beyond the cap): NEVER push a quantity implying more
-        # members than the plan allows; alert instead.
-        if usage.members > usage.max:
+        # members than the plan allows; alert instead. usage.max None =
+        # sur_mesure (no cap) — a sur_mesure agency is manual-billed and
+        # never reaches this paddle path anyway, but stay type-honest.
+        if usage.max is not None and usage.members > usage.max:
             logger.error(
                 "ALERT paddle seat sync for %s: %s members exceed the %s-seat cap — no push",
                 agency.slug,
