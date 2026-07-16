@@ -53,11 +53,13 @@ class ImpersonationManager:
     async def impersonate_expat(
         self, actor: Agent, expat_user_id: uuid.UUID
     ) -> ImpersonationTokenResponse:
-        """Scoped to the agency's clientele: the expat must be principal
-        of at least one of the actor's agency cases — 'see what your
-        client sees', not a cross-agency master key."""
+        """Scoped to the agency's clientele: the expat must be PRINCIPAL
+        or MEMBER of at least one of the actor's agency cases — 'see what
+        your client sees' now targets every person with an access (a member
+        lands on their own FILTERED projection), never a cross-agency
+        master key."""
         expat = await self.repo.get_expat(expat_user_id)
-        if expat is None or not await self.repo.expat_is_principal_in_agency(
+        if expat is None or not await self.repo.expat_is_impersonable_in_agency(
             expat_user_id, actor.agency_id
         ):
             raise NotFoundError("Expat user not found.")

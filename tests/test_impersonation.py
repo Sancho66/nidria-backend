@@ -651,7 +651,7 @@ async def test_cross_agency_impersonation_denied_activated_or_not(
 ) -> None:
     """Agency scoping is unchanged: an agent cannot impersonate a principal of
     ANOTHER agency, activated or not — 404 at the mint
-    (expat_is_principal_in_agency, which the fix never touches)."""
+    (expat_is_impersonable_in_agency: principal OR member, always agency-scoped)."""
     for activated in (False, True):
         foreign = await make_expat_user(activated=activated)
         await make_client_case(principal_expat_user_id=foreign.id)  # a DIFFERENT agency
@@ -659,3 +659,134 @@ async def test_cross_agency_impersonation_denied_activated_or_not(
             f"/expat-users/{foreign.id}/impersonate", headers=agent_headers(admin)
         )
         assert resp.status_code == 404, (activated, resp.text)
+
+
+# --- "voir comme" PAR PERSONNE : le membre est impersonable ----------------------------
+
+
+async def test_member_impersonation_lands_on_their_filtered_projection(
+    imp_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A dossier MEMBER (case_person.expat_user_id) is now a valid 'see as'
+    target — and the minted view is THEIR OWN filtered projection (their
+    requirements only), not the principal's."""
+    from tests.test_case_members import _all_requirements, _setup_with_db
+
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-imp@x.io")
+    member = await make_expat_user(email="member-imp@x.io")
+    case_id, _ = await _setup_with_db(
+        imp_client, db_session, admin, headers, make_client_case, principal, member.email
+    )
+
+    minted = await imp_client.post(f"/expat-users/{member.id}/impersonate", headers=headers)
+    assert minted.status_code == 200, minted.text
+    mask = _bearer(minted.json()["access_token"])
+
+    detail = await imp_client.get(f"/expat/cases/{case_id}", headers=mask)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["viewer_role"] == "member"
+    reqs = _all_requirements(body)
+    # The member's projection exactly: their own date_of_birth, nothing of
+    # the principal (no passport, no leaked value).
+    assert {r["reference"] for r in reqs} == {"date_of_birth"}
+    assert all(r["person_label"] == "Marie Dupont" for r in reqs)
+
+
+async def test_mask_blocks_member_fulfill_under_impersonation(
+    imp_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The legal read-only mask WINS over the member's contributor rights:
+    seeing as a member never allows filling in their name — filling for
+    someone is an AGENT-face gesture."""
+    from tests.test_case_members import _all_requirements, _setup_with_db
+
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-imp2@x.io")
+    member = await make_expat_user(email="member-imp2@x.io")
+    case_id, _ = await _setup_with_db(
+        imp_client, db_session, admin, headers, make_client_case, principal, member.email
+    )
+    minted = await imp_client.post(f"/expat-users/{member.id}/impersonate", headers=headers)
+    mask = _bearer(minted.json()["access_token"])
+    [req] = _all_requirements(
+        (await imp_client.get(f"/expat/cases/{case_id}", headers=mask)).json()
+    )
+
+    denied = await imp_client.put(
+        f"/expat/cases/{case_id}/requirements/{req['id']}",
+        headers=mask,
+        json={"value": "1990-02-01"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "impersonation.read_only"
+
+
+async def test_foreign_agency_member_is_not_impersonable(
+    imp_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The widened predicate stays agency-scoped: a MEMBER of another
+    agency's case is 404 at the mint, exactly like a foreign principal."""
+    from tests.test_case_members import _setup_with_db
+
+    other_admin = await make_agent(role=system_roles["admin"], email="other-imp@x.io")
+    # a member in the OTHER agency's case
+    foreign_principal = await make_expat_user(email="fp-imp@x.io")
+    foreign_member = await make_expat_user(email="fm-imp@x.io")
+    await _setup_with_db(
+        imp_client,
+        db_session,
+        other_admin,
+        agent_headers(other_admin),
+        make_client_case,
+        foreign_principal,
+        foreign_member.email,
+    )
+    resp = await imp_client.post(
+        f"/expat-users/{foreign_member.id}/impersonate", headers=agent_headers(admin)
+    )
+    assert resp.status_code == 404
+
+
+async def test_person_without_account_has_nothing_to_target(
+    imp_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """No email → no expat_user → nothing to impersonate. The contract the
+    front greys on: PersonResponse.expat_user_id is null for such a person."""
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-imp3@x.io")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    created = await imp_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Sans Compte", "relationship": "child"},  # NO email
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["expat_user_id"] is None  # the greying anchor
+    detail = (await imp_client.get(f"/cases/{case.id}", headers=headers)).json()
+    person = next(p for p in detail["persons"] if p["full_name"] == "Sans Compte")
+    assert person["expat_user_id"] is None and person["email"] is None

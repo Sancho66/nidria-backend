@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.impersonation import ImpersonationLog
@@ -47,15 +48,23 @@ class ImpersonationRepository:
     async def get_expat(self, expat_user_id: uuid.UUID) -> ExpatUser | None:
         return await self.db.get(ExpatUser, expat_user_id)
 
-    async def expat_is_principal_in_agency(
+    async def expat_is_impersonable_in_agency(
         self, expat_user_id: uuid.UUID, agency_id: uuid.UUID
     ) -> bool:
-        stmt = select(
-            exists().where(
-                ClientCase.principal_expat_user_id == expat_user_id,
-                ClientCase.agency_id == agency_id,
-            )
+        """PRINCIPAL of one of the agency's cases, OR MEMBER of one
+        (case_person.expat_user_id — the contributor lot gave members their
+        own filtered view, so 'see as' targets EVERY person with an access).
+        Still never a cross-agency master key."""
+        is_principal = exists().where(
+            ClientCase.principal_expat_user_id == expat_user_id,
+            ClientCase.agency_id == agency_id,
         )
+        is_member = exists().where(
+            CasePerson.expat_user_id == expat_user_id,
+            CasePerson.case_id == ClientCase.id,
+            ClientCase.agency_id == agency_id,
+        )
+        stmt = select(or_(is_principal, is_member))
         return bool((await self.db.execute(stmt)).scalar())
 
     def add_log(
