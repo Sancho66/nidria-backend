@@ -173,8 +173,19 @@ class DocumentsManager:
         case_id: uuid.UUID,
         file: UploadFile,
         step_progress_id: uuid.UUID | None,
+        *,
+        resolved_case: ClientCase | None = None,
     ) -> Document:
-        case = await self._case_for_expat(expat, case_id)
+        """`resolved_case`: the caller (requirement fulfillment) has ALREADY
+        authorized this write — including the member-targeting border this
+        manager's principal-only rule doesn't know. Without it (the direct
+        upload endpoint), the write stays PRINCIPAL-ONLY: a member deposits
+        exclusively through requirements that target them."""
+        case = (
+            resolved_case
+            if resolved_case is not None
+            else await self._case_for_expat(expat, case_id)
+        )
         return await self._upload(case, file, step_progress_id, None, ActorType.EXPAT, expat.id)
 
     async def fulfill_requirement_as_agent(

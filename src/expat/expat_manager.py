@@ -246,11 +246,25 @@ class ExpatPortalManager:
     async def _resolve_writable_requirement(
         self, expat: ExpatUser, case_id: uuid.UUID, requirement_id: uuid.UUID
     ) -> tuple[ClientCase, CaseStepRequirement]:
-        case, _ = await self._get_owned_case(expat, case_id)  # border 1
+        # Border 1 — principal OR dossier member (Nicolas: the co-associates
+        # of a company creation deposit their OWN pieces). The member's write
+        # right derives from the TARGETING below (requirement.person_id),
+        # never from a role — one role, no matrix change.
+        case, _, viewing_person = await self._get_viewing_case(expat, case_id)
         found = await self.repo.get_requirement_in_case(case.id, requirement_id)  # border 2
         if found is None:
             raise NotFoundError("Requirement not found.")
         requirement, progress = found
+        # Border 2b — targeting: the principal fills everything (their own
+        # case_person ALSO matches viewing_person, so the discriminant is
+        # is_member, like everywhere else in this manager); a member fills
+        # ONLY a requirement aimed at their own person — fail-closed if the
+        # person link is somehow missing. 404, not 403: the same
+        # non-revealing rule as the read filter (a member never even SEES
+        # a foreign requirement).
+        is_member = case.principal_expat_user_id != expat.id
+        if is_member and (viewing_person is None or requirement.person_id != viewing_person.id):
+            raise NotFoundError("Requirement not found.")
         if progress.status != StepStatus.IN_PROGRESS.value:  # border 3
             raise ConflictError("This step is not active; its requirements are read-only.")
         return case, requirement
@@ -369,8 +383,11 @@ class ExpatPortalManager:
 
         # Reuse the documents path (storage + Document row + audit); it
         # commits the upload. The document is attached to the step.
+        # `resolved_case`: the targeting border above ALREADY authorized this
+        # write (member included) — the documents manager must not re-run its
+        # own principal-only rule on top.
         document = await DocumentsManager(self.db).upload_as_expat(
-            expat, case_id, file, requirement.case_step_progress_id
+            expat, case_id, file, requirement.case_step_progress_id, resolved_case=case
         )
         # Shared core: mark provided + link + recompute (auto→DONE etc.).
         progress_mgr = ProgressManager(self.db)

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
+from shared.models.case_step_progress import CaseStepProgress
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import Role
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -195,10 +196,316 @@ async def test_member_cannot_write_on_any_expat_route(
             resp = await mem_client.request(
                 method, url, headers=h, json={"value": None, "body": "x"}
             )
-        # Every write path resolves the PRINCIPAL → a member is 404, never a
-        # partial write. (404, not 403: a member must not even confirm existence
-        # of a write endpoint — same non-revealing rule as the rest of the face.)
+        # Every write path is closed to a member — 404, never a partial write
+        # (404, not 403: a member must not even confirm existence of a write
+        # endpoint — same non-revealing rule as the rest of the face). ONE
+        # nuance since the CONTRIBUTOR lot: the two requirement-fulfill routes
+        # accept a member on a requirement TARGETING THEIR PERSON — here the
+        # ids are random, so even those answer 404 (not found / not theirs).
+        # The positive half of the nuance lives in the "contributor" section.
         assert resp.status_code == 404, (method, template, resp.status_code, resp.text)
+
+
+# --- (1b) the CONTRIBUTOR lot: a member fills the requirements that TARGET them --------
+
+
+async def _member_requirement_ids(
+    db: AsyncSession, case_id: uuid.UUID
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """(member's date_of_birth req, principal's date_of_birth req,
+    principal's passport req) — resolved from the targeting in base."""
+    from shared.models.case_step_requirement import CaseStepRequirement
+
+    rows = (
+        await db.execute(
+            select(CaseStepRequirement, CasePerson.kind)
+            .join(CasePerson, CasePerson.id == CaseStepRequirement.person_id)
+            .join(
+                CaseStepProgress, CaseStepProgress.id == CaseStepRequirement.case_step_progress_id
+            )
+            .where(CaseStepProgress.case_id == case_id)
+        )
+    ).all()
+    member_dob = next(
+        r.id for r, kind in rows if kind == "family" and r.reference == "date_of_birth"
+    )
+    principal_dob = next(
+        r.id for r, kind in rows if kind == "principal" and r.reference == "date_of_birth"
+    )
+    principal_passport = next(
+        r.id for r, kind in rows if kind == "principal" and r.reference == "passport_number"
+    )
+    return member_dob, principal_dob, principal_passport
+
+
+async def test_member_fills_their_own_requirement_not_the_principals(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """The Nicolas case: a co-associate fills THEIR OWN piece. The write
+    right derives from the requirement's person_id — one role, no matrix."""
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-c@x.io")
+    member = await make_expat_user(email="member-c@x.io")
+    case_id, _ = await _setup_with_db(
+        mem_client, db_session, admin, headers, make_client_case, principal, member.email
+    )
+    member_dob, principal_dob, principal_passport = await _member_requirement_ids(
+        db_session, case_id
+    )
+    h = expat_headers(member)
+
+    # THEIR requirement: the member writes — 200, value visible in return.
+    ok = await mem_client.put(
+        f"/expat/cases/{case_id}/requirements/{member_dob}",
+        headers=h,
+        json={"value": "1990-02-01"},
+    )
+    assert ok.status_code == 200, ok.text
+    [dob] = [r for r in _all_requirements(ok.json()) if r["reference"] == "date_of_birth"]
+    assert dob["status"] == "provided" and dob["value"] == "1990-02-01"
+
+    # The SAME reference on the principal's person: 404, non-revealing.
+    for foreign in (principal_dob, principal_passport):
+        denied = await mem_client.put(
+            f"/expat/cases/{case_id}/requirements/{foreign}",
+            headers=h,
+            json={"value": "1990-02-01"},
+        )
+        assert denied.status_code == 404, denied.text
+
+    # The principal keeps writing EVERYTHING (their own dob included).
+    ph = expat_headers(principal)
+    still = await mem_client.put(
+        f"/expat/cases/{case_id}/requirements/{principal_dob}",
+        headers=ph,
+        json={"value": "1985-06-15"},
+    )
+    assert still.status_code == 200, still.text
+
+
+async def test_member_deposits_document_on_their_targeted_requirement(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """Same rule for the deposit gesture — and the documents manager does
+    not re-run its principal-only rule on an already-authorized write."""
+    from shared.models.case_step_requirement import CaseStepRequirement
+
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-d@x.io")
+    member = await make_expat_user(email="member-d@x.io")
+
+    tid = (await mem_client.post("/journeys", headers=headers, json={"name": "TD"})).json()["id"]
+    sid = (
+        await mem_client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "Pieces"})
+    ).json()["id"]
+    r = await mem_client.post(
+        f"/journeys/{tid}/steps/{sid}/requirements",
+        headers=headers,
+        json={"kind": "document", "reference": "Piece d'identite", "scope": "each_person"},
+    )
+    assert r.status_code == 201, r.text
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    created = await mem_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Co Associe", "relationship": "associate", "email": member.email},
+    )
+    assert created.status_code == 201, created.text
+    pid = (
+        await mem_client.post(
+            f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": tid}
+        )
+    ).json()[0]["id"]
+    await mem_client.patch(
+        f"/cases/{case.id}/steps/{pid}", headers=headers, json={"status": "in_progress"}
+    )
+    rows = (
+        await db_session.execute(
+            select(CaseStepRequirement.id, CasePerson.kind)
+            .join(CasePerson, CasePerson.id == CaseStepRequirement.person_id)
+            .join(
+                CaseStepProgress, CaseStepProgress.id == CaseStepRequirement.case_step_progress_id
+            )
+            .where(CaseStepProgress.case_id == case.id)
+        )
+    ).all()
+    member_req = next(rid for rid, kind in rows if kind == "family")
+    principal_req = next(rid for rid, kind in rows if kind == "principal")
+
+    h = expat_headers(member)
+    deposited = await mem_client.post(
+        f"/expat/cases/{case.id}/requirements/{member_req}/document",
+        headers=h,
+        files={"file": ("id.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+    assert deposited.status_code == 200, deposited.text
+    [mine] = [r for r in _all_requirements(deposited.json())]
+    assert mine["status"] == "provided" and mine["document_id"] is not None
+
+    # The principal's requirement: 404 for the member, deposit refused.
+    denied = await mem_client.post(
+        f"/expat/cases/{case.id}/requirements/{principal_req}/document",
+        headers=h,
+        files={"file": ("id.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+    assert denied.status_code == 404, denied.text
+
+
+async def test_member_last_fill_autocompletes_the_step(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """Product intent, documented: the step closes because the requirements
+    are all met — not because the member 'validated' anything. The member's
+    LAST fill completes an auto step exactly as the principal's would."""
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-a@x.io")
+    member = await make_expat_user(email="member-a@x.io")
+
+    tid = (await mem_client.post("/journeys", headers=headers, json={"name": "TA"})).json()["id"]
+    sid = (
+        await mem_client.post(
+            f"/journeys/{tid}/steps",
+            headers=headers,
+            # "none" = self-completing (the default "agent" waits for the agency)
+            json={"name": "Infos", "validated_by_type": "none"},
+        )
+    ).json()["id"]
+    await _add_field_req(mem_client, headers, tid, sid, "date_of_birth", "each_person")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    created = await mem_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Co Associe", "relationship": "associate", "email": member.email},
+    )
+    assert created.status_code == 201, created.text
+    pid = (
+        await mem_client.post(
+            f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": tid}
+        )
+    ).json()[0]["id"]
+    await mem_client.patch(
+        f"/cases/{case.id}/steps/{pid}", headers=headers, json={"status": "in_progress"}
+    )
+    member_dob, principal_dob, _ = None, None, None
+    from shared.models.case_step_requirement import CaseStepRequirement
+
+    rows = (
+        await db_session.execute(
+            select(CaseStepRequirement.id, CasePerson.kind)
+            .join(CasePerson, CasePerson.id == CaseStepRequirement.person_id)
+            .join(
+                CaseStepProgress, CaseStepProgress.id == CaseStepRequirement.case_step_progress_id
+            )
+            .where(CaseStepProgress.case_id == case.id)
+        )
+    ).all()
+    member_dob = next(rid for rid, kind in rows if kind == "family")
+    principal_dob = next(rid for rid, kind in rows if kind == "principal")
+
+    # Principal fills theirs: step still in_progress (one requirement left).
+    first = await mem_client.put(
+        f"/expat/cases/{case.id}/requirements/{principal_dob}",
+        headers=expat_headers(principal),
+        json={"value": "1985-06-15"},
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["timeline"][0]["status"] == "in_progress"
+
+    # The member fills the LAST one: the auto step completes.
+    last = await mem_client.put(
+        f"/expat/cases/{case.id}/requirements/{member_dob}",
+        headers=expat_headers(member),
+        json={"value": "1990-02-01"},
+    )
+    assert last.status_code == 200, last.text
+    assert last.json()["timeline"][0]["status"] == "done"
+
+
+async def test_member_stays_404_on_case_level_requirements(
+    mem_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """Case-level requirements (no person_id, principal's domain) stay
+    closed to members — the case-requirement resolver kept the strict
+    principal-only rule."""
+    headers = agent_headers(admin)
+    principal = await make_expat_user(email="principal-cc@x.io")
+    member = await make_expat_user(email="member-cc@x.io")
+
+    tid = (await mem_client.post("/journeys", headers=headers, json={"name": "TC"})).json()["id"]
+    sid = (
+        await mem_client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "Dossier"})
+    ).json()["id"]
+    declared_field = await mem_client.post(
+        f"/journeys/{tid}/case-fields", headers=headers, json={"case_field": "dest_country"}
+    )
+    assert declared_field.status_code in (200, 201), declared_field.text
+    created = await mem_client.post(
+        f"/journeys/{tid}/steps/{sid}/case-requirements",
+        headers=headers,
+        json={"case_field": "dest_country"},
+    )
+    assert created.status_code == 201, created.text
+    crid = created.json()["id"]  # the DECLARATION id (no materialized row)
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    r = await mem_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Co Associe", "relationship": "associate", "email": member.email},
+    )
+    assert r.status_code == 201, r.text
+    pid = (
+        await mem_client.post(
+            f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": tid}
+        )
+    ).json()[0]["id"]
+    await mem_client.patch(
+        f"/cases/{case.id}/steps/{pid}", headers=headers, json={"status": "in_progress"}
+    )
+
+    denied = await mem_client.put(
+        f"/expat/cases/{case.id}/case-requirements/{crid}",
+        headers=expat_headers(member),
+        json={"value": "PT"},
+    )
+    assert denied.status_code == 404, denied.text  # principal-only, non-revealing
+
+    # Control: the principal fills it fine.
+    ok = await mem_client.put(
+        f"/expat/cases/{case.id}/case-requirements/{crid}",
+        headers=expat_headers(principal),
+        json={"value": "PT"},
+    )
+    assert ok.status_code == 200, ok.text
 
 
 # --- (2) a member sees no document outside their requirements (incl. step attachments) -
