@@ -761,14 +761,13 @@ class AgenciesManager:
             raise ValidationError("This endpoint requires one of the external provider roles.")
         if not external and role.is_external:
             raise ValidationError("External roles are invited via the external-invitation flow.")
-        # SEAT GATE (decision flagged, pricing 2026-07-07): an INTERNAL
-        # invitation is blocked only at the plan's hard cap (5 cabinet,
-        # 10 agence; 3 on trial = the future included seats). Between
-        # included+offered and the cap the invitation goes THROUGH:
-        # billing is manual (Eric bills), the app never blocks paid
-        # usage. Externals never consume a seat. Members are counted,
-        # not pending invitations (an accepted invite past the cap is a
-        # manual-billing tolerance, not a hole).
+        # SEAT GATE: an INTERNAL invitation is blocked only at the plan's
+        # hard cap (5 cabinet, 10 agence; 3 on trial). Between
+        # included+offered and the cap the invitation goes THROUGH: the
+        # app never blocks paid usage, it bills it. Externals never
+        # consume a seat. Members are counted, not pending invitations —
+        # the cap RE-CHECKS AT ACCEPTANCE (invitation-hygiene lot), so N
+        # pending invitations on one slot can never overshoot the cap.
         if not external:
             agency = await self.get_my_agency(agent)
             usage = await self.seat_usage(agency)
@@ -915,6 +914,18 @@ class AgenciesManager:
         if invitation.status != InvitationStatus.PENDING:
             raise ConflictError("Only pending invitations can be cancelled.")
         invitation.status = InvitationStatus.CANCELLED
+        # Purge the PRE-CREATED provider agent (external flow): cancelled =
+        # the access is withdrawn — the phantom must stop counting in the
+        # provider gate and the directory returns to 'none' (re-invitable).
+        # Safe: a PENDING invitation's pre-agent was never accepted (an
+        # accepted one is not cancellable), its password is a throwaway.
+        if invitation.external_contact_id is not None:
+            contact = await self.db.get(ExternalContact, invitation.external_contact_id)
+            if contact is not None and contact.agent_id is not None:
+                phantom = await self.db.get(Agent, contact.agent_id)
+                contact.agent_id = None
+                if phantom is not None:
+                    await self.db.delete(phantom)
         await self.db.commit()
 
     async def accept_invitation(
@@ -943,6 +954,35 @@ class AgenciesManager:
             if contact is not None and contact.agent_id is not None
             else None
         )
+        # CAP RE-CHECK AT ACCEPTANCE (invitation-hygiene lot): the invitation
+        # gate is necessary but not sufficient — N invitations can be pending
+        # on one free slot, and the self-serve billing era ended the old
+        # "manual-billing tolerance". 409 to the ACCEPTANT; the invitation
+        # STAYS PENDING: a seat can free up, or the agency upgrades, and the
+        # same link works again.
+        agency = await self.db.get(Agency, invitation.agency_id)
+        assert agency is not None
+        capacity_error = ConflictError(
+            "This invitation cannot be accepted right now: the agency has "
+            "reached its plan capacity. The invitation stays valid — retry "
+            "once a seat frees up or the plan is upgraded.",
+            code="invitation.capacity_reached",
+            params={"plan": agency.plan},
+        )
+        if role is not None and role.is_external:
+            cap = providers_max_for(agency.plan)
+            count = await self._providers_with_access(agency.id)
+            # The PRE-CREATED agent already counts itself; a legacy external
+            # (no pre-creation) adds one on acceptance.
+            after = count if pre_agent is not None else count + 1
+            if cap is not None and after > cap:
+                capacity_error.params["max"] = cap
+                raise capacity_error
+        else:
+            usage = await self.seat_usage(agency)
+            if usage.max is not None and usage.members >= usage.max:
+                capacity_error.params["max"] = usage.max
+                raise capacity_error
         if pre_agent is not None:
             pre_agent.password_hash = hash_password(password)
             pre_agent.first_name = first_name

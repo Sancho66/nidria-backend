@@ -469,3 +469,191 @@ async def test_sur_mesure_escapes_both_caps_and_checkout(
         json={"name": "P27", "email": "p27@example.com", "role_id": str(role.id)},
     )
     assert provider.status_code == 201, provider.text
+
+
+# --- (g) hygiene des invitations : re-check au cap a l'ACCEPTATION, purge du fantome ---
+
+
+async def _pending_token(db_session: AsyncSession, agency_id: uuid.UUID, email: str) -> str:
+    from shared.models.invitation import AgentInvitation
+
+    return (
+        await db_session.execute(
+            select(AgentInvitation.token).where(
+                AgentInvitation.agency_id == agency_id, AgentInvitation.email == email
+            )
+        )
+    ).scalar_one()
+
+
+async def _accept(client: AsyncClient, token: str):
+    return await client.post(
+        "/agencies/invitations/accept",
+        json={
+            "token": token,
+            "password": "AcceptPassword1!",
+            "first_name": "New",
+            "last_name": "Member",
+        },
+    )
+
+
+async def test_acceptance_recheck_blocks_at_the_cap_invitation_stays_pending(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    """N invitations on one slot can no longer overshoot: the cap re-checks
+    at ACCEPTANCE — 409 to the acceptant, the invitation STAYS PENDING (a
+    seat can free up and the same link works again)."""
+    from shared.models.invitation import AgentInvitation
+
+    headers = agent_headers(admin)
+    member_role = system_roles["member"]
+    aid = admin.agency_id  # plain id: instances expire below (expire_all)
+    # 1 member, trial cap 3: two invitations pass the invite gate.
+    for email in ("i2@example.com", "i3@example.com"):
+        r = await _invite(client, headers, member_role, email)
+        assert r.status_code == 201, r.text
+    # The roster fills up THROUGH ANOTHER PATH before anyone accepts.
+    await _add_members(db_session, admin.agency_id, member_role, 2)  # 3 = cap
+
+    token = await _pending_token(db_session, admin.agency_id, "i2@example.com")
+    blocked = await _accept(client, token)
+    assert blocked.status_code == 409, blocked.text
+    body = blocked.json()
+    assert body["code"] == "invitation.capacity_reached"
+    assert body["params"]["max"] == 3
+    # The invitation is UNTOUCHED: still pending.
+    db_session.expire_all()
+    status = (
+        await db_session.execute(
+            select(AgentInvitation.status).where(AgentInvitation.email == "i2@example.com")
+        )
+    ).scalar_one()
+    assert status == "pending"
+
+    # A seat frees up -> the SAME link works.
+    victim = (
+        (
+            await db_session.execute(
+                select(Agent).where(
+                    Agent.agency_id == aid,
+                    Agent.email.like("member-%@example.com"),
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    await db_session.delete(victim)
+    await db_session.commit()
+    accepted = await _accept(client, token)
+    assert accepted.status_code == 200, accepted.text
+
+
+async def test_external_acceptance_recheck_blocks_past_the_cap(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Provider variant: the pre-created agent counts itself, so acceptance
+    blocks only when the roster grew PAST the cap after the invite."""
+    headers = agent_headers(admin)
+    role = await _external_role(db_session)
+    invited = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "Presta cap", "email": "pcap@example.com", "role_id": str(role.id)},
+    )
+    assert invited.status_code == 201, invited.text
+    # The roster grows past the trial cap (10) after the invite.
+    await _add_externals(db_session, admin.agency_id, role, 10)  # 11 with the pre-created
+
+    token = await _pending_token(db_session, admin.agency_id, "pcap@example.com")
+    blocked = await _accept(client, token)
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["code"] == "invitation.capacity_reached"
+
+    # Two providers leave -> acceptance passes (10 <= 10 after).
+    extras = (
+        (
+            await db_session.execute(
+                select(Agent)
+                .where(
+                    Agent.agency_id == admin.agency_id,
+                    Agent.email.like("prov-%@example.com"),
+                )
+                .limit(1)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for extra in extras:
+        await db_session.delete(extra)
+    await db_session.commit()
+    accepted = await _accept(client, token)
+    assert accepted.status_code == 200, accepted.text
+
+
+async def test_cancellation_purges_the_phantom_and_frees_the_counter(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Cancelling an external invitation deletes the pre-created agent: the
+    provider counter drops, the directory contact returns to 'none'."""
+    from shared.models.external_contact import ExternalContact
+    from shared.models.invitation import AgentInvitation
+
+    headers = agent_headers(admin)
+    role = await _external_role(db_session)
+    role_id, aid = str(role.id), admin.agency_id  # plain ids (expire_all below)
+    await _add_externals(db_session, aid, role, 9)
+    tenth = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "P dix", "email": "pdix@example.com", "role_id": role_id},
+    )
+    assert tenth.status_code == 201, tenth.text
+    # At the trial cap (10): the next invitation is refused.
+    refused = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "P onze", "email": "ponze@example.com", "role_id": role_id},
+    )
+    assert refused.status_code == 409
+
+    invitation_id = (
+        await db_session.execute(
+            select(AgentInvitation.id).where(AgentInvitation.email == "pdix@example.com")
+        )
+    ).scalar_one()
+    cancelled = await client.delete(f"/agencies/me/invitations/{invitation_id}", headers=headers)
+    assert cancelled.status_code in (200, 204), cancelled.text
+
+    db_session.expire_all()
+    # The phantom is GONE…
+    ghost = (
+        await db_session.execute(select(Agent).where(Agent.email == "pdix@example.com"))
+    ).scalar_one_or_none()
+    assert ghost is None
+    # …the directory contact is back to 'none' (re-invitable)…
+    contact_agent = (
+        await db_session.execute(
+            select(ExternalContact.agent_id).where(ExternalContact.name == "P dix")
+        )
+    ).scalar_one()
+    assert contact_agent is None
+    # …and the counter dropped: the eleventh invitation now passes.
+    retry = await client.post(
+        "/agencies/me/external-invitations",
+        headers=headers,
+        json={"name": "P onze bis", "email": "ponzebis@example.com", "role_id": role_id},
+    )
+    assert retry.status_code == 201, retry.text
