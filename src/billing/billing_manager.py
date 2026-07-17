@@ -140,9 +140,11 @@ class BillingManager:
             # re-subscription path is open (new transaction, new Paddle
             # subscription, full new lifecycle). The kept plan/converted_at
             # are historical facts, not a manual conversion.
-        elif agency.plan is not None:
-            # Manually converted (Nicolas, large accounts): self-serve checkout
-            # would double-bill — a support gesture, not a product path.
+        elif agency.converted_at is not None:
+            # Manually CONVERTED (internal lifetime, sur-mesure): self-serve
+            # checkout would double-bill — a support gesture, not a product
+            # path. converted_at is the discriminant (a superadmin can pose a
+            # conversion date without a plan; the wall must hold there too).
             raise ConflictError(
                 "This agency is billed manually; contact support to switch.",
                 code="billing.manually_billed",
@@ -378,10 +380,14 @@ class BillingManager:
     ) -> str:
         # billing_mode guard: a MANUAL agency is never written by webhooks —
         # with ONE exception, the nominal conversion itself: created/activated
-        # on a manual agency WITHOUT a plan (a trial finishing its checkout).
-        # A manually-CONVERTED agency (Nicolas) is protected even from those.
+        # on a manual agency NOT YET CONVERTED (a trial finishing its
+        # checkout). A manually-CONVERTED agency (internal lifetime,
+        # sur-mesure) is protected even from those — converted_at is the
+        # discriminant, aligned with the checkout wall and the billing lock.
         establishes_link = event_type in ("subscription.created", "subscription.activated")
-        if agency.billing_mode != "paddle" and not (establishes_link and agency.plan is None):
+        if agency.billing_mode != "paddle" and not (
+            establishes_link and agency.converted_at is None
+        ):
             logger.error(
                 "ALERT paddle webhook %s for MANUAL agency %s — no-op, superadmin keeps the hand",
                 event_type,
@@ -576,8 +582,20 @@ class BillingManager:
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
         if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
+            if agency.converted_at is not None:
+                # Manually CONVERTED (internal lifetime agency, sur-mesure
+                # deal): the "managed with the team" wall — the ONLY wall
+                # case (decision 2026-07-17: the discriminant is the
+                # CONVERSION, never billing_mode — same lesson as the
+                # billing lock).
+                raise ConflictError(
+                    "This agency's subscription is managed with the team.",
+                    code="billing.manually_billed",
+                )
+            # NOT converted: a trial, whatever its billing_mode — the 409 IS
+            # the front's trial state (plan cards + subscribe, checkout open).
             raise ConflictError(
-                "This agency is billed manually; there is no Paddle subscription to manage.",
+                "This agency has no Paddle subscription to manage yet.",
                 code="billing.not_paddle_managed",
                 params={
                     "trial_ends_at": (

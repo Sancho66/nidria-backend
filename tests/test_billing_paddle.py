@@ -1241,3 +1241,121 @@ async def test_resume_pushes_nothing_when_quantities_match(
     resp = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
     assert resp.status_code == 200, resp.text
     push.assert_not_awaited()  # rien ne diverge -> aucun push
+
+
+# --- le self-serve pour les clients reels : la CONVERSION est le discriminant ----------
+# (decision 2026-07-17 : le mur "gere avec l'equipe" ne vise QUE la convertie
+#  manuelle ; une agence en essai, quel que soit billing_mode, voit les cartes
+#  et peut payer. Domiciliation Bulgarie / Reside Paraguay = manual non
+#  converties : le checkout leur est ouvert.)
+
+
+async def test_manual_trial_agency_gets_trial_409_and_open_checkout(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Le cas Domiciliation Bulgarie : manual, converted_at NULL, essai en
+    cours -> le 409 ESSAI complet (jamais le mur), et le checkout passe."""
+    from src.billing import paddle_client
+
+    await db_session.execute(
+        update(Agency)
+        .where(Agency.id == admin.agency_id)
+        .values(trial_ends_at=datetime.now(UTC) + timedelta(days=30))
+    )
+    await db_session.commit()
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "list_prices",
+        AsyncMock(return_value=_paddle_prices_payload()),
+    )
+    resp = await client.get("/billing/subscription", headers=agent_headers(admin))
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["code"] == "billing.not_paddle_managed"  # l'essai, PAS le mur
+    assert set(body["params"]) == {"trial_ends_at", "checkout_enabled", "catalog_prices"}
+    assert body["params"]["trial_ends_at"] is not None
+
+    create = AsyncMock(return_value={"id": "txn_db"})
+    monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", create)
+    checkout = await client.post(
+        "/billing/checkout",
+        headers=agent_headers(admin),
+        json={"plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert checkout.status_code == 200, checkout.text  # la porte est OUVERTE
+
+
+async def test_payment_converts_the_manual_trial_agency(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+) -> None:
+    """Sa conversion par paiement : l'activated bascule billing_mode=paddle,
+    pose converted_at, et emet agency.converted (le chemin nominal passe le
+    garde manual parce que converted_at est NULL)."""
+    from shared.models.usage import UsageEvent
+
+    aid = admin.agency_id
+    occurred = datetime.now(UTC)
+    resp = await _post(
+        client,
+        _envelope(
+            "subscription.activated",
+            agency_id=aid,
+            occurred_at=occurred,
+            subscription_id="sub_conv",
+        ),
+    )
+    assert resp.json()["status"] == "processed"
+    db_session.expire_all()
+    agency = await db_session.get(Agency, aid)
+    assert agency is not None
+    assert agency.billing_mode == "paddle"
+    assert agency.billing_status == "active"
+    assert agency.converted_at == occurred
+    events = (
+        (
+            await db_session.execute(
+                select(UsageEvent).where(
+                    UsageEvent.agency_id == aid, UsageEvent.event_type == "agency.converted"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(events) == 1
+
+
+async def test_manually_converted_agency_gets_the_wall(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le SEUL cas du mur : la convertie manuelle (Nidria Demo, sur-mesure).
+    GET -> manually_billed, checkout -> manually_billed. Et le discriminant
+    est bien converted_at : une conversion posee SANS plan (geste superadmin)
+    declenche le mur pareil."""
+    await db_session.execute(
+        update(Agency)
+        .where(Agency.id == admin.agency_id)
+        .values(converted_at=datetime.now(UTC))  # convertie, plan meme pas pose
+    )
+    await db_session.commit()
+    resp = await client.get("/billing/subscription", headers=agent_headers(admin))
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "billing.manually_billed"  # le mur, pas l'essai
+    checkout = await client.post(
+        "/billing/checkout",
+        headers=agent_headers(admin),
+        json={"plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert checkout.status_code == 409
+    assert checkout.json()["code"] == "billing.manually_billed"
+    # les webhooks residuels : no-op + alerte — test_manual_agency_is_never_
+    # written_by_webhooks tient (la convertie manuelle reste intouchable).
