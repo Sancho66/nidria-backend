@@ -22657,6 +22657,26 @@
         ],
         "title": "ReferralEntry"
       },
+      "ReferralNextChange": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "percent": {
+            "type": "integer",
+            "title": "Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "percent"
+        ],
+        "title": "ReferralNextChange",
+        "description": "The NEXT tier drop, announced in advance — nobody discovers a\ndecrease in their invoice. Derived from the ledger: the first expiry\namong active credits, and the tier that will remain after it\n(percent=0 means the discount ends there)."
+      },
       "ReferrerViewResponse": {
         "properties": {
           "referral_code": {
@@ -22686,6 +22706,16 @@
             },
             "type": "array",
             "title": "Referrals"
+          },
+          "next_change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferralNextChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

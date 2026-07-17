@@ -1,14 +1,22 @@
-"""Referral program (parrainage) — the machine.
+"""Referral program (parrainage) — the machine, bareme v2 (2026-07-17).
 
-The `referral_credit` table is THE truth (one row per converted godchild:
--20% for 12 months on the referrer, granted_at + 12 mois, decided). The
-Paddle discount on the referrer's subscription is the EXECUTION: sum of
-active credits capped at 60, posed as a DEDICATED discount whose
-`maximum_recurring_intervals` reaches the FIRST credit boundary — Paddle
-stops by itself there (spike-verified 17/07), and the lazy recompute on
-the referrer's next `transaction.completed` re-poses the next tier. No
-cron, no wrong invoice, nothing memorized outside the ledger: the posed
-state is READ from the subscription (spike simplification).
+The `referral_credit` table is THE truth (one row per converted godchild,
+12 months from grant). The discount is a TIER OF THE PRESENT: it follows
+the COUNT of currently-active credits (1=20%, 2=30%, 3=40%, 4+=50%
+capped) — it climbs at each godchild conversion and DROPS as soon as a
+credit expires (decide Alexandre: no lifetime rank, expiry lowers the
+progression). The per-credit `rate` column only records the tier reached
+at grant time (email/audit trace); it drives nothing.
+
+Execution on Paddle: the tier is posed as a DEDICATED discount evaluated
+AT THE NEXT BILLING (credits active at next_billed_at, not at now) so a
+drop is posed BEFORE the invoice it applies to — never a surprise
+invoice. Its `maximum_recurring_intervals` reaches the first expiry among
+those credits (Paddle stops by itself there, spike-verified 17/07), and
+the lazy recompute on the referrer's next `transaction.completed`
+re-poses the following tier. No cron, nothing memorized outside the
+ledger: the posed state is READ from the subscription (spike
+simplification).
 """
 
 import logging
@@ -31,15 +39,26 @@ from src.core.i18n import resolve_notification_lang_agent
 from src.referral.referral_schema import (
     ReferralCreditView,
     ReferralEntry,
+    ReferralNextChange,
     ReferrerViewResponse,
 )
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
 
-CREDIT_RATE = 20
+# Bareme v2, a tier of the PRESENT: driven by the count of active credits
+# (1=20, 2=30, 3=40, 4+=50 capped) — climbs at conversion, drops at expiry.
+CREDIT_FIRST_RATE = 20
+CREDIT_STEP = 10
+RATE_CAP = 50
 CREDIT_MONTHS = 12
-RATE_CAP = 60
+
+
+def tier_for_active(count: int) -> int:
+    """The discount tier for `count` currently-active credits (0 = none)."""
+    if count <= 0:
+        return 0
+    return min(CREDIT_FIRST_RATE + CREDIT_STEP * (count - 1), RATE_CAP)
 
 
 def _add_months(moment: datetime, months: int) -> datetime:
@@ -132,10 +151,24 @@ class ReferralManager:
                 -e.referred_at.timestamp(),
             )
         )
+        # The NEXT tier drop, announced in advance (nobody discovers a
+        # decrease): first expiry among active credits + the tier that
+        # will remain. Derived from the ledger alone — the front never
+        # needs to know the bareme.
+        active = [c for c in credits.values() if c.expires_at > now]
+        next_change = (
+            ReferralNextChange(
+                date=min(c.expires_at for c in active),
+                percent=tier_for_active(len(active) - 1),
+            )
+            if active
+            else None
+        )
         return ReferrerViewResponse(
             referral_code=agency.referral_code,
             current_discount=await BillingManager(self.db).posed_referral_discount(agency),
             referrals=entries,
+            next_change=next_change,
         )
 
     # --- the grant (INSIDE the conversion transaction) -----------------------------
@@ -156,13 +189,28 @@ class ReferralManager:
         if existing is not None:  # belt on top of apply_conversion's once-per-life
             return False
         granted = datetime.now(UTC)
+        # The tier AT THIS INSTANT (actives now + this one) — recorded as a
+        # trace for the email/audit; the executed discount always re-derives
+        # from the live count (it drops when credits expire).
+        from sqlalchemy import func
+
+        active_now = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(ReferralCredit)
+                .where(
+                    ReferralCredit.referrer_agency_id == referrer_id,
+                    ReferralCredit.expires_at > granted,
+                )
+            )
+        ).scalar_one()
         self.db.add(
             ReferralCredit(
                 referrer_agency_id=referrer_id,
                 referred_agency_id=agency.id,
                 granted_at=granted,
                 expires_at=_add_months(granted, CREDIT_MONTHS),
-                rate=CREDIT_RATE,
+                rate=tier_for_active(active_now + 1),
             )
         )
         # Eric's visibility: the referral shows in the usage stream.
@@ -201,21 +249,13 @@ class ReferralManager:
     async def recompute_discount(self, agency: Agency) -> None:
         """Align the Paddle discount with the ledger. Dormant when the
         agency has no live paddle subscription (trial, manual, canceled):
-        the ledger waits, the next activation recomputes."""
-        now = datetime.now(UTC)
-        credits = (
-            (
-                await self.db.execute(
-                    select(ReferralCredit).where(
-                        ReferralCredit.referrer_agency_id == agency.id,
-                        ReferralCredit.expires_at > now,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        rate = min(RATE_CAP, sum(credit.rate for credit in credits))
+        the ledger waits, the next activation recomputes.
+
+        The tier is evaluated AT THE NEXT BILLING (credits active at
+        next_billed_at): the lazy tick that runs at the LAST covered
+        invoice already poses the lower tier for the next one — a drop is
+        announced to Paddle before the invoice it applies to, never
+        after."""
         if (
             agency.billing_mode != "paddle"
             or agency.paddle_subscription_id is None
@@ -224,6 +264,23 @@ class ReferralManager:
             return  # dormant — nothing to execute yet
         client = PaddleClient()
         sub = await client.get_subscription(agency.paddle_subscription_id)
+        next_billed_raw = sub.get("next_billed_at")
+        if next_billed_raw is None:
+            return  # no upcoming billing (edge) — the lazy pass will retry
+        next_billed = datetime.fromisoformat(next_billed_raw.replace("Z", "+00:00"))
+        credits = (
+            (
+                await self.db.execute(
+                    select(ReferralCredit).where(
+                        ReferralCredit.referrer_agency_id == agency.id,
+                        ReferralCredit.expires_at > next_billed,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rate = tier_for_active(len(credits))
         current = sub.get("discount")
         current_id: str | None = current["id"] if current is not None else None
         current_ours = None
@@ -247,11 +304,9 @@ class ReferralManager:
                 await client.set_subscription_discount(agency.paddle_subscription_id, None)
                 await client.archive_discount(current_id)
             return
+        # The tier holds until the first expiry among the credits counted:
+        # that is where n drops, so where the posed discount must stop.
         boundary = min(credit.expires_at for credit in credits)
-        next_billed_raw = sub.get("next_billed_at")
-        if next_billed_raw is None:
-            return  # no upcoming billing (edge) — the lazy pass will retry
-        next_billed = datetime.fromisoformat(next_billed_raw.replace("Z", "+00:00"))
         key = f"{rate}:{boundary.date().isoformat()}"
         if current_ours is not None and current_ours.get("referral_key") == key:
             return  # posed state already right — no-op (read, never memorized)
@@ -287,8 +342,17 @@ class ReferralManager:
             ).scalar_one_or_none()
             if admin is None:
                 return
+            credit = (
+                await self.db.execute(
+                    select(ReferralCredit).where(ReferralCredit.referred_agency_id == referred.id)
+                )
+            ).scalar_one_or_none()
             lang = resolve_notification_lang_agent(referrer.default_language)
-            content = referral_granted_email(referred_name=referred.name, lang=lang)
+            content = referral_granted_email(
+                referred_name=referred.name,
+                rate=credit.rate if credit is not None else CREDIT_FIRST_RATE,
+                lang=lang,
+            )
             send_email(admin.email, content.subject, content.text, content.html)
         except Exception:
             logger.exception("referral grant email failed for %s", referrer.slug)

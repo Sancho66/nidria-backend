@@ -15,8 +15,18 @@ from src.billing.billing_schema import ReferralDiscountState
 class ReferralCreditView(BaseModel):
     granted_at: datetime
     expires_at: datetime
-    # expires_at in the future — the credit still weighs in the discount.
+    # expires_at in the future — the credit still counts in the tier.
     active: bool
+
+
+class ReferralNextChange(BaseModel):
+    """The NEXT tier drop, announced in advance — nobody discovers a
+    decrease in their invoice. Derived from the ledger: the first expiry
+    among active credits, and the tier that will remain after it
+    (percent=0 means the discount ends there)."""
+
+    date: datetime
+    percent: int
 
 
 class ReferralEntry(BaseModel):
@@ -33,3 +43,5 @@ class ReferrerViewResponse(BaseModel):
     referral_code: str | None
     current_discount: ReferralDiscountState | None = None
     referrals: list[ReferralEntry]
+    # None when no credit is active (nothing will change by itself).
+    next_change: ReferralNextChange | None = None

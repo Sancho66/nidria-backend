@@ -970,69 +970,70 @@ def new_comment_to_agent(
 
 _REFERRAL_GRANTED = {
     "fr": {
-        "subject": "Nidria : votre filleul s'est abonné : -20 % pendant 12 mois",
+        "subject": "Nidria : votre filleul s'est abonné : -{rate} % pendant 12 mois",
         "title": "Votre parrainage porte ses fruits",
         "intro": (
             "{referred} vient de s'abonner à Nidria grâce à votre parrainage. "
-            "Votre remise de -20 % s'applique sur votre abonnement pendant 12 mois, "
-            "dès votre prochaine facture (cumulable jusqu'à -60 %)."
+            "Votre remise passe à -{rate} % sur votre abonnement pendant 12 mois, "
+            "dès votre prochaine facture (jusqu'à -50 % avec vos prochains parrainages)."
         ),
     },
     "en": {
-        "subject": "Nidria: your referral subscribed : 20% off for 12 months",
+        "subject": "Nidria: your referral subscribed : {rate}% off for 12 months",
         "title": "Your referral paid off",
         "intro": (
             "{referred} just subscribed to Nidria thanks to your referral. "
-            "Your 20% discount applies to your subscription for 12 months, "
-            "starting with your next invoice (stackable up to 60%)."
+            "Your discount rises to {rate}% on your subscription for 12 months, "
+            "starting with your next invoice (up to 50% with your next referrals)."
         ),
     },
     "es": {
-        "subject": "Nidria: su recomendado se ha suscrito : -20 % durante 12 meses",
+        "subject": "Nidria: su recomendado se ha suscrito : -{rate} % durante 12 meses",
         "title": "Su recomendación ha dado frutos",
         "intro": (
             "{referred} acaba de suscribirse a Nidria gracias a su recomendación. "
-            "Su descuento del 20 % se aplica a su suscripción durante 12 meses, "
-            "desde su próxima factura (acumulable hasta el 60 %)."
+            "Su descuento sube al {rate} % en su suscripción durante 12 meses, "
+            "desde su próxima factura (hasta el 50 % con sus próximas recomendaciones)."
         ),
     },
     "ru": {
-        "subject": "Nidria: ваш приглашённый оформил подписку : скидка 20 % на 12 месяцев",
+        "subject": "Nidria: ваш приглашённый оформил подписку : скидка {rate} % на 12 месяцев",
         "title": "Ваша рекомендация принесла плоды",
         "intro": (
             "{referred} только что оформил подписку на Nidria по вашей рекомендации. "
-            "Скидка 20 % применяется к вашей подписке в течение 12 месяцев, "
-            "начиная со следующего счёта (суммируется до 60 %)."
+            "Ваша скидка выросла до {rate} % на 12 месяцев, "
+            "начиная со следующего счёта (до 50 % с новыми рекомендациями)."
         ),
     },
     "pt": {
-        "subject": "Nidria: o seu indicado assinou : -20 % durante 12 meses",
+        "subject": "Nidria: o seu indicado assinou : -{rate} % durante 12 meses",
         "title": "A sua indicação deu frutos",
         "intro": (
             "{referred} acaba de assinar a Nidria graças à sua indicação. "
-            "O seu desconto de 20 % aplica-se à sua assinatura durante 12 meses, "
-            "a partir da próxima fatura (acumulável até 60 %)."
+            "O seu desconto sobe para {rate} % na sua assinatura durante 12 meses, "
+            "a partir da próxima fatura (até 50 % com as suas próximas indicações)."
         ),
     },
     "it": {
-        "subject": "Nidria: il tuo invitato si è abbonato : -20% per 12 mesi",
+        "subject": "Nidria: il tuo invitato si è abbonato : -{rate}% per 12 mesi",
         "title": "Il tuo passaparola ha dato i suoi frutti",
         "intro": (
             "{referred} si è appena abbonato a Nidria grazie al tuo invito. "
-            "Il tuo sconto del 20% si applica al tuo abbonamento per 12 mesi, "
-            "a partire dalla prossima fattura (cumulabile fino al 60%)."
+            "Il tuo sconto sale al {rate}% sul tuo abbonamento per 12 mesi, "
+            "a partire dalla prossima fattura (fino al 50% con i tuoi prossimi inviti)."
         ),
     },
 }
 
 
-def referral_granted_email(referred_name: str, lang: str = "fr") -> EmailContent:
-    """Rendered in the REFERRER's language (agency default)."""
+def referral_granted_email(referred_name: str, rate: int, lang: str = "fr") -> EmailContent:
+    """Rendered in the REFERRER's language (agency default). `rate` is the
+    REAL tier the new credit locked in (bareme by rank) — never hardcoded."""
     s = _pick(_REFERRAL_GRANTED, lang)
     return _render(
-        subject=s["subject"],
+        subject=s["subject"].format(rate=rate),
         title=s["title"],
-        intro=s["intro"].format(referred=referred_name),
+        intro=s["intro"].format(referred=referred_name, rate=rate),
         lang=lang,
     )
 

@@ -1,10 +1,14 @@
 """Parrainage automatisé — la machine complète, Paddle mocké partout.
 
 La table referral_credit est LA vérité ; le discount Paddle est
-l'exécution : somme des crédits actifs plafonnée à 60, discount dédié
-dont maximum_recurring_intervals atteint la PREMIÈRE frontière (Paddle
+l'exécution. Barème v2 (décidé 17/07) : un palier du PRÉSENT — le NOMBRE
+de crédits actifs le fixe (1=20, 2=30, 3=40, 4+=50 plafonné), il monte à
+chaque conversion et BAISSE dès qu'un crédit expire. Le posé s'évalue AU
+PROCHAIN PRÉLÈVEMENT (jamais de facture surprise), borné à la première
+expiration parmi les comptés par maximum_recurring_intervals (Paddle
 s'arrête seul — vérifié au spike), le lazy sur transaction.completed
-re-pose le palier suivant. Grant dans apply_conversion (le geste unique :
+re-pose le palier suivant.
+Grant dans apply_conversion (le geste unique :
 manuel ET Paddle déclenchent), dormants activés à la conversion du
 parrain, re-souscription re-pose, churn du filleul sans effet, discount
 étranger jamais écrasé."""
@@ -330,31 +334,141 @@ async def test_self_referral_belt_never_credits(
 # --- la machine de recalcul -------------------------------------------------------------
 
 
-async def test_cumul_is_capped_at_sixty(
+async def _grant_for_new_godchild(db: AsyncSession, referrer_id: uuid.UUID) -> ReferralCredit:
+    """Un filleul converti de plus : agence attribuee au parrain + grant."""
+    godchild = Agency(
+        name=f"G {uuid.uuid4().hex[:6]}",
+        slug=f"gc-{uuid.uuid4().hex[:10]}",
+        settings={},
+        referred_by_agency_id=referrer_id,
+    )
+    db.add(godchild)
+    await db.flush()
+    assert await ReferralManager(db).grant_on_conversion(godchild) is True
+    await db.commit()
+    return (
+        await db.execute(
+            select(ReferralCredit).where(ReferralCredit.referred_agency_id == godchild.id)
+        )
+    ).scalar_one()
+
+
+async def test_tier_climbs_with_each_active_credit(db_session: AsyncSession, admin: Agent) -> None:
+    """La montee 20/30/40/50/50 : le palier suit le NOMBRE d'actifs
+    (tous vivants ici), plafond 50."""
+    rates = [(await _grant_for_new_godchild(db_session, admin.agency_id)).rate for _ in range(5)]
+    assert rates == [20, 30, 40, 50, 50]
+
+
+async def test_expiry_drops_the_tier(
     db_session: AsyncSession, admin: Agent, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """2 actifs = 30 ; le 1er expire -> le pose retombe a 20, et un
+    NOUVEAU converti prend le palier du PRESENT (30, pas 40 : plus de
+    rang, que des vivants)."""
+    first = await _grant_for_new_godchild(db_session, admin.agency_id)  # 20
+    await _grant_for_new_godchild(db_session, admin.agency_id)  # 30
     await _make_paddle_active(db_session, admin.agency_id)
-    for _ in range(4):  # 80% de credits actifs
-        await _credit(db_session, admin.agency_id)
     mocks = _mock_paddle(monkeypatch)
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
     await ReferralManager(db_session).recompute_discount(agency)
-    assert mocks["create_discount"].await_args.kwargs["rate"] == 60  # plafonne
+    assert mocks["create_discount"].await_args.kwargs["rate"] == 30  # 2 actifs
+
+    await db_session.execute(
+        update(ReferralCredit)
+        .where(ReferralCredit.id == first.id)
+        .values(expires_at=datetime.now(UTC) - timedelta(days=1))
+    )
+    await db_session.commit()
+    mocks["create_discount"].reset_mock()
+    await ReferralManager(db_session).recompute_discount(agency)
+    kwargs = mocks["create_discount"].await_args.kwargs
+    assert kwargs["rate"] == 20  # la baisse : 1 seul vivant
+    assert kwargs["custom_data"]["referral_key"].startswith("20:")
+
+    third = await _grant_for_new_godchild(db_session, admin.agency_id)
+    assert third.rate == 30  # le palier du present (2 vivants), pas un rang
 
 
-async def test_intervals_reach_the_first_credit_boundary(
+async def test_drop_is_posed_before_the_next_invoice(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La baisse ne surprend JAMAIS la facture : un credit meurt AVANT le
+    prochain prelevement -> le lazy tick du prelevement courant pose DEJA
+    le palier d'en dessous pour le suivant (sequence prouvee : create du
+    20, remplacement, archive de l'ancien 30)."""
+    aid = admin.agency_id
+    await _make_paddle_active(db_session, aid, sub_id="sub_drop")
+    # meurt dans 5 jours, AVANT le next_billed du 01/08 : ne compte plus
+    dying = await _credit(db_session, aid, months_left=0)
+    await db_session.execute(
+        update(ReferralCredit)
+        .where(ReferralCredit.id == dying.id)
+        .values(expires_at=datetime.now(UTC) + timedelta(days=5))
+    )
+    await db_session.commit()
+    await _credit(db_session, aid, months_left=10)  # survivant
+    mocks = _mock_paddle(
+        monkeypatch,
+        sub={
+            "id": "sub_drop",
+            "status": "active",
+            "next_billed_at": "2026-08-01T00:00:00Z",
+            "items": [],
+            "discount": {"id": "dsc_30"},
+        },
+        discount={
+            "id": "dsc_30",
+            "custom_data": {"referral_agency_id": str(aid), "referral_key": "30:2026-07-22"},
+        },
+    )
+    resp = await _post(
+        client, _envelope("transaction.completed", agency_id=aid, subscription_id="sub_drop")
+    )
+    assert resp.status_code == 200
+    kwargs = mocks["create_discount"].await_args.kwargs
+    assert kwargs["rate"] == 20  # le palier du PROCHAIN prelevement
+    assert kwargs["custom_data"]["referral_key"].startswith("20:")
+    assert kwargs["maximum_recurring_intervals"] >= 1
+    mocks["set_subscription_discount"].assert_awaited_with("sub_drop", "dsc_new")
+    mocks["archive_discount"].assert_awaited_once_with("dsc_30")  # l'ancien 30 archive
+
+
+async def test_granted_email_carries_the_real_rate(
     db_session: AsyncSession, admin: Agent, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """2e parrainage -> l'email dit -30 %, jamais un taux en dur."""
+    await _grant_for_new_godchild(db_session, admin.agency_id)  # rang 1
+    second = await _grant_for_new_godchild(db_session, admin.agency_id)  # rang 2 = 30
+    sent: list[tuple] = []
+    monkeypatch.setattr("src.referral.referral_manager.send_email", lambda *a, **k: sent.append(a))
+    referrer = await db_session.get(Agency, admin.agency_id)
+    referred = await db_session.get(Agency, second.referred_agency_id)
+    assert referrer is not None and referred is not None
+    await ReferralManager(db_session)._notify_referrer(referrer, referred)
+    assert len(sent) == 1
+    subject = sent[0][1]
+    assert "30" in subject and "20" not in subject
+
+
+async def test_intervals_stop_at_the_first_expiry(
+    db_session: AsyncSession, admin: Agent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le pose = palier du nombre d'actifs, borne a la PREMIERE expiration
+    parmi eux (la ou n baisse)."""
     await _make_paddle_active(db_session, admin.agency_id)
-    await _credit(db_session, admin.agency_id, months_left=2)  # la PREMIERE frontiere
+    await _credit(db_session, admin.agency_id, months_left=2)  # la frontiere
     await _credit(db_session, admin.agency_id, months_left=10)
     mocks = _mock_paddle(monkeypatch)
     agency = await db_session.get(Agency, admin.agency_id)
     await ReferralManager(db_session).recompute_discount(agency)
     kwargs = mocks["create_discount"].await_args.kwargs
-    assert kwargs["rate"] == 40
-    # frontiere ~60 j apres now, next_billed 01/08 : 2 facturations avant.
+    assert kwargs["rate"] == 30  # 2 actifs au prochain prelevement
+    # frontiere ~60 j apres now, next_billed 01/08 : 1 a 3 facturations.
     assert 1 <= kwargs["maximum_recurring_intervals"] <= 3
 
 
@@ -747,6 +861,9 @@ async def test_referrer_view_lists_three_statuses_sorted(
     assert by_name["Filleule Echue"]["status"] == "expired"
     credit = by_name["Filleule Convertie"]["credit"]
     assert credit["active"] is True and credit["granted_at"] and credit["expires_at"]
+    # la prochaine echeance ANNONCEE : le seul credit actif expire -> 0 %
+    assert body["next_change"]["date"] == credit["expires_at"]
+    assert body["next_change"]["percent"] == 0
     assert by_name["Filleule En Essai"]["credit"] is None
     # jamais la vie du filleul : nom, statut, dates de parrainage, c'est tout
     assert set(by_name["Filleule Convertie"]) == {"agency_name", "status", "referred_at", "credit"}
@@ -810,3 +927,4 @@ async def test_expired_godchild_has_no_credit(
     (entry,) = body["referrals"]
     assert entry["status"] == "expired"
     assert entry["credit"] is None
+    assert body["next_change"] is None  # rien d'actif : rien ne changera seul
