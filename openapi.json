@@ -1997,6 +1997,33 @@
         ]
       }
     },
+    "/agencies/me/referrals": {
+      "get": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Get My Referrals",
+        "description": "The referrer's view: code, posed discount, godchildren (name and\nreferral status only — nothing of the godchild's own life).",
+        "operationId": "get_my_referrals_agencies_me_referrals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferrerViewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/{agency_id}/subscription": {
       "patch": {
         "tags": [
@@ -22540,6 +22567,31 @@
         "title": "RecipientType",
         "description": "Recipient of a reminder (`reminder.recipient_type`)."
       },
+      "ReferralCreditView": {
+        "properties": {
+          "granted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Granted At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "granted_at",
+          "expires_at",
+          "active"
+        ],
+        "title": "ReferralCreditView"
+      },
       "ReferralDiscountState": {
         "properties": {
           "percent": {
@@ -22565,6 +22617,83 @@
         ],
         "title": "ReferralDiscountState",
         "description": "The POSED referral discount, read off the live sub (the spike's\nsimplification): percent from the discount rate, ends_at from the\nsub's discount block. A discount without our referral_key (a promo\nposed by hand) is NOT reported here — never dressed up as referral."
+      },
+      "ReferralEntry": {
+        "properties": {
+          "agency_name": {
+            "type": "string",
+            "title": "Agency Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "trial",
+              "converted",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "referred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Referred At"
+          },
+          "credit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferralCreditView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency_name",
+          "status",
+          "referred_at"
+        ],
+        "title": "ReferralEntry"
+      },
+      "ReferrerViewResponse": {
+        "properties": {
+          "referral_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referral Code"
+          },
+          "current_discount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferralDiscountState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "referrals": {
+            "items": {
+              "$ref": "#/components/schemas/ReferralEntry"
+            },
+            "type": "array",
+            "title": "Referrals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "referral_code",
+          "referrals"
+        ],
+        "title": "ReferrerViewResponse"
       },
       "RefreshRequest": {
         "properties": {

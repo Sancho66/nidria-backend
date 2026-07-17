@@ -14,6 +14,7 @@ state is READ from the subscription (spike simplification).
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,11 @@ from src.core.email import send_email
 from src.core.email_templates import referral_granted_email
 from src.core.enums import ActorType
 from src.core.i18n import resolve_notification_lang_agent
+from src.referral.referral_schema import (
+    ReferralCreditView,
+    ReferralEntry,
+    ReferrerViewResponse,
+)
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
@@ -66,6 +72,71 @@ def _cycles_until(next_billed_at: datetime, boundary: datetime, billing_cycle: s
 class ReferralManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    # --- the referrer's view (GET /agencies/me/referrals) --------------------------
+
+    async def referrer_view(self, agency: Agency) -> ReferrerViewResponse:
+        """The referrer's dashboard: their code, the discount POSED right
+        now (the existing posed-state read, reused), and their godchildren
+        — name + referral status only, nothing of the godchild's own life
+        (no plan, no amounts, no activity). Active credits first, then
+        referred_at desc."""
+        from src.billing.billing_manager import BillingManager
+
+        now = datetime.now(UTC)
+        referred = (
+            (await self.db.execute(select(Agency).where(Agency.referred_by_agency_id == agency.id)))
+            .scalars()
+            .all()
+        )
+        credits = {
+            credit.referred_agency_id: credit
+            for credit in (
+                await self.db.execute(
+                    select(ReferralCredit).where(ReferralCredit.referrer_agency_id == agency.id)
+                )
+            )
+            .scalars()
+            .all()
+        }
+        entries: list[ReferralEntry] = []
+        for child in referred:
+            if child.converted_at is not None:
+                status: Literal["trial", "converted", "expired"] = "converted"
+            elif child.trial_ends_at is not None and child.trial_ends_at <= now:
+                status = "expired"
+            else:
+                # No calendar (platform/demo) = no deadline: still "trial",
+                # the same reading as billing_lock.blocking_reason.
+                status = "trial"
+            credit = credits.get(child.id)
+            entries.append(
+                ReferralEntry(
+                    agency_name=child.name,
+                    status=status,
+                    referred_at=child.created_at,
+                    credit=(
+                        ReferralCreditView(
+                            granted_at=credit.granted_at,
+                            expires_at=credit.expires_at,
+                            active=credit.expires_at > now,
+                        )
+                        if credit is not None
+                        else None
+                    ),
+                )
+            )
+        entries.sort(
+            key=lambda e: (
+                0 if e.credit is not None and e.credit.active else 1,
+                -e.referred_at.timestamp(),
+            )
+        )
+        return ReferrerViewResponse(
+            referral_code=agency.referral_code,
+            current_discount=await BillingManager(self.db).posed_referral_discount(agency),
+            referrals=entries,
+        )
 
     # --- the grant (INSIDE the conversion transaction) -----------------------------
 

@@ -661,3 +661,152 @@ async def test_state_without_discount_reads_null(
     state = await _billing_state(client, agent_headers(admin))
     assert state["referral_discount"] is None
     mocks["get_discount"].assert_not_awaited()  # zero extra Paddle call
+
+
+# --- la vue du parrain (GET /agencies/me/referrals) -------------------------------------
+
+
+async def _godchild(
+    db: AsyncSession,
+    referrer_id: uuid.UUID,
+    *,
+    name: str,
+    created_at: datetime,
+    converted_at: datetime | None = None,
+    trial_ends_at: datetime | None = None,
+) -> Agency:
+    agency = Agency(
+        name=name, slug=f"g-{uuid.uuid4().hex[:10]}", settings={}, referred_by_agency_id=referrer_id
+    )
+    db.add(agency)
+    await db.flush()
+    await db.execute(
+        update(Agency)
+        .where(Agency.id == agency.id)
+        .values(created_at=created_at, converted_at=converted_at, trial_ends_at=trial_ends_at)
+    )
+    await db.commit()
+    return agency
+
+
+async def test_referrer_view_lists_three_statuses_sorted(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Les 3 statuts, le credit du converti, le tri (credit actif d'abord,
+    puis referred_at desc) — et RIEN de la vie du filleul dans la reponse."""
+    now = datetime.now(UTC)
+    converted = await _godchild(
+        db_session,
+        admin.agency_id,
+        name="Filleule Convertie",
+        created_at=now - timedelta(days=40),  # la plus ancienne, mais creditee
+        converted_at=now - timedelta(days=10),
+    )
+    await _godchild(
+        db_session,
+        admin.agency_id,
+        name="Filleule En Essai",
+        created_at=now - timedelta(days=5),
+        trial_ends_at=now + timedelta(days=25),
+    )
+    await _godchild(
+        db_session,
+        admin.agency_id,
+        name="Filleule Echue",
+        created_at=now - timedelta(days=20),
+        trial_ends_at=now - timedelta(days=2),
+    )
+    db_session.add(
+        ReferralCredit(
+            referrer_agency_id=admin.agency_id,
+            referred_agency_id=converted.id,
+            granted_at=now - timedelta(days=10),
+            expires_at=now + timedelta(days=355),
+            rate=20,
+        )
+    )
+    await db_session.execute(
+        update(Agency).where(Agency.id == admin.agency_id).values(referral_code="NID-TEST01")
+    )
+    await db_session.commit()
+
+    response = await client.get("/agencies/me/referrals", headers=agent_headers(admin))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["referral_code"] == "NID-TEST01"
+    assert body["current_discount"] is None  # agence manuelle : rien de pose
+    names = [r["agency_name"] for r in body["referrals"]]
+    # credit actif d'abord (malgre son referred_at le plus ancien), puis desc
+    assert names == ["Filleule Convertie", "Filleule En Essai", "Filleule Echue"]
+    by_name = {r["agency_name"]: r for r in body["referrals"]}
+    assert by_name["Filleule Convertie"]["status"] == "converted"
+    assert by_name["Filleule En Essai"]["status"] == "trial"
+    assert by_name["Filleule Echue"]["status"] == "expired"
+    credit = by_name["Filleule Convertie"]["credit"]
+    assert credit["active"] is True and credit["granted_at"] and credit["expires_at"]
+    assert by_name["Filleule En Essai"]["credit"] is None
+    # jamais la vie du filleul : nom, statut, dates de parrainage, c'est tout
+    assert set(by_name["Filleule Convertie"]) == {"agency_name", "status", "referred_at", "credit"}
+
+
+async def test_referrer_view_is_scoped_to_own_godchildren(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    now = datetime.now(UTC)
+    await _godchild(
+        db_session,
+        admin.agency_id,
+        name="A Moi",
+        created_at=now,
+        trial_ends_at=now + timedelta(days=9),
+    )
+    other = await make_agency(name="Autre SA", slug="autre-parrain")
+    other_admin = await make_agent(
+        agency_id=other.id, role=system_roles["admin"], email="adm@autre-parrain.io"
+    )
+    mine = (await client.get("/agencies/me/referrals", headers=agent_headers(admin))).json()
+    theirs = (await client.get("/agencies/me/referrals", headers=agent_headers(other_admin))).json()
+    assert [r["agency_name"] for r in mine["referrals"]] == ["A Moi"]
+    assert theirs["referrals"] == []
+
+
+async def test_referrer_view_requires_agency_manage(
+    client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    member = await make_agent(role=system_roles["member"], email="membre-ref@agency.io")
+    response = await client.get("/agencies/me/referrals", headers=agent_headers(member))
+    assert response.status_code == 403
+
+
+async def test_expired_godchild_has_no_credit(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """L'essai echu sans conversion : status expired, credit null — aucune
+    ligne referral_credit n'existe (le grant n'a jamais eu lieu)."""
+    now = datetime.now(UTC)
+    await _godchild(
+        db_session,
+        admin.agency_id,
+        name="Echue Sans Credit",
+        created_at=now - timedelta(days=45),
+        trial_ends_at=now - timedelta(days=15),
+    )
+    body = (await client.get("/agencies/me/referrals", headers=agent_headers(admin))).json()
+    (entry,) = body["referrals"]
+    assert entry["status"] == "expired"
+    assert entry["credit"] is None

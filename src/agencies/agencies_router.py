@@ -37,6 +37,8 @@ from src.core.email import send_email
 from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
+from src.referral.referral_manager import ReferralManager
+from src.referral.referral_schema import ReferrerViewResponse
 
 router = APIRouter(prefix="/agencies", tags=["agencies"])
 
@@ -59,6 +61,9 @@ BINDINGS = [
     # /me without permission: every authenticated agent sees their own
     # agency (tenant identity endpoint).
     RouteBinding("GET", "/agencies/me", Audience.AGENT),
+    # The referrer's view: gated agency.manage like the whole referral
+    # surface (the code is shared from Settings, a manage screen).
+    RouteBinding("GET", "/agencies/me/referrals", Audience.AGENT, Permission.AGENCY_MANAGE),
     # AI quota state: any agent of the agency (a read on their own tenant).
     RouteBinding("GET", "/agencies/me/ai-usage", Audience.AGENT),
     # Activation checklist: any agent reads it, any agent can dismiss the
@@ -257,6 +262,15 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     # (plan, cycle, seats); the conversion itself goes through Eric.
     response.subscription = await manager.subscription_info(agency)
     return response
+
+
+@router.get("/me/referrals", response_model=ReferrerViewResponse)
+async def get_my_referrals(agent: AgentDep, db: DbDep) -> ReferrerViewResponse:
+    """The referrer's view: code, posed discount, godchildren (name and
+    referral status only — nothing of the godchild's own life)."""
+    manager = AgenciesManager(db)
+    agency = await manager.get_my_agency(agent)
+    return await ReferralManager(db).referrer_view(agency)
 
 
 @router.patch("/{agency_id}/subscription", response_model=AgencySubscriptionInfo)

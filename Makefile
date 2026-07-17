@@ -6,7 +6,7 @@
 # Same paths as ci.yml so `make check` green == CI green.
 LINT_PATHS := src/ shared/ tests/ scripts/ alembic/env.py
 
-.PHONY: help dev dev-scheduler openapi db-upgrade db-downgrade db-current \
+.PHONY: help dev dev-scheduler openapi hooks db-upgrade db-downgrade db-current \
 	db-history db-migration db-reset seed lint format format-check \
 	typecheck test test-cov check
 
@@ -26,6 +26,9 @@ dev-scheduler: ## Run the API on :8001 with reload AND the scheduler ON
 
 openapi: ## Regenerate the committed openapi.json (contract-first)
 	uv run python scripts/export_openapi.py
+
+hooks: ## Install the repo git hooks (openapi cross-artifact guard)
+	cp scripts/git_hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 
 # --- Database ------------------------------------------------------------
 

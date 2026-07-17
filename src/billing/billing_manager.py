@@ -642,6 +642,19 @@ class BillingManager:
         ends = datetime.fromisoformat(ends_raw.replace("Z", "+00:00")) if ends_raw else None
         return ReferralDiscountState(percent=percent, ends_at=ends)
 
+    async def posed_referral_discount(self, agency: Agency) -> ReferralDiscountState | None:
+        """Public reuse of the posed-state read (referrer view): the
+        referral discount currently on the agency's live sub, None when
+        the agency is not paddle-managed or on ANY Paddle hiccup — same
+        doctrine as _referral_discount_from, display data never 500s."""
+        if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
+            return None
+        try:
+            subscription = await self._fetch_subscription(agency.paddle_subscription_id)
+        except Exception:  # noqa: BLE001 — display data, never a 500
+            return None
+        return await self._referral_discount_from(subscription)
+
     def _state_from(
         self,
         agency: Agency,

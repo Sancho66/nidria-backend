@@ -1,0 +1,19 @@
+#!/bin/sh
+# Garde des artefacts croises (incident e77fcd7, 17/07) : openapi.json est
+# regenere depuis l'ARBRE DE TRAVAIL — le committer pendant que du code
+# route reste non stage (modifie ou untracked sous src/) embarque des
+# routes dont le code ne part pas dans le commit. Regle : UN openapi.json
+# committe appartient au lot qui a ecrit ses routes.
+if git diff --cached --name-only | grep -qx "openapi.json"; then
+    dirty_src=$(
+        { git diff --name-only -- src/; git ls-files --others --exclude-standard -- src/; } \
+        | grep '\.py$' || true
+    )
+    if [ -n "$dirty_src" ]; then
+        echo "REFUS pre-commit : openapi.json est stage mais du code sous src/ ne part pas dans ce commit :" >&2
+        echo "$dirty_src" | sed 's/^/  - /' >&2
+        echo "L'openapi regenere refletera ces fichiers-la aussi. Stagez-les avec leur lot, ou destagez openapi.json (git restore --staged openapi.json)." >&2
+        exit 1
+    fi
+fi
+exit 0
