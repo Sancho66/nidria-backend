@@ -216,7 +216,12 @@ async def test_settings_expose_the_subscription_block(
     client: AsyncClient, admin: Agent, superadmin: Agent, agent_headers: AuthHeaders
 ) -> None:
     before = (await client.get("/agencies/me", headers=agent_headers(admin))).json()
-    assert before["subscription"] == {
+    sub = before["subscription"]
+    # trial_ends_at is a DATE (running trial) or None — dynamic, so it is
+    # asserted for shape, not value, and popped from the snapshot below.
+    trial_ends = sub.pop("trial_ends_at")
+    assert trial_ends is None or isinstance(trial_ends, str)
+    assert sub == {
         "plan": None,
         "billing_cycle": None,
         "is_founding": False,
