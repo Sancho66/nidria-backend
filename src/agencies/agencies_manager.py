@@ -170,53 +170,26 @@ class AgenciesManager:
         # refuse rather than silently re-attach an agent of another agency.
         if await self.repo.get_agent_by_email(payload.admin_email) is not None:
             raise ConflictError(_EMAIL_TAKEN)
-        # The first admin points at the SHARED system 'admin' role
-        # (agency_id NULL) — no per-agency role is created.
-        admin_role = await self.repo.get_system_role("admin")
-        if admin_role is None:
-            raise NotFoundError("System role 'admin' is not seeded — run the RBAC baseline seed.")
-
         if payload.founding_free_seats > 0 and not payload.is_founding:
             raise ValidationError(
                 "Free seats are reserved for founding agencies.",
                 code="subscription.founding_seats_invalid",
             )
-        # Referral attribution (optional wizard field): resolve the typed
-        # code BEFORE creating anything — unknown code = explicit 422.
-        referrer: Agency | None = None
-        if payload.referral_code is not None:
-            referrer = await self.repo.get_agency_by_referral_code(
-                payload.referral_code.strip().upper()
-            )
-            if referrer is None:
-                raise ValidationError("Unknown referral code.", code="referral.code_unknown")
-        agency = self.repo.add_agency(
-            name=payload.name, slug=slug, default_language=payload.default_language
-        )
-        # The agency's OWN shareable code (unique; regenerate on the rare
-        # collision — 31^6 space, the loop is theoretical).
-        code = _generate_referral_code()
-        while await self.repo.get_agency_by_referral_code(code) is not None:
-            code = _generate_referral_code()
-        agency.referral_code = code
-        if referrer is not None:
-            agency.referred_by_agency_id = referrer.id
-        # Founding offer posed at creation when Eric already knows it.
-        agency.is_founding = payload.is_founding
-        agency.founding_free_seats = payload.founding_free_seats
-        await self.db.flush()  # need agency.id for the admin row
-        admin = self.repo.add_agent(
-            agency_id=agency.id,
-            role_id=admin_role.id,
-            email=payload.admin_email,
-            first_name=payload.admin_first_name,
-            last_name=payload.admin_last_name,
+        agency, admin, admin_role = await self._create_agency_core(
+            name=payload.name,
+            slug=slug,
+            default_language=payload.default_language,
+            admin_email=payload.admin_email,
+            admin_first_name=payload.admin_first_name,
+            admin_last_name=payload.admin_last_name,
             # Throwaway: never used. The admin sets their own password via the
             # reset link below (same onboarding as the prod-seed admins).
             password_hash=hash_password(secrets.token_urlsafe(32)),
-            is_external=False,
+            referral_code=payload.referral_code,
+            is_founding=payload.is_founding,
+            founding_free_seats=payload.founding_free_seats,
+            event_actor_id=superadmin.id,
         )
-        await self.db.flush()  # need admin.id for the reset token
         # Reuse the password-reset machinery: create_reset_link only STAGES
         # the token (no commit), so agency + admin + token land in ONE
         # transaction — rollback if anything above failed. Onboarding is an
@@ -225,31 +198,7 @@ class AgenciesManager:
         reset_link = AuthManager(self.db).create_reset_link(
             admin.id, Audience.AGENT, expires_minutes=settings.onboarding_link_expires_minutes
         )
-        # Usage trackers: the wizard starts the trial clock and emits
-        # the adoption anchor event.
-        agency.trial_ends_at = datetime.now(UTC) + timedelta(days=settings.trial_days)
-        await UsageManager(self.db).emit(
-            agency_id=agency.id,
-            event_type="agency.activated",
-            actor_type=ActorType.AGENT,
-            actor_id=superadmin.id,
-        )
-        await self.db.commit()
-        await self.db.refresh(agency)
-        await self.db.refresh(admin)
-
-        # The example dossier (nurture bloc 2): a best-effort GIFT in its
-        # own transaction, AFTER the atomic wizard commit — a seed failure
-        # (storage down, whatever) must never cost an agency creation.
-        try:
-            await seed_demo_case(self.db, agency, admin)
-        except Exception:
-            await self.db.rollback()
-            # Rollback expires the loaded rows — re-fetch before the
-            # response serialization touches their attributes.
-            await self.db.refresh(agency)
-            await self.db.refresh(admin)
-            logger.exception("demo case seed failed for agency %s", agency.slug)
+        await self._finalize_agency_creation(agency, admin)
 
         content = password_reset_email(
             reset_link,
@@ -265,6 +214,88 @@ class AgenciesManager:
         return AgencyCreated(
             agency=agency, admin=admin, admin_role_name=admin_role.name, email=email
         )
+
+    async def _create_agency_core(
+        self,
+        *,
+        name: str,
+        slug: str,
+        default_language: str,
+        admin_email: str,
+        admin_first_name: str,
+        admin_last_name: str,
+        password_hash: str,
+        referral_code: str | None,
+        is_founding: bool = False,
+        founding_free_seats: int = 0,
+        event_actor_id: uuid.UUID | None = None,
+    ) -> tuple[Agency, Agent, Role]:
+        """THE single agency-creation writer, shared by the superadmin
+        wizard and the self-serve signup: role, referral (attribution +
+        own code), agency + admin rows, trial clock, adoption anchor.
+        NO commit — the caller stages its extras then calls
+        _finalize_agency_creation. Everything wired to creation (trial,
+        referral, demo, milestones, nurture anchor) fires identically
+        whatever the door."""
+        admin_role = await self.repo.get_system_role("admin")
+        if admin_role is None:
+            raise NotFoundError("System role 'admin' is not seeded — run the RBAC baseline seed.")
+        # Referral attribution: resolve the typed code BEFORE creating
+        # anything — unknown code = explicit 422, never a silent drop.
+        referrer: Agency | None = None
+        if referral_code is not None:
+            referrer = await self.repo.get_agency_by_referral_code(referral_code.strip().upper())
+            if referrer is None:
+                raise ValidationError("Unknown referral code.", code="referral.code_unknown")
+        agency = self.repo.add_agency(name=name, slug=slug, default_language=default_language)
+        # The agency's OWN shareable code (unique; regenerate on the rare
+        # collision — 31^6 space, the loop is theoretical).
+        code = _generate_referral_code()
+        while await self.repo.get_agency_by_referral_code(code) is not None:
+            code = _generate_referral_code()
+        agency.referral_code = code
+        if referrer is not None:
+            agency.referred_by_agency_id = referrer.id
+        agency.is_founding = is_founding
+        agency.founding_free_seats = founding_free_seats
+        await self.db.flush()  # need agency.id for the admin row
+        admin = self.repo.add_agent(
+            agency_id=agency.id,
+            role_id=admin_role.id,
+            email=admin_email,
+            first_name=admin_first_name,
+            last_name=admin_last_name,
+            password_hash=password_hash,
+            is_external=False,
+        )
+        await self.db.flush()  # need admin.id (reset token, event actor)
+        # Usage trackers: the creation starts the trial clock and emits
+        # the adoption anchor event (actor = the wizard's superadmin, or
+        # the self-serve admin themselves).
+        agency.trial_ends_at = datetime.now(UTC) + timedelta(days=get_settings().trial_days)
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.activated",
+            actor_type=ActorType.AGENT,
+            actor_id=event_actor_id if event_actor_id is not None else admin.id,
+        )
+        return agency, admin, admin_role
+
+    async def _finalize_agency_creation(self, agency: Agency, admin: Agent) -> None:
+        """Atomic commit, then the demo-case GIFT in its own transaction
+        (best-effort: a seed failure must never cost an agency creation)."""
+        await self.db.commit()
+        await self.db.refresh(agency)
+        await self.db.refresh(admin)
+        try:
+            await seed_demo_case(self.db, agency, admin)
+        except Exception:
+            await self.db.rollback()
+            # Rollback expires the loaded rows — re-fetch before the
+            # response serialization touches their attributes.
+            await self.db.refresh(agency)
+            await self.db.refresh(admin)
+            logger.exception("demo case seed failed for agency %s", agency.slug)
 
     # --- hard delete (Groupe C, superadmin platform tool) ----------------------------
 

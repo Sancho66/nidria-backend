@@ -84,6 +84,10 @@ class PayloadTooLargeError(NidriaError):
 
 class ValidationError(NidriaError):
     status_code = 422
+
+
+class TooManyRequestsError(NidriaError):
+    status_code = 429
     code = "validation_error"
 
 

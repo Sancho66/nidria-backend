@@ -1035,3 +1035,137 @@ def referral_granted_email(referred_name: str, lang: str = "fr") -> EmailContent
         intro=s["intro"].format(referred=referred_name),
         lang=lang,
     )
+
+
+_SIGNUP_CODE = {
+    "fr": {
+        "subject": "Nidria : votre code de verification",
+        "title": "Votre code de verification",
+        "intro": ("Voici votre code pour creer votre espace Nidria. Il expire dans 15 minutes."),
+        "phishing": "Si vous n'avez pas demande ce code, ignorez cet email.",
+    },
+    "en": {
+        "subject": "Nidria: your verification code",
+        "title": "Your verification code",
+        "intro": "Here is your code to create your Nidria workspace. It expires in 15 minutes.",
+        "phishing": "If you did not request this code, please ignore this email.",
+    },
+    "es": {
+        "subject": "Nidria: su codigo de verificacion",
+        "title": "Su codigo de verificacion",
+        "intro": ("Aqui tiene su codigo para crear su espacio Nidria. Caduca en 15 minutos."),
+        "phishing": "Si no ha solicitado este codigo, ignore este correo.",
+    },
+    "ru": {
+        "subject": "Nidria: ваш код подтверждения",
+        "title": "Ваш код подтверждения",
+        "intro": (
+            "Вот ваш код для создания рабочего пространства Nidria. Срок действия: 15 минут."
+        ),
+        "phishing": "Если вы не запрашивали этот код, просто проигнорируйте это письмо.",
+    },
+    "pt": {
+        "subject": "Nidria: o seu codigo de verificacao",
+        "title": "O seu codigo de verificacao",
+        "intro": ("Aqui esta o seu codigo para criar o seu espaco Nidria. Expira em 15 minutos."),
+        "phishing": "Se nao solicitou este codigo, ignore este email.",
+    },
+    "it": {
+        "subject": "Nidria: il tuo codice di verifica",
+        "title": "Il tuo codice di verifica",
+        "intro": "Ecco il tuo codice per creare il tuo spazio Nidria. Scade tra 15 minuti.",
+        "phishing": "Se non hai richiesto questo codice, ignora questa email.",
+    },
+}
+
+_SIGNUP_EXISTING = {
+    "fr": {
+        "subject": "Nidria : vous avez deja un compte",
+        "title": "Vous avez deja un compte",
+        "intro": (
+            "Une creation d'espace a ete demandee avec cette adresse, mais un "
+            "compte existe deja. Connectez-vous ci-dessous ; mot de passe oublie ? "
+            "La page de connexion propose la reinitialisation."
+        ),
+        "button": "Se connecter",
+        "phishing": "Si vous n'etes pas a l'origine de cette demande, ignorez cet email.",
+    },
+    "en": {
+        "subject": "Nidria: you already have an account",
+        "title": "You already have an account",
+        "intro": (
+            "A workspace creation was requested with this address, but an account "
+            "already exists. Log in below; forgot your password? The login page "
+            "offers a reset."
+        ),
+        "button": "Log in",
+        "phishing": "If you did not make this request, please ignore this email.",
+    },
+    "es": {
+        "subject": "Nidria: ya tiene una cuenta",
+        "title": "Ya tiene una cuenta",
+        "intro": (
+            "Se solicito crear un espacio con esta direccion, pero ya existe una "
+            "cuenta. Inicie sesion a continuacion."
+        ),
+        "button": "Iniciar sesion",
+        "phishing": "Si usted no realizo esta solicitud, ignore este correo.",
+    },
+    "ru": {
+        "subject": "Nidria: у вас уже есть аккаунт",
+        "title": "У вас уже есть аккаунт",
+        "intro": (
+            "С этим адресом запрошено создание пространства, но аккаунт уже "
+            "существует. Войдите по кнопке ниже."
+        ),
+        "button": "Войти",
+        "phishing": "Если это были не вы, просто проигнорируйте это письмо.",
+    },
+    "pt": {
+        "subject": "Nidria: ja tem uma conta",
+        "title": "Ja tem uma conta",
+        "intro": (
+            "Foi pedida a criacao de um espaco com este endereco, mas ja existe "
+            "uma conta. Inicie sessao abaixo."
+        ),
+        "button": "Iniciar sessao",
+        "phishing": "Se nao fez este pedido, ignore este email.",
+    },
+    "it": {
+        "subject": "Nidria: hai gia un account",
+        "title": "Hai gia un account",
+        "intro": (
+            "E stata richiesta la creazione di uno spazio con questo indirizzo, "
+            "ma esiste gia un account. Accedi qui sotto."
+        ),
+        "button": "Accedi",
+        "phishing": "Se non hai effettuato questa richiesta, ignora questa email.",
+    },
+}
+
+
+def signup_code_email(code: str, lang: str = "fr") -> EmailContent:
+    """The 6-digit code, BIG (body_text renders large in the layout), the
+    15-minute validity, and the standard anti-phishing line."""
+    s = _pick(_SIGNUP_CODE, lang)
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"],
+        body_text=code,
+        validity=s["phishing"],
+        lang=lang,
+    )
+
+
+def signup_existing_account_email(login_url: str, lang: str = "fr") -> EmailContent:
+    s = _pick(_SIGNUP_EXISTING, lang)
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"],
+        button_label=s["button"],
+        button_url=login_url,
+        validity=s["phishing"],
+        lang=lang,
+    )

@@ -48,6 +48,7 @@ from src.profile.profile_router import router as profile_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
+from src.signup.signup_router import router as signup_router
 from src.usage.usage_backfill import backfill_usage_milestones
 from src.views.views_router import router as views_router
 
@@ -159,6 +160,7 @@ app = FastAPI(
 register_exception_handlers(app)
 
 app.include_router(auth_router)
+app.include_router(signup_router)
 app.include_router(billing_router)
 app.include_router(activity_router)
 app.include_router(admin_router)

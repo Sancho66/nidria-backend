@@ -117,7 +117,16 @@ def send_trial_nurture(db: Session, *, log: LogFn, dry_run: bool = False) -> dic
     agencies = (
         db.execute(
             select(Agency)
-            .where(Agency.trial_ends_at.is_not(None), Agency.converted_at.is_(None))
+            .where(
+                Agency.trial_ends_at.is_not(None),
+                Agency.converted_at.is_(None),
+                # DECISION (self-serve lot, 2026-07-17): the nurture texts
+                # are handcrafted FRENCH (tutoiement) — a non-FR agency
+                # receives NOTHING rather than the wrong language. The
+                # nurture i18n sits in the backlog; it turns urgent with
+                # the first English-speaking marketing push.
+                Agency.default_language == "fr",
+            )
             .order_by(Agency.slug)
         )
         .scalars()

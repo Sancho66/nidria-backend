@@ -1,0 +1,45 @@
+from pydantic import BaseModel, Field
+
+from src.core.email import NormalizedEmailStr
+from src.core.i18n import Language
+
+
+class SignupRequest(BaseModel):
+    """Stage 1: the email to verify. `website` is the HONEYPOT (hidden
+    field): humans leave it empty, bots fill it — non-empty = silent 200,
+    nothing created. `turnstile_token` is required only when the
+    TURNSTILE_SECRET flag is armed."""
+
+    email: NormalizedEmailStr
+    lang: Language = "fr"
+    website: str | None = None
+    turnstile_token: str | None = None
+
+
+class SignupAccepted(BaseModel):
+    """Always the same body, email known or not (forgot-password pattern:
+    the EMAIL differs, never the response)."""
+
+    status: str = "sent"
+
+
+class SignupVerifyRequest(BaseModel):
+    email: NormalizedEmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
+class SignupVerifyResponse(BaseModel):
+    """The short-lived (30 min) completion token — long and
+    unbruteforcable, the only key /signup/complete accepts."""
+
+    completion_token: str
+
+
+class SignupCompleteRequest(BaseModel):
+    completion_token: str = Field(min_length=16, max_length=64)
+    agency_name: str = Field(min_length=1, max_length=200)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8)
+    language: Language = "fr"
+    referral_code: str | None = Field(default=None, min_length=4, max_length=16)

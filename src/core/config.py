@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     # payment), so we leave the innocent expired-card case time to recover
     # before the workspace turns read-only.
     billing_past_due_grace_days: int = 7
+    # Cloudflare Turnstile (signup anti-abuse), FLAG pattern: absent = the
+    # check is skipped entirely; arming it = setting the variable, no
+    # deploy (same doctrine as the billing kill switch).
+    turnstile_secret: str | None = None
     paddle_env: str = "sandbox"  # sandbox | live
     paddle_api_key: str | None = None
     paddle_webhook_secret: str | None = None
