@@ -98,8 +98,14 @@ class PaddleClient:
     async def list_products(self) -> list[dict[str, Any]]:
         return await self._request_page("/products?per_page=200&status=active")
 
-    async def list_prices(self) -> list[dict[str, Any]]:
-        return await self._request_page("/prices?per_page=200&status=active")
+    async def list_prices(self, ids: list[str] | None = None) -> list[dict[str, Any]]:
+        """`ids`: server-side filter (verified: GET /prices?id=a,b returns
+        exactly those) — the boot check only needs OUR 8, a lighter call
+        less exposed to the rate quota than the full listing."""
+        path = "/prices?per_page=200&status=active"
+        if ids:
+            path += "&id=" + ",".join(ids)
+        return await self._request_page(path)
 
     async def create_product(self, *, name: str, custom_data: dict[str, str]) -> dict[str, Any]:
         return await self._request(

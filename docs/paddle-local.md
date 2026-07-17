@@ -49,6 +49,8 @@ Variables d'env attendues (`.env` local / secrets Fly ailleurs) :
 BILLING_CHECKOUT_ENABLED=true      # kill switch d'offre — FALSE par défaut :
                                    # checkout fermé (409), gestion/webhooks intacts
 PADDLE_ENV=sandbox                 # sandbox | live
+PADDLE_BOOT_CHECK=false            # DEV : pas de GET /prices a chaque reload
+                                   # (429 Cloudflare vecu) ; true en prod
 PADDLE_API_KEY=...                 # ne JAMAIS logger, même tronquée
 PADDLE_PRICE_IDS={"cabinet_mensuel":"pri_...", ...}   # sortie du script
 PADDLE_WEBHOOK_SECRET=pdl_ntfset_...                  # affiché 1 fois à la création

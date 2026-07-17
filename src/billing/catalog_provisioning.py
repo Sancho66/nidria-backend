@@ -146,7 +146,7 @@ async def verify_catalog_env(*, client: PaddleClient, price_ids: dict[str, str])
     carry the SAME stable key it is mapped under. Returns the divergences —
     the caller logs ERROR and NEVER crashes (manual mode must survive a
     Paddle outage)."""
-    remote_by_id = {p["id"]: p for p in await client.list_prices()}
+    remote_by_id = {p["id"]: p for p in await client.list_prices(ids=list(price_ids.values()))}
     problems: list[str] = []
     for key, price_id in price_ids.items():
         remote = remote_by_id.get(price_id)

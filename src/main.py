@@ -106,7 +106,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     # (manual billing must survive a Paddle outage). Skipped when Paddle is
     # not configured (tests/CI: no key, no network — the app boots Paddle-less).
     settings_boot = get_settings()
-    if settings_boot.paddle_api_key and settings_boot.paddle_price_ids:
+    if not settings_boot.paddle_boot_check:
+        # DEV opt-out (PADDLE_BOOT_CHECK=false in the local .env): each
+        # uvicorn reload was one Paddle GET — a dev session got the sandbox
+        # rate-limited (Cloudflare 429, 2026-07-17). The catalog does not
+        # change between two file saves; prod (Fly) keeps the check.
+        boot_logger.info("paddle catalog check: disabled by PADDLE_BOOT_CHECK")
+    elif settings_boot.paddle_api_key and settings_boot.paddle_price_ids:
         try:
             from src.billing.catalog_provisioning import verify_catalog_env
             from src.billing.paddle_client import PaddleClient
@@ -121,8 +127,20 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                     "paddle catalog check: %s price ids verified",
                     len(settings_boot.paddle_price_ids),
                 )
-        except Exception:
-            boot_logger.exception("paddle catalog check failed (non-blocking)")
+        except Exception as exc:
+            from src.billing.paddle_client import PaddleApiError
+
+            # A rate-limit answers with a Cloudflare HTML page: recognize
+            # it and log ONE clean line instead of 500 chars of IE6 HTML.
+            # No retry at boot — the next deploy re-verifies.
+            if isinstance(exc, PaddleApiError) and (
+                exc.status_code == 429 or "cloudflare" in str(exc).lower()
+            ):
+                boot_logger.error(
+                    "paddle catalog check: rate limited by Paddle, check skipped, will not retry"
+                )
+            else:
+                boot_logger.exception("paddle catalog check failed (non-blocking)")
     elif not settings_boot.billing_checkout_enabled:
         # A closed prod without Paddle keys is a LEGITIMATE state today
         # (wired but shut until Eric opens the offer) — INFO, not ERROR.

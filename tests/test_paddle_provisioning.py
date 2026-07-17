@@ -51,7 +51,10 @@ class FakePaddle:
     async def list_products(self) -> list[dict[str, Any]]:
         return list(self.products)
 
-    async def list_prices(self) -> list[dict[str, Any]]:
+    async def list_prices(self, ids: list[str] | None = None) -> list[dict[str, Any]]:
+        # Mirrors the real API's ?id= filter (verified live on sandbox).
+        if ids is not None:
+            return [p for p in self.prices if p["id"] in ids]
         return list(self.prices)
 
     async def create_product(self, *, name: str, custom_data: dict[str, str]) -> dict[str, Any]:

@@ -132,6 +132,12 @@ class Settings(BaseSettings):
     # check is skipped entirely; arming it = setting the variable, no
     # deploy (same doctrine as the billing kill switch).
     turnstile_secret: str | None = None
+    # Boot catalog check opt-out for DEV (each uvicorn reload = one Paddle
+    # GET; a dev session = dozens → Cloudflare 429, lived 2026-07-17).
+    # Default TRUE (prod-safe: forgetting the var keeps the check that
+    # validated the go-live); local .env sets it false — the catalog does
+    # not change between two file saves.
+    paddle_boot_check: bool = True
     paddle_env: str = "sandbox"  # sandbox | live
     paddle_api_key: str | None = None
     paddle_webhook_secret: str | None = None
