@@ -506,6 +506,7 @@ class AgenciesManager:
             plan=agency.plan,
             billing_cycle=agency.billing_cycle,
             is_founding=agency.is_founding,
+            trial_ends_at=agency.trial_ends_at,
             seats=await self.seat_usage(agency),
             providers=ProviderUsage(
                 count=await self._providers_with_access(agency.id),

@@ -141,6 +141,10 @@ class AgencySubscriptionInfo(BaseModel):
     # the same value the 403 billing.subscription_required carries.
     is_blocked: bool = False
     blocked_reason: str | None = None
+    # Trial deadline — served to EVERY agent (this payload is not
+    # manager-gated): the trial countdown must be visible to all, not just
+    # to those who can pay (front lot 2026-07-18). None once converted.
+    trial_ends_at: datetime | None = None
 
 
 class ResponsibleStepRef(BaseModel):
