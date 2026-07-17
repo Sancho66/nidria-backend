@@ -42,5 +42,10 @@ class Agent(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
     is_external: Mapped[bool] = mapped_column(
         default=False, server_default=text("false"), nullable=False
     )
+    # Offboarding (never a DELETE: the identity lives in activity logs,
+    # completions, approvals). Set = login refused, live tokens die at the
+    # next request (_resolve_agent re-reads this row), out of every seat/
+    # provider count, not an impersonation target. NULL = active.
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     role: Mapped["Role"] = relationship("Role")

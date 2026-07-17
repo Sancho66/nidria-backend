@@ -27,6 +27,7 @@ class ImpersonationRepository:
             .where(
                 Agent.agency_id == agency_id,
                 Agent.is_external.is_(False),
+                Agent.deactivated_at.is_(None),
                 Role.is_system,
                 Role.name == "admin",
             )
@@ -42,6 +43,7 @@ class ImpersonationRepository:
             Agent.id == agent_id,
             Agent.agency_id == agency_id,
             Agent.is_external.is_(False),
+            Agent.deactivated_at.is_(None),  # an offboarded agent has no seat to sit in
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

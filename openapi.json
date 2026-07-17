@@ -2065,6 +2065,97 @@
         ]
       }
     },
+    "/agencies/me/members/{agent_id}/deactivate": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Deactivate Member",
+        "description": "Offboarding (never a DELETE): cuts access NOW, drops the seat, and\nreturns the inventory (owned cases, active responsible steps) for the\nfront's reassignment screen. Anti-lockout: the last agent.manage\nholder cannot be deactivated, by anyone.",
+        "operationId": "deactivate_member_agencies_me_members__agent_id__deactivate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberDeactivationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/me/members/{agent_id}/reactivate": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Reactivate Member",
+        "description": "The symmetric gesture — with the cap re-check (same rule as\naccepting an invitation: coming back consumes a slot).",
+        "operationId": "reactivate_member_agencies_me_members__agent_id__reactivate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/external-members": {
       "get": {
         "tags": [
@@ -13726,6 +13817,18 @@
           "is_external": {
             "type": "boolean",
             "title": "Is External"
+          },
+          "deactivated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivated At"
           }
         },
         "type": "object",
@@ -20797,6 +20900,38 @@
         ],
         "title": "MaritalStatus"
       },
+      "MemberDeactivationResponse": {
+        "properties": {
+          "deactivated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deactivated At"
+          },
+          "owned_cases": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Owned Cases"
+          },
+          "responsible_steps": {
+            "items": {
+              "$ref": "#/components/schemas/ResponsibleStepRef"
+            },
+            "type": "array",
+            "title": "Responsible Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deactivated_at",
+          "owned_cases",
+          "responsible_steps"
+        ],
+        "title": "MemberDeactivationResponse",
+        "description": "POST /agencies/me/members/{agent_id}/deactivate — the INVENTORY of\nwhat the departed agent leaves behind (nothing silent, nothing rigid:\nthe front chains a reassignment screen over the existing PATCHes)."
+      },
       "MemberRoleSetRequest": {
         "properties": {
           "role_id": {
@@ -22727,6 +22862,27 @@
           "password"
         ],
         "title": "ResetPasswordRequest"
+      },
+      "ResponsibleStepRef": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "progress_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Progress Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "progress_id"
+        ],
+        "title": "ResponsibleStepRef",
+        "description": "One step the deactivated agent was responsible for (active steps\nonly — DONE steps are history, never reassigned)."
       },
       "ResponsibleType": {
         "type": "string",

@@ -25,6 +25,7 @@ from src.agencies.agencies_schema import (
     DirectoryContactListItem,
     DirectoryContactResponse,
     ExternalInvitationCreateRequest,
+    MemberDeactivationResponse,
     OnboardingResponse,
     RoleResponse,
     SubscriptionUpdateRequest,
@@ -99,6 +100,18 @@ BINDINGS = [
     # internal flows above — the internal picker/listing never shows them.
     RouteBinding("GET", "/agencies/me/external-roles", Audience.AGENT, Permission.AGENT_MANAGE),
     RouteBinding("GET", "/agencies/me/external-members", Audience.AGENT, Permission.AGENT_MANAGE),
+    RouteBinding(
+        "POST",
+        "/agencies/me/members/{agent_id}/deactivate",
+        Audience.AGENT,
+        Permission.AGENT_MANAGE,
+    ),
+    RouteBinding(
+        "POST",
+        "/agencies/me/members/{agent_id}/reactivate",
+        Audience.AGENT,
+        Permission.AGENT_MANAGE,
+    ),
     RouteBinding(
         "POST", "/agencies/me/external-invitations", Audience.AGENT, Permission.AGENT_MANAGE
     ),
@@ -271,6 +284,7 @@ def _member_response(member: Agent) -> AgencyMemberResponse:
         role=member.role.name,
         role_id=member.role_id,
         is_external=member.is_external,
+        deactivated_at=member.deactivated_at,
     )
 
 
@@ -293,6 +307,27 @@ async def list_roles(agent: AgentDep, db: DbDep) -> list[RoleResponse]:
 async def list_external_roles(agent: AgentDep, db: DbDep) -> list[RoleResponse]:
     roles = await AgenciesManager(db).list_external_roles(agent)
     return [RoleResponse.model_validate(role) for role in roles]
+
+
+@router.post(
+    "/me/members/{agent_id}/deactivate",
+    response_model=MemberDeactivationResponse,
+)
+async def deactivate_member(
+    agent_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> MemberDeactivationResponse:
+    """Offboarding (never a DELETE): cuts access NOW, drops the seat, and
+    returns the inventory (owned cases, active responsible steps) for the
+    front's reassignment screen. Anti-lockout: the last agent.manage
+    holder cannot be deactivated, by anyone."""
+    return await AgenciesManager(db).deactivate_member(agent, agent_id)
+
+
+@router.post("/me/members/{agent_id}/reactivate", status_code=204)
+async def reactivate_member(agent_id: uuid.UUID, agent: AgentDep, db: DbDep) -> None:
+    """The symmetric gesture — with the cap re-check (same rule as
+    accepting an invitation: coming back consumes a slot)."""
+    await AgenciesManager(db).reactivate_member(agent, agent_id)
 
 
 @router.get("/me/external-members", response_model=list[AgencyMemberResponse])

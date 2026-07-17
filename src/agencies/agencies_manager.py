@@ -28,9 +28,11 @@ from src.agencies.agencies_schema import (
     AgencyUpdateRequest,
     DirectoryContactCreateRequest,
     DirectoryContactListItem,
+    MemberDeactivationResponse,
     OnboardingResponse,
     OnboardingStepState,
     ProviderUsage,
+    ResponsibleStepRef,
     SeatUsage,
     SubscriptionUpdateRequest,
 )
@@ -408,7 +410,9 @@ class AgenciesManager:
         members = (
             await self.db.execute(
                 select(func.count(Agent.id)).where(
-                    Agent.agency_id == agency.id, Agent.is_external.is_(False)
+                    Agent.agency_id == agency.id,
+                    Agent.is_external.is_(False),
+                    Agent.deactivated_at.is_(None),  # offboarded = out of every count
                 )
             )
         ).scalar_one()
@@ -431,7 +435,9 @@ class AgenciesManager:
         return (
             await self.db.execute(
                 select(func.count(Agent.id)).where(
-                    Agent.agency_id == agency_id, Agent.is_external.is_(True)
+                    Agent.agency_id == agency_id,
+                    Agent.is_external.is_(True),
+                    Agent.deactivated_at.is_(None),  # offboarded provider = free slot
                 )
             )
         ).scalar_one()
@@ -649,6 +655,92 @@ class AgenciesManager:
 
     async def list_members(self, agent: Agent) -> list[Agent]:
         return await self.repo.list_agents_with_roles(agent.agency_id)
+
+    async def deactivate_member(
+        self, agent: Agent, agent_id: uuid.UUID
+    ) -> MemberDeactivationResponse:
+        """Offboarding (never a DELETE — the identity lives in the audit
+        trail). Cuts login + live tokens (the resolve guard re-reads the
+        row per request), revokes the refresh tokens, drops the member out
+        of every seat/provider count, pushes the Paddle quantity DOWN
+        (full_next_billing_period: the started month stays due; no-op on a
+        manual agency), and returns the INVENTORY to reassign."""
+        target = await self.repo.get_agent_in_agency(agent.agency_id, agent_id)
+        if target is None:
+            raise NotFoundError("Member not found.")
+        if target.deactivated_at is not None:
+            raise ConflictError(
+                "This member is already deactivated.", code="member.already_deactivated"
+            )
+        if not target.is_external:
+            # Anti-lockout, by CAPABILITY (reused from the roles domain,
+            # deactivated managers already excluded from the capable list):
+            # simulate the target with ZERO permissions = deactivated.
+            from src.roles.roles_manager import RolesManager
+
+            await RolesManager(self.db)._assert_agency_keeps_manager(
+                agent.agency_id, reassigned_agent=(target.id, set())
+            )
+        now = datetime.now(UTC)
+        target.deactivated_at = now
+        # Live sessions die NOW: refresh revoked here, access dies at the
+        # next request (the enforcement guard re-reads deactivated_at).
+        from src.auth.auth_repository import AuthRepository
+
+        await AuthRepository(self.db).revoke_all_active_refresh_tokens(
+            Audience.AGENT.value, target.id, now
+        )
+        # The inventory: what the departed leaves to reassign (active only).
+        owned = await self.repo.list_owned_case_ids(agent.agency_id, target.id)
+        steps = await self.repo.list_responsible_active_steps(agent.agency_id, target.id)
+        self._log_member_event(agent, target, "agent.deactivated")
+        await self.db.commit()
+        if not target.is_external:
+            # Best-effort: a Paddle hiccup must never block an offboarding.
+            await self._sync_paddle_seats(agent.agency_id, increase=False)
+        return MemberDeactivationResponse(
+            deactivated_at=now,
+            owned_cases=owned,
+            responsible_steps=[
+                ResponsibleStepRef(case_id=case_id, progress_id=progress_id)
+                for case_id, progress_id in steps
+            ],
+        )
+
+    async def reactivate_member(self, agent: Agent, agent_id: uuid.UUID) -> None:
+        """The symmetric gesture (support: a mistaken offboarding must not
+        cost a ticket) — WITH the cap re-check, same rule as accepting an
+        invitation: coming back consumes a seat/provider slot."""
+        target = await self.repo.get_agent_in_agency(agent.agency_id, agent_id)
+        if target is None:
+            raise NotFoundError("Member not found.")
+        if target.deactivated_at is None:
+            raise ConflictError("This member is not deactivated.", code="member.not_deactivated")
+        agency = await self.get_my_agency(agent)
+        if target.is_external:
+            cap = providers_max_for(agency.plan)
+            if cap is not None and await self._providers_with_access(agency.id) >= cap:
+                raise ConflictError(
+                    f"The plan is capped at {cap} providers.",
+                    code="subscription.provider_limit",
+                    params={"max": cap, "plan": agency.plan},
+                )
+        else:
+            usage = await self.seat_usage(agency)
+            if usage.max is not None and usage.members >= usage.max:
+                raise ConflictError(
+                    f"The plan is capped at {usage.max} members.",
+                    code="subscription.seat_limit",
+                    params={"members": usage.members, "max": usage.max, "plan": agency.plan},
+                )
+        target.deactivated_at = None
+        self._log_member_event(agent, target, "agent.reactivated")
+        await self.db.commit()
+        if not target.is_external:
+            await self._sync_paddle_seats(agent.agency_id, increase=True)
+
+    def _log_member_event(self, actor: Agent, target: Agent, event: str) -> None:
+        logger.info("%s: agency=%s actor=%s target=%s", event, actor.agency_id, actor.id, target.id)
 
     async def list_roles(self, agent: Agent) -> list[Role]:
         return await self.repo.list_roles(agent.agency_id)

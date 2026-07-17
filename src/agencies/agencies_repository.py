@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
+from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.document import Document
 from shared.models.external_contact import ExternalContact
@@ -161,6 +162,38 @@ class AgenciesRepository:
         'admin' for a new agency's first admin. Never an agency clone."""
         stmt = select(Role).where(Role.is_system, Role.agency_id.is_(None), Role.name == name)
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
+        stmt = select(Agent).where(Agent.id == agent_id, Agent.agency_id == agency_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def list_owned_case_ids(
+        self, agency_id: uuid.UUID, agent_id: uuid.UUID
+    ) -> list[uuid.UUID]:
+        """Non-deleted cases owned by the agent — the offboarding inventory."""
+        stmt = select(ClientCase.id).where(
+            ClientCase.agency_id == agency_id,
+            ClientCase.owner_agent_id == agent_id,
+            ClientCase.deleted_at.is_(None),
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def list_responsible_active_steps(
+        self, agency_id: uuid.UUID, agent_id: uuid.UUID
+    ) -> list[tuple[uuid.UUID, uuid.UUID]]:
+        """(case_id, progress_id) of ACTIVE steps (todo/in_progress) whose
+        responsible is the agent — DONE steps are history, never reassigned."""
+        stmt = (
+            select(CaseStepProgress.case_id, CaseStepProgress.id)
+            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
+            .where(
+                ClientCase.agency_id == agency_id,
+                ClientCase.deleted_at.is_(None),
+                CaseStepProgress.responsible_agent_id == agent_id,
+                CaseStepProgress.status != "done",
+            )
+        )
+        return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
 
     async def list_agents_with_roles(self, agency_id: uuid.UUID) -> list[Agent]:
         # INTERNAL agents only — externals must never appear as candidate

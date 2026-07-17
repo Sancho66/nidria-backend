@@ -246,6 +246,10 @@ async def _resolve_agent(request: Request, db: AsyncSession) -> tuple[Agent, dic
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:
         raise UnauthorizedError("Agent not found.")
+    # Offboarded (deactivated_at posed): the row is re-read on EVERY
+    # request, so a still-valid access token dies here immediately.
+    if agent.deactivated_at is not None:
+        raise UnauthorizedError("Agent not found.")
     return agent, payload
 
 

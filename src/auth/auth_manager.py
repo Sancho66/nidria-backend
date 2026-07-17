@@ -109,6 +109,9 @@ class AuthManager:
         agent = await self.repo.get_agent_by_email(normalize_email(email))
         if agent is None or not verify_password(password, agent.password_hash):
             raise UnauthorizedError(_INVALID_CREDENTIALS)
+        # Offboarded agent: same non-revealing error as bad credentials.
+        if agent.deactivated_at is not None:
+            raise UnauthorizedError(_INVALID_CREDENTIALS)
         # A provider whose invitation is still PENDING has an Agent row (agent_id
         # posed at invite) but NO access: refuse with the SAME error — never
         # reveal that the account exists but is not activated. The throwaway

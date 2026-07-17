@@ -124,7 +124,13 @@ class RolesRepository:
         # internal agents; an external (zero perms) must never count.
         stmt = (
             select(Agent)
-            .where(Agent.agency_id == agency_id, Agent.is_external.is_(False))
+            .where(
+                Agent.agency_id == agency_id,
+                Agent.is_external.is_(False),
+                # A deactivated manager is NOT a capable manager: the
+                # anti-lockout guard must not count them.
+                Agent.deactivated_at.is_(None),
+            )
             .options(selectinload(Agent.role).selectinload(Role.permissions))
         )
         return list((await self.db.execute(stmt)).scalars())

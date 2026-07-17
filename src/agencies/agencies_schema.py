@@ -143,6 +143,24 @@ class AgencySubscriptionInfo(BaseModel):
     blocked_reason: str | None = None
 
 
+class ResponsibleStepRef(BaseModel):
+    """One step the deactivated agent was responsible for (active steps
+    only — DONE steps are history, never reassigned)."""
+
+    case_id: uuid.UUID
+    progress_id: uuid.UUID
+
+
+class MemberDeactivationResponse(BaseModel):
+    """POST /agencies/me/members/{agent_id}/deactivate — the INVENTORY of
+    what the departed agent leaves behind (nothing silent, nothing rigid:
+    the front chains a reassignment screen over the existing PATCHes)."""
+
+    deactivated_at: datetime
+    owned_cases: list[uuid.UUID]
+    responsible_steps: list[ResponsibleStepRef]
+
+
 class SubscriptionUpdateRequest(BaseModel):
     """PATCH /agencies/{id}/subscription (superadmin) - the post-closing
     gesture: pose the plan, cycle, founding terms and conversion date.
@@ -257,6 +275,9 @@ class AgencyMemberResponse(BaseModel):
     # Lets the front distinguish internal staff from external providers.
     # Internal-members listing → always false; external-members → true.
     is_external: bool
+    # Offboarding: NULL = active; set = deactivated (badge + reactivate
+    # button on the front — deactivated members STAY listed).
+    deactivated_at: datetime | None = None
 
 
 class RoleResponse(BaseModel):
