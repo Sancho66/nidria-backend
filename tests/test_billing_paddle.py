@@ -1118,3 +1118,126 @@ async def test_updated_webhook_with_scheduled_change_flows_untouched(
     agency = await _agency(db_session, aid)
     assert agency.billing_status == "active"  # still active until it takes effect
     assert agency.plan == "cabinet" and agency.converted_at is not None
+
+
+# --- resume : le rattrapage de quantity (bug du test manuel 17/07) ---------------------
+
+
+def _sub_payload_with_seats(seat_qty: int) -> dict[str, Any]:
+    """A live subscription payload whose seat item carries `seat_qty`
+    (0 = no seat item) — what remove_scheduled_change echoes back."""
+    items: list[dict[str, Any]] = [
+        {
+            "quantity": 1,
+            "price": {"id": PRICE_IDS["cabinet_mensuel"], "unit_price": {"amount": "9900"}},
+        }
+    ]
+    if seat_qty:
+        items.append(
+            {
+                "quantity": seat_qty,
+                "price": {
+                    "id": PRICE_IDS["seat_cabinet_mensuel"],
+                    "unit_price": {"amount": "3500"},
+                },
+            }
+        )
+    return {
+        "id": "sub_123",
+        "status": "active",
+        "currency_code": "EUR",
+        "next_billed_at": "2026-08-15T12:00:00Z",
+        "current_billing_period": {"ends_at": "2026-08-15T12:00:00Z"},
+        "scheduled_change": None,
+        "items": items,
+        "next_transaction": {"details": {"totals": {"grand_total": "9900"}}},
+    }
+
+
+async def test_resume_catches_up_a_missed_seat_down(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LE scenario du bug : un retrait pendant l'annulation programmee a
+    laisse Paddle a qty=2 alors que billed=0. Au resume, le scheduled
+    change vient de tomber -> le rattrapage pousse la quantity derivee,
+    en full_next_billing_period (la meme regle qu'un retrait)."""
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)  # 1 membre -> billed 0
+    resume = AsyncMock(return_value=_sub_payload_with_seats(2))  # Paddle croit 2 sieges
+    monkeypatch.setattr(paddle_client.PaddleClient, "remove_scheduled_change", resume)
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    refetch = AsyncMock(return_value=_sub_payload_with_seats(0))
+    monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", refetch)
+
+    resp = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
+    assert resp.status_code == 200, resp.text
+    push.assert_awaited_once()
+    sub_id, kwargs = push.await_args.args[0], push.await_args.kwargs
+    assert sub_id == "sub_123"
+    assert kwargs["proration_billing_mode"] == "full_next_billing_period"  # a la baisse
+    # billed 0 -> plus d'item siege du tout
+    assert all(i["price_id"] != PRICE_IDS["seat_cabinet_mensuel"] for i in kwargs["items"])
+    refetch.assert_awaited()  # la reponse reflete l'etat APRES rattrapage
+
+
+async def test_resume_catches_up_a_missed_seat_up(
+    client: AsyncClient,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L'autre sens (rare) : des sieges ajoutes pendant la fenetre annulee
+    -> le rattrapage MONTE, prorata immediat (la meme regle qu'un ajout)."""
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    for i in range(4):  # 5 membres -> billed 2
+        await make_agent(agency_id=aid, role=system_roles["member"], email=f"cu{i}@x.io")
+    resume = AsyncMock(return_value=_sub_payload_with_seats(0))  # Paddle croit 0
+    monkeypatch.setattr(paddle_client.PaddleClient, "remove_scheduled_change", resume)
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "get_subscription",
+        AsyncMock(return_value=_sub_payload_with_seats(2)),
+    )
+
+    resp = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
+    assert resp.status_code == 200, resp.text
+    push.assert_awaited_once()
+    kwargs = push.await_args.kwargs
+    assert kwargs["proration_billing_mode"] == "prorated_immediately"  # a la hausse
+    seat_item = next(
+        i for i in kwargs["items"] if i["price_id"] == PRICE_IDS["seat_cabinet_mensuel"]
+    )
+    assert seat_item["quantity"] == 2
+
+
+async def test_resume_pushes_nothing_when_quantities_match(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    await _activate(client, aid)  # billed 0
+    resume = AsyncMock(return_value=_sub_payload_with_seats(0))  # Paddle dit 0 aussi
+    monkeypatch.setattr(paddle_client.PaddleClient, "remove_scheduled_change", resume)
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+
+    resp = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
+    assert resp.status_code == 200, resp.text
+    push.assert_not_awaited()  # rien ne diverge -> aucun push

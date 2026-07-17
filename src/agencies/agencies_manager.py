@@ -564,8 +564,20 @@ class AgenciesManager:
 
         try:
             await BillingManager(self.db).sync_seat_quantity(agency_id, increase=increase)
-        except Exception:
-            logger.exception("paddle seat sync failed for agency %s", agency_id)
+        except Exception as exc:
+            if "scheduled_change" in str(exc):
+                # Known case (manual test 2026-07-17): Paddle refuses
+                # full_next_billing_period while a cancellation is
+                # scheduled. NOT lost: the resume endpoint catches up the
+                # quantity, and a sub left cancelled dies whole anyway.
+                logger.error(
+                    "paddle seat sync SKIPPED for agency %s: subscription has a "
+                    "scheduled change (cancellation programmed) — the resume "
+                    "catch-up will re-sync if the client resumes",
+                    agency_id,
+                )
+            else:
+                logger.exception("paddle seat sync failed for agency %s", agency_id)
 
     # --- onboarding checklist (activation) ------------------------------------------
 

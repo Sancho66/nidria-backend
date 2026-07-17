@@ -690,6 +690,28 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
+        # CATCH-UP SYNC (bug du test manuel 17/07) : pendant une annulation
+        # programmée, Paddle refuse full_next_billing_period — le push
+        # descendant d'un retrait échoue alors en best-effort silencieux.
+        # Le resume est LE moment du rattrapage : le scheduled change vient
+        # de tomber, tout mode passe à nouveau. On re-dérive billed du
+        # roster réel et on pousse SI ça diverge de l'écho Paddle — même
+        # règle de proration que partout : immédiat à la hausse (des sièges
+        # ajoutés pendant la fenêtre, rare), fin de cycle à la baisse (le
+        # cas du bug). Best-effort : un hoquet Paddle ne casse pas le
+        # resume, l'alerte du sync (cas scheduled-change reconnu) trace.
+        echoed = _seat_quantity_from_items(subscription.get("items", []))
+        if echoed != usage.billed:
+            try:
+                await self.sync_seat_quantity(agency.id, increase=usage.billed > echoed)
+                subscription = await self._fetch_subscription(agency.paddle_subscription_id)
+            except Exception:
+                logger.exception(
+                    "resume catch-up seat sync failed for %s (echo %s != billed %s)",
+                    agency.slug,
+                    echoed,
+                    usage.billed,
+                )
         return self._state_from(agency, subscription, usage.billed, await self._catalog_prices())
 
     async def payment_method_update(self, agent: Agent) -> PaymentMethodUpdateResponse:
