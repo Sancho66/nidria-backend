@@ -27,6 +27,7 @@ from shared.models.rbac import Role
 from shared.models.referral import ReferralCredit
 from src.core.config import get_settings
 from src.referral.referral_manager import ReferralManager, _add_months, _cycles_until
+from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.test_billing_paddle import PRICE_IDS, SECRET, _envelope, _post
 
@@ -562,3 +563,101 @@ async def test_godchild_churn_does_not_revoke_the_credit(
         )
     ).scalar_one()
     assert credit.expires_at > datetime.now(UTC)  # intact: rien ne revoque
+
+
+# --- the front line (2026-07-17): the POSED discount is readable on the state ---
+
+
+async def _billing_state(client: AsyncClient, headers: dict[str, str]) -> dict[str, Any]:
+    res = await client.get("/billing/subscription", headers=headers)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+async def test_state_exposes_the_posed_referral_discount(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    agency = await make_agency(name="Expose SA", slug="expose-sa")
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"], email="adm@expose.io")
+    await _make_paddle_active(db_session, agency.id, sub_id="sub_refd1")
+    _mock_paddle(
+        monkeypatch,
+        sub={
+            "id": "sub_refd1",
+            "status": "active",
+            "next_billed_at": "2026-08-01T00:00:00Z",
+            "items": [],
+            "discount": {"id": "dsc_ours_1", "ends_at": "2026-11-01T00:00:00Z"},
+        },
+        discount={
+            "id": "dsc_ours_1",
+            "amount": "40",
+            "custom_data": {"referral_agency_id": str(agency.id), "referral_key": "40:2026-11-01"},
+        },
+    )
+    state = await _billing_state(client, agent_headers(admin))
+    assert state["referral_discount"] == {
+        "percent": 40,
+        "ends_at": "2026-11-01T00:00:00Z",
+    }
+
+
+async def test_state_never_dresses_a_foreign_discount_as_referral(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    agency = await make_agency(name="Promo SA", slug="promo-sa")
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"], email="adm@promo.io")
+    await _make_paddle_active(db_session, agency.id, sub_id="sub_refd2")
+    _mock_paddle(
+        monkeypatch,
+        sub={
+            "id": "sub_refd2",
+            "status": "active",
+            "next_billed_at": "2026-08-01T00:00:00Z",
+            "items": [],
+            "discount": {"id": "dsc_promo_eric", "ends_at": "2026-09-01T00:00:00Z"},
+        },
+        # A promo posed by hand: NO referral_key in custom_data.
+        discount={"id": "dsc_promo_eric", "amount": "10", "custom_data": {"campaign": "ete"}},
+    )
+    state = await _billing_state(client, agent_headers(admin))
+    assert state["referral_discount"] is None
+
+
+async def test_state_without_discount_reads_null(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    agency = await make_agency(name="Nu SA", slug="nu-sa")
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"], email="adm@nu.io")
+    await _make_paddle_active(db_session, agency.id, sub_id="sub_refd3")
+    mocks = _mock_paddle(
+        monkeypatch,
+        sub={
+            "id": "sub_refd3",
+            "status": "active",
+            "next_billed_at": "2026-08-01T00:00:00Z",
+            "items": [],
+            "discount": None,
+        },
+    )
+    state = await _billing_state(client, agent_headers(admin))
+    assert state["referral_discount"] is None
+    mocks["get_discount"].assert_not_awaited()  # zero extra Paddle call

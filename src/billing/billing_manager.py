@@ -25,6 +25,7 @@ from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
     PaymentMethodUpdateResponse,
+    ReferralDiscountState,
     SubscriptionCancelResponse,
     SubscriptionStateResponse,
     WebhookAck,
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 # Short in-process cache for the Paddle subscription reads (the management
 # page can be polled; one call feeds it). Invalidated on our own mutations;
 # 60 s of staleness is acceptable for a display surface.
+_DISCOUNT_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _SUBSCRIPTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _SUBSCRIPTION_CACHE_TTL = 60.0
 
@@ -607,12 +609,46 @@ class BillingManager:
             return None
         return Decimal(str(amount)) / 100
 
+    async def _referral_discount_from(
+        self, subscription: dict[str, Any]
+    ) -> ReferralDiscountState | None:
+        """The posed referral state, READ off the sub (never memorized):
+        sub.discount present -> GET the discount (short-cached like the sub
+        read) -> ours iff its custom_data carries referral_key. A foreign
+        discount (a promo posed by hand) or any Paddle hiccup -> None: the
+        display never invents and never 500s."""
+        import time as _time
+
+        block = subscription.get("discount") or {}
+        discount_id = block.get("id")
+        if not discount_id:
+            return None
+        cached = _DISCOUNT_CACHE.get(discount_id)
+        if cached is not None and _time.monotonic() - cached[0] < _SUBSCRIPTION_CACHE_TTL:
+            discount = cached[1]
+        else:
+            try:
+                discount = await PaddleClient().get_discount(discount_id)
+            except Exception:  # noqa: BLE001 — display data, never a 500
+                return None
+            _DISCOUNT_CACHE[discount_id] = (_time.monotonic(), discount)
+        if (discount.get("custom_data") or {}).get("referral_key") is None:
+            return None
+        try:
+            percent = int(str(discount.get("amount") or "0"))
+        except ValueError:
+            return None
+        ends_raw = block.get("ends_at")
+        ends = datetime.fromisoformat(ends_raw.replace("Z", "+00:00")) if ends_raw else None
+        return ReferralDiscountState(percent=percent, ends_at=ends)
+
     def _state_from(
         self,
         agency: Agency,
         subscription: dict[str, Any],
         billed: int,
         catalog: dict[str, Any] | None,
+        referral_discount: ReferralDiscountState | None = None,
     ) -> SubscriptionStateResponse:
         settings = get_settings()
         seat_ids = {pid for k, pid in settings.paddle_price_ids.items() if k.startswith("seat_")}
@@ -648,6 +684,7 @@ class BillingManager:
             scheduled_cancel_at=cancel_at,
             checkout_enabled=settings.billing_checkout_enabled,
             catalog_prices=catalog,
+            referral_discount=referral_discount,
         )
 
     async def get_subscription_state(self, agent: Agent) -> SubscriptionStateResponse:
@@ -657,7 +694,13 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        return self._state_from(agency, subscription, usage.billed, await self._catalog_prices())
+        return self._state_from(
+            agency,
+            subscription,
+            usage.billed,
+            await self._catalog_prices(),
+            referral_discount=await self._referral_discount_from(subscription),
+        )
 
     async def cancel_subscription(self, agent: Agent) -> SubscriptionCancelResponse:
         """Cancellation at PERIOD END, the commercial default — the client
@@ -732,7 +775,13 @@ class BillingManager:
                     echoed,
                     usage.billed,
                 )
-        return self._state_from(agency, subscription, usage.billed, await self._catalog_prices())
+        return self._state_from(
+            agency,
+            subscription,
+            usage.billed,
+            await self._catalog_prices(),
+            referral_discount=await self._referral_discount_from(subscription),
+        )
 
     async def payment_method_update(self, agent: Agent) -> PaymentMethodUpdateResponse:
         """The past_due gesture: Paddle's special transaction to update the

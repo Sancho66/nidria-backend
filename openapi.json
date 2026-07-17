@@ -1000,6 +1000,131 @@
         }
       }
     },
+    "/signup": {
+      "post": {
+        "tags": [
+          "signup"
+        ],
+        "summary": "Request Signup",
+        "description": "200 ALWAYS (known email, honeypot, whatever): the EMAIL differs,\nnever the response — no enumeration.",
+        "operationId": "request_signup_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signup/verify": {
+      "post": {
+        "tags": [
+          "signup"
+        ],
+        "summary": "Verify Signup",
+        "operationId": "verify_signup_signup_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupVerifyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signup/complete": {
+      "post": {
+        "tags": [
+          "signup"
+        ],
+        "summary": "Complete Signup",
+        "description": "The single-transaction creation through the shared writer, then\nAUTO-LOGIN: the response is a live token pair — welcome screen next.",
+        "operationId": "complete_signup_signup_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/billing/webhooks/paddle": {
       "post": {
         "tags": [
@@ -22415,6 +22540,32 @@
         "title": "RecipientType",
         "description": "Recipient of a reminder (`reminder.recipient_type`)."
       },
+      "ReferralDiscountState": {
+        "properties": {
+          "percent": {
+            "type": "integer",
+            "title": "Percent"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "percent"
+        ],
+        "title": "ReferralDiscountState",
+        "description": "The POSED referral discount, read off the live sub (the spike's\nsimplification): percent from the discount rate, ends_at from the\nsub's discount block. A discount without our referral_key (a promo\nposed by hand) is NOT reported here — never dressed up as referral."
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -23694,6 +23845,171 @@
         ],
         "title": "Sex"
       },
+      "SignupAccepted": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "sent"
+          }
+        },
+        "type": "object",
+        "title": "SignupAccepted",
+        "description": "Always the same body, email known or not (forgot-password pattern:\nthe EMAIL differs, never the response)."
+      },
+      "SignupCompleteRequest": {
+        "properties": {
+          "completion_token": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 16,
+            "title": "Completion Token"
+          },
+          "agency_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Agency Name"
+          },
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it"
+            ],
+            "title": "Language",
+            "default": "fr"
+          },
+          "referral_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16,
+                "minLength": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referral Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "completion_token",
+          "agency_name",
+          "first_name",
+          "last_name",
+          "password"
+        ],
+        "title": "SignupCompleteRequest"
+      },
+      "SignupRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it"
+            ],
+            "title": "Lang",
+            "default": "fr"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "turnstile_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnstile Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "SignupRequest",
+        "description": "Stage 1: the email to verify. `website` is the HONEYPOT (hidden\nfield): humans leave it empty, bots fill it — non-empty = silent 200,\nnothing created. `turnstile_token` is required only when the\nTURNSTILE_SECRET flag is armed."
+      },
+      "SignupVerifyRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "code"
+        ],
+        "title": "SignupVerifyRequest"
+      },
+      "SignupVerifyResponse": {
+        "properties": {
+          "completion_token": {
+            "type": "string",
+            "title": "Completion Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "completion_token"
+        ],
+        "title": "SignupVerifyResponse",
+        "description": "The short-lived (30 min) completion token — long and\nunbruteforcable, the only key /signup/complete accepts."
+      },
       "StepAttachmentResponse": {
         "properties": {
           "id": {
@@ -24442,6 +24758,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CatalogPrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "referral_discount": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferralDiscountState"
               },
               {
                 "type": "null"

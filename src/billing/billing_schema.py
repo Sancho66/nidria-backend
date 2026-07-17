@@ -54,6 +54,16 @@ class CatalogPrices(BaseModel):
     agence: PlanCatalogPrices
 
 
+class ReferralDiscountState(BaseModel):
+    """The POSED referral discount, read off the live sub (the spike's
+    simplification): percent from the discount rate, ends_at from the
+    sub's discount block. A discount without our referral_key (a promo
+    posed by hand) is NOT reported here — never dressed up as referral."""
+
+    percent: int
+    ends_at: datetime | None = None
+
+
 class SubscriptionStateResponse(BaseModel):
     """GET /billing/subscription — everything the management page shows, in
     ONE response. Money as STRINGS (decimal euros), never a JSON float; the
@@ -79,6 +89,9 @@ class SubscriptionStateResponse(BaseModel):
     # None when Paddle is unreachable: the front keeps its SWR/skeleton —
     # never a 500 for display prices.
     catalog_prices: CatalogPrices | None = None
+    # The referral program's posed discount — None when none, or when the
+    # sub's discount is not ours (front line, 2026-07-17).
+    referral_discount: ReferralDiscountState | None = None
 
     @field_serializer("base_unit_price", "seat_unit_price", "next_payment_amount")
     def _ser_money(self, value: Decimal | None) -> str | None:
