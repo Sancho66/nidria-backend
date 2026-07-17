@@ -141,6 +141,52 @@ class PaddleClient:
         align (--align-tax-mode); amounts stay immutable by principle."""
         return await self._request("PATCH", f"/prices/{price_id}", {"tax_mode": tax_mode})
 
+    # --- discounts (referral program) -----------------------------------------------
+
+    async def get_discount(self, discount_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/discounts/{discount_id}", None)
+
+    async def create_discount(
+        self,
+        *,
+        description: str,
+        rate: int,
+        maximum_recurring_intervals: int,
+        custom_data: dict[str, str],
+    ) -> dict[str, Any]:
+        """A DEDICATED recurring percentage discount for one referral tier:
+        Paddle stops applying it by itself after `maximum_recurring_intervals`
+        billings (spike-verified) — the lazy recompute re-poses the next
+        tier after that boundary."""
+        return await self._request(
+            "POST",
+            "/discounts",
+            {
+                "description": description,
+                "type": "percentage",
+                "amount": str(rate),
+                "recur": True,
+                "maximum_recurring_intervals": maximum_recurring_intervals,
+                "custom_data": custom_data,
+            },
+        )
+
+    async def set_subscription_discount(
+        self, subscription_id: str, discount_id: str | None
+    ) -> dict[str, Any]:
+        """Pose (effective at the NEXT billing) or remove the subscription's
+        discount. Spike-verified: works on a live sub, replacement restarts
+        the interval counter, and scheduled_change does NOT block it."""
+        payload: dict[str, Any] = (
+            {"discount": {"id": discount_id, "effective_from": "next_billing_period"}}
+            if discount_id is not None
+            else {"discount": None}
+        )
+        return await self._request("PATCH", f"/subscriptions/{subscription_id}", payload)
+
+    async def archive_discount(self, discount_id: str) -> dict[str, Any]:
+        return await self._request("PATCH", f"/discounts/{discount_id}", {"status": "archived"})
+
     # --- notification destinations (webhook provisioning) --------------------------
 
     async def list_notification_settings(self) -> list[dict[str, Any]]:

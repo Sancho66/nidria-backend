@@ -96,6 +96,7 @@ class AdminManager:
             cases_count=r.cases_count,
             members_count=r.members_count,
             created_at=r.created_at,
+            referred_by=r.referred_by,
             onboarding=onboarding_gestures(
                 journey_at=journey_at,
                 premier_dossier=milestones.get("premier_dossier_cree"),

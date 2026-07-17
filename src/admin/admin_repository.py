@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import Row, ScalarSelect, and_, asc, desc, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
@@ -111,6 +112,16 @@ class AdminRepository:
         members_count = self._members_count().label("members_count")
         seats_used = self._seats_used().label("seats_used")
         last_login_at = self._last_login().label("last_login_at")
+        # "Parrainé par" (referral lot): the referrer's NAME, one scalar
+        # subquery in the same batch — never a per-row query.
+        referrer = aliased(Agency)
+        referred_by = (
+            select(referrer.name)
+            .where(referrer.id == Agency.referred_by_agency_id)
+            .correlate(Agency)
+            .scalar_subquery()
+            .label("referred_by")
+        )
 
         stmt = select(
             Agency.id,
@@ -128,6 +139,7 @@ class AdminRepository:
             members_count,
             seats_used,
             last_login_at,
+            referred_by,
         )
         count_stmt = select(func.count()).select_from(Agency)
 

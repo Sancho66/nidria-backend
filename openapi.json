@@ -13625,6 +13625,17 @@
               }
             ],
             "title": "Last Login At"
+          },
+          "referred_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referred By"
           }
         },
         "type": "object",
@@ -13713,6 +13724,19 @@
             "minimum": 0.0,
             "title": "Founding Free Seats",
             "default": 0
+          },
+          "referral_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16,
+                "minLength": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referral Code"
           }
         },
         "type": "object",
@@ -13895,6 +13919,17 @@
               }
             ],
             "title": "Currency"
+          },
+          "referral_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referral Code"
           },
           "subscription": {
             "anyOf": [

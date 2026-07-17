@@ -39,6 +39,7 @@ from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
 from shared.models.nurture import NurtureSend
 from shared.models.paddle_event import PaddleWebhookEvent
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
+from shared.models.referral import ReferralCredit
 from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
 from shared.models.step_case_requirement import StepCaseRequirement
@@ -89,6 +90,7 @@ __all__ = [
     "Permission",
     "ProtectedResource",
     "RefreshToken",
+    "ReferralCredit",
     "Reminder",
     "Role",
     "SavedView",

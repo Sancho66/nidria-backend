@@ -208,6 +208,9 @@ class AgencyResponse(BaseModel):
     # show the chosen code and detect "not set yet" (NULL) in Settings. It is
     # writable via PATCH /agencies/me; a written field must be re-readable.
     currency: str | None = None
+    # The agency's OWN referral code to share ("Parrainez une agence" in
+    # Settings) — generated at creation, stable.
+    referral_code: str | None = None
     # Filled on GET /agencies/me only (the settings read); other call
     # sites leave it None.
     subscription: AgencySubscriptionInfo | None = None
@@ -229,6 +232,11 @@ class AgencyCreateRequest(BaseModel):
     # also editable later via PATCH /agencies/{id}/subscription.
     is_founding: bool = False
     founding_free_seats: int = Field(default=0, ge=0, le=3)
+    # Referral attribution ("Code de parrainage", optional): the REFERRER's
+    # code. Resolved at creation, IMMUTABLE afterwards — a referral is
+    # never re-attributed. Unknown code = explicit refusal (the operator
+    # is typing it), never a silent drop.
+    referral_code: str | None = Field(default=None, min_length=4, max_length=16)
 
 
 class CreatedAdminResponse(BaseModel):

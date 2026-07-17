@@ -42,6 +42,9 @@ class AdminAgencyRow(BaseModel):
     onboarding: list[OnboardingStepState]
     usage_state: str  # S0 | S1 | S2
     last_login_at: datetime | None
+    # Referral lot: the referrer agency's name (Eric sees who referred
+    # whom); None when the agency came in without a code.
+    referred_by: str | None = None
 
 
 class AdminAgenciesResponse(BaseModel):

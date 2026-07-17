@@ -44,6 +44,10 @@ class AgenciesRepository:
         stmt = select(Agency).where(Agency.slug == slug)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_agency_by_referral_code(self, code: str) -> Agency | None:
+        stmt = select(Agency).where(Agency.referral_code == code)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     def add_agency(self, *, name: str, slug: str, default_language: str) -> Agency:
         agency = Agency(name=name, slug=slug, default_language=default_language, settings={})
         self.db.add(agency)

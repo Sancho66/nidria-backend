@@ -105,6 +105,14 @@ def providers_max_for(plan: str | None) -> int | None:
     return PROVIDERS_MAX_BY_PLAN.get(plan or "", TRIAL_PROVIDER_LIMIT)
 
 
+# Referral codes: no ambiguous glyphs (0/O, 1/I/L) — typed by humans.
+_REFERRAL_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def _generate_referral_code() -> str:
+    return "NID-" + "".join(secrets.choice(_REFERRAL_ALPHABET) for _ in range(6))
+
+
 def _slugify(name: str) -> str:
     """Derive a URL-safe slug from an agency name (ASCII, lower, hyphen)."""
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
@@ -173,9 +181,26 @@ class AgenciesManager:
                 "Free seats are reserved for founding agencies.",
                 code="subscription.founding_seats_invalid",
             )
+        # Referral attribution (optional wizard field): resolve the typed
+        # code BEFORE creating anything — unknown code = explicit 422.
+        referrer: Agency | None = None
+        if payload.referral_code is not None:
+            referrer = await self.repo.get_agency_by_referral_code(
+                payload.referral_code.strip().upper()
+            )
+            if referrer is None:
+                raise ValidationError("Unknown referral code.", code="referral.code_unknown")
         agency = self.repo.add_agency(
             name=payload.name, slug=slug, default_language=payload.default_language
         )
+        # The agency's OWN shareable code (unique; regenerate on the rare
+        # collision — 31^6 space, the loop is theoretical).
+        code = _generate_referral_code()
+        while await self.repo.get_agency_by_referral_code(code) is not None:
+            code = _generate_referral_code()
+        agency.referral_code = code
+        if referrer is not None:
+            agency.referred_by_agency_id = referrer.id
         # Founding offer posed at creation when Eric already knows it.
         agency.is_founding = payload.is_founding
         agency.founding_free_seats = payload.founding_free_seats
@@ -517,6 +542,15 @@ class AgenciesManager:
         # quantity (no-op for manual agencies). Best-effort after commit.
         if founding_seats_changed:
             await self._sync_paddle_seats(agency.id, increase=False)
+        # Referral effects (best-effort, post-commit): a manual conversion
+        # grants like a Paddle one — recompute the referrer's discount,
+        # notify them, and activate the converted agency's dormant credits.
+        if payload.plan is not None:
+            from src.referral.referral_manager import ReferralManager
+
+            await ReferralManager(self.db).post_conversion_effects(
+                agency.id, granted=getattr(self, "last_referral_granted", False)
+            )
         return await self.subscription_info(agency)
 
     async def apply_conversion(
@@ -545,6 +579,13 @@ class AgenciesManager:
             agency.converted_at = converted_at
         elif agency.converted_at is None:
             agency.converted_at = datetime.now(UTC)
+        # Referral grant — INSIDE the single gesture, so a manually
+        # converted godchild triggers exactly like a Paddle one. DB only
+        # (the caller owns the transaction); the Paddle/email effects run
+        # post-commit at the call sites (post_conversion_effects).
+        from src.referral.referral_manager import ReferralManager
+
+        self.last_referral_granted = await ReferralManager(self.db).grant_on_conversion(agency)
         await UsageManager(self.db).emit(
             agency_id=agency.id,
             event_type="agency.converted",

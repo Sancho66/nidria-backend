@@ -1,7 +1,8 @@
+import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Date, DateTime, String, text
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -98,6 +99,16 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     past_due_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     paddle_customer_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     paddle_subscription_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # Referral program (parrainage). `referral_code` = the agency's OWN code
+    # to share (dedicated, not the guessable public slug); generated at
+    # creation, backfilled for existing rows. `referred_by_agency_id` = who
+    # referred THIS agency — typed at signup/wizard, IMMUTABLE afterwards
+    # (a referral is never re-attributed). The credits ledger lives in
+    # referral_credit; these two columns are the attribution only.
+    referral_code: Mapped[str | None] = mapped_column(String(16), unique=True, index=True)
+    referred_by_agency_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agency.id", ondelete="SET NULL")
+    )
 
     @property
     def has_logo(self) -> bool:

@@ -316,6 +316,23 @@ class BillingManager:
                 await self.db.rollback()
                 return WebhookAck(status="duplicate")
             return WebhookAck(status="ignored")
+        # Referral effects, POST-commit and best-effort (Paddle + mail must
+        # never make a webhook fail): a processed `activated` grants and/or
+        # (re)poses discounts; a `transaction.completed` of a referrer is
+        # the LAZY tick that re-poses the next tier after an interval
+        # boundary (the webhook's only handled use).
+        if status == "processed" and event_type == "subscription.activated":
+            from src.referral.referral_manager import ReferralManager
+
+            await ReferralManager(self.db).post_conversion_effects(
+                agency_id, granted=getattr(self, "_referral_granted", False)
+            )
+        elif event_type == "transaction.completed":
+            from src.referral.referral_manager import ReferralManager
+
+            refreshed = await self.db.get(Agency, agency_id)
+            if refreshed is not None:
+                await ReferralManager(self.db).recompute_discount_best_effort(refreshed)
         return WebhookAck(status=status)
 
     async def _resolve_agency(self, data: dict[str, Any]) -> Agency | None:
@@ -441,7 +458,8 @@ class BillingManager:
             # (one emission point for agency.converted, by construction).
             from src.agencies.agencies_manager import AgenciesManager
 
-            await AgenciesManager(self.db).apply_conversion(
+            conversion_manager = AgenciesManager(self.db)
+            await conversion_manager.apply_conversion(
                 agency,
                 plan=plan,
                 billing_cycle=cycle,
@@ -449,6 +467,8 @@ class BillingManager:
                 actor_type=ActorType.SYSTEM,
                 actor_id=None,
             )
+            # For the post-commit referral effects in handle_webhook.
+            self._referral_granted = getattr(conversion_manager, "last_referral_granted", False)
         else:
             # RE-subscription of an already-converted agency: converted_at is
             # a HISTORICAL fact (never overwritten) and agency.converted is
