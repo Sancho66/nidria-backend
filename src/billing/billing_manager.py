@@ -114,8 +114,18 @@ class BillingManager:
         """Build the Paddle checkout transaction for the hosted overlay.
         custom_data.agency_id is THE link every webhook resolves by."""
         settings = get_settings()
-        # Offer kill switch — FIRST, before any lookup or Paddle call: a
-        # closed offer ("cable mais ferme") refuses at the door.
+        # Internal agency FIRST — outside billing entirely, whatever the
+        # offer state (the kill switch is about the OFFER, not about her).
+        internal = await self.db.execute(
+            select(Agency.is_internal).where(Agency.id == agent.agency_id)
+        )
+        if internal.scalar_one_or_none():
+            raise ConflictError(
+                "This agency is internal; billing does not apply.",
+                code="billing.internal_agency",
+            )
+        # Offer kill switch — before any Paddle call: a closed offer
+        # ("cable mais ferme") refuses at the door.
         if not settings.billing_checkout_enabled:
             raise ConflictError(
                 "Self-serve checkout is not open yet.",
@@ -130,11 +140,6 @@ class BillingManager:
             )
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
-        if agency.is_internal:
-            raise ConflictError(
-                "This agency is internal; billing does not apply.",
-                code="billing.internal_agency",
-            )
         if agency.billing_mode == "paddle":
             if agency.paddle_subscription_id is not None and agency.billing_status != "canceled":
                 raise ConflictError(
