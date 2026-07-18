@@ -218,6 +218,9 @@ class AgencyResponse(BaseModel):
     # Filled on GET /agencies/me only (the settings read); other call
     # sites leave it None.
     subscription: AgencySubscriptionInfo | None = None
+    # EFFECTIVE client notification prefs (defaults merged) — the front
+    # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
+    notification_prefs: dict[str, str] | None = None
 
 
 class AgencyCreateRequest(BaseModel):

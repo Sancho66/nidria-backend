@@ -1110,6 +1110,123 @@ def journey_kickoff_email(
     )
 
 
+_DIGEST = {
+    "fr": {
+        "subject": "Nidria : votre dossier a avancé",
+        "title": "Votre dossier a avancé",
+        "intro": "{agency} : {summary}.",
+        "period_weekly": "cette semaine",
+        "period_daily": "aujourd'hui",
+        "completed": "{n} étape(s) terminée(s)",
+        "started": "{n} étape(s) démarrée(s)",
+        "documents": "{n} document(s) validé(s)",
+        "line_completed": "Terminée : {step}",
+        "line_started": "Démarrée : {step}",
+        "button": "Voir mon dossier",
+    },
+    "en": {
+        "subject": "Nidria: your file has moved forward",
+        "title": "Your file has moved forward",
+        "intro": "{agency}: {summary}.",
+        "period_weekly": "this week",
+        "period_daily": "today",
+        "completed": "{n} step(s) completed",
+        "started": "{n} step(s) started",
+        "documents": "{n} document(s) validated",
+        "line_completed": "Completed: {step}",
+        "line_started": "Started: {step}",
+        "button": "View my file",
+    },
+    "es": {
+        "subject": "Nidria: su expediente ha avanzado",
+        "title": "Su expediente ha avanzado",
+        "intro": "{agency}: {summary}.",
+        "period_weekly": "esta semana",
+        "period_daily": "hoy",
+        "completed": "{n} etapa(s) completada(s)",
+        "started": "{n} etapa(s) iniciada(s)",
+        "documents": "{n} documento(s) validado(s)",
+        "line_completed": "Completada: {step}",
+        "line_started": "Iniciada: {step}",
+        "button": "Ver mi expediente",
+    },
+    "ru": {
+        "subject": "Nidria: ваше дело продвинулось",
+        "title": "Ваше дело продвинулось",
+        "intro": "{agency}: {summary}.",
+        "period_weekly": "за эту неделю",
+        "period_daily": "сегодня",
+        "completed": "этапов завершено: {n}",
+        "started": "этапов начато: {n}",
+        "documents": "документов подтверждено: {n}",
+        "line_completed": "Завершено: {step}",
+        "line_started": "Начато: {step}",
+        "button": "Открыть моё дело",
+    },
+    "pt": {
+        "subject": "Nidria: o seu processo avançou",
+        "title": "O seu processo avançou",
+        "intro": "{agency}: {summary}.",
+        "period_weekly": "esta semana",
+        "period_daily": "hoje",
+        "completed": "{n} etapa(s) concluída(s)",
+        "started": "{n} etapa(s) iniciada(s)",
+        "documents": "{n} documento(s) validado(s)",
+        "line_completed": "Concluída: {step}",
+        "line_started": "Iniciada: {step}",
+        "button": "Ver o meu processo",
+    },
+    "it": {
+        "subject": "Nidria: la tua pratica è avanzata",
+        "title": "La tua pratica è avanzata",
+        "intro": "{agency}: {summary}.",
+        "period_weekly": "questa settimana",
+        "period_daily": "oggi",
+        "completed": "{n} tappa(e) completata(e)",
+        "started": "{n} tappa(e) avviata(e)",
+        "documents": "{n} documento(i) convalidato(i)",
+        "line_completed": "Completata: {step}",
+        "line_started": "Avviata: {step}",
+        "button": "Vedi la mia pratica",
+    },
+}
+
+
+def digest_email(
+    agency_name: str,
+    period: str,
+    completed_steps: list[str],
+    started_steps: list[str],
+    documents_validated: int,
+    space_link: str,
+    lang: str = "fr",
+) -> EmailContent:
+    """The periodic progress digest (weekly|daily): a readable summary of
+    the WHITELISTED client-relevant events — never an internal action.
+    `period` is "weekly" | "daily" (localized label inside)."""
+    s = _pick(_DIGEST, lang)
+    parts: list[str] = []
+    if completed_steps:
+        parts.append(s["completed"].format(n=len(completed_steps)))
+    if started_steps:
+        parts.append(s["started"].format(n=len(started_steps)))
+    if documents_validated:
+        parts.append(s["documents"].format(n=documents_validated))
+    period_label = s["period_weekly"] if period == "weekly" else s["period_daily"]
+    summary = f"{period_label}, " + ", ".join(parts)
+    lines = [s["line_completed"].format(step=step) for step in completed_steps]
+    lines += [s["line_started"].format(step=step) for step in started_steps]
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name, summary=summary),
+        body_text="\n".join("- " + line for line in lines) if lines else None,
+        button_label=s["button"],
+        button_url=space_link,
+        lang=lang,
+    )
+
+
 def referral_granted_email(referred_name: str, rate: int, lang: str = "fr") -> EmailContent:
     """Rendered in the REFERRER's language (agency default). `rate` is the
     REAL tier the new credit locked in (bareme by rank) — never hardcoded."""

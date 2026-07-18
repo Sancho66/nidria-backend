@@ -23,6 +23,11 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         "name": "Trial nurture emails (J+7 / J+21 / J+28)",
         "cron_expression": "0 8 * * *",
     },
+    {
+        "job_id": "notification_digest",
+        "name": "Progress digest (weekly on Monday / daily per agency pref)",
+        "cron_expression": "0 9 * * *",
+    },
 ]
 
 

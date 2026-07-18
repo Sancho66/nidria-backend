@@ -17,6 +17,7 @@ from shared.models.client_case import ClientCase
 from shared.models.consent import ConsentAcceptance, ConsentDocument
 from shared.models.crm_import_mapping import CrmImportMapping
 from shared.models.custom_field import CustomFieldDefinition
+from shared.models.digest import DigestCursor
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
@@ -67,6 +68,7 @@ __all__ = [
     "ConsentDocument",
     "CrmImportMapping",
     "CustomFieldDefinition",
+    "DigestCursor",
     "Document",
     "ExpatUser",
     "ExternalContact",

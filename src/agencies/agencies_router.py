@@ -35,6 +35,7 @@ from src.auth.auth_schema import MessageResponse, TokenPairResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
+from src.core.notification_prefs import effective_client_prefs
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.referral.referral_manager import ReferralManager
@@ -261,6 +262,7 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     # Read-only settings block: the agency SEES where it stands
     # (plan, cycle, seats); the conversion itself goes through Eric.
     response.subscription = await manager.subscription_info(agency)
+    response.notification_prefs = effective_client_prefs(agency)
     return response
 
 

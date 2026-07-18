@@ -14144,6 +14144,20 @@
                 "type": "null"
               }
             ]
+          },
+          "notification_prefs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Prefs"
           }
         },
         "type": "object",

@@ -17,6 +17,7 @@ from shared.models.job import JobConfig
 from src.core.config import get_settings
 from src.core.enums import JobTriggeredBy
 from src.core.job_wrapper import Pipeline, run_job
+from src.digest.digest_job import run_notification_digest
 from src.nurture.nurture_job import send_trial_nurture
 from src.reminders.reminders_jobs import create_auto_reminders, dispatch_due_reminders
 
@@ -26,6 +27,7 @@ JOB_REGISTRY: dict[str, Pipeline] = {
     "dispatch_reminders": dispatch_due_reminders,
     "auto_reminders": create_auto_reminders,
     "trial_nurture": send_trial_nurture,
+    "notification_digest": run_notification_digest,
 }
 
 
