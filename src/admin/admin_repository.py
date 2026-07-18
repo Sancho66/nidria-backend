@@ -130,6 +130,7 @@ class AdminRepository:
             Agency.logo_path,
             Agency.plan,
             Agency.is_founding,
+            Agency.is_internal,
             Agency.billing_mode,
             Agency.billing_status,
             Agency.trial_ends_at,

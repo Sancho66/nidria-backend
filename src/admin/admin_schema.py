@@ -26,6 +26,8 @@ class AdminAgencyRow(BaseModel):
     seats_used: int
     seats_limit: int
     is_founding: bool
+    # Badge "Interne" (agence maison, hors facturation) — jamais un client.
+    is_internal: bool
     # Paddle lot: who writes the subscription (manual | paddle) and the
     # payment health (active | past_due | canceled, NULL pre-checkout) —
     # past_due invisible alerts nobody, hence the ?billing_status= filter.

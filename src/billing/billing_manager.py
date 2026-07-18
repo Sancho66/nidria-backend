@@ -130,6 +130,11 @@ class BillingManager:
             )
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
+        if agency.is_internal:
+            raise ConflictError(
+                "This agency is internal; billing does not apply.",
+                code="billing.internal_agency",
+            )
         if agency.billing_mode == "paddle":
             if agency.paddle_subscription_id is not None and agency.billing_status != "canceled":
                 raise ConflictError(
@@ -581,6 +586,13 @@ class BillingManager:
         the pricing page renders cold, without the Paddle iframe."""
         agency = await self.db.get(Agency, agent.agency_id)
         assert agency is not None
+        if agency.is_internal:
+            # Internal lifetime agency: outside billing entirely — its own
+            # code so the front shows the internal state, never a wall.
+            raise ConflictError(
+                "This agency is internal; billing does not apply.",
+                code="billing.internal_agency",
+            )
         if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
             if agency.converted_at is not None:
                 # Manually CONVERTED (internal lifetime agency, sur-mesure

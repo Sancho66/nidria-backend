@@ -79,6 +79,10 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # as the subscription stays continuous - Eric's call, not enforced).
     price_locked_until: Mapped[date | None] = mapped_column(Date)
     is_founding: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # Internal agency (Nidria Demo, future in-house workspaces): lifetime,
+    # outside billing entirely (409 billing.internal_agency, never blocked,
+    # never nurtured) and badged "Interne" in Eric's admin table.
+    is_internal: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Paddle (Merchant of Record, self-serve). billing_mode drives WHO writes
     # the subscription state: "manual" (default — the superadmin's PATCH, the

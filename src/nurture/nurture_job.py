@@ -126,6 +126,7 @@ def send_trial_nurture(db: Session, *, log: LogFn, dry_run: bool = False) -> dic
                 # nurture i18n sits in the backlog; it turns urgent with
                 # the first English-speaking marketing push.
                 Agency.default_language == "fr",
+                Agency.is_internal.is_(False),
             )
             .order_by(Agency.slug)
         )

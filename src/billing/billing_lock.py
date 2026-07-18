@@ -24,6 +24,8 @@ def blocking_reason(agency: Agency, *, now: datetime) -> str | None:
     """The stable reason the agency is blocked, or None when it is not.
     Values: "trial_expired" | "past_due" | "canceled" — served to the front
     (banner wording) alongside the 403 code billing.subscription_required."""
+    if agency.is_internal:
+        return None  # internal agency (lifetime): structurally never blocked
     if agency.converted_at is None:
         # No conversion: the trial calendar decides. No calendar at all
         # (platform/demo agencies) = no deadline, never blocked.

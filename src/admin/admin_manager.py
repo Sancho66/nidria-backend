@@ -89,6 +89,7 @@ class AdminManager:
             seats_used=r.seats_used,
             seats_limit=SEATS_MAX_BY_PLAN.get(r.plan or "", TRIAL_SEAT_LIMIT),
             is_founding=r.is_founding,
+            is_internal=r.is_internal,
             billing_mode=r.billing_mode,
             billing_status=r.billing_status,
             status=status,
