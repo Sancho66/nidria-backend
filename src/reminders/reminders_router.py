@@ -93,8 +93,9 @@ async def delete_message_template(
 async def create_reminder(
     case_id: uuid.UUID, body: ReminderCreateRequest, agent: AgentDep, db: DbDep
 ) -> ReminderResponse:
-    reminder = await RemindersManager(db).create_reminder(agent, case_id, body)
-    return ReminderResponse.model_validate(reminder)
+    manager = RemindersManager(db)
+    reminder = await manager.create_reminder(agent, case_id, body)
+    return await manager.to_response(reminder)
 
 
 @router.get("/reminders", response_model=ReminderListResponse)
@@ -115,9 +116,10 @@ async def list_reminders(
         "scheduled_from": scheduled_from,
         "scheduled_to": scheduled_to,
     }
-    reminders, total = await RemindersManager(db).list_reminders(agent, filters, page, page_size)
+    manager = RemindersManager(db)
+    reminders, total = await manager.list_reminders(agent, filters, page, page_size)
     return ReminderListResponse(
-        items=[ReminderResponse.model_validate(reminder) for reminder in reminders],
+        items=await manager.to_responses(reminders),
         total=total,
         page=page,
         page_size=page_size,
@@ -126,33 +128,38 @@ async def list_reminders(
 
 @router.get("/reminders/{reminder_id}", response_model=ReminderResponse)
 async def get_reminder(reminder_id: uuid.UUID, agent: AgentDep, db: DbDep) -> ReminderResponse:
-    reminder = await RemindersManager(db).get_reminder(agent, reminder_id)
-    return ReminderResponse.model_validate(reminder)
+    manager = RemindersManager(db)
+    reminder = await manager.get_reminder(agent, reminder_id)
+    return await manager.to_response(reminder)
 
 
 @router.patch("/reminders/{reminder_id}", response_model=ReminderResponse)
 async def update_reminder(
     reminder_id: uuid.UUID, body: ReminderUpdateRequest, agent: AgentDep, db: DbDep
 ) -> ReminderResponse:
-    reminder = await RemindersManager(db).update_reminder(agent, reminder_id, body)
-    return ReminderResponse.model_validate(reminder)
+    manager = RemindersManager(db)
+    reminder = await manager.update_reminder(agent, reminder_id, body)
+    return await manager.to_response(reminder)
 
 
 @router.post("/reminders/{reminder_id}/approve", response_model=ReminderResponse)
 async def approve_reminder(reminder_id: uuid.UUID, agent: AgentDep, db: DbDep) -> ReminderResponse:
-    reminder = await RemindersManager(db).approve_reminder(agent, reminder_id)
-    return ReminderResponse.model_validate(reminder)
+    manager = RemindersManager(db)
+    reminder = await manager.approve_reminder(agent, reminder_id)
+    return await manager.to_response(reminder)
 
 
 @router.post("/reminders/{reminder_id}/cancel", response_model=ReminderResponse)
 async def cancel_reminder(reminder_id: uuid.UUID, agent: AgentDep, db: DbDep) -> ReminderResponse:
-    reminder = await RemindersManager(db).cancel_reminder(agent, reminder_id)
-    return ReminderResponse.model_validate(reminder)
+    manager = RemindersManager(db)
+    reminder = await manager.cancel_reminder(agent, reminder_id)
+    return await manager.to_response(reminder)
 
 
 @router.post("/reminders/{reminder_id}/mark-sent", response_model=ReminderResponse)
 async def mark_reminder_sent(
     reminder_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> ReminderResponse:
-    reminder = await RemindersManager(db).mark_sent(agent, reminder_id)
-    return ReminderResponse.model_validate(reminder)
+    manager = RemindersManager(db)
+    reminder = await manager.mark_sent(agent, reminder_id)
+    return await manager.to_response(reminder)

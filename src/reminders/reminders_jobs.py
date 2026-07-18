@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
@@ -40,6 +42,7 @@ from src.core.enums import (
     StepStatus,
 )
 from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
+from src.reminders.reminders_targeting import targeted_member
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,35 @@ def _owner_delivery(db: Session, case_id: uuid.UUID, agency: Agency) -> tuple[st
     return str(row[0]), resolve_notification_lang_agent(agency.default_language)
 
 
+def _targeted_member_user(db: Session, reminder: Reminder) -> ExpatUser | None:
+    """The member the reminder's step points at (see reminders_targeting) —
+    None routes to the principal path."""
+    if reminder.step_progress_id is None:
+        return None
+    requirements = (
+        db.execute(
+            select(CaseStepRequirement).where(
+                CaseStepRequirement.case_step_progress_id == reminder.step_progress_id
+            )
+        )
+        .scalars()
+        .all()
+    )
+    persons = {
+        p.id: p
+        for p in db.execute(select(CasePerson).where(CasePerson.case_id == reminder.case_id))
+        .scalars()
+        .all()
+    }
+    person = targeted_member(list(requirements), persons)
+    if person is None or person.expat_user_id is None:
+        return None
+    member = db.get(ExpatUser, person.expat_user_id)
+    if member is None or not member.email:
+        return None
+    return member
+
+
 def _recipient(
     db: Session, reminder: Reminder, agency: Agency
 ) -> tuple[str, str, str | None] | None:
@@ -68,6 +100,12 @@ def _recipient(
     case owner — so a reminder NEVER dies in silence. Returns None only when
     even the owner is missing (defensive)."""
     if reminder.recipient_type == RecipientType.EXPAT.value:
+        # Routing (2026-07-18): the step's pending requirements may all
+        # point at ONE member with an access — the reminder goes to HER,
+        # in HER language. Otherwise the principal, as before. Never both.
+        member = _targeted_member_user(db, reminder)
+        if member is not None:
+            return member.email, resolve_notification_lang_client(member.preferred_lang), None
         row = db.execute(
             select(ExpatUser.email, ExpatUser.preferred_lang)
             .join(ClientCase, ClientCase.principal_expat_user_id == ExpatUser.id)

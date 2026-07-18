@@ -66,6 +66,12 @@ class ReminderResponse(BaseModel):
     message_body: str
     approved_by_agent_id: uuid.UUID | None
     auto_threshold_days: int | None
+    # The REAL recipient the dispatch will resolve ("sera envoye a Claire
+    # Martin") — routing 2026-07-18: an EXPAT reminder whose step targets
+    # one member with access goes to HER; the approval screen must say it.
+    # Display name (member full_name, principal name, contact name, owner
+    # email) — None only when nothing is resolvable (defensive).
+    resolved_recipient: str | None = None
     created_at: datetime
     updated_at: datetime
 

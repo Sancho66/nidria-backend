@@ -22953,6 +22953,17 @@
             ],
             "title": "Auto Threshold Days"
           },
+          "resolved_recipient": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Recipient"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",

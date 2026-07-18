@@ -6,7 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
@@ -30,6 +32,38 @@ class RemindersRepository:
             ClientCase.deleted_at.is_(None),
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def list_step_requirements_for_progress(
+        self, progress_id: uuid.UUID
+    ) -> list[CaseStepRequirement]:
+        stmt = select(CaseStepRequirement).where(
+            CaseStepRequirement.case_step_progress_id == progress_id
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def persons_by_id_for_case(self, case_id: uuid.UUID) -> dict[uuid.UUID, CasePerson]:
+        stmt = select(CasePerson).where(CasePerson.case_id == case_id)
+        return {p.id: p for p in (await self.db.execute(stmt)).scalars().all()}
+
+    async def get_principal_display(self, case_id: uuid.UUID) -> str | None:
+        stmt = (
+            select(ExpatUser.first_name, ExpatUser.last_name)
+            .join(ClientCase, ClientCase.principal_expat_user_id == ExpatUser.id)
+            .where(ClientCase.id == case_id)
+        )
+        row = (await self.db.execute(stmt)).first()
+        return f"{row[0]} {row[1]}" if row is not None else None
+
+    async def get_owner_display(self, case_id: uuid.UUID) -> str | None:
+        from shared.models.agent import Agent as AgentModel
+
+        stmt = (
+            select(AgentModel.first_name, AgentModel.last_name)
+            .join(ClientCase, ClientCase.owner_agent_id == AgentModel.id)
+            .where(ClientCase.id == case_id)
+        )
+        row = (await self.db.execute(stmt)).first()
+        return f"{row[0]} {row[1]}" if row is not None else None
 
     async def get_expat(self, expat_id: uuid.UUID) -> ExpatUser | None:
         return await self.db.get(ExpatUser, expat_id)

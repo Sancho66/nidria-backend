@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -22,9 +23,13 @@ from src.reminders.reminders_schema import (
     MessageTemplateCreateRequest,
     MessageTemplateUpdateRequest,
     ReminderCreateRequest,
+    ReminderResponse,
     ReminderUpdateRequest,
 )
+from src.reminders.reminders_targeting import targeted_member
 from src.usage.usage_manager import UsageManager
+
+logger = logging.getLogger(__name__)
 
 _VARIABLE_PATTERN = re.compile(r"\{(client_name|step_name|days_left)\}")
 
@@ -223,6 +228,48 @@ class RemindersManager:
         self, agent: Agent, filters: dict[str, Any], page: int, page_size: int
     ) -> tuple[list[Reminder], int]:
         return await self.repo.list_reminders(agent.agency_id, filters, page, page_size)
+
+    # --- the approval screen says the REAL recipient -------------------------------------
+
+    async def to_response(self, reminder: Reminder) -> ReminderResponse:
+        response = ReminderResponse.model_validate(reminder)
+        response.resolved_recipient = await self._resolved_recipient(reminder)
+        return response
+
+    async def to_responses(self, reminders: list[Reminder]) -> list[ReminderResponse]:
+        return [await self.to_response(reminder) for reminder in reminders]
+
+    async def _resolved_recipient(self, reminder: Reminder) -> str | None:
+        """Mirror of the dispatch routing (reminders_targeting), for
+        DISPLAY: who will actually receive this reminder. Best-effort —
+        a resolution hiccup shows None, never a 500 on the calendar."""
+        try:
+            if reminder.recipient_type == RecipientType.EXTERNAL.value:
+                contact = (
+                    await self.repo.get_external_contact_in_case(
+                        reminder.case_id, reminder.recipient_external_id
+                    )
+                    if reminder.recipient_external_id
+                    else None
+                )
+                return contact.name if contact is not None else None
+            if reminder.recipient_type == RecipientType.AGENT.value:
+                return await self.repo.get_owner_display(reminder.case_id)
+            # EXPAT: the targeted member with access, else the principal.
+            if reminder.step_progress_id is not None:
+                requirements = await self.repo.list_step_requirements_for_progress(
+                    reminder.step_progress_id
+                )
+                persons = await self.repo.persons_by_id_for_case(reminder.case_id)
+                person = targeted_member(requirements, persons)
+                if person is not None and person.expat_user_id is not None:
+                    member = await self.repo.get_expat(person.expat_user_id)
+                    if member is not None and member.email:
+                        return person.full_name or f"{member.first_name} {member.last_name}"
+            return await self.repo.get_principal_display(reminder.case_id)
+        except Exception:  # noqa: BLE001 — display data, never a 500
+            logger.exception("reminder recipient resolution failed for %s", reminder.id)
+            return None
 
     # --- state machine -------------------------------------------------------------------------
 
