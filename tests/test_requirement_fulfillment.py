@@ -678,9 +678,11 @@ async def test_activation_notifies_client(
     )
     email.outbox.clear()
     await _assign_start(rf_client, headers, str(case.id), tid)
-    sent = _mails("De nouvelles informations")
+    # Anti-burst 2026-07-18 : l'ASSIGNATION notifie (le kickoff), le
+    # demarrage dans la foulee est absorbe par la fenetre — un seul mail.
+    sent = [m for m in email.outbox if m.to == expat.email]
     assert len(sent) == 1
-    assert sent[0].to == expat.email
+    assert "votre parcours démarre" in sent[0].subject
 
 
 async def test_reopen_notifies_client_distinct_template(

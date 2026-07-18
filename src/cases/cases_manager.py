@@ -44,6 +44,7 @@ from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
+from src.core.notification_window import record_send
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.costs.costs_repository import CostsRepository
@@ -228,6 +229,11 @@ class CasesManager:
         # journey_template_id is REQUIRED since 2026-07-11 (a journey-less
         # case is a dead shell) — every creation instantiates its steps here.
         await ProgressManager(self.db).apply_journey(agent, case, payload.journey_template_id)
+        # Anti-burst J1 : le dossier nait AVEC son parcours et l'invitation
+        # part a l'instant — elle suffit (l'espace montrera tout a
+        # l'activation). On ouvre la fenetre "steps" pour que les
+        # demarrages d'etapes qui suivent n'empilent pas de mails.
+        await record_send(self.db, case.id, normalize_email(payload.email), "steps")
 
         # The case link IS principal_expat_user_id (just set). The
         # invitation is notification + audit trail, never the linking

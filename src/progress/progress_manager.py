@@ -19,6 +19,7 @@ from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import (
     EmailContent,
+    journey_kickoff_email,
     ready_to_validate_email,
     requirement_request_email,
     step_reopened_email,
@@ -42,6 +43,7 @@ from src.core.i18n import (
     resolve_notification_lang_client,
     resolve_step_name_for_notif,
 )
+from src.core.notification_window import record_send, window_allows
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
@@ -69,10 +71,13 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class PendingMail:
     """A best-effort notification collected during a write, sent AFTER
-    commit — a mail failure never rolls back or blocks the write."""
+    commit — a mail failure never rolls back or blocks the write.
+    `window` (case_id, category) marks the anti-burst window to post
+    AFTER an effective send (None = not windowed, e.g. reopen mails)."""
 
     to: str
     content: EmailContent
+    window: tuple[uuid.UUID, str] | None = None
 
 
 # Stored-status state machine. BLOCKED never appears here: it is a
@@ -330,8 +335,53 @@ class ProgressManager:
     ) -> list[StepProgressResponse]:
         case = await self._get_case(agent, case_id)
         await self.apply_journey(agent, case, template_id)
+        # Anti-burst J1: the assignment announces the journey ONCE ("your
+        # journey starts, N pieces expected"), and opens the "steps" window
+        # so the starts that follow in the setup session mail nothing more.
+        kickoff = await self._journey_kickoff_mail(case, template_id)
         await self.db.commit()
+        if kickoff is not None:
+            await self.send_pending([kickoff])
         return await self.timeline_for_case(case, lang)
+
+    async def _journey_kickoff_mail(
+        self, case: ClientCase, template_id: uuid.UUID
+    ) -> PendingMail | None:
+        """ONE email at assignment listing what the STARTABLE steps (no
+        prerequisites) expect from the client, grouped by step — instead of
+        N unitary mails as the agent starts them. Built from the TEMPLATE
+        definitions (the steps are still TODO at this point). None when
+        nothing is expected, notifications are off, or the window is shut
+        (a case created WITH its journey: the invitation suffices)."""
+        if not await self._notifications_enabled(case):
+            return None
+        (
+            email,
+            agency_name,
+            preferred_lang,
+            agency_slug,
+        ) = await self.repo.get_principal_email_and_agency_name(case)
+        if not email:
+            return None
+        if not await window_allows(self.db, case.id, email, "steps"):
+            return None
+        steps = await self.repo.list_template_steps(template_id)
+        with_prereq = {
+            p.step_id for p in await self.repo.list_prerequisites_for_steps([s.id for s in steps])
+        }
+        lang = resolve_notification_lang_client(preferred_lang)
+        items: list[tuple[str, int]] = []
+        for step in sorted(steps, key=lambda s: s.position):
+            if step.id in with_prereq:
+                continue  # not startable yet — its own activation will speak
+            count = len(await self.repo.list_step_requirements(step.id))
+            if count:
+                items.append((resolve_step_name_for_notif(step.name_i18n, step.name, lang), count))
+        if not items:
+            return None
+        link = space_link(get_settings().frontend_url, "/space", agency_slug)
+        content = journey_kickoff_email(agency_name, items, link, lang)
+        return PendingMail(to=email, content=content, window=(case.id, "steps"))
 
     async def backfill_step(self, agent: Agent, step: JourneyTemplateStep) -> int:
         """Option-A contract (step 8): a step added to an ASSIGNED
@@ -1260,16 +1310,28 @@ class ProgressManager:
         lang = resolve_notification_lang_client(preferred_lang)
         step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang)
         link = space_link(get_settings().frontend_url, "/space", agency_slug)
-        content = (
-            step_reopened_email(agency_name, step_name, link, lang)
-            if reopened
-            else requirement_request_email(agency_name, step_name, link, lang)
+        if reopened:
+            # A reopen is a correction: it always speaks, never windowed.
+            return PendingMail(
+                to=email, content=step_reopened_email(agency_name, step_name, link, lang)
+            )
+        # Activation mails share the "steps" window (30 min per case and
+        # recipient): the setup burst (kickoff or first start) opens it,
+        # the starts that follow are covered by it — one email, not N.
+        if not await window_allows(self.db, case.id, email, "steps"):
+            return None
+        return PendingMail(
+            to=email,
+            content=requirement_request_email(agency_name, step_name, link, lang),
+            window=(case.id, "steps"),
         )
-        return PendingMail(to=email, content=content)
 
     async def send_pending(self, mails: list[PendingMail]) -> None:
         """Best-effort, AFTER commit. A send failure is logged and
-        swallowed — it never blocks the write or the auto-completion."""
+        swallowed — it never blocks the write or the auto-completion.
+        A windowed mail posts its anti-burst window only after the
+        EFFECTIVE send (a failed mail never suppresses the next one)."""
+        posted = False
         for mail in mails:
             try:
                 await asyncio.to_thread(
@@ -1277,3 +1339,13 @@ class ProgressManager:
                 )
             except Exception:  # noqa: BLE001 — best-effort boundary
                 logger.exception("step notification email failed (best-effort) to=%s", mail.to)
+                continue
+            if mail.window is not None:
+                case_id, category = mail.window
+                await record_send(self.db, case_id, mail.to, category)
+                posted = True
+        if posted:
+            try:
+                await self.db.commit()
+            except Exception:  # noqa: BLE001 — best-effort boundary
+                logger.exception("notification window commit failed (best-effort)")

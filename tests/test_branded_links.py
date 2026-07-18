@@ -106,18 +106,22 @@ async def test_step_mail_carries_slug(
 
     expat = await make_expat_user(email="stepmail@example.com")
     case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=expat.id)
+    email.outbox.clear()
+    # L'assignation envoie le KICKOFF (anti-burst J1) et ouvre la fenetre :
+    # le lien brande se verifie sur lui — le demarrage qui suit est absorbe.
     pid = (
         await client.post(
             f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": tid}
         )
     ).json()[0]["id"]
+    kickoff = next(m for m in email.outbox if m.to == expat.email)
+    assert f"/space?agency={slug}" in kickoff.body
     email.outbox.clear()
     started = await client.patch(
         f"/cases/{case.id}/steps/{pid}", headers=headers, json={"status": "in_progress"}
     )
     assert started.status_code == 200
-    sent = next(m for m in email.outbox if m.to == expat.email)
-    assert f"/space?agency={slug}" in sent.body
+    assert not [m for m in email.outbox if m.to == expat.email]  # la fenetre absorbe
 
 
 async def test_comment_mail_carries_slug(

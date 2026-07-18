@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -11,7 +10,7 @@ from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplateStep
-from shared.models.step_comment import StepComment, StepCommentNotification
+from shared.models.step_comment import StepComment
 
 
 class CommentsRepository:
@@ -136,27 +135,3 @@ class CommentsRepository:
         return f"{first} {last}".strip(), email, lang
 
     # --- anti-burst tracker (effective-send timestamp) ------------------------------
-
-    async def get_notification(
-        self, progress_id: uuid.UUID, recipient_type: str
-    ) -> StepCommentNotification | None:
-        stmt = select(StepCommentNotification).where(
-            StepCommentNotification.case_step_progress_id == progress_id,
-            StepCommentNotification.recipient_type == recipient_type,
-        )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
-
-    async def upsert_notification(
-        self, progress_id: uuid.UUID, recipient_type: str, when: datetime
-    ) -> None:
-        row = await self.get_notification(progress_id, recipient_type)
-        if row is None:
-            self.db.add(
-                StepCommentNotification(
-                    case_step_progress_id=progress_id,
-                    recipient_type=recipient_type,
-                    last_notified_at=when,
-                )
-            )
-        else:
-            row.last_notified_at = when

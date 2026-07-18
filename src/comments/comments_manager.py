@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from src.core.i18n import (
     resolve_notification_lang_client,
     resolve_step_name_for_notif,
 )
+from src.core.notification_window import record_send, window_allows
 from src.external.scoping import get_case_for_external
 from src.usage.usage_manager import UsageManager
 
@@ -28,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Anti-burst window: a recipient already notified for THIS thread less
 # than this ago is not re-mailed (messages are grouped).
-NOTIFY_WINDOW = timedelta(minutes=15)
+# La fenetre anti-burst (30 min par dossier+destinataire) vit dans
+# src/core/notification_window, partagee avec les mails d'etape.
 
 
 class CommentsManager:
@@ -348,14 +350,16 @@ class CommentsManager:
             )
 
         now = datetime.now(UTC)
-        existing = await self.repo.get_notification(progress_id, recipient_type.value)
-        if existing is not None and (now - existing.last_notified_at) < NOTIFY_WINDOW:
-            return  # grouped — recipient already notified recently for this thread
+        # Window per (CASE, recipient email) — not per step: activity on two
+        # steps minutes apart costs ONE email. Two recipients (client vs
+        # owner, principal vs member) never share a window.
+        if not await window_allows(self.db, case.id, email, "comments", now):
+            return  # grouped — recipient already notified recently for this case
 
         try:
             await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
         except Exception:  # noqa: BLE001 — best-effort boundary
             logger.exception("comment notification email failed (best-effort) to=%s", email)
             return  # do NOT record a send → the next message will retry
-        await self.repo.upsert_notification(progress_id, recipient_type.value, now)
+        await record_send(self.db, case.id, email, "comments", now)
         await self.db.commit()

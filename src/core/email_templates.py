@@ -1026,6 +1026,90 @@ _REFERRAL_GRANTED = {
 }
 
 
+_JOURNEY_KICKOFF = {
+    "fr": {
+        "subject": "Nidria : votre parcours démarre, des éléments sont attendus de vous",
+        "title": "Votre parcours démarre",
+        "intro": (
+            "{agency} a lancé votre parcours : {total} élément(s) sont attendus de vous "
+            "pour commencer. Voici ce qui vous sera demandé, étape par étape :"
+        ),
+        "line": "{step} : {count} élément(s)",
+        "button": "Ouvrir mon espace",
+    },
+    "en": {
+        "subject": "Nidria: your journey starts, some items are expected from you",
+        "title": "Your journey starts",
+        "intro": (
+            "{agency} has launched your journey: {total} item(s) are expected from you "
+            "to begin. Here is what will be asked, step by step:"
+        ),
+        "line": "{step}: {count} item(s)",
+        "button": "Open my space",
+    },
+    "es": {
+        "subject": "Nidria: su proceso comienza, se esperan elementos de usted",
+        "title": "Su proceso comienza",
+        "intro": (
+            "{agency} ha lanzado su proceso: se esperan {total} elemento(s) de usted "
+            "para comenzar. Esto es lo que se le pedirá, etapa por etapa:"
+        ),
+        "line": "{step}: {count} elemento(s)",
+        "button": "Abrir mi espacio",
+    },
+    "ru": {
+        "subject": "Nidria: ваш процесс начинается, от вас ожидаются документы",
+        "title": "Ваш процесс начинается",
+        "intro": (
+            "{agency} запустило ваш процесс: от вас ожидается {total} элемент(ов) "
+            "для начала. Вот что потребуется, по этапам:"
+        ),
+        "line": "{step}: {count} элемент(ов)",
+        "button": "Открыть моё пространство",
+    },
+    "pt": {
+        "subject": "Nidria: o seu percurso começa, aguardamos elementos seus",
+        "title": "O seu percurso começa",
+        "intro": (
+            "{agency} lançou o seu percurso: aguardamos {total} elemento(s) seus "
+            "para começar. Eis o que será pedido, etapa a etapa:"
+        ),
+        "line": "{step}: {count} elemento(s)",
+        "button": "Abrir o meu espaço",
+    },
+    "it": {
+        "subject": "Nidria: il tuo percorso inizia, alcuni elementi sono attesi da te",
+        "title": "Il tuo percorso inizia",
+        "intro": (
+            "{agency} ha avviato il tuo percorso: {total} elemento(i) sono attesi da te "
+            "per iniziare. Ecco cosa ti sarà chiesto, tappa per tappa:"
+        ),
+        "line": "{step}: {count} elemento(i)",
+        "button": "Apri il mio spazio",
+    },
+}
+
+
+def journey_kickoff_email(
+    agency_name: str, items: list[tuple[str, int]], space_link: str, lang: str = "fr"
+) -> EmailContent:
+    """ONE mail at journey assignment (anti-burst J1): what the startable
+    steps expect from the client, grouped by step — instead of N unitary
+    requirement mails as the agent starts them."""
+    s = _pick(_JOURNEY_KICKOFF, lang)
+    total = sum(count for _, count in items)
+    lines = "\n".join("- " + s["line"].format(step=step, count=count) for step, count in items)
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name, total=total),
+        body_text=lines,
+        button_label=s["button"],
+        button_url=space_link,
+        lang=lang,
+    )
+
+
 def referral_granted_email(referred_name: str, rate: int, lang: str = "fr") -> EmailContent:
     """Rendered in the REFERRER's language (agency default). `rate` is the
     REAL tier the new credit locked in (bareme by rank) — never hardcoded."""

@@ -36,6 +36,7 @@ from shared.models.journey import (
 from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.message_template import MessageTemplate
 from shared.models.mfa import MfaBackupCode, MfaChallenge, MfaTotp
+from shared.models.notification_window import NotificationWindow
 from shared.models.nurture import NurtureSend
 from shared.models.paddle_event import PaddleWebhookEvent
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
@@ -44,7 +45,7 @@ from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
 from shared.models.signup import SignupVerification
 from shared.models.step_case_requirement import StepCaseRequirement
-from shared.models.step_comment import StepComment, StepCommentNotification
+from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
 from shared.models.usage import AgencyUsageMilestone, UsageEvent
 
@@ -98,7 +99,7 @@ __all__ = [
     "SavedView",
     "RolePermission",
     "StepComment",
-    "StepCommentNotification",
+    "NotificationWindow",
     "StepPrerequisite",
     "StepCaseRequirement",
     "StepRequirement",
