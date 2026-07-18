@@ -21,6 +21,7 @@ from src.core.i18n import (
     resolve_notification_lang_client,
     resolve_step_name_for_notif,
 )
+from src.core.notification_prefs import COMMENT_WINDOWS, agent_pref, client_pref
 from src.core.notification_window import record_send, window_allows
 from src.external.scoping import get_case_for_external
 from src.usage.usage_manager import UsageManager
@@ -290,11 +291,6 @@ class CommentsManager:
 
     # --- notification (anti-burst, best-effort, AFTER commit) ----------------------
 
-    async def _notifications_enabled(self, case: ClientCase) -> bool:
-        agency = await self.repo.get_agency(case.agency_id)
-        settings = (agency.settings if agency else None) or {}
-        return bool(settings.get("step_notifications_enabled", True))
-
     async def _notify_after_commit(
         self,
         case: ClientCase,
@@ -308,9 +304,24 @@ class CommentsManager:
         anti-burst window is keyed on the EFFECTIVE send (last_notified_at),
         posted only after send_email succeeds: a failed mail does not
         suppress the next one."""
-        if not await self._notifications_enabled(case):
-            return
         recipient_type = ActorType.EXPAT if author_type is ActorType.AGENT else ActorType.AGENT
+        # Preference du DESTINATAIRE (lot 2026-07-18) : cote client c'est
+        # l'agence qui regle (notification_prefs.client.comments), cote
+        # agent c'est SA pref personnelle. off = jamais ; on = fenetre
+        # courte 5 min ; grouped = la fenetre 30 min du demi-lot.
+        if recipient_type is ActorType.EXPAT:
+            agency_holder = await self.repo.get_agency(case.agency_id)
+            mode = client_pref(agency_holder, "comments")
+        else:
+            owner = (
+                await self.repo.get_agent(case.owner_agent_id)
+                if case.owner_agent_id is not None
+                else None
+            )
+            mode = agent_pref(owner, "comments")
+        if mode == "off":
+            return
+        window = COMMENT_WINDOWS[mode]
         step_scalar, step_i18n = await self.repo.get_step_name_and_i18n(template_step_id)
         step_scalar = step_scalar or ""
         settings = get_settings()
@@ -353,7 +364,7 @@ class CommentsManager:
         # Window per (CASE, recipient email) — not per step: activity on two
         # steps minutes apart costs ONE email. Two recipients (client vs
         # owner, principal vs member) never share a window.
-        if not await window_allows(self.db, case.id, email, "comments", now):
+        if not await window_allows(self.db, case.id, email, "comments", now, window=window):
             return  # grouped — recipient already notified recently for this case
 
         try:

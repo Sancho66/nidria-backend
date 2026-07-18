@@ -716,6 +716,16 @@ class AgenciesManager:
             agency.name = payload.name
         if payload.settings is not None:
             agency.settings = payload.settings
+        if payload.notification_prefs is not None:
+            # Merge partiel cle a cle dans settings.notification_prefs.client
+            # (JSONB : reassignation complete pour que SQLAlchemy voie le
+            # changement). Les cles absentes gardent leur valeur/defaut.
+            patch = payload.notification_prefs.model_dump(exclude_none=True)
+            settings_map = dict(agency.settings or {})
+            prefs = dict(settings_map.get("notification_prefs") or {})
+            prefs["client"] = {**(prefs.get("client") or {}), **patch}
+            settings_map["notification_prefs"] = prefs
+            agency.settings = settings_map
         if payload.default_language is not None:
             agency.default_language = payload.default_language
         if payload.currency is not None:

@@ -22,8 +22,10 @@ async def window_allows(
     recipient_email: str,
     category: str,
     now: datetime | None = None,
+    window: timedelta | None = None,
 ) -> bool:
     now = now or datetime.now(UTC)
+    window = window or WINDOW
     row = (
         await db.execute(
             select(NotificationWindow).where(
@@ -33,7 +35,7 @@ async def window_allows(
             )
         )
     ).scalar_one_or_none()
-    return row is None or (now - row.last_sent_at) >= WINDOW
+    return row is None or (now - row.last_sent_at) >= window
 
 
 async def record_send(

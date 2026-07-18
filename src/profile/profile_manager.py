@@ -15,8 +15,14 @@ from shared.models.expat_user import ExpatUser
 from src.core import storage
 from src.core.exceptions import NotFoundError
 from src.core.images import process_avatar
+from src.core.notification_prefs import effective_agent_prefs
 from src.profile.profile_repository import ProfileRepository
-from src.profile.profile_schema import ProfileResponse, ProfileUpdateRequest
+from src.profile.profile_schema import (
+    AgentNotificationPrefsPatch,
+    AgentNotificationPrefsResponse,
+    ProfileResponse,
+    ProfileUpdateRequest,
+)
 
 
 def _profile_response(actor: Agent | ExpatUser) -> ProfileResponse:
@@ -46,6 +52,18 @@ class ProfileManager:
         return _profile_response(actor)
 
     # --- avatar ----------------------------------------------------------------------
+
+    async def update_agent_notification_prefs(
+        self, agent: Agent, payload: AgentNotificationPrefsPatch
+    ) -> AgentNotificationPrefsResponse:
+        """Chaque agent pour LUI-MEME (l'acteur du token, jamais un id en
+        parametre — pas de chemin vers les prefs d'un autre). Merge
+        partiel, reassignation JSONB complete."""
+        patch = payload.model_dump(exclude_none=True)
+        agent.notification_prefs = {**(agent.notification_prefs or {}), **patch}
+        await self.db.commit()
+        await self.db.refresh(agent)
+        return AgentNotificationPrefsResponse(**effective_agent_prefs(agent))
 
     async def upload_avatar(
         self, actor: Agent | ExpatUser, content_type: str | None, raw: bytes

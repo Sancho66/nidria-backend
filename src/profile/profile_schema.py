@@ -1,6 +1,7 @@
 import uuid
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -18,6 +19,24 @@ class ProfileResponse(BaseModel):
     first_name: str
     last_name: str
     has_avatar: bool
+
+
+class AgentNotificationPrefsPatch(BaseModel):
+    """Chaque agent regle SES mails (audit §5). Strict : hors enum ou cle
+    inconnue = 422. Le critique n'apparait pas."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    comments: Literal["on", "grouped", "off"] | None = None
+    ready_to_validate: Literal["on", "off"] | None = None
+
+
+class AgentNotificationPrefsResponse(BaseModel):
+    """Les prefs EFFECTIVES (defauts fusionnes) — le front affiche l'etat
+    reel, jamais un trou."""
+
+    comments: str
+    ready_to_validate: str
 
 
 class AvatarResponse(BaseModel):

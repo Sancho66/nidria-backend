@@ -31,6 +31,7 @@ from src.auth.auth_schema import (
 )
 from src.core.dependencies import get_current_agent, get_current_expat, get_db
 from src.core.enums import Audience
+from src.core.notification_prefs import effective_agent_prefs
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.enforcement import effective_permissions
 
@@ -182,6 +183,7 @@ async def agent_me(
         is_external=agent.is_external,
         effective_permissions=sorted(effective_permissions(agent)),
         has_avatar=agent.avatar_path is not None,
+        notification_prefs=effective_agent_prefs(agent),
         impersonator=await _impersonator_info(request, db),
     )
 

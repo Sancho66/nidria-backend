@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.models.base import Base, PersonNameMixin, TimestampMixin, UUIDPrimaryKeyMixin
@@ -47,5 +48,9 @@ class Agent(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
     # next request (_resolve_agent re-reads this row), out of every seat/
     # provider count, not an impersonation target. NULL = active.
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Personal notification preferences (2026-07-18): {comments:
+    # on|grouped|off, ready_to_validate: on|off} — NULL = the defaults
+    # (src/core/notification_prefs.py). The critical is not in the model.
+    notification_prefs: Mapped[dict[str, str] | None] = mapped_column(JSONB)
 
     role: Mapped["Role"] = relationship("Role")

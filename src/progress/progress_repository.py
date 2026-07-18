@@ -429,6 +429,9 @@ class ProgressRepository:
     async def get_agency_settings_holder(self, agency_id: uuid.UUID) -> Agency | None:
         return await self.db.get(Agency, agency_id)
 
+    async def get_agent(self, agent_id: uuid.UUID) -> Agent | None:
+        return await self.db.get(Agent, agent_id)
+
     async def get_owner_email(self, owner_agent_id: uuid.UUID) -> str | None:
         return (
             await self.db.execute(select(Agent.email).where(Agent.id == owner_agent_id))

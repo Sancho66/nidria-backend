@@ -43,6 +43,7 @@ from src.core.i18n import (
     resolve_notification_lang_client,
     resolve_step_name_for_notif,
 )
+from src.core.notification_prefs import agent_pref, client_pref
 from src.core.notification_window import record_send, window_allows
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
@@ -1132,9 +1133,19 @@ class ProgressManager:
         return (bool(person_reqs) or bool(case_reqs)) and person_ok and case_ok
 
     async def _notifications_enabled(self, case: ClientCase) -> bool:
+        """Client pref `requirement_request` (lot preferences 2026-07-18):
+        governs the activation/reopen/kickoff mails. The legacy
+        step_notifications_enabled flag is migrated then read nowhere."""
         agency = await self.repo.get_agency_settings_holder(case.agency_id)
-        settings = (agency.settings if agency else None) or {}
-        return bool(settings.get("step_notifications_enabled", True))
+        return client_pref(agency, "requirement_request") != "off"
+
+    async def _owner_wants_ready_to_validate(self, case: ClientCase) -> bool:
+        """The OWNER's own pref (agent.notification_prefs) — each agent
+        rules his own mails."""
+        if case.owner_agent_id is None:
+            return False
+        owner = await self.repo.get_agent(case.owner_agent_id)
+        return agent_pref(owner, "ready_to_validate") == "on"
 
     async def fulfill_document_requirement(
         self, case: ClientCase, requirement: Any, document_id: uuid.UUID
@@ -1204,7 +1215,7 @@ class ProgressManager:
         case_by_step = await self._case_reqs_by_step(rows)
         steps = await self.repo.get_template_steps_by_ids([r.template_step_id for r in rows])
 
-        notifications_on = await self._notifications_enabled(case)
+        notifications_on = await self._owner_wants_ready_to_validate(case)
         pending: list[PendingMail] = []
         auto_closed = False
         for row in rows:

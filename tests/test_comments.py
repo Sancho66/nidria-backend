@@ -483,11 +483,14 @@ async def test_flag_disables_comment_notifications(
     ah = agent_headers(admin)
     case, pid = await _thread(c_client, ah, admin, expat, make_client_case)
     agency = await db_session.get(Agency, admin.agency_id)  # type: ignore[attr-defined]
-    agency.settings = {**(agency.settings or {}), "step_notifications_enabled": False}
+    agency.settings = {
+        **(agency.settings or {}),
+        "notification_prefs": {"client": {"comments": "off"}},
+    }
     await db_session.commit()  # type: ignore[attr-defined]
     email.outbox.clear()
     await c_client.post(f"/cases/{case.id}/steps/{pid}/comments", headers=ah, json={"body": "x"})
-    assert email.outbox == []  # same single switch as wave 2
+    assert email.outbox == []  # la pref agence coupe les comments clients
 
 
 # --- timeline integration: progress_id + comment_count (vague 5 front) ---------------

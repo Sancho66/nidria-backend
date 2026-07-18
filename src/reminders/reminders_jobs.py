@@ -42,6 +42,7 @@ from src.core.enums import (
     StepStatus,
 )
 from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
+from src.core.notification_prefs import client_pref
 from src.reminders.reminders_targeting import targeted_member
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,16 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     sent = 0
     for reminder, agency in rows:
         escalated_from: str | None = None
-        if reminder.channel == ReminderChannel.MAIL.value:
+        email_suppressed = False
+        if (
+            reminder.channel == ReminderChannel.MAIL.value
+            and reminder.recipient_type == RecipientType.EXPAT.value
+            and client_pref(agency, "reminders") == "off"
+        ):
+            # La pref de l'agence coupe l'EMAIL client, jamais le rappel :
+            # le cycle de vie continue (SENT + trace), l'agence garde tout.
+            email_suppressed = True
+        elif reminder.channel == ReminderChannel.MAIL.value:
             recipient = _recipient(db, reminder, agency)
             if recipient is None:
                 # No reachable recipient AND no owner to escalate to — the
@@ -190,6 +200,8 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
         details: dict[str, Any] = {"reminder_id": str(reminder.id), "channel": reminder.channel}
         if escalated_from is not None:
             details["escalated_from"] = escalated_from
+        if email_suppressed:
+            details["email_suppressed"] = True  # la pref agence a coupe l'email
         db.add(
             ActivityLog(
                 case_id=reminder.case_id,

@@ -11725,6 +11725,53 @@
         }
       }
     },
+    "/profile/agent/notification-prefs": {
+      "patch": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Update Agent Notification Prefs",
+        "description": "Chaque agent regle SES notifications — l'acteur du token, personne\nd'autre (aucun parametre d'identite).",
+        "operationId": "update_agent_notification_prefs_profile_agent_notification_prefs_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentNotificationPrefsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentNotificationPrefsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/profile/agent": {
       "patch": {
         "tags": [
@@ -13712,6 +13759,10 @@
             "type": "boolean",
             "title": "Is Founding"
           },
+          "is_internal": {
+            "type": "boolean",
+            "title": "Is Internal"
+          },
           "billing_mode": {
             "type": "string",
             "title": "Billing Mode"
@@ -13800,6 +13851,7 @@
           "seats_used",
           "seats_limit",
           "is_founding",
+          "is_internal",
           "billing_mode",
           "billing_status",
           "status",
@@ -14205,6 +14257,16 @@
             ],
             "title": "Settings"
           },
+          "notification_prefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientNotificationPrefsPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "default_language": {
             "anyOf": [
               {
@@ -14359,6 +14421,14 @@
             "title": "Has Avatar",
             "default": false
           },
+          "notification_prefs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Notification Prefs",
+            "default": {}
+          },
           "impersonator": {
             "anyOf": [
               {
@@ -14382,6 +14452,64 @@
           "effective_permissions"
         ],
         "title": "AgentMeResponse"
+      },
+      "AgentNotificationPrefsPatch": {
+        "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "on",
+                  "grouped",
+                  "off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "ready_to_validate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "on",
+                  "off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ready To Validate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AgentNotificationPrefsPatch",
+        "description": "Chaque agent regle SES mails (audit §5). Strict : hors enum ou cle\ninconnue = 422. Le critique n'apparait pas."
+      },
+      "AgentNotificationPrefsResponse": {
+        "properties": {
+          "comments": {
+            "type": "string",
+            "title": "Comments"
+          },
+          "ready_to_validate": {
+            "type": "string",
+            "title": "Ready To Validate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "comments",
+          "ready_to_validate"
+        ],
+        "title": "AgentNotificationPrefsResponse",
+        "description": "Les prefs EFFECTIVES (defauts fusionnes) — le front affiche l'etat\nreel, jamais un trou."
       },
       "AiUsageResponse": {
         "properties": {
@@ -16652,6 +16780,76 @@
         ],
         "title": "CheckoutCreateResponse",
         "description": "What the front needs to open the hosted overlay\n(Paddle.Checkout.open({transactionId})): the transaction id, and the\nPaddle environment to initialise Paddle.js with."
+      },
+      "ClientNotificationPrefsPatch": {
+        "properties": {
+          "requirement_request": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "on",
+                  "off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Request"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "on",
+                  "grouped",
+                  "off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "on",
+                  "off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminders"
+          },
+          "progress_digest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weekly",
+                  "daily",
+                  "off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ClientNotificationPrefsPatch",
+        "description": "Ce que l'agence regle pour SES clients (audit §5). Strict : une\nvaleur hors enum = 422, une cle inconnue = 422 (extra=forbid). Le\nCRITIQUE (invitations, codes, acces) n'apparait pas — non reglable\npar construction. progress_digest est INERTE tant que le job digest\nn'existe pas (lot suivant)."
       },
       "CommentCreateRequest": {
         "properties": {

@@ -11,7 +11,12 @@ from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.profile.profile_manager import ProfileManager
-from src.profile.profile_schema import ProfileResponse, ProfileUpdateRequest
+from src.profile.profile_schema import (
+    AgentNotificationPrefsPatch,
+    AgentNotificationPrefsResponse,
+    ProfileResponse,
+    ProfileUpdateRequest,
+)
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -22,6 +27,8 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 # attribution poisoning.
 BINDINGS = [
     RouteBinding("PATCH", "/profile/agent", Audience.AGENT),
+    # Prefs perso : tout agent authentifie, pour lui-meme uniquement.
+    RouteBinding("PATCH", "/profile/agent/notification-prefs", Audience.AGENT),
     RouteBinding("POST", "/profile/agent/avatar", Audience.AGENT),
     RouteBinding("DELETE", "/profile/agent/avatar", Audience.AGENT),
     RouteBinding("GET", "/profile/agent/avatar/{agent_id}", Audience.AGENT),
@@ -49,6 +56,15 @@ def _image_response(content: bytes) -> Response:
 
 
 # --- agent face ---------------------------------------------------------------------
+
+
+@router.patch("/agent/notification-prefs", response_model=AgentNotificationPrefsResponse)
+async def update_agent_notification_prefs(
+    body: AgentNotificationPrefsPatch, agent: AgentDep, db: DbDep
+) -> AgentNotificationPrefsResponse:
+    """Chaque agent regle SES notifications — l'acteur du token, personne
+    d'autre (aucun parametre d'identite)."""
+    return await ProfileManager(db).update_agent_notification_prefs(agent, body)
 
 
 @router.patch("/agent", response_model=ProfileResponse)

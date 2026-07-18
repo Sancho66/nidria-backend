@@ -256,12 +256,31 @@ class AgencyCreateResponse(BaseModel):
     admin: CreatedAdminResponse
 
 
+class ClientNotificationPrefsPatch(BaseModel):
+    """Ce que l'agence regle pour SES clients (audit §5). Strict : une
+    valeur hors enum = 422, une cle inconnue = 422 (extra=forbid). Le
+    CRITIQUE (invitations, codes, acces) n'apparait pas — non reglable
+    par construction. progress_digest est INERTE tant que le job digest
+    n'existe pas (lot suivant)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requirement_request: Literal["on", "off"] | None = None
+    comments: Literal["on", "grouped", "off"] | None = None
+    reminders: Literal["on", "off"] | None = None
+    progress_digest: Literal["weekly", "daily", "off"] | None = None
+
+
 class AgencyUpdateRequest(BaseModel):
     """`slug` is deliberately absent: immutable at MVP (public
     identifier — changing it would break links and logs)."""
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     settings: dict[str, Any] | None = None
+    # Prefs notifications clients : PATCH partiel type (merge cle a cle
+    # dans settings.notification_prefs.client), jamais un remplacement du
+    # settings brut.
+    notification_prefs: ClientNotificationPrefsPatch | None = None
     # i18n fallback language for this agency's content (validated fr/en/es).
     default_language: Language | None = None
     # ISO 4217 code for internal cost tracking. Strict: an EXACT uppercase code

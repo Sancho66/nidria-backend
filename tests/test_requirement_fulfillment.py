@@ -723,7 +723,10 @@ async def test_flag_disables_client_notifications(
     headers = agent_headers(admin)
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
-    agency.settings = {**(agency.settings or {}), "step_notifications_enabled": False}
+    agency.settings = {
+        **(agency.settings or {}),
+        "notification_prefs": {"client": {"requirement_request": "off"}},
+    }
     await db_session.commit()
 
     tid, sid = await _step(rf_client, headers)

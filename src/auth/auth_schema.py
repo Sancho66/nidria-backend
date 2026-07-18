@@ -54,6 +54,9 @@ class AgentMeResponse(BaseModel):
     # derive mechanically instead of being a hand-kept mirror that drifts.
     effective_permissions: list[Permission]
     has_avatar: bool = False
+    # Prefs notifications EFFECTIVES (defauts fusionnes) — le front affiche
+    # l'etat reel du reglage personnel.
+    notification_prefs: dict[str, str] = {}
     impersonator: ImpersonatorInfo | None = None
 
 

@@ -92,6 +92,9 @@ class CommentsRepository:
 
     # --- notification resolution -----------------------------------------------------
 
+    async def get_agent(self, agent_id: uuid.UUID) -> Agent | None:
+        return await self.db.get(Agent, agent_id)
+
     async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
         return await self.db.get(Agency, agency_id)
 
