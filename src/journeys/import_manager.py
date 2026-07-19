@@ -43,14 +43,17 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from shared.models.agent import Agent
+from shared.models.ai_translation_job import AiTranslationSource
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import (
+    JourneySection,
+    JourneyStepAttachment,
     JourneyStepParticipant,
     JourneyTemplate,
     JourneyTemplateField,
@@ -66,7 +69,7 @@ from src.core.enums import (
     StepRequirementScope,
     StepValidatorType,
 )
-from src.core.exceptions import ValidationError
+from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.i18n import SUPPORTED_LANGUAGES, normalize_i18n_input
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.journeys_manager import JourneysManager
@@ -383,7 +386,16 @@ class JourneyImportManager:
         *,
         preview: bool,
         provider_assignments: dict[str, ProviderRef] | None = None,
+        replace_template_id: uuid.UUID | None = None,
     ) -> JourneyImportReport:
+        # Re-generation (2026-07-19, demande Nicolas) : le remplacement
+        # TOTAL d'un template JAMAIS instancie (actifs + archives = 0),
+        # verifie EN TRANSACTION (verrou de ligne + re-check post-flush).
+        replace_target = None
+        if replace_template_id is not None:
+            replace_target = await self._locked_template_for_replace(
+                agent, replace_template_id, preview=preview
+            )
         resolved_providers = await self._resolve_providers(agent, provider_assignments)
         if not isinstance(parcours, dict):
             raise ValidationError(
@@ -392,6 +404,8 @@ class JourneyImportManager:
                 params={"chemin": "parcours"},
             )
         warnings: list[ImportWarningItem] = []
+        if replace_target is not None:
+            warnings.extend(await self._replace_warnings(replace_target.id))
         pii_texts: list[tuple[str, str]] = []
 
         raw_default = parcours.get("langue_par_defaut")
@@ -584,11 +598,102 @@ class JourneyImportManager:
         if preview:
             return report
 
+        if replace_target is not None:
+            await self._purge_template_content(replace_target.id)
         report.template_id = await self._create(
-            agent, name_blob, valid, defs_plan, defs_position, resolved_providers, len(warnings)
+            agent,
+            name_blob,
+            valid,
+            defs_plan,
+            defs_position,
+            resolved_providers,
+            len(warnings),
+            existing_template=replace_target,
         )
         report.created = True
         return report
+
+    async def _locked_template_for_replace(
+        self, agent: Agent, template_id: uuid.UUID, *, preview: bool
+    ) -> JourneyTemplate:
+        """Le template a remplacer, verrouille (hors preview) — 404 hors
+        agence/sample, 409 journey.in_use s'il a le moindre dossier."""
+        stmt = select(JourneyTemplate).where(
+            JourneyTemplate.id == template_id,
+            JourneyTemplate.agency_id == agent.agency_id,
+            JourneyTemplate.is_sample.is_(False),
+        )
+        if not preview:
+            stmt = stmt.with_for_update()
+        template = (await self.db.execute(stmt)).scalar_one_or_none()
+        if template is None:
+            raise NotFoundError("Journey template not found.")
+        await self._assert_no_cases(template_id)
+        return template
+
+    async def _assert_no_cases(self, template_id: uuid.UUID) -> None:
+        repo = JourneysRepository(self.db)
+        active = await repo.count_active_cases_using_template(template_id)
+        archived = await repo.count_archived_cases_using_template(template_id)
+        if active + archived:
+            raise ConflictError(
+                "This journey is used by cases; regeneration is only for unused templates.",
+                code="journey.in_use",
+                params={"active_cases": active, "archived_cases": archived},
+            )
+
+    async def _replace_warnings(self, template_id: uuid.UUID) -> list[ImportWarningItem]:
+        """Les deux pertes ANNONCEES du remplacement : les pieces jointes
+        du modele (pas dans le JSON) et les traductions IA existantes
+        (re-traduire = un nouveau job, points re-debites)."""
+        out: list[ImportWarningItem] = []
+        attachments = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(JourneyStepAttachment)
+                .join(JourneyTemplateStep, JourneyTemplateStep.id == JourneyStepAttachment.step_id)
+                .where(JourneyTemplateStep.template_id == template_id)
+            )
+        ).scalar_one()
+        if attachments:
+            out.append(
+                ImportWarningItem(
+                    code="import_ai.replace_attachments_lost", valeur=str(attachments)
+                )
+            )
+        translations = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(AiTranslationSource)
+                .where(AiTranslationSource.template_id == template_id)
+            )
+        ).scalar_one()
+        if translations:
+            out.append(
+                ImportWarningItem(
+                    code="import_ai.replace_translations_lost", valeur=str(translations)
+                )
+            )
+        return out
+
+    async def _purge_template_content(self, template_id: uuid.UUID) -> None:
+        """Drop total du contenu (zero dossier garanti par la garde) : les
+        etapes cascadent leurs enfants (exigences, prerequis, participants,
+        pieces jointes) au niveau DB ; les traces de traduction tombent
+        (leurs content_keys pointeraient du vide). Les jobs de traduction
+        restent (l'historique du quota n'est pas reecrit)."""
+        await self.db.execute(
+            delete(JourneySection).where(JourneySection.template_id == template_id)
+        )
+        await self.db.execute(
+            delete(JourneyTemplateField).where(JourneyTemplateField.template_id == template_id)
+        )
+        await self.db.execute(
+            delete(JourneyTemplateStep).where(JourneyTemplateStep.template_id == template_id)
+        )
+        await self.db.execute(
+            delete(AiTranslationSource).where(AiTranslationSource.template_id == template_id)
+        )
 
     async def _plan_field_keys(
         self, agent: Agent, steps: list[_Step], warnings: list[ImportWarningItem]
@@ -663,16 +768,24 @@ class JourneyImportManager:
         defs_position: int,
         resolved_providers: dict[str, tuple[str, uuid.UUID]],
         warning_count: int,
+        existing_template: JourneyTemplate | None = None,
     ) -> uuid.UUID:
         agency_default = await JourneysManager(self.db).agency_default(agent.agency_id)
-        template = JourneyTemplate(
-            id=uuid.uuid4(),
-            agency_id=agent.agency_id,
-            is_sample=False,
-            name=name_blob.get(agency_default) or name_blob["fr"],
-            name_i18n=name_blob,
-        )
-        self.db.add(template)
+        if existing_template is not None:
+            # Remplacement : la coquille (id, liens) survit, le contenu
+            # repart du JSON.
+            template = existing_template
+            template.name = name_blob.get(agency_default) or name_blob["fr"]
+            template.name_i18n = name_blob
+        else:
+            template = JourneyTemplate(
+                id=uuid.uuid4(),
+                agency_id=agent.agency_id,
+                is_sample=False,
+                name=name_blob.get(agency_default) or name_blob["fr"],
+                name_i18n=name_blob,
+            )
+            self.db.add(template)
 
         for key, parsed in defs_plan.items():
             self.db.add(
@@ -794,5 +907,10 @@ class JourneyImportManager:
             actor_id=agent.id,
             details={"steps": len(steps), "warnings": warning_count},
         )
+        if existing_template is not None:
+            # LA COURSE : un dossier ne entre le clic et l'ecriture — le
+            # re-check post-flush ferme la fenetre, la transaction saute.
+            await self.db.flush()
+            await self._assert_no_cases(existing_template.id)
         await self.db.commit()
         return template.id

@@ -74,6 +74,11 @@ BINDINGS = [
     # AI-JSON import (the agency pastes its own AI's output) - same
     # configure gate as the editor; deterministic, no LLM server-side.
     RouteBinding("POST", "/journeys/import", Audience.AGENT, Permission.JOURNEY_CONFIGURE),
+    # Re-generation (Nicolas) : remplacer le contenu d'un template JAMAIS
+    # instancie depuis un nouveau JSON — meme permission que l'import.
+    RouteBinding(
+        "POST", "/journeys/{template_id}/import", Audience.AGENT, Permission.JOURNEY_CONFIGURE
+    ),
     # Deep clone (source = sample OR own template) into the calling agency.
     RouteBinding(
         "POST", "/journeys/{template_id}/clone", Audience.AGENT, Permission.JOURNEY_CONFIGURE
@@ -402,6 +407,28 @@ async def import_journey(
         body.parcours,
         preview=preview,
         provider_assignments=body.provider_assignments,
+    )
+
+
+@router.post("/{template_id}/import", response_model=JourneyImportReport)
+async def regenerate_journey(
+    template_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    body: JourneyImportRequest,
+    preview: bool = False,
+) -> JourneyImportReport:
+    """Re-generation (demande Nicolas) : REMPLACE le contenu du template
+    depuis un nouveau JSON — uniquement s'il n'a AUCUN dossier (actifs +
+    archives), garde verifiee en transaction (verrou + re-check). 409
+    journey.in_use sinon. Les pertes (pieces jointes du modele,
+    traductions) sont annoncees dans les warnings du rapport."""
+    return await JourneyImportManager(db).run(
+        agent,
+        body.parcours,
+        preview=preview,
+        provider_assignments=body.provider_assignments,
+        replace_template_id=template_id,
     )
 
 

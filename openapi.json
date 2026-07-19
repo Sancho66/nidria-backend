@@ -8888,6 +8888,75 @@
         }
       }
     },
+    "/journeys/{template_id}/import": {
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Regenerate Journey",
+        "description": "Re-generation (demande Nicolas) : REMPLACE le contenu du template\ndepuis un nouveau JSON — uniquement s'il n'a AUCUN dossier (actifs +\narchives), garde verifiee en transaction (verrou + re-check). 409\njourney.in_use sinon. Les pertes (pieces jointes du modele,\ntraductions) sont annoncees dans les warnings du rapport.",
+        "operationId": "regenerate_journey_journeys__template_id__import_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Preview"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JourneyImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyImportReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/translate": {
       "post": {
         "tags": [
