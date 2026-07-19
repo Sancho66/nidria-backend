@@ -97,7 +97,16 @@ class DocumentsManager:
         expires_at: datetime | None,
         actor_type: ActorType,
         actor_id: uuid.UUID,
+        *,
+        kind: str = "deposit",
+        person_id: uuid.UUID | None = None,
     ) -> Document:
+        if person_id is not None:
+            # Member targeting (GAP-B): the person must belong to THIS case
+            # — never a cross-case handle.
+            person = await self.repo.get_person_in_case(case.id, person_id)
+            if person is None:
+                raise NotFoundError("Person not found on this case.")
         settings = get_settings()
         original_filename = file.filename
         if not original_filename:
@@ -135,6 +144,8 @@ class DocumentsManager:
             uploaded_by_type=actor_type.value,
             uploaded_by_id=actor_id,
             expires_at=expires_at,
+            kind=kind,
+            person_id=person_id,
         )
         self._log(
             case.id,
@@ -161,10 +172,55 @@ class DocumentsManager:
         file: UploadFile,
         step_progress_id: uuid.UUID | None,
         expires_at: datetime | None,
+        *,
+        kind: str = "deposit",
+        person_id: uuid.UUID | None = None,
     ) -> Document:
         case = await self._case_for_agent(agent, case_id)
         return await self._upload(
-            case, file, step_progress_id, expires_at, ActorType.AGENT, agent.id
+            case,
+            file,
+            step_progress_id,
+            expires_at,
+            ActorType.AGENT,
+            agent.id,
+            kind=kind,
+            person_id=person_id,
+        )
+
+    async def upload_step_document_as_external(
+        self,
+        external: Agent,
+        case_id: uuid.UUID,
+        file: UploadFile,
+        step_progress_id: uuid.UUID | None,
+        *,
+        kind: str = "deliverable",
+        person_id: uuid.UUID | None = None,
+    ) -> ExternalDocumentResponse:
+        """GAP-B: the provider DELIVERS on a step of an ASSIGNED case (the
+        certified translation) — same perimeter as all his accesses (the
+        assignment scope), same upload core, deliverable by default."""
+        case = await self._case_for_external(external, case_id)
+        document = await self._upload(
+            case,
+            file,
+            step_progress_id,
+            None,
+            ActorType.AGENT,
+            external.id,
+            kind=kind,
+            person_id=person_id,
+        )
+        await self.db.commit()
+        step_names = await self.repo.step_names(
+            [document.step_progress_id] if document.step_progress_id else []
+        )
+        return self._external_doc(
+            document,
+            external,
+            step_names.get(document.step_progress_id) if document.step_progress_id else None,
+            None,
         )
 
     async def upload_as_expat(
@@ -228,9 +284,11 @@ class DocumentsManager:
         req_refs = await self.repo.requirement_refs([d.id for d in documents])
         return step_names, req_refs
 
-    async def list_for_agent(self, agent: Agent, case_id: uuid.UUID) -> list[DocumentResponse]:
+    async def list_for_agent(
+        self, agent: Agent, case_id: uuid.UUID, step_progress_id: uuid.UUID | None = None
+    ) -> list[DocumentResponse]:
         case = await self._case_for_agent(agent, case_id)
-        documents = await self.repo.list_documents(case.id)
+        documents = await self.repo.list_documents(case.id, step_progress_id=step_progress_id)
         step_names, req_refs = await self._enrich(documents)
         return [
             DocumentResponse(
@@ -238,6 +296,8 @@ class DocumentsManager:
                 case_id=d.case_id,
                 step_progress_id=d.step_progress_id,
                 filename=d.filename,
+                kind=d.kind,
+                person_id=d.person_id,
                 uploaded_by_type=d.uploaded_by_type,
                 uploaded_by_id=d.uploaded_by_id,
                 validation_status=d.validation_status,
@@ -251,16 +311,19 @@ class DocumentsManager:
         ]
 
     async def list_for_expat(
-        self, expat: ExpatUser, case_id: uuid.UUID
+        self, expat: ExpatUser, case_id: uuid.UUID, step_progress_id: uuid.UUID | None = None
     ) -> list[ExpatDocumentResponse]:
         # The PRINCIPAL sees ALL documents of their case (the agency deposits
-        # pieces FOR the client). A MEMBER sees ONLY documents reachable through
-        # their own requirements (decision B — step attachments never surface).
+        # pieces FOR the client). A MEMBER sees documents reachable through
+        # their own requirements PLUS the deliverables TARGETING them
+        # (GAP-B: Claire's translation visible to Claire) — never the rest.
         case, viewing_person, is_member = await self._viewer_case(expat, case_id)
         documents = (
-            await self.repo.list_documents_for_person(case.id, viewing_person.id)
+            await self.repo.list_documents_for_person(
+                case.id, viewing_person.id, step_progress_id=step_progress_id
+            )
             if is_member and viewing_person is not None
-            else await self.repo.list_documents(case.id)
+            else await self.repo.list_documents(case.id, step_progress_id=step_progress_id)
         )
         step_names, req_refs = await self._enrich(documents)
         return [
@@ -268,6 +331,8 @@ class DocumentsManager:
                 id=d.id,
                 case_id=d.case_id,
                 filename=d.filename,
+                kind=d.kind,
+                person_id=d.person_id,
                 uploaded_by_type=d.uploaded_by_type,
                 # is_mine drives the delete affordance; no internal UUID exposed.
                 is_mine=(

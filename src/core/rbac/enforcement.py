@@ -147,6 +147,9 @@ EXTERNAL_AGENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/external/cases/{case_id}/documents"),
         ("GET", "/external/cases/{case_id}/documents/{document_id}/download"),
         ("POST", "/external/cases/{case_id}/requirements/{requirement_id}/document"),
+        # GAP-B: the provider DELIVERS on a step of an assigned case
+        # (scoped by get_case_for_external like every portal route).
+        ("POST", "/external/cases/{case_id}/documents"),
         (
             "GET",
             "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download",

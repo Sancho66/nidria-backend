@@ -1,8 +1,8 @@
 import mimetypes
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Response, UploadFile
+from fastapi import APIRouter, Depends, Form, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -59,6 +59,9 @@ BINDINGS = [
     RouteBinding("GET", f"{_C}/documents", Audience.AGENT, _VIEW),
     RouteBinding("GET", f"{_C}/documents/{{document_id}}/download", Audience.AGENT, _VIEW),
     RouteBinding("POST", f"{_C}/requirements/{{requirement_id}}/document", Audience.AGENT, _UPLOAD),
+    # GAP-B : le prestataire LIVRE sur une etape du dossier assigne (la
+    # traduction certifiee) — meme perimetre que tous ses acces.
+    RouteBinding("POST", f"{_C}/documents", Audience.AGENT, _UPLOAD),
     # Feature 2 (RGPD): step attachment download — gated in the manager to
     # steps this provider is responsible for (responsible_agent_id).
     RouteBinding("GET", _ATT, Audience.AGENT, _VIEW),
@@ -137,6 +140,25 @@ async def download_step_attachment(
         agent, case_id, progress_id, attachment_id
     )
     return file_download_response(filename, content)
+
+
+@external_router.post(
+    "/{case_id}/documents", response_model=ExternalDocumentResponse, status_code=201
+)
+async def upload_step_document(
+    case_id: uuid.UUID,
+    file: UploadFile,
+    agent: AgentDep,
+    db: DbDep,
+    step_progress_id: Annotated[uuid.UUID | None, Form()] = None,
+    kind: Annotated[Literal["deposit", "deliverable"], Form()] = "deliverable",
+    person_id: Annotated[uuid.UUID | None, Form()] = None,
+) -> ExternalDocumentResponse:
+    """Le livrable du prestataire (GAP-B) : depose sur l'etape DU dossier
+    assigne, visible par le client — deliverable par defaut."""
+    return await DocumentsManager(db).upload_step_document_as_external(
+        agent, case_id, file, step_progress_id, kind=kind, person_id=person_id
+    )
 
 
 @external_router.post(

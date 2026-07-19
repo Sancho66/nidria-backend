@@ -81,6 +81,7 @@ PORTAL_CASE_ROUTES: list[tuple[str, str]] = [
     ("GET", "/external/cases/{case_id}/documents"),
     ("GET", "/external/cases/{case_id}/documents/{document_id}/download"),
     ("POST", "/external/cases/{case_id}/requirements/{requirement_id}/document"),
+    ("POST", "/external/cases/{case_id}/documents"),  # GAP-B : le livrable
     ("GET", "/external/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download"),
     ("POST", "/external/cases/{case_id}/steps/{progress_id}/validate"),
     ("GET", "/external/cases/{case_id}/steps/{progress_id}/comments"),
@@ -104,7 +105,7 @@ def _fill(template: str, case_id: uuid.UUID) -> str:
 
 
 def _body(method: str, template: str) -> dict:
-    if method == "POST" and template.endswith("/document"):
+    if method == "POST" and template.endswith(("/document", "/documents")):
         return {"files": {"file": PDF}}
     if method in {"POST", "PATCH"}:
         return {"json": {"body": "x"}}

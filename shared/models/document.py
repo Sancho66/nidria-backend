@@ -21,6 +21,16 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     step_progress_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("case_step_progress.id", ondelete="SET NULL")
     )
+    # GAP-B (2026-07-19): deposit (default, the client->agency sense and
+    # any working piece) | deliverable (the agency/provider PRODUCES a piece
+    # FOR this client: the certified translation). The agency chooses at
+    # deposit; client uploads are always deposits.
+    kind: Mapped[str] = mapped_column(String(20), default="deposit", server_default="deposit")
+    # Optional member targeting: Claire's translation visible to Claire.
+    # NULL = the whole case (principal view, decision B unchanged).
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("case_person.id", ondelete="SET NULL")
+    )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     uploaded_by_type: Mapped[str] = mapped_column(String(20), nullable=False)

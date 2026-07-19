@@ -20,6 +20,10 @@ class DocumentResponse(BaseModel):
     case_id: uuid.UUID
     step_progress_id: uuid.UUID | None
     filename: str
+    # GAP-B : deposit | deliverable (le livrable nominatif de l'agence ou
+    # du prestataire) + le ciblage membre optionnel.
+    kind: str
+    person_id: uuid.UUID | None
     uploaded_by_type: str
     uploaded_by_id: uuid.UUID
     validation_status: str | None
@@ -40,6 +44,9 @@ class ExpatDocumentResponse(BaseModel):
     id: uuid.UUID
     case_id: uuid.UUID
     filename: str
+    # deposit | deliverable — le front nomme le livrable sans heuristique.
+    kind: str
+    person_id: uuid.UUID | None
     uploaded_by_type: str  # agent | expat
     is_mine: bool
     validation_status: str | None

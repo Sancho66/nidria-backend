@@ -1,9 +1,10 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
@@ -30,11 +31,21 @@ class DocumentsRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def list_documents(self, case_id: uuid.UUID) -> list[Document]:
+    async def list_documents(
+        self, case_id: uuid.UUID, step_progress_id: uuid.UUID | None = None
+    ) -> list[Document]:
         stmt = (
             select(Document).where(Document.case_id == case_id).order_by(Document.created_at.desc())
         )
+        if step_progress_id is not None:
+            stmt = stmt.where(Document.step_progress_id == step_progress_id)
         return list((await self.db.execute(stmt)).scalars())
+
+    async def get_person_in_case(
+        self, case_id: uuid.UUID, person_id: uuid.UUID
+    ) -> CasePerson | None:
+        stmt = select(CasePerson).where(CasePerson.case_id == case_id, CasePerson.id == person_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_document_in_case(
         self, case_id: uuid.UUID, document_id: uuid.UUID
@@ -50,40 +61,56 @@ class DocumentsRepository:
     # agency step attachments, which carry no person and never surface.
 
     async def list_documents_for_person(
-        self, case_id: uuid.UUID, person_id: uuid.UUID
+        self, case_id: uuid.UUID, person_id: uuid.UUID, step_progress_id: uuid.UUID | None = None
     ) -> list[Document]:
-        stmt = (
-            select(Document)
-            .join(CaseStepRequirement, CaseStepRequirement.document_id == Document.id)
+        # Reachable through THEIR requirements (decision B) OR targeting
+        # them nominatively (GAP-B: the deliverable for Claire).
+        own_requirement_docs = (
+            select(CaseStepRequirement.document_id)
             .join(
                 CaseStepProgress,
                 CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
             )
             .where(
-                Document.case_id == case_id,
                 CaseStepProgress.case_id == case_id,
                 CaseStepRequirement.person_id == person_id,
+                CaseStepRequirement.document_id.is_not(None),
+            )
+        )
+        stmt = (
+            select(Document)
+            .where(
+                Document.case_id == case_id,
+                or_(Document.id.in_(own_requirement_docs), Document.person_id == person_id),
             )
             .order_by(Document.created_at.desc())
             .distinct()
         )
+        if step_progress_id is not None:
+            stmt = stmt.where(Document.step_progress_id == step_progress_id)
         return list((await self.db.execute(stmt)).scalars())
 
     async def get_document_for_person(
         self, case_id: uuid.UUID, document_id: uuid.UUID, person_id: uuid.UUID
     ) -> Document | None:
-        stmt = (
-            select(Document)
-            .join(CaseStepRequirement, CaseStepRequirement.document_id == Document.id)
+        own_requirement_docs = (
+            select(CaseStepRequirement.document_id)
             .join(
                 CaseStepProgress,
                 CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
             )
             .where(
-                Document.id == document_id,
-                Document.case_id == case_id,
                 CaseStepProgress.case_id == case_id,
                 CaseStepRequirement.person_id == person_id,
+                CaseStepRequirement.document_id.is_not(None),
+            )
+        )
+        stmt = (
+            select(Document)
+            .where(
+                Document.id == document_id,
+                Document.case_id == case_id,
+                or_(Document.id.in_(own_requirement_docs), Document.person_id == person_id),
             )
             .limit(1)
         )

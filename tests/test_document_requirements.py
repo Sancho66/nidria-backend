@@ -287,6 +287,8 @@ async def test_expat_list_no_internal_uuid_and_enriched(
             "id",
             "case_id",
             "filename",
+            "kind",  # GAP-B : le livrable nomme au contrat
+            "person_id",
             "uploaded_by_type",
             "is_mine",
             "validation_status",

@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Form, Response, UploadFile
+from fastapi import APIRouter, Depends, Form, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -76,9 +76,11 @@ async def upload_document_as_agent(
     db: DbDep,
     step_progress_id: Annotated[uuid.UUID | None, Form()] = None,
     expires_at: Annotated[datetime | None, Form()] = None,
+    kind: Annotated[Literal["deposit", "deliverable"], Form()] = "deposit",
+    person_id: Annotated[uuid.UUID | None, Form()] = None,
 ) -> DocumentResponse:
     document = await DocumentsManager(db).upload_as_agent(
-        agent, case_id, file, step_progress_id, expires_at
+        agent, case_id, file, step_progress_id, expires_at, kind=kind, person_id=person_id
     )
     return DocumentResponse.model_validate(document)
 
@@ -103,9 +105,12 @@ async def fulfill_requirement_as_agent(
 
 @agent_router.get("/{case_id}/documents", response_model=list[DocumentResponse])
 async def list_documents_as_agent(
-    case_id: uuid.UUID, agent: AgentDep, db: DbDep
+    case_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    step_progress_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[DocumentResponse]:
-    return await DocumentsManager(db).list_for_agent(agent, case_id)
+    return await DocumentsManager(db).list_for_agent(agent, case_id, step_progress_id)
 
 
 @agent_router.get("/{case_id}/documents/{document_id}/download")
@@ -155,9 +160,12 @@ async def upload_document_as_expat(
 
 @expat_router.get("/{case_id}/documents", response_model=list[ExpatDocumentResponse])
 async def list_documents_as_expat(
-    case_id: uuid.UUID, expat: ExpatDep, db: DbDep
+    case_id: uuid.UUID,
+    expat: ExpatDep,
+    db: DbDep,
+    step_progress_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[ExpatDocumentResponse]:
-    return await DocumentsManager(db).list_for_expat(expat, case_id)
+    return await DocumentsManager(db).list_for_expat(expat, case_id, step_progress_id)
 
 
 @expat_router.get("/{case_id}/documents/{document_id}/download")
