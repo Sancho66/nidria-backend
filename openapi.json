@@ -22349,6 +22349,11 @@
             ],
             "title": "Full Name"
           },
+          "invitation_resent": {
+            "type": "boolean",
+            "title": "Invitation Resent",
+            "default": false
+          },
           "expat_user_id": {
             "anyOf": [
               {

@@ -739,9 +739,10 @@ async def test_email_change_on_an_already_linked_member_is_409(
     make_expat_user: MakeExpatUser,
     agent_headers: AuthHeaders,
 ) -> None:
-    """A member who ALREADY has an access keeps it: a different email is an
-    ACCESS TRANSFER disguised as a field edit → 409. Identical or empty
-    email: clean no-op."""
+    """Un membre au compte ACTIVE garde son email : le changer serait un
+    transfert d'identite de compte → 409 person.email_locked (GO
+    2026-07-19 : un compte NON active se corrige desormais — voir
+    test_person_email_edit). Email identique : no-op propre."""
     headers = agent_headers(admin)
     principal = await make_expat_user(email="principal-409@x.io")
     case = await make_client_case(
@@ -756,11 +757,19 @@ async def test_email_change_on_an_already_linked_member_is_409(
     person_id = created.json()["id"]
     linked_before = (await db_session.get(CasePerson, uuid.UUID(person_id))).expat_user_id
     assert linked_before is not None
+    # Marie ACTIVE son compte : des lors l'email est une identite.
+    from datetime import UTC, datetime
+
+    from shared.models.expat_user import ExpatUser as _Expat
+
+    marie = await db_session.get(_Expat, linked_before)
+    marie.activated_at = datetime.now(UTC)
+    await db_session.commit()
 
     url = f"/cases/{case.id}/persons/{person_id}"
     denied = await mem_client.patch(url, headers=headers, json={"email": "autre@x.io"})
     assert denied.status_code == 409
-    assert denied.json()["code"] == "person.email_change_forbidden"
+    assert denied.json()["code"] == "person.email_locked"
 
     # Identical, empty and null emails: clean no-ops, the link never moves.
     for body in ({"email": "marie@x.io"}, {"email": ""}, {"email": None}):

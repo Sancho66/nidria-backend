@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -13,6 +14,7 @@ from shared.models.client_case import ClientCase
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
+from shared.models.invitation import CaseInvitation
 from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
 from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
@@ -41,7 +43,7 @@ from src.cases.cases_schema import (
 from src.core.config import get_settings
 from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
-from src.core.enums import ActorType, CasePersonKind
+from src.core.enums import ActorType, CasePersonKind, InvitationStatus
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
 from src.core.notification_window import record_send
@@ -755,6 +757,63 @@ class CasesManager:
                 # Enums (sex, marital_status) → store their .value.
                 setattr(person, field, value.value if hasattr(value, "value") else value)
 
+    async def _account_used_elsewhere(self, expat_id: uuid.UUID, case_id: uuid.UUID) -> bool:
+        """Le compte est-il lie a d'AUTRES dossiers (principal ou membre) ?
+        (Requetes inline : cases_repository fait partie des 7 fichiers
+        geles de l'ecosysteme — on n'y ajoute rien.)"""
+        principal_elsewhere = (
+            await self.db.execute(
+                select(func.count()).where(
+                    ClientCase.principal_expat_user_id == expat_id,
+                    ClientCase.id != case_id,
+                    ClientCase.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        member_elsewhere = (
+            await self.db.execute(
+                select(func.count()).where(
+                    CasePerson.expat_user_id == expat_id, CasePerson.case_id != case_id
+                )
+            )
+        ).scalar_one()
+        return bool(principal_elsewhere or member_elsewhere)
+
+    async def _case_email_taken(
+        self, case: ClientCase, email: str, *, exclude_person_id: uuid.UUID
+    ) -> bool:
+        taken = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(CasePerson)
+                .join(ExpatUser, ExpatUser.id == CasePerson.expat_user_id)
+                .where(
+                    CasePerson.case_id == case.id,
+                    CasePerson.id != exclude_person_id,
+                    ExpatUser.email == email,
+                )
+            )
+        ).scalar_one()
+        return bool(taken)
+
+    async def _cancel_pending_invitations(self, case_id: uuid.UUID, email: str) -> int:
+        rows = (
+            (
+                await self.db.execute(
+                    select(CaseInvitation).where(
+                        CaseInvitation.case_id == case_id,
+                        CaseInvitation.email == email,
+                        CaseInvitation.status == InvitationStatus.PENDING.value,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for invitation in rows:
+            invitation.status = InvitationStatus.CANCELLED.value
+        return len(rows)
+
     async def _get_or_create_member_account(self, email: str, full_name: str) -> ExpatUser:
         """The member-account pivot, ONE implementation for creation AND email
         edition (Arthur): linked-or-created expat_user by email, NEVER a blind
@@ -872,6 +931,7 @@ class CasesManager:
         # disguised as a field edit → 409, remove the access then re-invite.
         # Empty or identical email: a clean no-op.
         invite_mail: tuple[str, str, str, str] | None = None
+        invitation_resent = False
         if provided.get("email"):
             new_email = provided["email"]
             if person.expat_user_id is None:
@@ -882,11 +942,62 @@ class CasesManager:
                 invite_mail = await self._prepare_member_invite(agent, case, new_email, expat)
             else:
                 current = await self.db.get(ExpatUser, person.expat_user_id)
-                if current is None or current.email != new_email:
+                if current is not None and current.email == new_email:
+                    pass  # email identique : no-op propre
+                elif current is not None and current.activated_at is not None:
+                    # (c) ACTIVEE : l'email est une identite de COMPTE — le
+                    # changement se fait par la personne (flux verifie, autre
+                    # chantier). Refus clair, code dedie.
                     raise ConflictError(
-                        "This person already has an access; remove it, then re-invite.",
-                        code="person.email_change_forbidden",
+                        "This person has an active account; the email change is theirs to make.",
+                        code="person.email_locked",
                     )
+                elif current is not None and await self._account_used_elsewhere(
+                    current.id, case.id
+                ):
+                    # (b') compte non active mais PARTAGE avec d'autres
+                    # dossiers (le link-or-create reutilise les comptes) :
+                    # corriger "son" email toucherait une identite partagee.
+                    raise ConflictError(
+                        "This person has an active account; the email change is theirs to make.",
+                        code="person.email_locked",
+                    )
+                else:
+                    # Anti-collision MEME dossier : une autre personne du
+                    # dossier porte deja cet email -> 409 explicite.
+                    if await self._case_email_taken(case, new_email, exclude_person_id=person.id):
+                        raise ConflictError(
+                            "Another person of this case already uses this email.",
+                            code="person.email_taken",
+                        )
+                    old_email = current.email if current is not None else None
+                    # (b) invitation PENDING (le deblocage Nicolas) :
+                    # l'ancienne invitation meurt (le token avec elle — le
+                    # pattern re-POST du signup), la nouvelle part a la bonne
+                    # adresse. (a) sans invitation pendante : ecriture simple.
+                    cancelled = (
+                        await self._cancel_pending_invitations(case.id, old_email)
+                        if old_email
+                        else 0
+                    )
+                    # Re-link par le MEME pivot que la creation. La collision
+                    # avec un expat_user d'un AUTRE compte ne se gere PAS ici
+                    # (decision GO) : le link-or-create reutilise ce compte,
+                    # et l'ACTIVATION suit le pattern existant — le token de
+                    # la nouvelle invitation resout le compte par SON email
+                    # (un login, N dossiers, chacun dans son contexte).
+                    fallback_name = person.full_name or (
+                        f"{current.first_name} {current.last_name}" if current else new_email
+                    )
+                    expat = await self._get_or_create_member_account(new_email, fallback_name)
+                    person.expat_user_id = expat.id
+                    if person.kind == CasePersonKind.PRINCIPAL.value:
+                        case.principal_expat_user_id = expat.id
+                    if cancelled:
+                        invite_mail = await self._prepare_member_invite(
+                            agent, case, new_email, expat
+                        )
+                        invitation_resent = True
         # full_name / relationship are FAMILY-only; the PRINCIPAL's name
         # lives on expat_user and is never set here.
         if person.kind == CasePersonKind.FAMILY.value:
@@ -911,7 +1022,9 @@ class CasesManager:
         await progress.send_pending(pending)
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
-        return self._person_response(reloaded, definitions)
+        response = self._person_response(reloaded, definitions)
+        response.invitation_resent = invitation_resent
+        return response
 
     async def delete_person(self, agent: Agent, case_id: uuid.UUID, person_id: uuid.UUID) -> None:
         case = await self._get_case(agent, case_id)

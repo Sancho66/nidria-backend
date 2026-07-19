@@ -175,6 +175,9 @@ class PersonResponse(_CivilStatusFields):
     kind: str
     relationship: str | None
     full_name: str | None
+    # PATCH email, etat (b) : l'invitation a ete renvoyee a la nouvelle
+    # adresse (l'ancienne est annulee, son token mort) — le front informe.
+    invitation_resent: bool = False
     # Resolved from expat_user for PRINCIPAL (so the frontend shows the
     # name without a second fetch); NULL for FAMILY.
     expat_user_id: uuid.UUID | None
