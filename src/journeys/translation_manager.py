@@ -37,6 +37,7 @@ import hashlib
 import logging
 import math
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -373,6 +374,18 @@ async def execute_job(
                 failed_keys: list[str] = []
                 if sendable:
                     items = [{"key": e.key, "text": e.text} for e in sendable]
+                    # Tracabilite sous-traitant (mitigation Z.ai 2026-07-19) :
+                    # le TYPE de contenu part en log, JAMAIS le contenu. Le
+                    # perimetre est verrouille par build_translation_entries
+                    # (contenus de TEMPLATE uniquement, zero donnee de dossier).
+                    kinds = Counter(e.key.split(".")[0] for e in sendable)
+                    logger.info(
+                        "ai translation -> Z.ai: template=%s lang=%s entries=%d types=%s",
+                        job.template_id,
+                        lang,
+                        len(sendable),
+                        dict(kinds),
+                    )
                     # One batch call + one stricter repair pass on botched
                     # items — FIELD grain: valid fields are written even
                     # when some keys resist.
