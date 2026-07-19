@@ -17100,6 +17100,18 @@
             "maxLength": 5000,
             "minLength": 1,
             "title": "Body"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
           }
         },
         "type": "object",
@@ -17138,6 +17150,18 @@
             ],
             "title": "Body"
           },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
           "edited": {
             "type": "boolean",
             "title": "Edited"
@@ -17164,6 +17188,7 @@
           "author_label",
           "is_mine",
           "body",
+          "document_id",
           "edited",
           "deleted",
           "created_at",

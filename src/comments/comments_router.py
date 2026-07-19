@@ -70,7 +70,9 @@ async def create_comment_as_agent(
     agent: AgentDep,
     db: DbDep,
 ) -> CommentResponse:
-    return await CommentsManager(db).create_as_agent(agent, case_id, progress_id, body.body)
+    return await CommentsManager(db).create_as_agent(
+        agent, case_id, progress_id, body.body, body.document_id
+    )
 
 
 @agent_router.patch(_SUB_ID, response_model=CommentResponse)
@@ -113,7 +115,9 @@ async def create_comment_as_expat(
     expat: ExpatDep,
     db: DbDep,
 ) -> CommentResponse:
-    return await CommentsManager(db).create_as_expat(expat, case_id, progress_id, body.body)
+    return await CommentsManager(db).create_as_expat(
+        expat, case_id, progress_id, body.body, body.document_id
+    )
 
 
 @expat_router.patch(_SUB_ID, response_model=CommentResponse)

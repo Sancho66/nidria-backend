@@ -3,6 +3,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -65,6 +66,7 @@ class CommentsManager:
                     author_label=label,
                     is_mine=(c.author_type == viewer_type.value and c.author_id == viewer_id),
                     body=None if deleted else c.body,
+                    document_id=None if deleted else c.document_id,
                     edited=c.edited_at is not None,
                     deleted=deleted,
                     created_at=c.created_at,
@@ -93,15 +95,45 @@ class CommentsManager:
         comments = await self.repo.list_comments(progress_id)
         return await self._build_responses(comments, ActorType.AGENT, agent.id)
 
+    async def _attach_document(
+        self, case_id: uuid.UUID, progress_id: uuid.UUID, document_id: uuid.UUID | None
+    ) -> uuid.UUID | None:
+        """Piece jointe (2026-07-19) : le document doit appartenir au MEME
+        dossier (404 sinon — jamais un rattachement croise) ; s'il n'a pas
+        d'etape, il s'ancre sur celle du fil. L'upload lui-meme est passe
+        par les endpoints documents existants — tous les gardes GAP-B ont
+        deja mordu la-bas."""
+        if document_id is None:
+            return None
+        from shared.models.document import Document
+
+        document = (
+            await self.db.execute(
+                select(Document).where(Document.id == document_id, Document.case_id == case_id)
+            )
+        ).scalar_one_or_none()
+        if document is None:
+            raise NotFoundError("Document not found on this case.")
+        if document.step_progress_id is None:
+            document.step_progress_id = progress_id
+        return document.id
+
     async def create_as_agent(
-        self, agent: Agent, case_id: uuid.UUID, progress_id: uuid.UUID, body: str
+        self,
+        agent: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        body: str,
+        document_id: uuid.UUID | None = None,
     ) -> CommentResponse:
         case, template_step_id = await self._resolve_agent(agent, case_id, progress_id)
+        attached = await self._attach_document(case.id, progress_id, document_id)
         comment = self.repo.add_comment(
             case_step_progress_id=progress_id,
             author_type=ActorType.AGENT.value,
             author_id=agent.id,
             body=body,
+            document_id=attached,
         )
         await UsageManager(self.db).emit_for_case(
             case, "message.sent", actor_type=ActorType.AGENT, actor_id=agent.id
@@ -164,18 +196,25 @@ class CommentsManager:
         return await self._build_responses(comments, ActorType.AGENT, external.id)
 
     async def create_as_external(
-        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID, body: str
+        self,
+        external: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        body: str,
+        document_id: uuid.UUID | None = None,
     ) -> CommentResponse:
         await self._resolve_external(external, case_id, progress_id)
         # Usage tracker needs the case (demo exclusion); the border above
         # already guaranteed assignment-scoped access.
         case = await get_case_for_external(self.db, external, case_id)
         assert case is not None  # _resolve_external just resolved it
+        attached = await self._attach_document(case.id, progress_id, document_id)
         comment = self.repo.add_comment(
             case_step_progress_id=progress_id,
             author_type=ActorType.AGENT.value,
             author_id=external.id,
             body=body,
+            document_id=attached,
         )
         await UsageManager(self.db).emit_for_case(
             case, "message.sent", actor_type=ActorType.AGENT, actor_id=external.id
@@ -229,14 +268,21 @@ class CommentsManager:
         return await self._build_responses(comments, ActorType.EXPAT, expat.id)
 
     async def create_as_expat(
-        self, expat: ExpatUser, case_id: uuid.UUID, progress_id: uuid.UUID, body: str
+        self,
+        expat: ExpatUser,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        body: str,
+        document_id: uuid.UUID | None = None,
     ) -> CommentResponse:
         case, template_step_id = await self._resolve_expat(expat, case_id, progress_id)
+        attached = await self._attach_document(case.id, progress_id, document_id)
         comment = self.repo.add_comment(
             case_step_progress_id=progress_id,
             author_type=ActorType.EXPAT.value,
             author_id=expat.id,
             body=body,
+            document_id=attached,
         )
         await UsageManager(self.db).emit_for_case(
             case, "message.sent", actor_type=ActorType.EXPAT, actor_id=expat.id

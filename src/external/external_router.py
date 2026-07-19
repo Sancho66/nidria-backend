@@ -197,7 +197,9 @@ async def create_comment(
     agent: AgentDep,
     db: DbDep,
 ) -> CommentResponse:
-    return await CommentsManager(db).create_as_external(agent, case_id, progress_id, body.body)
+    return await CommentsManager(db).create_as_external(
+        agent, case_id, progress_id, body.body, body.document_id
+    )
 
 
 @external_router.patch(
