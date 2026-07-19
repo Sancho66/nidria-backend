@@ -25781,12 +25781,13 @@
             "title": "Default Validated By Agent Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "name"
         ],
         "title": "TemplateStepCreateRequest",
-        "description": "No `position`: new steps are APPENDED; ordering is managed only\nthrough the declarative reorder endpoint."
+        "description": "No `position`: new steps are APPENDED; ordering is managed only\nthrough the declarative reorder endpoint.\n\nextra=\"forbid\" (BUG-A, 2026-07-19): participants (\"Action à réaliser\npar\") are a SUB-RESOURCE (/participants), not a step field — an inline\nunknown key used to be silently swallowed (200, nothing written); now\nit 422s loudly."
       },
       "TemplateStepParticipantResponse": {
         "properties": {
@@ -26116,6 +26117,7 @@
             "title": "Content Note I18N"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "TemplateStepUpdateRequest"
       },

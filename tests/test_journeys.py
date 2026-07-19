@@ -476,3 +476,31 @@ async def test_editing_language_never_touches_client_resolution(
     detail = await journeys_client.get(f"/expat/cases/{case.id}?lang=fr", headers=expat_headers)
     assert detail.status_code == 200, detail.text
     assert [s["name"] for s in detail.json()["timeline"]] == ["Étape FR"]  # never "Paso ES"
+
+
+async def test_step_payload_unknown_key_is_422_never_swallowed(
+    journeys_client: AsyncClient,
+    configurer: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """BUG-A : « Action à réaliser par » est une sous-ressource — un champ
+    inconnu envoyé inline dans le POST/PATCH d'étape faisait un 200 menteur
+    (pydantic l'avalait). Désormais : 422 bruyant, des deux côtés."""
+    client = journeys_client
+    headers = agent_headers(configurer)
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    bad_create = await client.post(
+        f"/journeys/{tid}/steps",
+        headers=headers,
+        json={"name": "Etape", "participants": [{"type": "agent"}]},
+    )
+    assert bad_create.status_code == 422
+    sid = (
+        await client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "Etape"})
+    ).json()["id"]
+    bad_patch = await client.patch(
+        f"/journeys/{tid}/steps/{sid}",
+        headers=headers,
+        json={"unknown_key": "x"},
+    )
+    assert bad_patch.status_code == 422

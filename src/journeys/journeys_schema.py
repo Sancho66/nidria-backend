@@ -200,7 +200,14 @@ class JourneyTemplateUpdateRequest(BaseModel):
 
 class TemplateStepCreateRequest(BaseModel):
     """No `position`: new steps are APPENDED; ordering is managed only
-    through the declarative reorder endpoint."""
+    through the declarative reorder endpoint.
+
+    extra="forbid" (BUG-A, 2026-07-19): participants ("Action à réaliser
+    par") are a SUB-RESOURCE (/participants), not a step field — an inline
+    unknown key used to be silently swallowed (200, nothing written); now
+    it 422s loudly."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=200)
     name_i18n: I18nBlob | None = None
@@ -221,6 +228,9 @@ class TemplateStepCreateRequest(BaseModel):
 
 
 class TemplateStepUpdateRequest(BaseModel):
+    # Same forbid rationale as TemplateStepCreateRequest (BUG-A).
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(default=None, min_length=1, max_length=200)
     name_i18n: I18nBlob | None = None
     estimated_days: int | None = Field(default=None, ge=0)
