@@ -82,6 +82,11 @@ class PayloadTooLargeError(NidriaError):
     code = "payload_too_large"
 
 
+class UnsupportedMediaTypeError(NidriaError):
+    status_code = 415
+    code = "unsupported_media_type"
+
+
 class ValidationError(NidriaError):
     status_code = 422
 

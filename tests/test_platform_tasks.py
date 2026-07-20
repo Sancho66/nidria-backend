@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.platform_task import PlatformTask
 from shared.models.rbac import Role
-from src.core import email
+from src.core import email, storage
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
@@ -557,3 +557,153 @@ async def test_overdue_and_order_judge_due_at_only(
     assert titles == ["due-later", "past-meeting"]  # due_at NULLS LAST, scheduled ignored
     overdue = await client.get("/admin/tasks?is_overdue=true", headers=headers)
     assert overdue.json()["items"] == []
+
+
+# --- attachments (Prism port; limits aligned on case documents) -----------------------
+
+
+def _pdf(name: str = "notes.pdf", size: int = 100) -> dict[str, tuple[str, bytes, str]]:
+    return {"file": (name, b"x" * size, "application/pdf")}
+
+
+async def test_attachment_upload_list_download_delete(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    uploaded = await client.post(
+        f"/admin/tasks/{task['id']}/attachments", headers=headers, files=_pdf()
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    body = uploaded.json()
+    assert body["file_name"] == "notes.pdf" and body["size_bytes"] == 100
+    assert body["uploaded_by_agent_id"] == str(superadmin.id)
+    assert "storage_path" not in body  # internal key, never served
+
+    listed = await client.get(f"/admin/tasks/{task['id']}/attachments", headers=headers)
+    assert [a["id"] for a in listed.json()] == [body["id"]]
+
+    download = await client.get(
+        f"/admin/tasks/{task['id']}/attachments/{body['id']}/download", headers=headers
+    )
+    assert download.status_code == 200
+    assert download.content == b"x" * 100
+    assert "notes.pdf" in download.headers["content-disposition"]
+
+    # The blob key is uuid-only under the platform prefix: the display
+    # name never reaches the storage path.
+    [path] = storage.mock_store.keys()
+    assert path == f"platform-tasks/{task['id']}/{body['id']}"
+
+    deleted = await client.delete(
+        f"/admin/tasks/{task['id']}/attachments/{body['id']}", headers=headers
+    )
+    assert deleted.status_code == 204
+    assert storage.mock_store == {}  # physical delete, not just the row
+    assert (
+        await client.get(f"/admin/tasks/{task['id']}/attachments", headers=headers)
+    ).json() == []
+
+
+async def test_attachment_unsupported_extension_is_415(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    response = await client.post(
+        f"/admin/tasks/{task['id']}/attachments",
+        headers=headers,
+        files={"file": ("script.exe", b"MZ", "application/octet-stream")},
+    )
+    assert response.status_code == 415, response.text
+    assert storage.mock_store == {}  # nothing reached the bucket
+
+
+async def test_attachment_oversize_is_413(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    too_big = 10 * 1024 * 1024 + 1  # the case-documents cap, aligned
+    response = await client.post(
+        f"/admin/tasks/{task['id']}/attachments",
+        headers=headers,
+        files=_pdf(size=too_big),
+    )
+    assert response.status_code == 413, response.text
+    assert storage.mock_store == {}
+
+
+async def test_task_delete_removes_blobs_physically(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders, db_session: AsyncSession
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    for name in ("a.pdf", "b.png"):
+        upload = await client.post(
+            f"/admin/tasks/{task['id']}/attachments", headers=headers, files=_pdf(name=name)
+        )
+        assert upload.status_code == 201
+    assert len(storage.mock_store) == 2
+    assert (await client.delete(f"/admin/tasks/{task['id']}", headers=headers)).status_code == 204
+    assert storage.mock_store == {}  # blobs gone, not only the CASCADE rows
+    from shared.models.platform_task_attachment import PlatformTaskAttachment
+
+    rows = (await db_session.execute(select(PlatformTaskAttachment))).scalars().all()
+    assert rows == []
+
+
+async def test_attachments_403_for_agency_admin(
+    client: AsyncClient, superadmin: Agent, agency_admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(client, agent_headers(superadmin))
+    denied_headers = agent_headers(agency_admin)
+    upload = await client.post(
+        f"/admin/tasks/{task['id']}/attachments", headers=denied_headers, files=_pdf()
+    )
+    assert upload.status_code == 403
+    listed = await client.get(f"/admin/tasks/{task['id']}/attachments", headers=denied_headers)
+    assert listed.status_code == 403
+
+
+async def test_attachment_of_another_task_is_404(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task_a = await _create(client, headers, title="A")
+    task_b = await _create(client, headers, title="B")
+    upload = await client.post(
+        f"/admin/tasks/{task_a['id']}/attachments", headers=headers, files=_pdf()
+    )
+    attachment_id = upload.json()["id"]
+    crossed = await client.get(
+        f"/admin/tasks/{task_b['id']}/attachments/{attachment_id}/download", headers=headers
+    )
+    assert crossed.status_code == 404  # scoped by task_id, no traversal
+    crossed_delete = await client.delete(
+        f"/admin/tasks/{task_b['id']}/attachments/{attachment_id}", headers=headers
+    )
+    assert crossed_delete.status_code == 404
+
+
+async def test_attachments_live_on_done_task(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Prism has NO lock on done tasks (verified in the reference): a
+    provided content stays visible for life, and upload/delete remain
+    allowed — a platform task is not a client dossier."""
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers, status="done")
+    upload = await client.post(
+        f"/admin/tasks/{task['id']}/attachments", headers=headers, files=_pdf()
+    )
+    assert upload.status_code == 201  # upload allowed on done
+    attachment_id = upload.json()["id"]
+    download = await client.get(
+        f"/admin/tasks/{task['id']}/attachments/{attachment_id}/download", headers=headers
+    )
+    assert download.status_code == 200  # visible/downloadable on done
+    deleted = await client.delete(
+        f"/admin/tasks/{task['id']}/attachments/{attachment_id}", headers=headers
+    )
+    assert deleted.status_code == 204  # delete allowed on done

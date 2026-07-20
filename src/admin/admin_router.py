@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -18,6 +18,7 @@ from src.admin.platform_tasks_manager import PlatformTasksManager
 from src.admin.platform_tasks_schema import (
     CalendarLinkResponse,
     PlatformOperatorRead,
+    PlatformTaskAttachmentRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
     PlatformTaskRead,
@@ -27,6 +28,7 @@ from src.admin.platform_tasks_schema import (
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.exceptions import ValidationError
+from src.core.http import file_download_response
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 
@@ -59,6 +61,30 @@ BINDINGS = [
     RouteBinding(
         "GET",
         "/admin/tasks/{task_id}/calendar-link",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
+    ),
+    RouteBinding(
+        "POST",
+        "/admin/tasks/{task_id}/attachments",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
+    ),
+    RouteBinding(
+        "GET",
+        "/admin/tasks/{task_id}/attachments",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
+    ),
+    RouteBinding(
+        "GET",
+        "/admin/tasks/{task_id}/attachments/{attachment_id}/download",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/admin/tasks/{task_id}/attachments/{attachment_id}",
         Audience.AGENT,
         Permission.PLATFORM_TASK_MANAGE,
     ),
@@ -202,3 +228,39 @@ async def platform_task_calendar_link(
     """Google / Outlook / ICS for a scheduled task (the Prism port).
     400 when the task has no scheduled_at."""
     return await PlatformTasksManager(db).calendar_link(task_id)
+
+
+@router.post(
+    "/tasks/{task_id}/attachments", response_model=PlatformTaskAttachmentRead, status_code=201
+)
+async def upload_platform_task_attachment(
+    task_id: uuid.UUID, file: UploadFile, agent: AgentDep, db: DbDep
+) -> PlatformTaskAttachmentRead:
+    """Multipart upload. Limits ALIGNED on case documents: same size cap
+    (413 task.attachment_too_large) and same extension whitelist (415
+    task.attachment_type_unsupported)."""
+    return await PlatformTasksManager(db).upload_attachment(agent, task_id, file)
+
+
+@router.get("/tasks/{task_id}/attachments", response_model=list[PlatformTaskAttachmentRead])
+async def list_platform_task_attachments(
+    task_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[PlatformTaskAttachmentRead]:
+    return await PlatformTasksManager(db).list_attachments(task_id)
+
+
+@router.get("/tasks/{task_id}/attachments/{attachment_id}/download")
+async def download_platform_task_attachment(
+    task_id: uuid.UUID, attachment_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> Response:
+    """The documents mechanism: the private bucket is re-streamed by the
+    backend (no signed URL anywhere in this product)."""
+    file_name, content = await PlatformTasksManager(db).download_attachment(task_id, attachment_id)
+    return file_download_response(file_name, content)
+
+
+@router.delete("/tasks/{task_id}/attachments/{attachment_id}", status_code=204)
+async def delete_platform_task_attachment(
+    task_id: uuid.UUID, attachment_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> None:
+    await PlatformTasksManager(db).delete_attachment(task_id, attachment_id)

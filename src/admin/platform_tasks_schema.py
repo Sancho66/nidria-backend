@@ -146,6 +146,20 @@ class CalendarLinkResponse(BaseModel):
     end: datetime
 
 
+class PlatformTaskAttachmentRead(BaseModel):
+    """One attached file — storage_path is INTERNAL, never served."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    file_name: str
+    content_type: str
+    size_bytes: int
+    uploaded_by_agent_id: uuid.UUID | None
+    created_at: datetime
+
+
 class PlatformOperatorRead(BaseModel):
     """One assignable platform operator (superadmin) — the task form
     selector. No pagination: they are two."""

@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -26,17 +27,20 @@ from shared.models.platform_task import (
     PLATFORM_TASK_TYPES,
     PlatformTask,
 )
+from shared.models.platform_task_attachment import PlatformTaskAttachment
 from shared.models.rbac import Role
 from src.admin.platform_tasks_repository import PlatformTasksRepository
 from src.admin.platform_tasks_schema import (
     CalendarLinkResponse,
     PlatformOperatorRead,
+    PlatformTaskAttachmentRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
     PlatformTaskRead,
     PlatformTaskSummary,
     PlatformTaskUpdate,
 )
+from src.core import storage
 from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.email_templates import (
@@ -44,7 +48,13 @@ from src.core.email_templates import (
     task_assigned_email,
     task_status_changed_email,
 )
-from src.core.exceptions import BadRequestError, NotFoundError, ValidationError
+from src.core.exceptions import (
+    BadRequestError,
+    NotFoundError,
+    PayloadTooLargeError,
+    UnsupportedMediaTypeError,
+    ValidationError,
+)
 from src.core.i18n import resolve_notification_lang_agent
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 
@@ -431,6 +441,22 @@ class PlatformTasksManager:
 
     async def delete(self, task_id: uuid.UUID) -> None:
         task = await self._get_or_404(task_id)
+        attachments = (
+            (
+                await self.db.execute(
+                    select(PlatformTaskAttachment).where(PlatformTaskAttachment.task_id == task_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for attachment in attachments:
+            # Best-effort physical cleanup (the Prism contract): a storage
+            # hiccup never blocks the delete, the DB CASCADE takes the rows.
+            try:
+                await asyncio.to_thread(storage.delete, attachment.storage_path)
+            except Exception:
+                logger.warning("attachment blob cleanup failed: %s", attachment.storage_path)
         await self.db.delete(task)
         await self.db.commit()
 
@@ -439,6 +465,95 @@ class PlatformTasksManager:
         if task.scheduled_at is None:
             raise BadRequestError("This task has no scheduled time.", code="task.not_scheduled")
         return build_calendar_link(task, await self._agency_name(task.agency_id))
+
+    # --- attachments (Prism port; limits ALIGNED on case documents) -----------
+
+    async def list_attachments(self, task_id: uuid.UUID) -> list[PlatformTaskAttachmentRead]:
+        await self._get_or_404(task_id)
+        rows = (
+            (
+                await self.db.execute(
+                    select(PlatformTaskAttachment)
+                    .where(PlatformTaskAttachment.task_id == task_id)
+                    .order_by(PlatformTaskAttachment.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [PlatformTaskAttachmentRead.model_validate(r) for r in rows]
+
+    async def upload_attachment(
+        self, actor: Agent, task_id: uuid.UUID, file: UploadFile
+    ) -> PlatformTaskAttachmentRead:
+        await self._get_or_404(task_id)
+        settings = get_settings()
+        filename = (file.filename or "").strip()
+        if not filename:
+            raise ValidationError("A file name is required.", code="task.attachment_no_name")
+        extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if extension not in settings.allowed_document_extensions:
+            raise UnsupportedMediaTypeError(
+                f"File type .{extension or '?'} is not accepted. "
+                f"Allowed: {', '.join(settings.allowed_document_extensions)}.",
+                code="task.attachment_type_unsupported",
+            )
+        content = await file.read()
+        if len(content) > settings.max_document_size_mb * 1024 * 1024:
+            raise PayloadTooLargeError(
+                f"File exceeds {settings.max_document_size_mb} MB.",
+                code="task.attachment_too_large",
+            )
+        attachment_id = uuid.uuid4()
+        # uuid-only key: the display name NEVER reaches the storage path.
+        path = f"platform-tasks/{task_id}/{attachment_id}"
+        content_type = file.content_type or "application/octet-stream"
+        await asyncio.to_thread(storage.upload, path, content, content_type)
+        row = PlatformTaskAttachment(
+            id=attachment_id,
+            task_id=task_id,
+            file_name=filename[:255],
+            content_type=content_type,
+            size_bytes=len(content),
+            storage_path=path,
+            uploaded_by_agent_id=actor.id,
+        )
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return PlatformTaskAttachmentRead.model_validate(row)
+
+    async def _attachment_or_404(
+        self, task_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> PlatformTaskAttachment:
+        """Scoped by task_id: an attachment of ANOTHER task is a 404 —
+        no id traversal through the URL."""
+        row = (
+            await self.db.execute(
+                select(PlatformTaskAttachment).where(
+                    PlatformTaskAttachment.id == attachment_id,
+                    PlatformTaskAttachment.task_id == task_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Attachment not found.", code="task.attachment_not_found")
+        return row
+
+    async def download_attachment(
+        self, task_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> tuple[str, bytes]:
+        row = await self._attachment_or_404(task_id, attachment_id)
+        content = await asyncio.to_thread(storage.download, row.storage_path)
+        return row.file_name, content
+
+    async def delete_attachment(self, task_id: uuid.UUID, attachment_id: uuid.UUID) -> None:
+        row = await self._attachment_or_404(task_id, attachment_id)
+        # Storage FIRST (the documents order): a mid-failure leaves a
+        # recoverable orphan row, never a dangling blob.
+        await asyncio.to_thread(storage.delete, row.storage_path)
+        await self.db.delete(row)
+        await self.db.commit()
 
     async def summary(self) -> PlatformTaskSummary:
         return PlatformTaskSummary(**await self.repository.summary())

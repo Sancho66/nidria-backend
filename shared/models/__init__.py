@@ -41,6 +41,7 @@ from shared.models.notification_window import NotificationWindow
 from shared.models.nurture import NurtureSend
 from shared.models.paddle_event import PaddleWebhookEvent
 from shared.models.platform_task import PlatformTask
+from shared.models.platform_task_attachment import PlatformTaskAttachment
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.referral import ReferralCredit
 from shared.models.reminder import Reminder
@@ -78,6 +79,7 @@ __all__ = [
     "AgencyDeletionLog",
     "JobConfig",
     "PlatformTask",
+    "PlatformTaskAttachment",
     "JobRun",
     "JourneySection",
     "JourneyStepAttachment",
