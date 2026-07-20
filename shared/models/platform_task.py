@@ -47,6 +47,13 @@ class PlatformTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     assigned_to_agent_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agent.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    # WHO assigned + WHEN — the LAST assigner only (reassignment overwrites;
+    # the history, if ever wanted, lives in activity_log). SET NULL: an
+    # assigner who leaves does not orphan the task.
+    assigned_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent.id", ondelete="SET NULL")
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agent.id", ondelete="SET NULL")
     )

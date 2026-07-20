@@ -273,6 +273,15 @@ class PlatformTasksManager:
                 agency_name=agencies.get(t.agency_id) if t.agency_id else None,
                 assigned_to_agent_id=t.assigned_to_agent_id,
                 assigned_to_name=agents.get(t.assigned_to_agent_id, ""),
+                assigned_by=(
+                    PlatformOperatorRead(
+                        agent_id=t.assigned_by_agent_id,
+                        name=agents.get(t.assigned_by_agent_id, ""),
+                    )
+                    if t.assigned_by_agent_id
+                    else None
+                ),
+                assigned_at=t.assigned_at,
                 created_by_agent_id=t.created_by_agent_id,
                 completed_by_agent_id=t.completed_by_agent_id,
                 completed_by_name=(
@@ -409,13 +418,22 @@ class PlatformTasksManager:
             location=payload.location,
             agency_id=payload.agency_id,
             assigned_to_agent_id=assignee,
+            # A task is ALWAYS assigned (defaults to the creator), so the
+            # trace is always stamped: the actor is the assigner, now.
+            assigned_by_agent_id=actor.id,
+            assigned_at=datetime.now(UTC),
             created_by_agent_id=actor.id,
         )
         # Created straight into a done lane: the audit stamp applies (Prism).
         self._apply_status(task, payload.status or "todo", actor)
         self.db.add(task)
         await self.db.flush()
-        if payload.watcher_agent_ids is not None:
+        if payload.watcher_agent_ids is None:
+            # Field ABSENT -> the creator is the default observer. (An
+            # explicit [] means "no observers" and is honored as-is; a
+            # provided list is honored as-is, the creator NOT forced in.)
+            await self._replace_watchers(task.id, [actor.id])
+        else:
             watcher_ids = await self._validate_watchers(payload.watcher_agent_ids)
             await self._replace_watchers(task.id, watcher_ids)
         await self.db.commit()
@@ -474,7 +492,15 @@ class PlatformTasksManager:
             task.completion_message = payload.completion_message
         if "assigned_to_agent_id" in fields and payload.assigned_to_agent_id is not None:
             await self._validate_assignee(payload.assigned_to_agent_id)
+            changed = payload.assigned_to_agent_id != task.assigned_to_agent_id
             task.assigned_to_agent_id = payload.assigned_to_agent_id
+            # Stamp the PATCH actor on a real (re)assignment only. A no-op
+            # re-send of the SAME assignee (a front that PATCHes the whole
+            # object on a status edit) must NOT re-stamp — THE trap. The
+            # `assigned_by is None` guard is a defensive backfill.
+            if changed or task.assigned_by_agent_id is None:
+                task.assigned_by_agent_id = actor.id
+                task.assigned_at = datetime.now(UTC)
         if "watcher_agent_ids" in fields and payload.watcher_agent_ids is not None:
             watcher_ids = await self._validate_watchers(payload.watcher_agent_ids)
             await self._replace_watchers(task.id, watcher_ids)

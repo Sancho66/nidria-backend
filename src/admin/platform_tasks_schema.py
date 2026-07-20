@@ -132,6 +132,8 @@ class PlatformTaskRead(BaseModel):
     agency_name: str | None
     assigned_to_agent_id: uuid.UUID
     assigned_to_name: str
+    assigned_by: "PlatformOperatorRead | None"
+    assigned_at: datetime | None
     created_by_agent_id: uuid.UUID | None
     completed_by_agent_id: uuid.UUID | None
     completed_by_name: str | None

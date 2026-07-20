@@ -951,3 +951,140 @@ async def test_attachment_out_of_task_whitelist_still_415(
     )
     assert response.status_code == 415, response.text
     assert storage.mock_store == {}
+
+
+# --- PART 1: creator is the default watcher (2026-07-21) -------------------------------
+
+
+async def test_creator_is_default_watcher_when_field_absent(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(client, agent_headers(superadmin))  # no watcher_agent_ids
+    assert [w["agent_id"] for w in task["watchers"]] == [str(superadmin.id)]
+
+
+async def test_explicit_empty_list_means_no_watcher(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(client, agent_headers(superadmin), watcher_agent_ids=[])
+    assert task["watchers"] == []  # [] is distinguishable from absent → honored
+
+
+async def test_explicit_list_without_creator_is_not_forced_in(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(client, agent_headers(superadmin), watcher_agent_ids=[str(superadmin2.id)])
+    ids = {w["agent_id"] for w in task["watchers"]}
+    assert ids == {str(superadmin2.id)}  # creator NOT re-added
+
+
+async def test_creator_default_watcher_dedup_single_mail(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    """THE dedup test: creator is a default observer AND the status-change
+    recipient (as creator). A THIRD party changes status → the creator
+    gets ONE mail, not two — the watchers dedup absorbs the overlap."""
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    assert [w["agent_id"] for w in task["watchers"]] == [str(superadmin.id)]  # default
+    email.outbox.clear()
+    await client.post(f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin2))
+    assert [m.to for m in email.outbox] == [superadmin.email]  # ONE, not two
+
+
+async def test_creator_watcher_as_actor_gets_no_mail(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(client, agent_headers(superadmin))  # creator = default watcher
+    email.outbox.clear()
+    await client.post(f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin))
+    assert email.outbox == []  # never to the actor, even as watcher
+
+
+# --- PART 2: "assigned by X" traceability ---------------------------------------------
+
+
+async def test_create_assigned_stamps_assigner_and_time(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    assert task["assigned_by"]["agent_id"] == str(superadmin.id)  # the creator/actor
+    assert task["assigned_by"]["name"]
+    assert task["assigned_at"] is not None
+
+
+async def test_create_auto_assign_stamps_self(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Our model ALWAYS assigns (defaults to the creator) — there is no
+    unassigned task. The auto-assignment stamps the creator as assigner."""
+    task = await _create(client, agent_headers(superadmin))  # no assigned_to
+    assert task["assigned_to_agent_id"] == str(superadmin.id)
+    assert task["assigned_by"]["agent_id"] == str(superadmin.id)
+    assert task["assigned_at"] is not None
+
+
+async def test_patch_reassignment_overwrites_assigner(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    superadmin3: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    # Created by A (assigned to B) → assigned_by = A. C reassigns to D-ish
+    # (superadmin3) → assigned_by overwritten to C, assigned_at refreshed.
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    before = task["assigned_at"]
+    assert task["assigned_by"]["agent_id"] == str(superadmin.id)
+    patched = await client.patch(
+        f"/admin/tasks/{task['id']}",
+        headers=agent_headers(superadmin3),  # actor C
+        json={"assigned_to_agent_id": str(superadmin3.id)},
+    )
+    body = patched.json()
+    assert body["assigned_to_agent_id"] == str(superadmin3.id)
+    assert body["assigned_by"]["agent_id"] == str(superadmin3.id)  # overwritten to C
+    assert body["assigned_at"] >= before  # refreshed
+
+
+async def test_patch_status_only_never_restamps_assigner(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    """THE trap: a status-only PATCH on an assigned task leaves
+    assigned_by / assigned_at untouched."""
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    by_before, at_before = task["assigned_by"]["agent_id"], task["assigned_at"]
+    patched = await client.patch(
+        f"/admin/tasks/{task['id']}",
+        headers=agent_headers(superadmin2),  # a DIFFERENT actor changes status
+        json={"status": "in_progress"},
+    )
+    body = patched.json()
+    assert body["assigned_by"]["agent_id"] == by_before  # unchanged
+    assert body["assigned_at"] == at_before  # unchanged — never re-stamped
+
+
+async def test_patch_resend_same_assignee_does_not_restamp(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    """A front that PATCHes the whole object (assigned_to unchanged) must
+    not re-stamp — the no-op re-send is trap-safe too."""
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    by_before, at_before = task["assigned_by"]["agent_id"], task["assigned_at"]
+    patched = await client.patch(
+        f"/admin/tasks/{task['id']}",
+        headers=agent_headers(superadmin),  # any actor, same assignee
+        json={"assigned_to_agent_id": str(superadmin2.id), "title": "Renommée"},
+    )
+    body = patched.json()
+    assert body["assigned_by"]["agent_id"] == by_before  # no change → no re-stamp
+    assert body["assigned_at"] == at_before

@@ -24041,6 +24041,28 @@
             "type": "string",
             "title": "Assigned To Name"
           },
+          "assigned_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformOperatorRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assigned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned At"
+          },
           "created_by_agent_id": {
             "anyOf": [
               {
@@ -24136,6 +24158,8 @@
           "agency_name",
           "assigned_to_agent_id",
           "assigned_to_name",
+          "assigned_by",
+          "assigned_at",
           "created_by_agent_id",
           "completed_by_agent_id",
           "completed_by_name",
