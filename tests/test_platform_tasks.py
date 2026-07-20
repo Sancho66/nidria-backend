@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.platform_task import PlatformTask
 from shared.models.rbac import Role
+from src.core import email
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
@@ -347,3 +348,97 @@ async def test_task_type_filter(
     assert {t["title"] for t in response.json()["items"]} == {"the-call"}
     everything = await client.get("/admin/tasks", headers=headers)
     assert everything.json()["total"] == 3  # no filter, no exclusion
+
+
+# --- emails (the Prism model, exact) --------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def superadmin2(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
+    return await make_agent(role=system_roles["superadmin"], email="root2@platform.io")
+
+
+@pytest_asyncio.fixture
+async def superadmin3(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
+    return await make_agent(role=system_roles["superadmin"], email="root3@platform.io")
+
+
+async def test_create_assigned_to_other_sends_one_mail(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    email.outbox.clear()
+    await _create(
+        client,
+        agent_headers(superadmin),
+        title="Relancer le KYB",
+        assigned_to_agent_id=str(superadmin2.id),
+    )
+    assert [m.to for m in email.outbox] == [superadmin2.email]
+    assert "Relancer le KYB" in email.outbox[0].subject  # task_assigned template
+
+
+async def test_self_assignment_sends_nothing(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    email.outbox.clear()
+    await _create(client, agent_headers(superadmin))
+    assert email.outbox == []  # the actor is never their own recipient
+
+
+async def test_complete_by_assignee_mails_the_creator(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(
+        client,
+        agent_headers(superadmin),
+        title="Vérifier le KYB",
+        assigned_to_agent_id=str(superadmin2.id),
+    )
+    email.outbox.clear()
+    done = await client.post(
+        f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin2)
+    )
+    assert done.status_code == 200
+    assert [m.to for m in email.outbox] == [superadmin.email]  # the creator, once
+    assert "mise à jour" in email.outbox[0].subject  # task_status_changed template
+
+
+async def test_creator_completing_own_task_gets_no_mail(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    email.outbox.clear()
+    await client.post(f"/admin/tasks/{task['id']}/complete", headers=headers)
+    assert email.outbox == []  # actor == creator == assignee: zero mail
+
+
+async def test_reassignment_mails_new_assignee_and_creator_deduplicated(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    superadmin3: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    # Creator A, assignee A; actor B reassigns to C -> 2 mails {C, A}.
+    task = await _create(client, agent_headers(superadmin))
+    email.outbox.clear()
+    patched = await client.patch(
+        f"/admin/tasks/{task['id']}",
+        headers=agent_headers(superadmin2),
+        json={"assigned_to_agent_id": str(superadmin3.id)},
+    )
+    assert patched.status_code == 200
+    assert sorted(m.to for m in email.outbox) == sorted([superadmin.email, superadmin3.email])
+    # Creator A (assigned to C), actor B reassigns to A: the creator IS
+    # the new assignee -> ONE deduplicated mail.
+    other = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin3.id)
+    )
+    email.outbox.clear()
+    await client.patch(
+        f"/admin/tasks/{other['id']}",
+        headers=agent_headers(superadmin2),
+        json={"assigned_to_agent_id": str(superadmin.id)},
+    )
+    assert [m.to for m in email.outbox] == [superadmin.email]  # deduplicated

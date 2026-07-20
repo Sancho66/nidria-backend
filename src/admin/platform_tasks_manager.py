@@ -1,9 +1,14 @@
 """Superadmin task backlog — the Prism transition model, whole: any lane
 to any lane, the ONLY mechanic is the completion audit stamp on entering
-a done lane (and the clear on leaving it). v1 scope (GO 2026-07-20):
-no ActivityLog (ours requires a case), no emails (2 superadmins), no
-contact, fixed 3 lanes."""
+a done lane (and the clear on leaving it). No ActivityLog (ours requires
+a case), no contact, fixed 3 lanes.
 
+Emails (Prism model, exact): assignee on creation, creator on status
+change, new assignee + creator on reassignment — the actor is NEVER
+their own recipient, recipients deduplicated, sends never blocking."""
+
+import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -29,8 +34,18 @@ from src.admin.platform_tasks_schema import (
     PlatformTaskSummary,
     PlatformTaskUpdate,
 )
+from src.core.config import get_settings
+from src.core.email import send_email
+from src.core.email_templates import (
+    EmailContent,
+    task_assigned_email,
+    task_status_changed_email,
+)
 from src.core.exceptions import NotFoundError, ValidationError
+from src.core.i18n import resolve_notification_lang_agent
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
+
+logger = logging.getLogger(__name__)
 
 
 class PlatformTasksManager:
@@ -138,6 +153,75 @@ class PlatformTasksManager:
             task.completed_at = None
             task.completed_by_agent_id = None
 
+    # --- emails (the Prism model, never blocking) -----------------------------
+
+    async def _recipient(self, agent_id: uuid.UUID) -> tuple[str, str] | None:
+        """(email, lang) of an agent, lang resolved by the existing agent
+        rule (their agency's default language)."""
+        row = (
+            await self.db.execute(
+                select(Agent.email, Agency.default_language)
+                .join(Agency, Agency.id == Agent.agency_id)
+                .where(Agent.id == agent_id)
+            )
+        ).first()
+        if row is None:
+            return None
+        return row.email, resolve_notification_lang_agent(row.default_language)
+
+    async def _agency_name(self, agency_id: uuid.UUID | None) -> str | None:
+        if agency_id is None:
+            return None
+        agency = await self.db.get(Agency, agency_id)
+        return agency.name if agency else None
+
+    @staticmethod
+    def _actor_name(actor: Agent) -> str:
+        return f"{actor.first_name} {actor.last_name}".strip()
+
+    async def _notify(self, mails: dict[uuid.UUID, tuple[str, EmailContent]]) -> None:
+        """Send after commit, deduplicated by recipient, NEVER blocking
+        the mutation (the Prism _safe_send pattern)."""
+        for to, content in mails.values():
+            try:
+                await asyncio.to_thread(send_email, to, content.subject, content.text, content.html)
+            except Exception:
+                logger.warning("platform task email failed (never blocking)", exc_info=True)
+
+    async def _assigned_mail(
+        self, task: PlatformTask, recipient_id: uuid.UUID, actor: Agent
+    ) -> tuple[str, EmailContent] | None:
+        recipient = await self._recipient(recipient_id)
+        if recipient is None:
+            return None
+        email_addr, lang = recipient
+        content = task_assigned_email(
+            title=task.title,
+            priority=task.priority,
+            due=task.due_at.strftime("%Y-%m-%d") if task.due_at else None,
+            agency_name=await self._agency_name(task.agency_id),
+            actor_name=self._actor_name(actor),
+            tasks_url=f"{get_settings().frontend_url}/admin/tasks",
+            lang=lang,
+        )
+        return email_addr, content
+
+    async def _status_mail(
+        self, task: PlatformTask, recipient_id: uuid.UUID, actor: Agent
+    ) -> tuple[str, EmailContent] | None:
+        recipient = await self._recipient(recipient_id)
+        if recipient is None:
+            return None
+        email_addr, lang = recipient
+        content = task_status_changed_email(
+            title=task.title,
+            new_status=task.status,
+            actor_name=self._actor_name(actor),
+            tasks_url=f"{get_settings().frontend_url}/admin/tasks",
+            lang=lang,
+        )
+        return email_addr, content
+
     # --- use cases ------------------------------------------------------------
 
     async def list_tasks(
@@ -170,12 +254,17 @@ class PlatformTasksManager:
         self.db.add(task)
         await self.db.commit()
         await self.db.refresh(task)
+        if task.assigned_to_agent_id != actor.id:  # never mail yourself
+            mail = await self._assigned_mail(task, task.assigned_to_agent_id, actor)
+            if mail is not None:
+                await self._notify({task.assigned_to_agent_id: mail})
         return (await self._project([task]))[0]
 
     async def update(
         self, actor: Agent, task_id: uuid.UUID, payload: PlatformTaskUpdate
     ) -> PlatformTaskRead:
         task = await self._get_or_404(task_id)
+        prev_status, prev_assignee = task.status, task.assigned_to_agent_id
         fields = payload.model_fields_set
         if "title" in fields and payload.title is not None:
             task.title = payload.title
@@ -200,21 +289,45 @@ class PlatformTasksManager:
             self._apply_status(task, payload.status, actor)
         await self.db.commit()
         await self.db.refresh(task)
+        mails: dict[uuid.UUID, tuple[str, EmailContent]] = {}
+        if task.assigned_to_agent_id != prev_assignee and task.assigned_to_agent_id != actor.id:
+            mail = await self._assigned_mail(task, task.assigned_to_agent_id, actor)
+            if mail is not None:
+                mails[task.assigned_to_agent_id] = mail
+        creator = task.created_by_agent_id
+        if creator is not None and creator != actor.id and creator not in mails:
+            if task.status != prev_status:
+                mail = await self._status_mail(task, creator, actor)
+            elif task.assigned_to_agent_id != prev_assignee:
+                mail = await self._assigned_mail(task, creator, actor)
+            else:
+                mail = None
+            if mail is not None:
+                mails[creator] = mail
+        if mails:
+            await self._notify(mails)
+        return (await self._project([task]))[0]
+
+    async def _flip_status(
+        self, actor: Agent, task_id: uuid.UUID, new_status: str
+    ) -> PlatformTaskRead:
+        task = await self._get_or_404(task_id)
+        changed = task.status != new_status
+        self._apply_status(task, new_status, actor)
+        await self.db.commit()
+        await self.db.refresh(task)
+        creator = task.created_by_agent_id
+        if changed and creator is not None and creator != actor.id:
+            mail = await self._status_mail(task, creator, actor)
+            if mail is not None:
+                await self._notify({creator: mail})
         return (await self._project([task]))[0]
 
     async def complete(self, actor: Agent, task_id: uuid.UUID) -> PlatformTaskRead:
-        task = await self._get_or_404(task_id)
-        self._apply_status(task, "done", actor)
-        await self.db.commit()
-        await self.db.refresh(task)
-        return (await self._project([task]))[0]
+        return await self._flip_status(actor, task_id, "done")
 
     async def reopen(self, actor: Agent, task_id: uuid.UUID) -> PlatformTaskRead:
-        task = await self._get_or_404(task_id)
-        self._apply_status(task, "todo", actor)
-        await self.db.commit()
-        await self.db.refresh(task)
-        return (await self._project([task]))[0]
+        return await self._flip_status(actor, task_id, "todo")
 
     async def delete(self, task_id: uuid.UUID) -> None:
         task = await self._get_or_404(task_id)

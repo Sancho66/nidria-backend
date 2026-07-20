@@ -1517,3 +1517,190 @@ def signup_existing_account_email(login_url: str, lang: str = "fr") -> EmailCont
         validity=s["phishing"],
         lang=lang,
     )
+
+
+# --- platform tasks (superadmin backlog, Prism email model) --------------------
+
+_TASK_ASSIGNED = {
+    "fr": {
+        "subject": "Nidria : nouvelle tâche pour vous : {title}",
+        "title": "Une tâche vous a été assignée",
+        "intro": "{actor} vous a assigné une tâche.",
+        "priority": "Priorité : {priority}",
+        "due": "Échéance : {due}",
+        "agency": "Agence concernée : {agency}",
+        "button": "Ouvrir les tâches",
+    },
+    "en": {
+        "subject": "Nidria: a new task for you: {title}",
+        "title": "A task was assigned to you",
+        "intro": "{actor} assigned you a task.",
+        "priority": "Priority: {priority}",
+        "due": "Due date: {due}",
+        "agency": "Agency concerned: {agency}",
+        "button": "Open the tasks",
+    },
+    "es": {
+        "subject": "Nidria: una nueva tarea para usted: {title}",
+        "title": "Se le ha asignado una tarea",
+        "intro": "{actor} le ha asignado una tarea.",
+        "priority": "Prioridad: {priority}",
+        "due": "Fecha límite: {due}",
+        "agency": "Agencia concernida: {agency}",
+        "button": "Abrir las tareas",
+    },
+    "ru": {
+        "subject": "Nidria: новая задача для вас: {title}",
+        "title": "Вам назначена задача",
+        "intro": "{actor} назначил(а) вам задачу.",
+        "priority": "Приоритет: {priority}",
+        "due": "Срок: {due}",
+        "agency": "Агентство: {agency}",
+        "button": "Открыть задачи",
+    },
+    "pt": {
+        "subject": "Nidria: uma nova tarefa para si: {title}",
+        "title": "Uma tarefa foi-lhe atribuída",
+        "intro": "{actor} atribuiu-lhe uma tarefa.",
+        "priority": "Prioridade: {priority}",
+        "due": "Prazo: {due}",
+        "agency": "Agência em causa: {agency}",
+        "button": "Abrir as tarefas",
+    },
+    "it": {
+        "subject": "Nidria: un nuovo compito per lei: {title}",
+        "title": "Le è stato assegnato un compito",
+        "intro": "{actor} le ha assegnato un compito.",
+        "priority": "Priorità: {priority}",
+        "due": "Scadenza: {due}",
+        "agency": "Agenzia interessata: {agency}",
+        "button": "Aprire i compiti",
+    },
+    "hu": {
+        "subject": "Nidria: új feladat Önnek: {title}",
+        "title": "Feladatot rendeltek Önhöz",
+        "intro": "{actor} feladatot rendelt Önhöz.",
+        "priority": "Prioritás: {priority}",
+        "due": "Határidő: {due}",
+        "agency": "Érintett ügynökség: {agency}",
+        "button": "Feladatok megnyitása",
+    },
+}
+
+_TASK_STATUS_CHANGED = {
+    "fr": {
+        "subject": "Nidria : tâche mise à jour : {title}",
+        "title": "Une tâche a changé de statut",
+        "intro": '{actor} a fait passer la tâche "{title}" au statut : {status}.',
+        "button": "Ouvrir les tâches",
+    },
+    "en": {
+        "subject": "Nidria: task updated: {title}",
+        "title": "A task changed status",
+        "intro": '{actor} moved the task "{title}" to the status: {status}.',
+        "button": "Open the tasks",
+    },
+    "es": {
+        "subject": "Nidria: tarea actualizada: {title}",
+        "title": "Una tarea ha cambiado de estado",
+        "intro": '{actor} ha pasado la tarea "{title}" al estado: {status}.',
+        "button": "Abrir las tareas",
+    },
+    "ru": {
+        "subject": "Nidria: задача обновлена: {title}",
+        "title": "Статус задачи изменился",
+        "intro": '{actor} перевёл(а) задачу "{title}" в статус: {status}.',
+        "button": "Открыть задачи",
+    },
+    "pt": {
+        "subject": "Nidria: tarefa atualizada: {title}",
+        "title": "Uma tarefa mudou de estado",
+        "intro": '{actor} passou a tarefa "{title}" ao estado: {status}.',
+        "button": "Abrir as tarefas",
+    },
+    "it": {
+        "subject": "Nidria: compito aggiornato: {title}",
+        "title": "Un compito ha cambiato stato",
+        "intro": '{actor} ha portato il compito "{title}" allo stato: {status}.',
+        "button": "Aprire i compiti",
+    },
+    "hu": {
+        "subject": "Nidria: feladat frissítve: {title}",
+        "title": "Egy feladat állapota megváltozott",
+        "intro": '{actor} a(z) "{title}" feladatot új állapotba tette: {status}.',
+        "button": "Feladatok megnyitása",
+    },
+}
+
+
+_TASK_PRIORITY_LABELS = {
+    "fr": {"low": "basse", "medium": "moyenne", "high": "haute", "urgent": "urgente"},
+    "en": {"low": "low", "medium": "medium", "high": "high", "urgent": "urgent"},
+    "es": {"low": "baja", "medium": "media", "high": "alta", "urgent": "urgente"},
+    "ru": {"low": "низкий", "medium": "средний", "high": "высокий", "urgent": "срочный"},
+    "pt": {"low": "baixa", "medium": "média", "high": "alta", "urgent": "urgente"},
+    "it": {"low": "bassa", "medium": "media", "high": "alta", "urgent": "urgente"},
+    "hu": {"low": "alacsony", "medium": "közepes", "high": "magas", "urgent": "sürgős"},
+}
+
+_TASK_STATUS_LABELS = {
+    "fr": {"todo": "à faire", "in_progress": "en cours", "done": "terminée"},
+    "en": {"todo": "to do", "in_progress": "in progress", "done": "done"},
+    "es": {"todo": "por hacer", "in_progress": "en curso", "done": "terminada"},
+    "ru": {"todo": "к выполнению", "in_progress": "в работе", "done": "завершена"},
+    "pt": {"todo": "por fazer", "in_progress": "em curso", "done": "concluída"},
+    "it": {"todo": "da fare", "in_progress": "in corso", "done": "completato"},
+    "hu": {"todo": "teendő", "in_progress": "folyamatban", "done": "kész"},
+}
+
+
+def task_assigned_email(
+    title: str,
+    priority: str,
+    due: str | None,
+    agency_name: str | None,
+    actor_name: str,
+    tasks_url: str,
+    lang: str = "fr",
+) -> EmailContent:
+    """Prism trigger: creation and reassignment, to the (new) assignee —
+    never to the actor themselves."""
+    s = _pick(_TASK_ASSIGNED, lang)
+    labels = _TASK_PRIORITY_LABELS.get(lang, _TASK_PRIORITY_LABELS["fr"])
+    lines = [title, s["priority"].format(priority=labels.get(priority, priority))]
+    if due:
+        lines.append(s["due"].format(due=due))
+    if agency_name:
+        lines.append(s["agency"].format(agency=agency_name))
+    return _render(
+        subject=s["subject"].format(title=title),
+        title=s["title"],
+        intro=s["intro"].format(actor=actor_name),
+        body_text="\n".join(lines),
+        button_label=s["button"],
+        button_url=tasks_url,
+        lang=lang,
+    )
+
+
+def task_status_changed_email(
+    title: str,
+    new_status: str,
+    actor_name: str,
+    tasks_url: str,
+    lang: str = "fr",
+) -> EmailContent:
+    """Prism trigger: status change, to the task CREATOR (when the actor
+    is somebody else)."""
+    s = _pick(_TASK_STATUS_CHANGED, lang)
+    labels = _TASK_STATUS_LABELS.get(lang, _TASK_STATUS_LABELS["fr"])
+    status_label = labels.get(new_status, new_status)
+    return _render(
+        subject=s["subject"].format(title=title),
+        title=s["title"],
+        intro=s["intro"].format(actor=actor_name, title=title, status=status_label),
+        body_text="",
+        button_label=s["button"],
+        button_url=tasks_url,
+        lang=lang,
+    )
