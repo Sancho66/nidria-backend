@@ -15,7 +15,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -28,6 +28,7 @@ from shared.models.platform_task import (
     PlatformTask,
 )
 from shared.models.platform_task_attachment import PlatformTaskAttachment
+from shared.models.platform_task_watcher import PlatformTaskWatcher
 from shared.models.rbac import Role
 from src.admin.platform_tasks_repository import PlatformTasksRepository
 from src.admin.platform_tasks_schema import (
@@ -179,6 +180,55 @@ class PlatformTasksManager:
                 code="task.assignee_not_superadmin",
             )
 
+    async def _validate_watchers(self, watcher_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+        """Every watcher must be an ACTIVE platform operator (superadmin,
+        deactivated_at NULL) — 422 named otherwise. Deduplicated; the
+        assignee/creator MAY watch (the send dedup absorbs them)."""
+        unique_ids = list(dict.fromkeys(watcher_ids))
+        if not unique_ids:
+            return []
+        rows = (
+            (
+                await self.db.execute(
+                    select(Agent.id)
+                    .join(Role, Agent.role_id == Role.id)
+                    .where(
+                        Agent.id.in_(unique_ids),
+                        Agent.deactivated_at.is_(None),
+                        Role.is_system.is_(True),
+                        Role.name.in_(PLATFORM_ROLE_NAMES),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        invalid = set(unique_ids) - set(rows)
+        if invalid:
+            raise ValidationError(
+                "Every watcher must be an active platform superadmin.",
+                code="task.watcher_not_active_operator",
+            )
+        return unique_ids
+
+    async def _replace_watchers(self, task_id: uuid.UUID, watcher_ids: list[uuid.UUID]) -> None:
+        await self.db.execute(
+            delete(PlatformTaskWatcher).where(PlatformTaskWatcher.task_id == task_id)
+        )
+        for agent_id in watcher_ids:
+            self.db.add(PlatformTaskWatcher(task_id=task_id, agent_id=agent_id))
+
+    async def _watcher_ids(self, task_id: uuid.UUID) -> list[uuid.UUID]:
+        return list(
+            (
+                await self.db.execute(
+                    select(PlatformTaskWatcher.agent_id).where(
+                        PlatformTaskWatcher.task_id == task_id
+                    )
+                )
+            ).scalars()
+        )
+
     async def _validate_agency(self, agency_id: uuid.UUID) -> None:
         if await self.db.get(Agency, agency_id) is None:
             raise NotFoundError("Agency not found.", code="agency.not_found")
@@ -187,6 +237,23 @@ class PlatformTasksManager:
 
     async def _project(self, tasks: list[PlatformTask]) -> list[PlatformTaskRead]:
         agencies, agents = await self.repository.display_names(tasks)
+        watcher_rows = (
+            (
+                await self.db.execute(
+                    select(PlatformTaskWatcher.task_id, Agent.id, Agent.first_name, Agent.last_name)
+                    .join(Agent, Agent.id == PlatformTaskWatcher.agent_id)
+                    .where(PlatformTaskWatcher.task_id.in_([t.id for t in tasks]))
+                    .order_by(Agent.first_name, Agent.last_name)
+                )
+            ).all()
+            if tasks
+            else []
+        )
+        watchers_by_task: dict[uuid.UUID, list[PlatformOperatorRead]] = {}
+        for task_id, agent_id, first, last in watcher_rows:
+            watchers_by_task.setdefault(task_id, []).append(
+                PlatformOperatorRead(agent_id=agent_id, name=f"{first} {last}".strip())
+            )
         now = datetime.now(UTC)
         return [
             PlatformTaskRead(
@@ -213,6 +280,7 @@ class PlatformTasksManager:
                 ),
                 completed_at=t.completed_at,
                 completion_message=t.completion_message,
+                watchers=watchers_by_task.get(t.id, []),
                 created_at=t.created_at,
                 updated_at=t.updated_at,
             )
@@ -346,6 +414,10 @@ class PlatformTasksManager:
         # Created straight into a done lane: the audit stamp applies (Prism).
         self._apply_status(task, payload.status or "todo", actor)
         self.db.add(task)
+        await self.db.flush()
+        if payload.watcher_agent_ids is not None:
+            watcher_ids = await self._validate_watchers(payload.watcher_agent_ids)
+            await self._replace_watchers(task.id, watcher_ids)
         await self.db.commit()
         await self.db.refresh(task)
         if task.assigned_to_agent_id != actor.id:  # never mail yourself
@@ -403,6 +475,9 @@ class PlatformTasksManager:
         if "assigned_to_agent_id" in fields and payload.assigned_to_agent_id is not None:
             await self._validate_assignee(payload.assigned_to_agent_id)
             task.assigned_to_agent_id = payload.assigned_to_agent_id
+        if "watcher_agent_ids" in fields and payload.watcher_agent_ids is not None:
+            watcher_ids = await self._validate_watchers(payload.watcher_agent_ids)
+            await self._replace_watchers(task.id, watcher_ids)
         if "status" in fields and payload.status is not None:
             self._apply_status(task, payload.status, actor)
         await self.db.commit()
@@ -422,6 +497,15 @@ class PlatformTasksManager:
                 mail = None
             if mail is not None:
                 mails[creator] = mail
+        if task.status != prev_status:
+            # Watchers join on the SAME trigger (a real status change) —
+            # the dedup dict absorbs creator/assignee overlaps, the actor
+            # is never a recipient.
+            for watcher_id in await self._watcher_ids(task.id):
+                if watcher_id != actor.id and watcher_id not in mails:
+                    mail = await self._status_mail(task, watcher_id, actor)
+                    if mail is not None:
+                        mails[watcher_id] = mail
         if mails:
             await self._notify(mails)
         return (await self._project([task]))[0]
@@ -440,11 +524,20 @@ class PlatformTasksManager:
         self._apply_status(task, new_status, actor)
         await self.db.commit()
         await self.db.refresh(task)
+        mails: dict[uuid.UUID, tuple[str, EmailContent]] = {}
         creator = task.created_by_agent_id
         if changed and creator is not None and creator != actor.id:
             mail = await self._status_mail(task, creator, actor)
             if mail is not None:
-                await self._notify({creator: mail})
+                mails[creator] = mail
+        if changed:
+            for watcher_id in await self._watcher_ids(task.id):
+                if watcher_id != actor.id and watcher_id not in mails:
+                    mail = await self._status_mail(task, watcher_id, actor)
+                    if mail is not None:
+                        mails[watcher_id] = mail
+        if mails:
+            await self._notify(mails)
         return (await self._project([task]))[0]
 
     async def complete(
@@ -582,7 +675,11 @@ class PlatformTasksManager:
                 await self.db.execute(
                     select(Agent)
                     .join(Role, Agent.role_id == Role.id)
-                    .where(Role.is_system.is_(True), Role.name.in_(PLATFORM_ROLE_NAMES))
+                    .where(
+                        Agent.deactivated_at.is_(None),  # actifs (spec operators)
+                        Role.is_system.is_(True),
+                        Role.name.in_(PLATFORM_ROLE_NAMES),
+                    )
                     .order_by(Agent.first_name, Agent.last_name)
                 )
             )

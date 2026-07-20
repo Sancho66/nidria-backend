@@ -793,3 +793,117 @@ async def test_message_patchable_after_done_and_survives_reopen(
         f"/admin/tasks/{task['id']}/complete", headers=headers, json={"sticky": True}
     )
     assert unknown.status_code == 422  # extra=forbid on the complete body
+
+
+# --- watchers (Nidria-pure: Prism has no watcher/follower concept) --------------------
+
+
+async def test_watcher_joins_status_mail_and_actor_excluded(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    superadmin3: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    # Creator A, assignee B, watcher C: B completes -> mails to A + C.
+    task = await _create(
+        client,
+        agent_headers(superadmin),
+        assigned_to_agent_id=str(superadmin2.id),
+        watcher_agent_ids=[str(superadmin3.id)],
+    )
+    assert [w["agent_id"] for w in task["watchers"]] == [str(superadmin3.id)]
+    email.outbox.clear()
+    await client.post(f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin2))
+    assert sorted(m.to for m in email.outbox) == sorted([superadmin.email, superadmin3.email])
+
+    # Watcher = the ACTOR: excluded. C (watcher) reopens -> only creator A mailed.
+    email.outbox.clear()
+    await client.post(f"/admin/tasks/{task['id']}/reopen", headers=agent_headers(superadmin3))
+    assert [m.to for m in email.outbox] == [superadmin.email]
+
+
+async def test_watcher_equals_creator_single_mail(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    task = await _create(
+        client,
+        agent_headers(superadmin),
+        assigned_to_agent_id=str(superadmin2.id),
+        watcher_agent_ids=[str(superadmin.id)],  # the creator watches too
+    )
+    email.outbox.clear()
+    await client.post(f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin2))
+    assert [m.to for m in email.outbox] == [superadmin.email]  # ONE mail, dedup absorbed
+
+
+async def test_watcher_list_patch_replacement(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    superadmin3: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers, watcher_agent_ids=[str(superadmin2.id)])
+    patched = await client.patch(
+        f"/admin/tasks/{task['id']}",
+        headers=headers,
+        json={"watcher_agent_ids": [str(superadmin3.id)]},  # full replacement
+    )
+    assert patched.status_code == 200
+    assert [w["agent_id"] for w in patched.json()["watchers"]] == [str(superadmin3.id)]
+    emptied = await client.patch(
+        f"/admin/tasks/{task['id']}", headers=headers, json={"watcher_agent_ids": []}
+    )
+    assert emptied.json()["watchers"] == []
+
+
+async def test_watcher_validation_active_operator_only(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    superadmin: Agent,
+    superadmin2: Agent,
+    agency_admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(superadmin)
+    not_operator = await client.post(
+        "/admin/tasks",
+        headers=headers,
+        json={"title": "x", "watcher_agent_ids": [str(agency_admin.id)]},
+    )
+    assert not_operator.status_code == 422
+    assert "task.watcher_not_active_operator" in not_operator.text
+
+    from sqlalchemy import update as sa_update
+
+    await db_session.execute(
+        sa_update(Agent).where(Agent.id == superadmin2.id).values(deactivated_at=datetime.now(UTC))
+    )
+    await db_session.commit()
+    deactivated = await client.post(
+        "/admin/tasks",
+        headers=headers,
+        json={"title": "x", "watcher_agent_ids": [str(superadmin2.id)]},
+    )
+    assert deactivated.status_code == 422  # deactivated operator refused
+
+
+async def test_watchers_cascade_on_task_delete(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    superadmin: Agent,
+    superadmin2: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers, watcher_agent_ids=[str(superadmin2.id)])
+    assert (await client.delete(f"/admin/tasks/{task['id']}", headers=headers)).status_code == 204
+    from shared.models.platform_task_watcher import PlatformTaskWatcher
+
+    rows = (await db_session.execute(select(PlatformTaskWatcher))).scalars().all()
+    assert rows == []  # CASCADE took the rows

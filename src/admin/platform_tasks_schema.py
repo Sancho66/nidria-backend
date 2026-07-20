@@ -53,6 +53,7 @@ class PlatformTaskCreate(BaseModel):
     agency_id: uuid.UUID | None = None
     # Defaults to the acting superadmin (the solo-operator fast path).
     assigned_to_agent_id: uuid.UUID | None = None
+    watcher_agent_ids: list[uuid.UUID] | None = None
 
     @field_validator("scheduled_timezone")
     @classmethod
@@ -82,6 +83,8 @@ class PlatformTaskUpdate(BaseModel):
     agency_id: uuid.UUID | None = None
     assigned_to_agent_id: uuid.UUID | None = None
     completion_message: str | None = None
+    # FULL replacement of the watcher list (the simplest pattern).
+    watcher_agent_ids: list[uuid.UUID] | None = None
 
     @field_validator("scheduled_timezone")
     @classmethod
@@ -134,6 +137,7 @@ class PlatformTaskRead(BaseModel):
     completed_by_name: str | None
     completed_at: datetime | None
     completion_message: str | None
+    watchers: list["PlatformOperatorRead"] = []
     created_at: datetime
     updated_at: datetime
 
