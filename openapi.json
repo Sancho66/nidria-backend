@@ -9072,7 +9072,8 @@
                       "es",
                       "ru",
                       "pt",
-                      "it"
+                      "it",
+                      "hu"
                     ],
                     "type": "string"
                   }
@@ -14055,7 +14056,8 @@
               "es",
               "ru",
               "pt",
-              "it"
+              "it",
+              "hu"
             ],
             "title": "Default Language",
             "default": "fr"
@@ -14259,7 +14261,8 @@
               "es",
               "ru",
               "pt",
-              "it"
+              "it",
+              "hu"
             ],
             "title": "Default Language"
           },
@@ -14451,7 +14454,8 @@
                   "es",
                   "ru",
                   "pt",
-                  "it"
+                  "it",
+                  "hu"
                 ]
               },
               {
@@ -21369,7 +21373,8 @@
                     "es",
                     "ru",
                     "pt",
-                    "it"
+                    "it",
+                    "hu"
                   ]
                 },
                 "type": "array"
@@ -21396,7 +21401,8 @@
                     "es",
                     "ru",
                     "pt",
-                    "it"
+                    "it",
+                    "hu"
                   ]
                 },
                 "type": "array"
@@ -24584,7 +24590,8 @@
               "es",
               "ru",
               "pt",
-              "it"
+              "it",
+              "hu"
             ],
             "title": "Language",
             "default": "fr"
@@ -24628,7 +24635,8 @@
               "es",
               "ru",
               "pt",
-              "it"
+              "it",
+              "hu"
             ],
             "title": "Lang",
             "default": "fr"

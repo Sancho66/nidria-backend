@@ -28,6 +28,10 @@ _FOOTER = {
     "it": (
         "Questa email è stata inviata da Nidria. Se non hai effettuato questa richiesta, ignorala."
     ),
+    "hu": (
+        "Ezt az emailt a Nidria küldte. Ha nem Ön kezdeményezte ezt a kérést, "
+        "hagyja figyelmen kívül."
+    ),
 }
 
 _COPY_PASTE = {
@@ -37,6 +41,7 @@ _COPY_PASTE = {
     "ru": "Или скопируйте и вставьте эту ссылку",
     "pt": "Ou copie e cole este link",
     "it": "Oppure copia e incolla questo link",
+    "hu": "Vagy másolja be ezt a linket",
 }
 
 _HTML_LAYOUT = """\
@@ -208,6 +213,14 @@ _PASSWORD_RESET = {
         "hours": "Questo link scade tra {n} ore.",
         "minutes": "Questo link scade tra {n} minuti.",
     },
+    "hu": {
+        "subject": "Nidria: Állítsa vissza jelszavát",
+        "title": "Állítsa vissza jelszavát",
+        "intro": "Jelszó-visszaállítási kérelem érkezett az Ön Nidria fiókjához.",
+        "button": "Új jelszó megadása",
+        "hours": "Ez a link {n} óra múlva lejár.",
+        "minutes": "Ez a link {n} perc múlva lejár.",
+    },
 }
 
 _AGENT_INVITATION = {
@@ -269,6 +282,13 @@ _AGENT_INVITATION = {
         "button": "Accettare l'invito",
         "expires": "Questo link scade tra {days} giorni.",
     },
+    "hu": {
+        "subject": "Nidria: Meghívást kapott a(z) {agency} csapatába",
+        "title": "Meghívást kapott a(z) {agency} Nidria munkaterületére",
+        "intro": ("A(z) {agency} meghívja Önt a Nidria munkaterületére az ügyek kezeléséhez."),
+        "button": "Meghívás elfogadása",
+        "expires": "Ez a link {days} nap múlva lejár.",
+    },
 }
 
 
@@ -318,6 +338,10 @@ _DOSSIER = {
     "ru": {"named": "ваше дело «{name}»", "neutral": "ваше дело"},
     "pt": {"named": "o seu processo «{name}»", "neutral": "o seu processo"},
     "it": {"named": "la tua pratica «{name}»", "neutral": "la tua pratica"},
+    "hu": {
+        "named": "az Ön „{name}” ügye",
+        "neutral": "az Ön ügye",
+    },
 }
 
 
@@ -387,6 +411,16 @@ _CASE_ACTIVATION = {
         "button": "Attivare il mio spazio",
         "expires": "Questo link scade tra {days} giorni.",
     },
+    "hu": {
+        "subject": "Nidria: A(z) {agency} követési felületet nyitott Önnek",
+        "title": "A(z) {agency} követési felületet nyitott Önnek",
+        "intro": (
+            "A(z) {agency} megnyitotta: {dossier}. Aktiválja személyes felületét, és "
+            "kövesse az előrehaladást lépésről lépésre."
+        ),
+        "button": "Felületem aktiválása",
+        "expires": "Ez a link {days} nap múlva lejár.",
+    },
 }
 
 _NEW_CASE = {
@@ -430,6 +464,14 @@ _NEW_CASE = {
         "title": "Una nuova pratica ti aspetta",
         "intro": "{agency} ha appena aperto {dossier}. Accedi al tuo spazio per consultarla.",
         "button": "Accedere al mio spazio",
+    },
+    "hu": {
+        "subject": "Nidria: Új ügy várja Önt",
+        "title": "Új ügy várja Önt",
+        "intro": (
+            "A(z) {agency} megnyitotta: {dossier}. Jelentkezzen be a felületére a megtekintéséhez."
+        ),
+        "button": "Belépés a felületemre",
     },
 }
 
@@ -515,6 +557,12 @@ _REMINDER = {
         "intro": "{agency} ti invia un promemoria sulla tua pratica:",
         "button": "Accedere al mio spazio",
     },
+    "hu": {
+        "subject": "Nidria: Emlékeztető a(z) {agency} részéről",
+        "title": "Emlékeztető",
+        "intro": "A(z) {agency} emlékeztetőt küld Önnek az ügyével kapcsolatban:",
+        "button": "Belépés a felületemre",
+    },
 }
 
 
@@ -570,6 +618,11 @@ _ESCALATION_PREFIX = {
         "irraggiungibile nell'applicazione (nessun accesso). Contattalo "
         "direttamente. Promemoria originale:"
     ),
+    "hu": (
+        "A(z) {name} szolgáltatónak kellene benyújtania az alábbi elemeket, de az "
+        "alkalmazásban nem érhető el (nincs hozzáférése). Kérjük, vegye fel vele a "
+        "kapcsolatot közvetlenül. Az eredeti emlékeztető:"
+    ),
 }
 
 
@@ -594,6 +647,7 @@ _AUTO_REMINDER_BODY = {
     "ru": "Автоматическое напоминание: этап «{step}» не продвигался {days} дней.",
     "pt": "Lembrete automático: a etapa «{step}» não avança há {days} dias.",
     "it": "Promemoria automatico: la fase «{step}» non è avanzata da {days} giorni.",
+    "hu": "Automatikus emlékeztető: a(z) „{step}” lépés {days} napja nem haladt előre.",
 }
 
 
@@ -670,6 +724,15 @@ _REQUIREMENT_REQUEST = {
         ),
         "button": "Completare la mia pratica",
     },
+    "hu": {
+        "subject": "Nidria: Új információkat várunk Öntől",
+        "title": "Új információkat várunk Öntől",
+        "intro": (
+            "A(z) {agency} információkat vagy dokumentumokat kér az ügye „{step}” "
+            "lépéséhez. Jelentkezzen be a felületére, és adja meg őket."
+        ),
+        "button": "Ügyem kiegészítése",
+    },
 }
 
 _STEP_REOPENED = {
@@ -726,6 +789,15 @@ _STEP_REOPENED = {
             "di informazioni aggiuntive. Accedi al tuo spazio per aggiornarla."
         ),
         "button": "Aggiornare la mia pratica",
+    },
+    "hu": {
+        "subject": "Nidria: Az irodájának pontosításokra van szüksége",
+        "title": "Az irodájának pontosításokra van szüksége",
+        "intro": (
+            "A(z) {agency} újranyitotta az ügye „{step}” lépését, és pontosítást vagy "
+            "kiegészítést kér. Jelentkezzen be a felületére a frissítéshez."
+        ),
+        "button": "Ügyem frissítése",
     },
 }
 
@@ -784,6 +856,14 @@ _READY_TO_VALIDATE = {
         ),
         "button": "Aprire la pratica",
     },
+    "hu": {
+        "subject": "Nidria: Egy ügy jóváhagyásra kész",
+        "title": "Egy ügy jóváhagyásra kész",
+        "intro": (
+            "A(z) {case} ügy „{step}” lépéséhez minden várt információ beérkezett. Jóváhagyhatja."
+        ),
+        "button": "Ügy megnyitása",
+    },
 }
 
 _NEW_COMMENT_CLIENT = {
@@ -839,6 +919,15 @@ _NEW_COMMENT_CLIENT = {
         ),
         "button": "Vedere la conversazione",
     },
+    "hu": {
+        "subject": "Nidria: Új üzenet a tanácsadójától",
+        "title": "Új üzenete érkezett",
+        "intro": (
+            "{author} ({agency}) írt Önnek a(z) „{step}” lépéssel kapcsolatban. "
+            "Válaszoljon a felületéről."
+        ),
+        "button": "Beszélgetés megtekintése",
+    },
 }
 
 _NEW_COMMENT_AGENT = {
@@ -881,6 +970,14 @@ _NEW_COMMENT_AGENT = {
             "{client} ha scritto in merito alla fase «{step}». Apri la pratica per rispondere."
         ),
         "button": "Aprire la pratica",
+    },
+    "hu": {
+        "subject": "Nidria: Új üzenet az ügyfelétől",
+        "title": "Új ügyfélüzenet",
+        "intro": (
+            "{client} írt a(z) „{step}” lépéssel kapcsolatban. Nyissa meg az ügyet a válaszhoz."
+        ),
+        "button": "Ügy megnyitása",
     },
 }
 
@@ -1023,6 +1120,15 @@ _REFERRAL_GRANTED = {
             "a partire dalla prossima fattura (fino al 50% con i tuoi prossimi inviti)."
         ),
     },
+    "hu": {
+        "subject": "Nidria: az Ön által ajánlott ügyfél előfizetett: -{rate} % 12 hónapig",
+        "title": "Az ajánlása meghozta gyümölcsét",
+        "intro": (
+            "{referred} most fizetett elő a Nidriára az Ön ajánlásának köszönhetően. "
+            "Kedvezménye -{rate} %-ra nő az előfizetésén 12 hónapig, már a következő "
+            "számlától (akár -50 % a további ajánlásokkal)."
+        ),
+    },
 }
 
 
@@ -1086,6 +1192,16 @@ _JOURNEY_KICKOFF = {
         ),
         "line": "{step}: {count} elemento(i)",
         "button": "Apri il mio spazio",
+    },
+    "hu": {
+        "subject": "Nidria: elindult az útja, elemeket várunk Öntől",
+        "title": "Elindult az útja",
+        "intro": (
+            "A(z) {agency} elindította az Ön útját: {total} elemet várunk Öntől a "
+            "kezdéshez. Íme, amit lépésenként kérni fogunk:"
+        ),
+        "line": "{step}: {count} elem",
+        "button": "Felületem megnyitása",
     },
 }
 
@@ -1189,6 +1305,19 @@ _DIGEST = {
         "line_started": "Avviata: {step}",
         "button": "Vedi la mia pratica",
     },
+    "hu": {
+        "subject": "Nidria: az ügye előrehaladt",
+        "title": "Az ügye előrehaladt",
+        "intro": "{agency}: {summary}.",
+        "period_weekly": "ezen a héten",
+        "period_daily": "ma",
+        "completed": "{n} lépés befejezve",
+        "started": "{n} lépés elindítva",
+        "documents": "{n} dokumentum jóváhagyva",
+        "line_completed": "Befejezve: {step}",
+        "line_started": "Elindítva: {step}",
+        "button": "Ügyem megtekintése",
+    },
 }
 
 
@@ -1278,6 +1407,12 @@ _SIGNUP_CODE = {
         "intro": "Ecco il tuo codice per creare il tuo spazio Nidria. Scade tra 15 minuti.",
         "phishing": "Se non hai richiesto questo codice, ignora questa email.",
     },
+    "hu": {
+        "subject": "Nidria: az Ön ellenőrző kódja",
+        "title": "Az Ön ellenőrző kódja",
+        "intro": "Íme a kód a Nidria felületének létrehozásához. 15 perc múlva lejár.",
+        "phishing": "Ha nem Ön kérte ezt a kódot, hagyja figyelmen kívül ezt az emailt.",
+    },
 }
 
 _SIGNUP_EXISTING = {
@@ -1342,6 +1477,17 @@ _SIGNUP_EXISTING = {
         ),
         "button": "Accedi",
         "phishing": "Se non hai effettuato questa richiesta, ignora questa email.",
+    },
+    "hu": {
+        "subject": "Nidria: Önnek már van fiókja",
+        "title": "Önnek már van fiókja",
+        "intro": (
+            "Ezzel a címmel felület létrehozását kérték, de már létezik fiók. "
+            "Jelentkezzen be alább; elfelejtett jelszó? A bejelentkezési oldalon "
+            "kérhető a visszaállítás."
+        ),
+        "button": "Bejelentkezés",
+        "phishing": "Ha nem Ön kezdeményezte ezt a kérést, hagyja figyelmen kívül ezt az emailt.",
     },
 }
 

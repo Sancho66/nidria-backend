@@ -39,6 +39,7 @@ from shared.models.rbac import Role
 from shared.models.usage import UsageEvent
 from src.ai import translation_client
 from src.ai.quota import month_key, points_for_usage
+from src.core.i18n import SUPPORTED_LANGUAGES
 from src.journeys.sample_seed import BG_FL_NAME, seed_sample_journeys
 from src.journeys.translation_manager import build_translation_entries, content_hash
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -47,6 +48,8 @@ pytestmark = pytest.mark.usefixtures("rbac_baseline")
 
 USAGE = {"prompt_tokens": 900, "completion_tokens": 2500}
 POINTS_PER_CALL = points_for_usage(USAGE)  # config-pinned in conftest
+TARGETS = sorted(set(SUPPORTED_LANGUAGES) - {"fr"})  # the default target lot
+N_TARGETS = len(TARGETS)
 
 
 @pytest_asyncio.fixture
@@ -114,26 +117,20 @@ async def test_async_run_fills_only_empty_variants(
     assert started.status_code == 202, started.text
     launched = started.json()
     assert launched["status"] == "pending"
-    assert launched["langs"] == ["en", "es", "it", "pt", "ru"]
-    assert launched["progress"] == {"done": 0, "total": 5}
+    assert launched["langs"] == TARGETS
+    assert launched["progress"] == {"done": 0, "total": N_TARGETS}
     job_id = launched["translation_job_id"]
 
     # With the ASGI transport the background task has completed by now.
     status = await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)
     body = status.json()
     assert body["status"] == "done", body
-    assert body["progress"] == {"done": 5, "total": 5}
-    assert body["points_charged"] == 5 * POINTS_PER_CALL  # one debit per lot
+    assert body["progress"] == {"done": N_TARGETS, "total": N_TARGETS}
+    assert body["points_charged"] == N_TARGETS * POINTS_PER_CALL  # one debit per lot
 
     # One provider call PER language; the EN call excludes the already-
     # translated template name (only the step needed EN).
-    assert [c["targets"] for c in fake_provider["calls"]] == [
-        ["en"],
-        ["es"],
-        ["it"],
-        ["pt"],
-        ["ru"],
-    ]
+    assert [c["targets"] for c in fake_provider["calls"]] == [[lang] for lang in TARGETS]
     en_call = fake_provider["calls"][0]
     assert [i["key"] for i in en_call["items"]] != []
     assert all(i["key"] != "template.name" for i in en_call["items"])
@@ -230,15 +227,15 @@ async def test_bulgaria_sample_detects_and_translates_every_field(
 
     estimate = (await client.get(f"/journeys/{tid}/translate/estimate", headers=headers)).json()
     assert estimate["items"] == expected  # N fields DETECTED
-    assert estimate["langs"] == ["en", "es", "it", "pt", "ru"]
+    assert estimate["langs"] == TARGETS
 
     started = await client.post(f"/journeys/{tid}/translate", headers=headers, json={})
     assert started.status_code == 202, started.text
     job_id = started.json()["translation_job_id"]
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "done", status
-    assert status["progress"] == {"done": 5, "total": 5}
-    assert status["translated_keys"] == 5 * expected  # N fields x 5 langs TRANSLATED
+    assert status["progress"] == {"done": N_TARGETS, "total": N_TARGETS}
+    assert status["translated_keys"] == N_TARGETS * expected  # N fields x N langs TRANSLATED
 
     # Every detected field now carries the 5 target variants in base
     # (re-FETCHED: the worker wrote through its own session).
@@ -268,7 +265,7 @@ async def test_bulgaria_sample_detects_and_translates_every_field(
         for attr in attrs:
             blob = dict(getattr(obj, f"{attr}_i18n") or {})
             if (blob.get("fr") or getattr(obj, attr) or "").strip():
-                assert set(blob) >= {"en", "es", "it", "pt", "ru"}, (attr, blob)
+                assert set(blob) >= set(TARGETS), (attr, blob)
 
     again = await client.post(f"/journeys/{tid}/translate", headers=headers, json={})
     assert again.status_code == 409
@@ -287,7 +284,7 @@ async def test_estimate_reports_points_and_quota(
     assert estimate.status_code == 200, estimate.text
     body = estimate.json()
     assert body["items"] == 2  # template name + step name
-    assert body["langs"] == ["en", "es", "it", "pt", "ru"]
+    assert body["langs"] == TARGETS
     assert body["counts"]["en"] == {"empty": 2, "stale": 0}  # the front's split
     assert body["estimated_points"] >= 1
     assert body["quota_limit"] == 200
@@ -330,7 +327,7 @@ async def test_source_edit_marks_stale_and_retranslation_overwrites(
             )
         ).scalars()
     )
-    assert len(trails) == 2 * 5
+    assert len(trails) == 2 * N_TARGETS
     step_key = next(t.content_key for t in trails if t.content_key.startswith("step."))
 
     # The FR source moves THROUGH the editor API — like the front does:
@@ -356,7 +353,7 @@ async def test_source_edit_marks_stale_and_retranslation_overwrites(
         await client.get(f"/journeys/{tid}/translate/estimate?include_stale=true", headers=headers)
     ).json()
     assert stale_estimate["items"] == 1
-    assert stale_estimate["langs"] == ["en", "es", "it", "pt", "ru"]
+    assert stale_estimate["langs"] == TARGETS
 
     started = await client.post(
         f"/journeys/{tid}/translate", headers=headers, json={"include_stale": True}
@@ -365,8 +362,8 @@ async def test_source_edit_marks_stale_and_retranslation_overwrites(
     job_id = started.json()["translation_job_id"]
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "done", status
-    assert status["progress"] == {"done": 5, "total": 5}
-    assert status["translated_keys"] == 5  # ONLY the drifted field, x5 langs
+    assert status["progress"] == {"done": N_TARGETS, "total": N_TARGETS}
+    assert status["translated_keys"] == N_TARGETS  # ONLY the drifted field, xN langs
 
     step = await _fresh_step(db_session, tid)
     assert step.name_i18n["es"] == "[es] Dépôt du dossier COMPLET"  # overwritten
@@ -423,7 +420,7 @@ async def test_human_corrected_variant_is_protected_from_retranslation(
     ).json()
     assert estimate["counts"]["es"] == {"empty": 0, "stale": 0}  # protected
     assert estimate["counts"]["en"] == {"empty": 0, "stale": 1}
-    assert estimate["langs"] == ["en", "it", "pt", "ru"]  # ES is not even a lot
+    assert estimate["langs"] == [lang for lang in TARGETS if lang != "es"]  # ES: not even a lot
 
     started = await client.post(
         f"/journeys/{tid}/translate", headers=headers, json={"include_stale": True}
@@ -432,7 +429,7 @@ async def test_human_corrected_variant_is_protected_from_retranslation(
     job_id = started.json()["translation_job_id"]
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "done", status
-    assert status["progress"] == {"done": 4, "total": 4}
+    assert status["progress"] == {"done": N_TARGETS - 1, "total": N_TARGETS - 1}
 
     step = await _fresh_step(db_session, tid)
     assert step.name_i18n["es"] == "Corrección humana"  # human work intact
@@ -458,7 +455,7 @@ async def test_pure_human_translation_is_never_stale(
     stale — a source edit changes nothing, in either mode."""
     headers = agent_headers(admin)
     tid = await _template_with_content(client, headers)
-    human = {lang: f"human {lang}" for lang in ("en", "es", "it", "pt", "ru")}
+    human = {lang: f"human {lang}" for lang in TARGETS}
     step = await _fresh_step(db_session, tid)  # expire_all FIRST, then mutate
     template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
     assert template is not None
@@ -507,7 +504,7 @@ async def test_retranslate_lang_overwrites_and_seeds_the_trail(
     laid by that run makes a LATER source edit finally detectable."""
     headers = agent_headers(admin)
     tid = await _template_with_content(client, headers)
-    human = {lang: f"human {lang}" for lang in ("en", "es", "it", "pt", "ru")}
+    human = {lang: f"human {lang}" for lang in TARGETS}
     step = await _fresh_step(db_session, tid)
     template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
     assert template is not None
@@ -650,15 +647,15 @@ async def test_salvage_pass_reasks_only_the_botched_item(
     job_id = started.json()["translation_job_id"]
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "done", status  # the lot SURVIVED the slip
-    assert status["progress"] == {"done": 5, "total": 5}
+    assert status["progress"] == {"done": N_TARGETS, "total": N_TARGETS}
 
-    # 6 calls total: 5 lots + 1 repair, and the repair re-asked ONLY the
+    # N+1 calls total: N lots + 1 repair, and the repair re-asked ONLY the
     # botched key, with the HARDENED instruction; the extra call is
     # debited (real cost).
     ru = [c for c in calls if c["targets"] == ["ru"]]
     assert len(ru) == 2 and ru[1]["keys"] == ["template.name"]
     assert ru[0]["strict"] is False and ru[1]["strict"] is True
-    assert status["points_charged"] == 6 * POINTS_PER_CALL
+    assert status["points_charged"] == (N_TARGETS + 1) * POINTS_PER_CALL
 
     template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
     assert template is not None
@@ -688,11 +685,12 @@ async def test_persistent_repair_failure_keeps_the_valid_fields(
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "failed", status
     assert status["error"] == "ai.translation_failed"
-    assert status["progress"] == {"done": 4, "total": 5}  # the ru lot never completed
-    assert status["translated_keys"] == 4 * 2 + 1  # ...but its valid field IS written
+    # the ru lot never completed:
+    assert status["progress"] == {"done": N_TARGETS - 1, "total": N_TARGETS}
+    assert status["translated_keys"] == (N_TARGETS - 1) * 2 + 1  # ...but its valid field IS written
     # Debit pro rata: the ru lot cost 2 calls for 2 fields, 1 written →
-    # ceil(2 x 1/2) = 1 call-equivalent on top of the 4 clean lots.
-    assert status["points_charged"] == 5 * POINTS_PER_CALL
+    # ceil(2 x 1/2) = 1 call-equivalent on top of the clean lots.
+    assert status["points_charged"] == N_TARGETS * POINTS_PER_CALL
 
     db_session.expire_all()
     template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
@@ -838,7 +836,7 @@ async def test_midrun_failure_keeps_completed_languages(
 
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "failed"
-    assert status["progress"] == {"done": 1, "total": 5}  # EN landed before the failure
+    assert status["progress"] == {"done": 1, "total": N_TARGETS}  # EN landed before the failure
     assert status["points_charged"] == POINTS_PER_CALL  # pro rata of successful lots
 
     template = await db_session.get(JourneyTemplate, uuid.UUID(tid))

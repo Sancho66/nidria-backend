@@ -4,6 +4,7 @@ projection wiring is exercised by the domain tests (timeline/clone)."""
 
 from src.core.i18n import (
     DEFAULT_LANG,
+    SUPPORTED_LANGUAGES,
     resolve_i18n,
     resolve_notification_lang_agent,
     resolve_notification_lang_client,
@@ -51,7 +52,7 @@ def test_resolve_optional_field_with_no_value_is_none() -> None:
 
 
 def test_notif_lang_client_supported_kept() -> None:
-    for lang in ("fr", "en", "es", "ru", "pt", "it"):
+    for lang in SUPPORTED_LANGUAGES:  # x7 automatique, la liste centrale derive
         assert resolve_notification_lang_client(lang) == lang
 
 

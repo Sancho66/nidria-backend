@@ -10,7 +10,11 @@ from src.core.email_templates import (
     requirement_request_email,
     step_reopened_email,
 )
-from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
+from src.core.i18n import (
+    SUPPORTED_LANGUAGES,
+    resolve_notification_lang_agent,
+    resolve_notification_lang_client,
+)
 
 
 def test_client_template_es_subject_body_and_html_lang() -> None:
@@ -67,7 +71,7 @@ def test_agent_template_default_it() -> None:
 def test_all_builders_interpolate_step_name_in_every_language() -> None:
     # Guard: no language drops the step-name (or other) placeholder.
     step = "STEP_MARKER"
-    for lang in ("fr", "en", "es", "ru", "pt", "it"):
+    for lang in SUPPORTED_LANGUAGES:  # x7 automatique, la liste centrale derive
         assert step in requirement_request_email("A", step, "u", lang=lang).text
         assert step in step_reopened_email("A", step, "u", lang=lang).text
         assert step in ready_to_validate_email("Case", step, "u", lang=lang).text

@@ -19,14 +19,14 @@ from fastapi import Depends, Request
 # blob filter, the resolvers, the notification routing, the request-language
 # negotiation, and the agency.default_language Pydantic schema. The SQL CHECK on
 # agency.default_language is widened by a dedicated migration, never here.
-SUPPORTED_LANGUAGES: tuple[str, ...] = ("fr", "en", "es", "ru", "pt", "it")
+SUPPORTED_LANGUAGES: tuple[str, ...] = ("fr", "en", "es", "ru", "pt", "it", "hu")
 DEFAULT_LANG = "fr"  # the platform fallback (also the implicit default of samples)
 
 # The Pydantic/OpenAPI face of SUPPORTED_LANGUAGES. mypy needs a STATIC Literal,
 # so it is spelled out and kept in lock-step with the tuple by the assert below —
 # edit BOTH in the same change when adding a language (the assert fails at import
 # otherwise, turning any drift into an immediate startup error).
-Language = Literal["fr", "en", "es", "ru", "pt", "it"]
+Language = Literal["fr", "en", "es", "ru", "pt", "it", "hu"]
 assert set(get_args(Language)) == set(SUPPORTED_LANGUAGES), (
     "Language literal and SUPPORTED_LANGUAGES drifted apart"
 )

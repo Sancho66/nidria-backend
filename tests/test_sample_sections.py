@@ -19,6 +19,7 @@ from shared.models.agent import Agent
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.journey import JourneySection, JourneyTemplate, JourneyTemplateField
 from shared.models.rbac import Role
+from src.core.i18n import SUPPORTED_LANGUAGES
 from src.journeys.field_catalog import FIELD_PRESETS, SECTION_TYPES, field_kind
 from src.journeys.sample_seed import _SAMPLE_SECTIONS, _SAMPLES, PY1_NAME, seed_sample_journeys
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -80,7 +81,7 @@ async def test_reseed_twice_no_duplicate_and_refresh_in_place(db_session: AsyncS
     )
     assert [s.seed_key for s in rows] == list(_SAMPLE_SECTIONS[PY1_NAME])
     assert rows[0].name == "Identité"
-    assert set(rows[0].name_i18n) == {"fr", "en", "es", "ru", "pt", "it"}
+    assert set(rows[0].name_i18n) == set(SUPPORTED_LANGUAGES)
 
     # Drift + re-seed: refreshed in place, never duplicated.
     first_id = rows[0].id
@@ -168,7 +169,7 @@ async def test_clone_carries_sections_and_materializes_definitions(
     }
     assert expected <= set(definitions)
     probe = definitions[next(iter(expected))]
-    assert set(probe.label_i18n) == {"fr", "en", "es", "ru", "pt", "it"}
+    assert set(probe.label_i18n) == set(SUPPORTED_LANGUAGES)
     assert probe.archived_at is None
     select_probe = next(
         (d for d in definitions.values() if FIELD_PRESETS[d.key].options is not None), None

@@ -18,7 +18,7 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         # i18n blobs (resolved in BLOC 2). Samples (agency_id NULL) have no row
         # here → they fall back to "fr" implicitly at resolution time.
         CheckConstraint(
-            "default_language IN ('fr', 'en', 'es', 'ru', 'pt', 'it')",
+            "default_language IN ('fr', 'en', 'es', 'ru', 'pt', 'it', 'hu')",
             name="agency_default_language_check",
         ),
         # Founding offer: at most 3 free seats (pricing 2026-07-07).
