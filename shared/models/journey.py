@@ -22,7 +22,7 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         # Point 6c — same referential as agency.default_language (NULL passes).
         CheckConstraint(
-            "editing_language IN ('fr', 'en', 'es', 'ru', 'pt', 'it')",
+            "editing_language IN ('fr', 'en', 'es', 'ru', 'pt', 'it', 'hu')",
             name="journey_template_editing_language_check",
         ),
     )

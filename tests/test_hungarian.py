@@ -3,13 +3,17 @@ dérive tout — la parité x7 des gabarits, le signup en hu, le catalogue de
 champs en hu, la traduction IA qui accepte hu en cible."""
 
 import ast
+import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.rbac import Role
 from src.core import email
 from src.core.i18n import SUPPORTED_LANGUAGES
@@ -90,3 +94,108 @@ async def test_agency_speaks_hungarian_and_zai_accepts_hu_target(
     # l'agence est en hu : fr est une cible valide ; et hu en cible depuis
     # une agence fr passe pareil (la liste centrale, pas une liste en dur)
     assert estimate.status_code == 200, estimate.text
+
+
+# --- the AI translation chain serves and writes hu (BUG hongrois, 2026-07-20) -----------------
+
+
+@pytest.fixture
+def hu_provider(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Echo provider at the raw-call boundary, one call per language lot."""
+    state: dict[str, Any] = {"calls": []}
+
+    async def _fake(
+        items: list[dict[str, str]],
+        source_lang: str,
+        target_langs: list[str],
+        strict_retry: bool = False,
+    ):
+        state["calls"].append(list(target_langs))
+        translations = {
+            item["key"]: {
+                lang: f"[{lang}] {'Перевод ' if lang == 'ru' else ''}{item['text']}"
+                for lang in target_langs
+            }
+            for item in items
+        }
+        return translations, {"prompt_tokens": 900, "completion_tokens": 2500}
+
+    import src.journeys.translation_manager as tm
+
+    monkeypatch.setattr(tm.translation_client, "request_translations", _fake)
+    return state
+
+
+async def test_editing_language_accepts_hu(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Before the fix: the API validation (derived) said yes and the DB
+    CHECK (stuck at 6) blew up in a 500. Both speak hu now."""
+    ah = agent_headers(admin)
+    tid = (await client.post("/journeys", headers=ah, json={"name": "Ut"})).json()["id"]
+    patched = await client.patch(f"/journeys/{tid}", headers=ah, json={"editing_language": "hu"})
+    assert patched.status_code == 200, patched.text
+    detail = await client.get(f"/journeys/{tid}", headers=ah)
+    assert detail.json()["editing_language"] == "hu"
+
+
+async def test_translation_job_serves_and_writes_hu(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    hu_provider: dict[str, Any],
+) -> None:
+    """The list served to the front carries hu, and the job WRITES the
+    hu content."""
+    ah = agent_headers(admin)
+    tid = (await client.post("/journeys", headers=ah, json={"name": "Résidence D7"})).json()["id"]
+    step = await client.post(f"/journeys/{tid}/steps", headers=ah, json={"name": "Dépôt"})
+    assert step.status_code == 201
+    step_id = step.json()["id"]
+
+    estimate = (await client.get(f"/journeys/{tid}/translate/estimate", headers=ah)).json()
+    assert "hu" in estimate["langs"] and "hu" in estimate["counts"]
+
+    started = await client.post(f"/journeys/{tid}/translate", headers=ah, json={})
+    assert started.status_code == 202, started.text
+    assert "hu" in started.json()["langs"]
+
+    row = await db_session.get(JourneyTemplateStep, uuid.UUID(step_id))
+    assert row is not None
+    assert row.name_i18n["hu"] == "[hu] Dépôt"  # the hu content IS written
+
+
+async def test_x6_template_retranslates_hu_alone(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    hu_provider: dict[str, Any],
+) -> None:
+    """A template already translated in the 6 historic languages: the
+    fill-empty-only job proposes and consumes hu ALONE (one lot), the
+    six existing variants untouched."""
+    ah = agent_headers(admin)
+    tid = (await client.post("/journeys", headers=ah, json={"name": "Résidence D7"})).json()["id"]
+    template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
+    assert template is not None
+    template.name_i18n = {
+        "fr": "Résidence D7",
+        **{lang: f"human {lang}" for lang in ("en", "es", "it", "pt", "ru")},
+    }
+    await db_session.commit()
+
+    estimate = (await client.get(f"/journeys/{tid}/translate/estimate", headers=ah)).json()
+    assert estimate["langs"] == ["hu"]  # the ONLY lot with work
+
+    started = await client.post(f"/journeys/{tid}/translate", headers=ah, json={})
+    assert started.status_code == 202, started.text
+    assert started.json()["langs"] == ["hu"]
+    assert hu_provider["calls"] == [["hu"]]  # one call, hu alone — the 6 not re-consumed
+
+    db_session.expire_all()
+    template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
+    assert template is not None
+    assert template.name_i18n["hu"] == "[hu] Résidence D7"
+    assert template.name_i18n["en"] == "human en"  # untouched
