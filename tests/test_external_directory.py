@@ -385,7 +385,9 @@ async def test_unreachable_contact_reminder_escalates_to_owner(
     await db_session.refresh(reminder)
     assert reminder.status == "sent"
     assert reminder.recipient_type == "agent"  # re-routed to the owner
-    assert reminder.recipient_external_id is None
+    # P2 (2026-07-20): the external FK is KEPT as provenance — the auto-pass
+    # idempotence matches on it (an escalated line still blocks its threshold).
+    assert reminder.recipient_external_id == contact.id
 
     log = (
         await db_session.execute(

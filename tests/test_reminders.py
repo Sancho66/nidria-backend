@@ -2,6 +2,7 @@
 nothing is ever sent without human approval — a due TO_APPROVE crosses
 a dispatch tick untouched. Mocks everywhere, zero real sends."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -12,13 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, sessionmaker
 
 from shared.models.activity import ActivityLog
+from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
 from src.core import email
 from src.reminders.reminders_jobs import create_auto_reminders, dispatch_due_reminders
+from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase, MakeExternalContact
 from tests.plugins.expat_plugin import MakeExpatUser
@@ -526,3 +530,259 @@ async def test_viewer_cannot_create_reminders(
         },
     )
     assert response.status_code == 403
+
+
+# --- P2: provider auto follow-ups (same clock, agency language) -----------------------
+
+
+async def _external_participant(
+    db_session: AsyncSession, case: ClientCase, contact_id: uuid.UUID
+) -> uuid.UUID:
+    """Wire an external participant on the case's (single) step progress."""
+    progress_id = (
+        await db_session.execute(
+            select(CaseStepProgress.id).where(CaseStepProgress.case_id == case.id)
+        )
+    ).scalar_one()
+    db_session.add(
+        CaseStepParticipant(
+            case_step_progress_id=progress_id,
+            type="external",
+            external_id=contact_id,
+            role="executant",
+        )
+    )
+    await db_session.commit()
+    return progress_id
+
+
+async def test_auto_provider_j20_in_agency_language_client_untouched(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    await db_session.execute(
+        update(Agency).where(Agency.id == case.agency_id).values(default_language="en")
+    )
+    await db_session.commit()
+    contact = await make_external_contact(case=case, email="notaire@example.com")
+    await _external_participant(db_session, case, contact.id)
+
+    assert _run_auto(sync_session_local)["created"] == 2  # client + provider, same tick
+    rows = (
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == case.id)))
+        .scalars()
+        .all()
+    )
+    by_type = {r.recipient_type: r for r in rows}
+    provider = by_type["external"]
+    assert provider.status == "to_approve"  # NEVER auto-sent
+    assert provider.recipient_external_id == contact.id
+    assert provider.auto_threshold_days == 20
+    # The manual-flow language rule: AGENCY language (en), not the client's.
+    assert "has not progressed" in provider.message_body
+    # The client flow is UNTOUCHED: its row exists, in the client's language.
+    assert "n'a pas progressé" in by_type["expat"].message_body
+
+
+async def test_auto_provider_j30_joins_and_dedup(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    contact = await make_external_contact(case=case, email="n@example.com")
+    await _external_participant(db_session, case, contact.id)
+
+    assert _run_auto(sync_session_local)["created"] == 2
+    assert _run_auto(sync_session_local)["created"] == 0  # dedup: pending -> no doubles
+
+    await db_session.execute(
+        update(CaseStepProgress)
+        .where(CaseStepProgress.case_id == case.id)
+        .values(updated_at=datetime.now(UTC) - timedelta(days=31))
+    )
+    await db_session.commit()
+    assert _run_auto(sync_session_local)["created"] == 2  # J+30 joins for BOTH
+    provider_thresholds = (
+        await db_session.execute(
+            select(Reminder.auto_threshold_days).where(
+                Reminder.case_id == case.id,
+                Reminder.recipient_type == "external",
+            )
+        )
+    ).scalars()
+    assert sorted(provider_thresholds) == [20, 30]
+
+
+async def test_auto_provider_without_email_escalates_to_owner(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    await db_session.execute(
+        update(ClientCase).where(ClientCase.id == case.id).values(owner_agent_id=manager_agent.id)
+    )
+    contact = await make_external_contact(case=case, email=None)  # unreachable
+    await _external_participant(db_session, case, contact.id)
+    await db_session.commit()
+    _run_auto(sync_session_local)
+
+    email.outbox.clear()
+    await db_session.execute(
+        update(Reminder)
+        .where(Reminder.recipient_type == "external", Reminder.case_id == case.id)
+        .values(status="approved", scheduled_at=datetime.now(UTC) - timedelta(hours=1))
+    )
+    await db_session.commit()
+    _run_dispatch(sync_session_local)
+    [mail] = email.outbox
+    assert mail.to == manager_agent.email  # the case owner, not silence
+    reminder = (
+        await db_session.execute(
+            select(Reminder).where(Reminder.case_id == case.id, Reminder.status == "sent")
+        )
+    ).scalar_one()
+    assert reminder.recipient_type == "agent"  # re-routed (escalated_from mechanism)
+    assert "Maitre Dupont" in mail.body  # the original provider is NAMED
+
+
+async def test_auto_provider_foreign_case_contact_creates_nothing(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    other_case = await make_client_case(agency_id=manager_agent.agency_id)
+    foreign = await make_external_contact(case=other_case, email="x@example.com")
+    await _external_participant(db_session, case, foreign.id)
+
+    _run_auto(sync_session_local)
+    external_rows = (
+        await db_session.execute(select(Reminder).where(Reminder.recipient_type == "external"))
+    ).scalars()
+    assert list(external_rows) == []  # the case-contact validation, in SQL
+
+
+async def test_auto_provider_respects_agency_toggle_and_tenancy(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    # Agency A: provider follow-up created.
+    headers = agent_headers(manager_agent)
+    case_a = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    contact_a = await make_external_contact(case=case_a, email="a@example.com")
+    await _external_participant(db_session, case_a, contact_a.id)
+
+    # Agency B: toggle OFF — its stalled provider step creates NOTHING.
+    agency_b = await make_agency(settings={"auto_reminders_enabled": False})
+    agent_b = await make_agent(agency_id=agency_b.id, role=system_roles["case_manager"])
+    headers_b = agent_headers(agent_b)
+    case_b = await _stalled_step(
+        rem_client, db_session, agent_b, make_client_case, headers_b, days=21
+    )
+    contact_b = await make_external_contact(case=case_b, email="b@example.com")
+    await _external_participant(db_session, case_b, contact_b.id)
+
+    _run_auto(sync_session_local)
+    externals = (
+        (await db_session.execute(select(Reminder).where(Reminder.recipient_type == "external")))
+        .scalars()
+        .all()
+    )
+    assert [r.case_id for r in externals] == [case_a.id]  # B's tenancy/toggle respected
+
+
+async def test_auto_provider_escalated_line_still_blocks_next_tick(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Fermeture (feu vert conditionnel): created -> ESCALATED at dispatch
+    (rewritten agent, provenance kept) -> next tick -> ZERO re-creation
+    for this (step, threshold, provider)."""
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    await db_session.execute(
+        update(ClientCase).where(ClientCase.id == case.id).values(owner_agent_id=manager_agent.id)
+    )
+    contact = await make_external_contact(case=case, email=None)  # will escalate
+    await _external_participant(db_session, case, contact.id)
+    assert _run_auto(sync_session_local)["created"] == 2  # client + provider
+
+    await db_session.execute(
+        update(Reminder)
+        .where(Reminder.recipient_type == "external", Reminder.case_id == case.id)
+        .values(status="approved", scheduled_at=datetime.now(UTC) - timedelta(hours=1))
+    )
+    await db_session.commit()
+    _run_dispatch(sync_session_local)
+    escalated = (
+        await db_session.execute(
+            select(Reminder).where(Reminder.case_id == case.id, Reminder.status == "sent")
+        )
+    ).scalar_one()
+    assert escalated.recipient_type == "agent"  # rewritten
+    assert escalated.recipient_external_id == contact.id  # PROVENANCE KEPT
+
+    # The closing assertion: the next tick recreates NOTHING.
+    assert _run_auto(sync_session_local)["created"] == 0
+    provider_rows = (
+        (
+            await db_session.execute(
+                select(Reminder).where(
+                    Reminder.case_id == case.id,
+                    Reminder.recipient_external_id == contact.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(provider_rows) == 1  # the escalated line, alone, blocks its threshold

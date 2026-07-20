@@ -20,6 +20,7 @@ from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
+from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
@@ -182,9 +183,10 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
                 content = reminder_escalation_email(
                     agency.name, escalated_from, reminder.message_body, lang
                 )
-                # Record that it now targets the owner (agent), no external FK.
+                # Record that it now targets the owner (agent). The external
+                # FK is KEPT as provenance: the auto-pass idempotence matches
+                # on it — a rewritten line still blocks its threshold.
                 reminder.recipient_type = RecipientType.AGENT.value
-                reminder.recipient_external_id = None
             else:
                 # The BRANDED client-space link — expat recipients only.
                 link = (
@@ -219,11 +221,16 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
 
 def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
     """J+20/J+30 follow-ups on stalled steps — created TO_APPROVE, never
-    more: the system proposes, a human approves. Idempotence is PHYSICAL
-    (unique on (step_progress_id, auto_threshold_days)); the NOT EXISTS
-    here keeps repeat ticks quiet, the constraint is the belt.
-    Per-agency toggle: agency.settings["auto_reminders_enabled"].
-    Actor: SYSTEM."""
+    more: the system proposes, a human approves. TWO passes on the SAME
+    clock (step_progress.updated_at as the last-movement proxy): the
+    client one (principal/member), and since P2 the PROVIDER one — every
+    external participant of a stalled step gets its own proposed
+    follow-up, in the AGENCY's language (the manual-reminder rule), the
+    dispatch escalation (no email → case owner) applying unchanged.
+    Idempotence is PHYSICAL (unique on (step, threshold, recipient_type,
+    provider) — the widened belt); the NOT EXISTS here keeps repeat
+    ticks quiet. Per-agency toggle: agency.settings
+    ["auto_reminders_enabled"]. Actor: SYSTEM."""
     settings = get_settings()
     now = datetime.now(UTC)
     created = 0
@@ -294,6 +301,84 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
             )
             created += 1
             log(f"auto follow-up J+{threshold} for step {progress.id}")
+    # --- provider pass (P2): same clock, same toggle, per external
+    # participant. The join on ExternalContact.case_id == ClientCase.id
+    # IS the "contact of the case" validation of the manual flow,
+    # expressed in SQL (a foreign-case contact wired on a participant
+    # creates nothing).
+    for threshold in settings.auto_reminder_thresholds_days:
+        cutoff = now - timedelta(days=threshold)
+        # No recipient_type filter: an ESCALATED line (rewritten to agent,
+        # provenance kept) still blocks its (step, threshold, provider).
+        already_provider = exists(
+            select(Reminder.id).where(
+                Reminder.step_progress_id == CaseStepProgress.id,
+                Reminder.auto_threshold_days == threshold,
+                Reminder.recipient_external_id == ExternalContact.id,
+            )
+        )
+        provider_stmt = (
+            select(CaseStepProgress, JourneyTemplateStep, ClientCase, Agency, ExternalContact)
+            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
+            .join(Agency, Agency.id == ClientCase.agency_id)
+            .join(
+                JourneyTemplateStep,
+                JourneyTemplateStep.id == CaseStepProgress.template_step_id,
+            )
+            .join(
+                CaseStepParticipant,
+                CaseStepParticipant.case_step_progress_id == CaseStepProgress.id,
+            )
+            .join(ExternalContact, ExternalContact.id == CaseStepParticipant.external_id)
+            .where(
+                CaseStepParticipant.type == "external",
+                ExternalContact.case_id == ClientCase.id,
+                CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
+                CaseStepProgress.updated_at <= cutoff,
+                ClientCase.deleted_at.is_(None),
+                ~already_provider,
+            )
+        )
+        for progress, step, case, agency, contact in db.execute(provider_stmt).all():
+            if not (agency.settings or {}).get("auto_reminders_enabled", True):
+                continue
+            if dry_run:
+                would_create += 1
+                continue
+            db.add(
+                Reminder(
+                    case_id=case.id,
+                    step_progress_id=progress.id,
+                    channel=ReminderChannel.MAIL.value,
+                    scheduled_at=now,
+                    status=ReminderStatus.TO_APPROVE.value,
+                    recipient_type=RecipientType.EXTERNAL.value,
+                    recipient_external_id=contact.id,
+                    # The manual-flow language rule: a provider reads the
+                    # AGENCY's language, never the client's.
+                    message_body=auto_reminder_body(
+                        step.name,
+                        threshold,
+                        resolve_notification_lang_agent(agency.default_language),
+                    ),
+                    auto_threshold_days=threshold,
+                )
+            )
+            db.add(
+                ActivityLog(
+                    case_id=case.id,
+                    actor_type=ActorType.SYSTEM.value,
+                    actor_id=None,
+                    action_type="reminder.auto_created",
+                    details={
+                        "step_progress_id": str(progress.id),
+                        "threshold": threshold,
+                        "recipient_external_id": str(contact.id),
+                    },
+                )
+            )
+            created += 1
+            log(f"auto follow-up J+{threshold} for provider {contact.id} on step {progress.id}")
     db.commit()
     stats: dict[str, Any] = {"created": created}
     if dry_run:

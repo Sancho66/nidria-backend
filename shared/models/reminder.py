@@ -8,7 +8,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
-    UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,16 +31,31 @@ class Reminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "(recipient_type = 'expat' AND recipient_external_id IS NULL)"
             " OR (recipient_type = 'external' AND recipient_external_id IS NOT NULL)"
             # 'agent' = the case owner (escalation target), derived from
-            # client_case.owner_agent_id → no recipient FK.
-            " OR (recipient_type = 'agent' AND recipient_external_id IS NULL)",
+            # client_case.owner_agent_id. Its external FK is OPTIONAL: an
+            # escalated provider reminder keeps it as provenance (the
+            # auto-pass idempotence matches on it).
+            " OR (recipient_type = 'agent')",
             name="recipient_type_matches_fk",
         ),
         # The step-12 dispatcher polls approved reminders due for sending.
         Index("ix_reminder_status_scheduled_at", "status", "scheduled_at"),
-        # PHYSICAL idempotence of the J+20/J+30 auto follow-ups: one
-        # threshold can never be created twice for the same step. NULLs
-        # (manual reminders) stay unconstrained (PG default NULLS DISTINCT).
-        UniqueConstraint("step_progress_id", "auto_threshold_days"),
+        # PHYSICAL idempotence of the J+20/J+30 auto follow-ups, per
+        # RECIPIENT since the provider extension (P2 2026-07-20): one
+        # threshold can never be created twice for the same step AND the
+        # same recipient (the client row and each provider's row coexist).
+        # COALESCE folds the NULL external id of the client row so the
+        # belt holds for it too. Manual reminders (threshold NULL) stay
+        # unconstrained (partial index).
+        # No recipient_type in the key: the belt must keep holding when an
+        # escalation rewrites external → agent (provenance kept).
+        Index(
+            "uq_reminder_auto_idempotence",
+            "step_progress_id",
+            "auto_threshold_days",
+            text("COALESCE(recipient_external_id, '00000000-0000-0000-0000-000000000000')"),
+            unique=True,
+            postgresql_where=text("auto_threshold_days IS NOT NULL"),
+        ),
     )
 
     case_id: Mapped[uuid.UUID] = mapped_column(
