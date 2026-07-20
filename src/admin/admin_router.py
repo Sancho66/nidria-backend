@@ -16,6 +16,7 @@ from src.admin.admin_manager import AdminManager
 from src.admin.admin_schema import AdminAgenciesResponse
 from src.admin.platform_tasks_manager import PlatformTasksManager
 from src.admin.platform_tasks_schema import (
+    CalendarLinkResponse,
     PlatformOperatorRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
@@ -54,6 +55,12 @@ BINDINGS = [
     ),
     RouteBinding(
         "POST", "/admin/tasks/{task_id}/reopen", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE
+    ),
+    RouteBinding(
+        "GET",
+        "/admin/tasks/{task_id}/calendar-link",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
     ),
 ]
 
@@ -186,3 +193,12 @@ async def list_platform_operators(agent: AgentDep, db: DbDep) -> list[PlatformOp
     """The assignable platform operators (superadmin role holders) for
     the task form selector — same gate as the tasks themselves."""
     return await PlatformTasksManager(db).list_operators()
+
+
+@router.get("/tasks/{task_id}/calendar-link", response_model=CalendarLinkResponse)
+async def platform_task_calendar_link(
+    task_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> CalendarLinkResponse:
+    """Google / Outlook / ICS for a scheduled task (the Prism port).
+    400 when the task has no scheduled_at."""
+    return await PlatformTasksManager(db).calendar_link(task_id)

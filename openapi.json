@@ -2022,6 +2022,55 @@
         ]
       }
     },
+    "/admin/tasks/{task_id}/calendar-link": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Platform Task Calendar Link",
+        "description": "Google / Outlook / ICS for a scheduled task (the Prism port).\n400 when the task has no scheduled_at.",
+        "operationId": "platform_task_calendar_link_admin_tasks__task_id__calendar_link_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies": {
       "get": {
         "tags": [
@@ -15775,6 +15824,47 @@
         ],
         "title": "BulkSetStatusRequest"
       },
+      "CalendarLinkResponse": {
+        "properties": {
+          "google_url": {
+            "type": "string",
+            "title": "Google Url"
+          },
+          "outlook_url": {
+            "type": "string",
+            "title": "Outlook Url"
+          },
+          "ics_content": {
+            "type": "string",
+            "title": "Ics Content"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "google_url",
+          "outlook_url",
+          "ics_content",
+          "title",
+          "start",
+          "end"
+        ],
+        "title": "CalendarLinkResponse",
+        "description": "The Prism calendar-link payload: Google / Outlook URLs + minimal\nICS, start/end rendered in the task's own zone."
+      },
       "CanvasLayoutRequest": {
         "properties": {
           "positions": {
@@ -23375,6 +23465,54 @@
             ],
             "title": "Due At"
           },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "scheduled_timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Timezone"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1440.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
           "agency_id": {
             "anyOf": [
               {
@@ -23484,6 +23622,51 @@
             ],
             "title": "Due At"
           },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "scheduled_timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Timezone"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
           "is_overdue": {
             "type": "boolean",
             "title": "Is Overdue"
@@ -23587,6 +23770,10 @@
           "priority",
           "task_type",
           "due_at",
+          "scheduled_at",
+          "scheduled_timezone",
+          "duration_minutes",
+          "location",
           "is_overdue",
           "agency_id",
           "agency_name",
@@ -23708,6 +23895,54 @@
               }
             ],
             "title": "Due At"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "scheduled_timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Timezone"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1440.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
           },
           "agency_id": {
             "anyOf": [

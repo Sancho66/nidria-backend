@@ -35,6 +35,12 @@ class PlatformTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(20), nullable=False, default="task", server_default="task"
     )
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # The Prism appointment block (call/meeting): a precise UTC instant
+    # paired with the IANA zone it was picked in (required together).
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_timezone: Mapped[str | None] = mapped_column(String(50))
+    duration_minutes: Mapped[int | None] = mapped_column()
+    location: Mapped[str | None] = mapped_column(String(500))
     agency_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agency.id", ondelete="SET NULL"), index=True
     )

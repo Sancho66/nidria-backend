@@ -6,8 +6,10 @@ a scope — served denormalized (agency_name) for the list."""
 
 import uuid
 from datetime import datetime
+from typing import Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from shared.models.platform_task import (
     PLATFORM_TASK_PRIORITIES,
@@ -23,6 +25,18 @@ _PRIORITY_HELP = f"one of {PLATFORM_TASK_PRIORITIES}"
 _TYPE_HELP = f"one of {PLATFORM_TASK_TYPES}"
 
 
+def _validate_timezone(value: str | None) -> str | None:
+    """None passes; otherwise the string must resolve to a real IANA
+    zone (the exact Prism validation) — surfaced as a 422."""
+    if value is None:
+        return None
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(f"Unknown timezone: {value!r}") from exc
+    return value
+
+
 class PlatformTaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -32,9 +46,24 @@ class PlatformTaskCreate(BaseModel):
     priority: str = Field(default="medium", description=_PRIORITY_HELP)
     task_type: str = Field(default="task", description=_TYPE_HELP)
     due_at: datetime | None = None
+    scheduled_at: datetime | None = None
+    scheduled_timezone: str | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    location: str | None = Field(default=None, max_length=500)
     agency_id: uuid.UUID | None = None
     # Defaults to the acting superadmin (the solo-operator fast path).
     assigned_to_agent_id: uuid.UUID | None = None
+
+    @field_validator("scheduled_timezone")
+    @classmethod
+    def _tz_is_iana(cls, v: str | None) -> str | None:
+        return _validate_timezone(v)
+
+    @model_validator(mode="after")
+    def _scheduled_at_requires_tz(self) -> Self:
+        if self.scheduled_at is not None and self.scheduled_timezone is None:
+            raise ValueError("scheduled_timezone is required when scheduled_at is provided")
+        return self
 
 
 class PlatformTaskUpdate(BaseModel):
@@ -46,8 +75,29 @@ class PlatformTaskUpdate(BaseModel):
     priority: str | None = Field(default=None, description=_PRIORITY_HELP)
     task_type: str | None = Field(default=None, description=_TYPE_HELP)
     due_at: datetime | None = None
+    scheduled_at: datetime | None = None
+    scheduled_timezone: str | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    location: str | None = Field(default=None, max_length=500)
     agency_id: uuid.UUID | None = None
     assigned_to_agent_id: uuid.UUID | None = None
+
+    @field_validator("scheduled_timezone")
+    @classmethod
+    def _tz_is_iana(cls, v: str | None) -> str | None:
+        return _validate_timezone(v)
+
+    @model_validator(mode="after")
+    def _scheduled_at_requires_tz(self) -> Self:
+        # Prism exact: enforced only when scheduled_at is EXPLICITLY set
+        # in this PATCH (a tz-only edit stays legal).
+        if (
+            "scheduled_at" in self.model_fields_set
+            and self.scheduled_at is not None
+            and self.scheduled_timezone is None
+        ):
+            raise ValueError("scheduled_timezone is required when scheduled_at is provided")
+        return self
 
 
 class PlatformTaskRead(BaseModel):
@@ -60,6 +110,10 @@ class PlatformTaskRead(BaseModel):
     priority: str
     task_type: str
     due_at: datetime | None
+    scheduled_at: datetime | None
+    scheduled_timezone: str | None
+    duration_minutes: int | None
+    location: str | None
     is_overdue: bool
     agency_id: uuid.UUID | None
     agency_name: str | None
@@ -78,6 +132,18 @@ class PlatformTaskListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class CalendarLinkResponse(BaseModel):
+    """The Prism calendar-link payload: Google / Outlook URLs + minimal
+    ICS, start/end rendered in the task's own zone."""
+
+    google_url: str
+    outlook_url: str
+    ics_content: str
+    title: str
+    start: datetime
+    end: datetime
 
 
 class PlatformOperatorRead(BaseModel):

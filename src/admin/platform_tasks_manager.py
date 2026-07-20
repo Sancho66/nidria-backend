@@ -10,7 +10,9 @@ their own recipient, recipients deduplicated, sends never blocking."""
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +29,7 @@ from shared.models.platform_task import (
 from shared.models.rbac import Role
 from src.admin.platform_tasks_repository import PlatformTasksRepository
 from src.admin.platform_tasks_schema import (
+    CalendarLinkResponse,
     PlatformOperatorRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
@@ -41,11 +44,80 @@ from src.core.email_templates import (
     task_assigned_email,
     task_status_changed_email,
 )
-from src.core.exceptions import NotFoundError, ValidationError
+from src.core.exceptions import BadRequestError, NotFoundError, ValidationError
 from src.core.i18n import resolve_notification_lang_agent
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 
 logger = logging.getLogger(__name__)
+
+
+def _ics_escape(value: str) -> str:
+    """RFC 5545 text escaping (the Prism helper)."""
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def build_calendar_link(task: PlatformTask, agency_name: str | None) -> CalendarLinkResponse:
+    """The Prism generator, ported: Google (floating local + ctz=),
+    Outlook (offset-baked ISO), minimal ICS (TZID, no VTIMEZONE block —
+    calendar apps resolve IANA names against the system tzdb). Falls
+    back to UTC on a legacy/typo zone."""
+    assert task.scheduled_at is not None  # checked by caller
+    duration = task.duration_minutes or 30
+    tz_name = task.scheduled_timezone or "UTC"
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        tz_name = "UTC"
+        tz = ZoneInfo("UTC")
+
+    start_local = task.scheduled_at.astimezone(tz)
+    end_local = start_local + timedelta(minutes=duration)
+    start_compact = start_local.strftime("%Y%m%dT%H%M%S")
+    end_compact = end_local.strftime("%Y%m%dT%H%M%S")
+
+    title = task.title if agency_name is None else f"{task.title} - {agency_name}"
+    description = task.description or ""
+    location = task.location or ""
+
+    google_url = (
+        "https://calendar.google.com/calendar/render?action=TEMPLATE"
+        f"&text={quote(title)}"
+        f"&dates={start_compact}/{end_compact}"
+        f"&ctz={quote(tz_name)}"
+        f"&details={quote(description)}"
+        f"&location={quote(location)}"
+    )
+    outlook_url = (
+        "https://outlook.live.com/calendar/0/action/compose"
+        f"?subject={quote(title)}"
+        f"&startdt={quote(start_local.isoformat())}"
+        f"&enddt={quote(end_local.isoformat())}"
+        f"&body={quote(description)}"
+        f"&location={quote(location)}"
+    )
+    ics = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//Nidria//Platform Tasks//EN\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:nidria-task-{task.id}@nidria\r\n"
+        f"DTSTAMP:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}\r\n"
+        f"DTSTART;TZID={tz_name}:{start_compact}\r\n"
+        f"DTEND;TZID={tz_name}:{end_compact}\r\n"
+        f"SUMMARY:{_ics_escape(title)}\r\n"
+        f"DESCRIPTION:{_ics_escape(description)}\r\n"
+        f"LOCATION:{_ics_escape(location)}\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR"
+    )
+    return CalendarLinkResponse(
+        google_url=google_url,
+        outlook_url=outlook_url,
+        ics_content=ics,
+        title=title,
+        start=start_local,
+        end=end_local,
+    )
 
 
 class PlatformTasksManager:
@@ -115,6 +187,10 @@ class PlatformTasksManager:
                 priority=t.priority,
                 task_type=t.task_type,
                 due_at=t.due_at,
+                scheduled_at=t.scheduled_at,
+                scheduled_timezone=t.scheduled_timezone,
+                duration_minutes=t.duration_minutes,
+                location=t.location,
                 is_overdue=(t.status != "done" and t.due_at is not None and t.due_at < now),
                 agency_id=t.agency_id,
                 agency_name=agencies.get(t.agency_id) if t.agency_id else None,
@@ -245,6 +321,10 @@ class PlatformTasksManager:
             priority=payload.priority,
             task_type=payload.task_type,
             due_at=payload.due_at,
+            scheduled_at=payload.scheduled_at,
+            scheduled_timezone=payload.scheduled_timezone,
+            duration_minutes=payload.duration_minutes,
+            location=payload.location,
             agency_id=payload.agency_id,
             assigned_to_agent_id=assignee,
             created_by_agent_id=actor.id,
@@ -278,6 +358,26 @@ class PlatformTasksManager:
             task.task_type = payload.task_type
         if "due_at" in fields:
             task.due_at = payload.due_at
+        if "scheduled_at" in fields:
+            task.scheduled_at = payload.scheduled_at
+            if payload.scheduled_at is None:
+                task.scheduled_timezone = None
+        if "scheduled_timezone" in fields and payload.scheduled_timezone is not None:
+            # Prism exact: a timezone-only edit KEEPS the wall clock the
+            # operator picked and moves the stored UTC instant.
+            if (
+                "scheduled_at" not in fields
+                and task.scheduled_at is not None
+                and task.scheduled_timezone
+                and payload.scheduled_timezone != task.scheduled_timezone
+            ):
+                local = task.scheduled_at.astimezone(ZoneInfo(task.scheduled_timezone))
+                task.scheduled_at = local.replace(tzinfo=ZoneInfo(payload.scheduled_timezone))
+            task.scheduled_timezone = payload.scheduled_timezone
+        if "duration_minutes" in fields:
+            task.duration_minutes = payload.duration_minutes
+        if "location" in fields:
+            task.location = payload.location
         if "agency_id" in fields:
             if payload.agency_id is not None:
                 await self._validate_agency(payload.agency_id)
@@ -333,6 +433,12 @@ class PlatformTasksManager:
         task = await self._get_or_404(task_id)
         await self.db.delete(task)
         await self.db.commit()
+
+    async def calendar_link(self, task_id: uuid.UUID) -> CalendarLinkResponse:
+        task = await self._get_or_404(task_id)
+        if task.scheduled_at is None:
+            raise BadRequestError("This task has no scheduled time.", code="task.not_scheduled")
+        return build_calendar_link(task, await self._agency_name(task.agency_id))
 
     async def summary(self) -> PlatformTaskSummary:
         return PlatformTaskSummary(**await self.repository.summary())

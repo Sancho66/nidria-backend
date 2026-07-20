@@ -442,3 +442,118 @@ async def test_reassignment_mails_new_assignee_and_creator_deduplicated(
         json={"assigned_to_agent_id": str(superadmin.id)},
     )
     assert [m.to for m in email.outbox] == [superadmin.email]  # deduplicated
+
+
+# --- the appointment block (Prism: scheduled_at + tz + calendar links) ----------------
+
+
+async def test_schedule_validation_and_wall_clock_tz_edit(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    no_tz = await client.post(
+        "/admin/tasks",
+        headers=headers,
+        json={"title": "x", "scheduled_at": "2026-08-01T14:00:00+00:00"},
+    )
+    assert no_tz.status_code == 422  # scheduled_at without timezone
+    bad_tz = await client.post(
+        "/admin/tasks",
+        headers=headers,
+        json={
+            "title": "x",
+            "scheduled_at": "2026-08-01T14:00:00+00:00",
+            "scheduled_timezone": "Mars/Olympus",
+        },
+    )
+    assert bad_tz.status_code == 422  # not an IANA zone
+    meeting = await _create(
+        client,
+        headers,
+        title="Call Eric",
+        task_type="call",
+        scheduled_at="2026-08-01T14:00:00+00:00",
+        scheduled_timezone="Europe/Lisbon",
+        duration_minutes=45,
+        location="Zoom",
+    )
+    assert meeting["scheduled_timezone"] == "Europe/Lisbon"
+    assert meeting["duration_minutes"] == 45 and meeting["location"] == "Zoom"
+
+    # Prism exact: a timezone-only PATCH keeps the wall clock (15:00
+    # Lisbon stays 15:00, now in New York) and moves the UTC instant.
+    patched = await client.patch(
+        f"/admin/tasks/{meeting['id']}",
+        headers=headers,
+        json={"scheduled_timezone": "America/New_York"},
+    )
+    assert patched.status_code == 200, patched.text
+    from zoneinfo import ZoneInfo
+
+    stored = datetime.fromisoformat(patched.json()["scheduled_at"])
+    assert stored.astimezone(ZoneInfo("America/New_York")).strftime("%H:%M") == "15:00"
+
+
+async def test_calendar_link_three_formats(
+    client: AsyncClient,
+    superadmin: Agent,
+    make_agency: MakeAgency,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(superadmin)
+    agency = await make_agency(name="Expat Lisbonne")
+    meeting = await _create(
+        client,
+        headers,
+        title="Point KYB",
+        agency_id=str(agency.id),
+        scheduled_at="2026-08-01T14:00:00+00:00",
+        scheduled_timezone="Europe/Lisbon",
+        duration_minutes=45,
+        location="Zoom",
+    )
+    response = await client.get(f"/admin/tasks/{meeting['id']}/calendar-link", headers=headers)
+    assert response.status_code == 200, response.text
+    link = response.json()
+    assert link["title"] == "Point KYB - Expat Lisbonne"  # agency subject in the title
+    # Google: floating LOCAL time (15:00 Lisbon in August) + ctz=.
+    assert "dates=20260801T150000/20260801T154500" in link["google_url"]
+    assert "ctz=Europe/Lisbon" in link["google_url"]  # quote() keeps the slash
+    # Outlook: offset-baked ISO.
+    assert "startdt=2026-08-01T15%3A00%3A00%2B01%3A00" in link["outlook_url"]
+    # ICS: TZID-prefixed times, no VTIMEZONE block (Prism choice).
+    assert "DTSTART;TZID=Europe/Lisbon:20260801T150000" in link["ics_content"]
+    assert "DTEND;TZID=Europe/Lisbon:20260801T154500" in link["ics_content"]
+    assert "SUMMARY:Point KYB - Expat Lisbonne" in link["ics_content"]
+    assert "VTIMEZONE" not in link["ics_content"]
+
+
+async def test_calendar_link_400_without_schedule(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    response = await client.get(f"/admin/tasks/{task['id']}/calendar-link", headers=headers)
+    assert response.status_code == 400
+
+
+async def test_overdue_and_order_judge_due_at_only(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Prism exact: is_overdue, the overdue filter and the list order
+    look at due_at ONLY — scheduled_at plays no role in either."""
+    headers = agent_headers(superadmin)
+    meeting = await _create(
+        client,
+        headers,
+        title="past-meeting",
+        scheduled_at=(_NOW - timedelta(days=2)).isoformat(),
+        scheduled_timezone="Europe/Paris",
+    )
+    assert meeting["is_overdue"] is False  # past scheduled_at, no due_at: NOT overdue
+    await _create(client, headers, title="due-later", due_at=(_NOW + timedelta(days=5)).isoformat())
+    listed = await client.get("/admin/tasks", headers=headers)
+    titles = [t["title"] for t in listed.json()["items"]]
+    assert titles == ["due-later", "past-meeting"]  # due_at NULLS LAST, scheduled ignored
+    overdue = await client.get("/admin/tasks?is_overdue=true", headers=headers)
+    assert overdue.json()["items"] == []
