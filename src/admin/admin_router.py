@@ -266,7 +266,14 @@ async def download_platform_task_attachment(
     """The documents mechanism: the private bucket is re-streamed by the
     backend (no signed URL anywhere in this product)."""
     file_name, content = await PlatformTasksManager(db).download_attachment(task_id, attachment_id)
-    return file_download_response(file_name, content)
+    # Text notes get their explicit content-type + utf-8 so the browser
+    # renders them; the helper guesses for the binary kinds.
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    text_media = {
+        "txt": "text/plain; charset=utf-8",
+        "md": "text/markdown; charset=utf-8",
+    }.get(ext)
+    return file_download_response(file_name, content, media_type=text_media)
 
 
 @router.delete("/tasks/{task_id}/attachments/{attachment_id}", status_code=204)

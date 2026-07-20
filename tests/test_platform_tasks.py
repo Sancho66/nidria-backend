@@ -907,3 +907,47 @@ async def test_watchers_cascade_on_task_delete(
 
     rows = (await db_session.execute(select(PlatformTaskWatcher))).scalars().all()
     assert rows == []  # CASCADE took the rows
+
+
+# --- .txt / .md attachments (micro-lot 2026-07-21) ------------------------------------
+
+
+async def test_txt_and_md_attachments_upload_and_download_content_type(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    cases = {
+        "notes.txt": ("text/plain", b"Relance faite le 21/07."),
+        "brief.md": ("text/markdown", b"# Brief\n- point 1\n- point 2"),
+    }
+    for name, (expected_media, body) in cases.items():
+        up = await client.post(
+            f"/admin/tasks/{task['id']}/attachments",
+            headers=headers,
+            files={"file": (name, body, "application/octet-stream")},
+        )
+        assert up.status_code == 201, up.text
+        aid = up.json()["id"]
+        dl = await client.get(
+            f"/admin/tasks/{task['id']}/attachments/{aid}/download", headers=headers
+        )
+        assert dl.status_code == 200
+        assert dl.content == body
+        # explicit content-type + utf-8 at re-stream
+        assert dl.headers["content-type"] == f"{expected_media}; charset=utf-8"
+        assert name in dl.headers["content-disposition"]  # disposition unchanged
+
+
+async def test_attachment_out_of_task_whitelist_still_415(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    response = await client.post(
+        f"/admin/tasks/{task['id']}/attachments",
+        headers=headers,
+        files={"file": ("archive.zip", b"PK\x03\x04", "application/zip")},
+    )
+    assert response.status_code == 415, response.text
+    assert storage.mock_store == {}

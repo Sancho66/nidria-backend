@@ -120,6 +120,21 @@ async def test_disallowed_extension_422(
     assert storage.mock_store == {}
 
 
+async def test_case_documents_still_reject_txt_and_md(
+    docs_client: AsyncClient, member: Agent, case: ClientCase, agent_headers: AuthHeaders
+) -> None:
+    """Proves the task-attachment whitelist (which DOES take txt/md) is
+    NOT shared with case documents: a .txt/.md on a dossier stays 422."""
+    for name in ("notes.txt", "brief.md"):
+        response = await docs_client.post(
+            f"/cases/{case.id}/documents",
+            headers=agent_headers(member),
+            files=_file(name=name, content=b"x"),
+        )
+        assert response.status_code == 422, response.text
+    assert storage.mock_store == {}
+
+
 async def test_size_limit_413(
     docs_client: AsyncClient,
     member: Agent,

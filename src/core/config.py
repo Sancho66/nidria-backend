@@ -89,6 +89,17 @@ class Settings(BaseSettings):
     # photos — doc/docx waits for a real ask)
     max_document_size_mb: int = 10
     allowed_document_extensions: Annotated[list[str], NoDecode] = ["pdf", "jpg", "jpeg", "png"]
+    # Task attachments are a SEPARATE whitelist (superadmin ops backlog):
+    # they also take .txt/.md notes. Deliberately NOT shared with the
+    # case-documents list above — documents must never accept txt/md here.
+    allowed_task_attachment_extensions: Annotated[list[str], NoDecode] = [
+        "pdf",
+        "jpg",
+        "jpeg",
+        "png",
+        "txt",
+        "md",
+    ]
 
     # API
     cors_origins: Annotated[list[str], NoDecode] = [
@@ -160,7 +171,12 @@ class Settings(BaseSettings):
         # (e.g. a live run shadowing the local tunnel URL), not become "".
         return v or None
 
-    @field_validator("cors_origins", "allowed_document_extensions", mode="before")
+    @field_validator(
+        "cors_origins",
+        "allowed_document_extensions",
+        "allowed_task_attachment_extensions",
+        mode="before",
+    )
     @classmethod
     def _parse_comma_list(cls, v: str | list[str]) -> list[str]:
         if isinstance(v, str):

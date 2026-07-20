@@ -603,10 +603,10 @@ class PlatformTasksManager:
         if not filename:
             raise ValidationError("A file name is required.", code="task.attachment_no_name")
         extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if extension not in settings.allowed_document_extensions:
+        if extension not in settings.allowed_task_attachment_extensions:
             raise UnsupportedMediaTypeError(
                 f"File type .{extension or '?'} is not accepted. "
-                f"Allowed: {', '.join(settings.allowed_document_extensions)}.",
+                f"Allowed: {', '.join(settings.allowed_task_attachment_extensions)}.",
                 code="task.attachment_type_unsupported",
             )
         content = await file.read()
