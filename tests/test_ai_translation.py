@@ -17,9 +17,9 @@ finally works on them), human retouches overwritten BY CONTRACT; (i)
 REPAIR pass, FIELD grain (live 2026-07-06: the model echoes verbatim an
 item whose text is not in the declared source language): a botched item
 is re-asked ALONE with a stricter instruction and the lot survives; a
-still-botched repair fails the JOB but the lot's valid fields are
-written and debited pro rata; protected latin terms in a valid ru
-translation never trigger the repair."""
+still-botched repair marks the job done_with_gaps (option A, 2026-07-21)
+— NOT failed — writing the valid fields and EXPOSING the residual key;
+protected latin terms in a valid ru translation never trigger the repair."""
 
 import uuid
 from typing import Any
@@ -647,6 +647,7 @@ async def test_salvage_pass_reasks_only_the_botched_item(
     job_id = started.json()["translation_job_id"]
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
     assert status["status"] == "done", status  # the lot SURVIVED the slip
+    assert status["failed_keys"] == []  # rescued by the repair, no residue
     assert status["progress"] == {"done": N_TARGETS, "total": N_TARGETS}
 
     # N+1 calls total: N lots + 1 repair, and the repair re-asked ONLY the
@@ -662,16 +663,18 @@ async def test_salvage_pass_reasks_only_the_botched_item(
     assert template.name_i18n["ru"].startswith("[ru] Перевод")  # the re-ask landed
 
 
-async def test_persistent_repair_failure_keeps_the_valid_fields(
+async def test_persistent_residue_is_done_with_gaps_not_failed(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
     agent_headers: AuthHeaders,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both the batch AND the repair come back wrong for ONE field → the
-    job fails naming it, but the lot's VALID fields are written and
-    debited pro rata (field grain, not lot grain)."""
+    """Both the batch AND the repair come back wrong for ONE RU field
+    (option A, 2026-07-21): the job is done_with_gaps — NOT failed — its
+    VALID fields are written and debited pro rata, and the residual key
+    is EXPOSED for manual review. A job that wrote the majority is never
+    failed; failed is reserved for a true (nothing-written) failure."""
     headers = agent_headers(admin)
     tid = await _template_with_content(client, headers)
     calls: list[dict[str, Any]] = []
@@ -683,11 +686,12 @@ async def test_persistent_repair_failure_keeps_the_valid_fields(
     assert started.status_code == 202, started.text
     job_id = started.json()["translation_job_id"]
     status = (await client.get(f"/journeys/translate-jobs/{job_id}", headers=headers)).json()
-    assert status["status"] == "failed", status
-    assert status["error"] == "ai.translation_failed"
-    # the ru lot never completed:
-    assert status["progress"] == {"done": N_TARGETS - 1, "total": N_TARGETS}
-    assert status["translated_keys"] == (N_TARGETS - 1) * 2 + 1  # ...but its valid field IS written
+    assert status["status"] == "done_with_gaps", status  # NOT failed
+    assert status["error"] is None
+    assert status["failed_keys"] == ["ru:template.name"]  # the residue, exposed
+    # Every lot was processed — the bar completes even with a gap.
+    assert status["progress"] == {"done": N_TARGETS, "total": N_TARGETS}
+    assert status["translated_keys"] == (N_TARGETS - 1) * 2 + 1  # the valid fields written
     # Debit pro rata: the ru lot cost 2 calls for 2 fields, 1 written →
     # ceil(2 x 1/2) = 1 call-equivalent on top of the clean lots.
     assert status["points_charged"] == N_TARGETS * POINTS_PER_CALL
@@ -695,7 +699,7 @@ async def test_persistent_repair_failure_keeps_the_valid_fields(
     db_session.expire_all()
     template = await db_session.get(JourneyTemplate, uuid.UUID(tid))
     assert template is not None
-    assert "ru" not in template.name_i18n  # nothing English ever written
+    assert "ru" not in template.name_i18n  # the residue was never written
     assert template.name_i18n["pt"] == "[pt] Résidence D7"  # completed lots kept
     step = await _fresh_step(db_session, tid)
     assert step.name_i18n["ru"].startswith("[ru] Перевод")  # the VALID ru field landed

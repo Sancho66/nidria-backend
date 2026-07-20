@@ -27903,6 +27903,14 @@
             ],
             "title": "Error"
           },
+          "failed_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Failed Keys",
+            "default": []
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -27929,7 +27937,7 @@
           "updated_at"
         ],
         "title": "TranslationJobResponse",
-        "description": "An async translation job — progress.done/progress.total IS the\nprogress bar; poll GET /journeys/translate-jobs/{id} until\ndone|failed. One lot = one language."
+        "description": "An async translation job — progress.done/progress.total IS the\nprogress bar; poll GET /journeys/translate-jobs/{id} until\ndone|done_with_gaps|failed. One lot = one language."
       },
       "UnsectionedFields": {
         "properties": {

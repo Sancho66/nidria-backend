@@ -69,6 +69,9 @@ logger = logging.getLogger(__name__)
 PENDING = "pending"
 RUNNING = "running"
 DONE = "done"
+# The field-grain wrote the majority; a residue resisted even the repair.
+# NOT a failure — the good fields are written and the residue is exposed.
+DONE_WITH_GAPS = "done_with_gaps"
 FAILED = "failed"
 
 # Test hook: the background worker opens its OWN session (the request one
@@ -156,6 +159,7 @@ def job_response(job: AiTranslationJob) -> TranslationJobResponse:
         translated_keys=job.translated_keys,
         points_charged=job.points_charged,
         error=job.error,
+        failed_keys=list(job.failed_keys or []),
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -435,24 +439,26 @@ async def execute_job(
                         job.points_charged += points
                         job.translated_keys += len(written)
                 if failed_keys:
-                    # FIELD-grain failure: keep (commit) the fields that
-                    # made it, fail the job naming the resistant ones.
-                    job.status = FAILED
-                    job.error = "ai.translation_failed"
-                    await db.commit()
+                    # FIELD-grain GAPS (option A): the good fields ARE written
+                    # (above); the residue is recorded and EXPOSED, the lot is
+                    # still processed — the job does NOT fail on a residue.
+                    job.failed_keys = [
+                        *(job.failed_keys or []),
+                        *(f"{lang}:{k}" for k in failed_keys),
+                    ]
                     logger.warning(
                         "AI translation job %s: %d/%d %s field(s) still invalid "
-                        "after the repair pass: %s",
+                        "after the repair pass (kept as gaps): %s",
                         job_id,
                         len(failed_keys),
                         len(sendable),
                         lang,
                         failed_keys,
                     )
-                    return
                 job.progress_done += 1
-                await db.commit()  # progress + this lot's fills land together
-            job.status = DONE
+                await db.commit()  # progress + this lot's fills (+ gaps) land together
+            # done_with_gaps iff a residue survived; DONE only when 0 residue.
+            job.status = DONE_WITH_GAPS if job.failed_keys else DONE
             await UsageManager(db).emit(
                 agency_id=job.agency_id,
                 event_type="ai.translation_used",

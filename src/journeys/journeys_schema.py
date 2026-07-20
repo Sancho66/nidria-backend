@@ -169,17 +169,22 @@ class JobProgress(BaseModel):
 class TranslationJobResponse(BaseModel):
     """An async translation job — progress.done/progress.total IS the
     progress bar; poll GET /journeys/translate-jobs/{id} until
-    done|failed. One lot = one language."""
+    done|done_with_gaps|failed. One lot = one language."""
 
     id: uuid.UUID
     translation_job_id: uuid.UUID  # alias of id (the ticket's name)
     template_id: uuid.UUID
-    status: str  # pending | running | done | failed
+    # done = 0 residue ; done_with_gaps = good fields written, some keys
+    # need manual review (see failed_keys) ; failed = nothing written
+    # (parsing/network/upstream — a true failure).
+    status: str  # pending | running | done | done_with_gaps | failed
     langs: list[str]
     progress: JobProgress
     translated_keys: int
     points_charged: int
     error: str | None
+    # "{lang}:{content_key}" of the keys to review; empty unless done_with_gaps.
+    failed_keys: list[str] = []
     created_at: datetime
     updated_at: datetime
 

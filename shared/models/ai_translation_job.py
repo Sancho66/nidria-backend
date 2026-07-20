@@ -25,13 +25,22 @@ class AiTranslationJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     template_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    status: Mapped[str] = mapped_column(String(20), nullable=False)  # pending|running|done|failed
+    status: Mapped[str] = mapped_column(  # pending|running|done|done_with_gaps|failed
+        String(20), nullable=False
+    )
     langs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     progress_done: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     progress_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     translated_keys: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     points_charged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error: Mapped[str | None] = mapped_column(String(120))
+    # Residual keys the model could not translate acceptably even after the
+    # repair pass (e.g. RU field still not Cyrillic): the good fields are
+    # written, these are EXPOSED for manual review. "{lang}:{content_key}".
+    # A job with residual keys is done_with_gaps, never failed.
+    failed_keys: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
 
 class AiTranslationSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
