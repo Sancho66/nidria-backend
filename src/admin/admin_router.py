@@ -17,6 +17,7 @@ from src.admin.admin_schema import AdminAgenciesResponse
 from src.admin.platform_tasks_manager import PlatformTasksManager
 from src.admin.platform_tasks_schema import (
     CalendarLinkResponse,
+    CompleteTaskRequest,
     PlatformOperatorRead,
     PlatformTaskAttachmentRead,
     PlatformTaskCreate,
@@ -206,9 +207,16 @@ async def delete_platform_task(task_id: uuid.UUID, agent: AgentDep, db: DbDep) -
 
 @router.post("/tasks/{task_id}/complete", response_model=PlatformTaskRead)
 async def complete_platform_task(
-    task_id: uuid.UUID, agent: AgentDep, db: DbDep
+    task_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    body: CompleteTaskRequest | None = None,
 ) -> PlatformTaskRead:
-    return await PlatformTasksManager(db).complete(agent, task_id)
+    """Optional body: completion_message, the client-facing note carried
+    by the done email (verbatim, never translated) and stored for life."""
+    return await PlatformTasksManager(db).complete(
+        agent, task_id, completion_message=body.completion_message if body else None
+    )
 
 
 @router.post("/tasks/{task_id}/reopen", response_model=PlatformTaskRead)

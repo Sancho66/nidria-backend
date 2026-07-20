@@ -1901,6 +1901,7 @@
           "admin"
         ],
         "summary": "Complete Platform Task",
+        "description": "Optional body: completion_message, the client-facing note carried\nby the done email (verbatim, never translated) and stored for life.",
         "operationId": "complete_platform_task_admin_tasks__task_id__complete_post",
         "security": [
           {
@@ -1919,6 +1920,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CompleteTaskRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -18031,6 +18049,25 @@
         ],
         "title": "CommentUpdateRequest"
       },
+      "CompleteTaskRequest": {
+        "properties": {
+          "completion_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CompleteTaskRequest",
+        "description": "Optional body of POST /complete: the client-facing note carried\nby the done email (copy-paste), stored on the task."
+      },
       "CompletionMode": {
         "type": "string",
         "enum": [
@@ -24036,6 +24073,17 @@
             ],
             "title": "Completed At"
           },
+          "completion_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Message"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -24069,6 +24117,7 @@
           "completed_by_agent_id",
           "completed_by_name",
           "completed_at",
+          "completion_message",
           "created_at",
           "updated_at"
         ],
@@ -24253,6 +24302,17 @@
               }
             ],
             "title": "Assigned To Agent Id"
+          },
+          "completion_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Message"
           }
         },
         "additionalProperties": false,

@@ -709,3 +709,87 @@ async def test_attachments_live_on_done_task(
         f"/admin/tasks/{task['id']}/attachments/{attachment_id}", headers=headers
     )
     assert deleted.status_code == 204  # delete allowed on done
+
+
+# --- completion_message (client-facing note on done) ----------------------------------
+
+
+async def test_complete_with_message_persists_and_mails_verbatim(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(
+        client,
+        agent_headers(superadmin),
+        assigned_to_agent_id=str(superadmin2.id),
+    )
+    email.outbox.clear()
+    note = "Bonjour Monsieur Kovacs,\nvotre visa D7 est approuvé."
+    done = await client.post(
+        f"/admin/tasks/{task['id']}/complete",
+        headers=agent_headers(superadmin2),
+        json={"completion_message": note},
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["completion_message"] == note  # persisted
+    [mail] = email.outbox
+    assert mail.to == superadmin.email  # the creator, existing rules untouched
+    assert "Message pour le client (à copier-coller) :" in mail.body  # localized heading
+    assert note in mail.body  # VERBATIM, never translated
+    assert "votre visa D7 est approuvé." in mail.html  # escaped block present in html
+
+
+async def test_complete_without_message_mails_without_block(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    email.outbox.clear()
+    done = await client.post(
+        f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin2)
+    )
+    assert done.status_code == 200
+    [mail] = email.outbox
+    assert "Message pour le client" not in mail.body  # no empty block
+
+
+async def test_self_complete_with_message_persists_without_mail(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    email.outbox.clear()
+    done = await client.post(
+        f"/admin/tasks/{task['id']}/complete",
+        headers=headers,
+        json={"completion_message": "Note pour plus tard."},
+    )
+    assert done.json()["completion_message"] == "Note pour plus tard."
+    assert email.outbox == []  # actor == creator == assignee: zero mail, message kept
+
+
+async def test_message_patchable_after_done_and_survives_reopen(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    await client.post(
+        f"/admin/tasks/{task['id']}/complete",
+        headers=headers,
+        json={"completion_message": "Version avec une coquile."},
+    )
+    patched = await client.patch(
+        f"/admin/tasks/{task['id']}",
+        headers=headers,
+        json={"completion_message": "Version sans coquille."},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["completion_message"] == "Version sans coquille."  # corrected
+
+    reopened = await client.post(f"/admin/tasks/{task['id']}/reopen", headers=headers)
+    assert reopened.json()["status"] == "todo"
+    assert reopened.json()["completion_message"] == "Version sans coquille."  # lives forever
+    unknown = await client.post(
+        f"/admin/tasks/{task['id']}/complete", headers=headers, json={"sticky": True}
+    )
+    assert unknown.status_code == 422  # extra=forbid on the complete body

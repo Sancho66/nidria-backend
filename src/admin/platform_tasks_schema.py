@@ -81,6 +81,7 @@ class PlatformTaskUpdate(BaseModel):
     location: str | None = Field(default=None, max_length=500)
     agency_id: uuid.UUID | None = None
     assigned_to_agent_id: uuid.UUID | None = None
+    completion_message: str | None = None
 
     @field_validator("scheduled_timezone")
     @classmethod
@@ -98,6 +99,15 @@ class PlatformTaskUpdate(BaseModel):
         ):
             raise ValueError("scheduled_timezone is required when scheduled_at is provided")
         return self
+
+
+class CompleteTaskRequest(BaseModel):
+    """Optional body of POST /complete: the client-facing note carried
+    by the done email (copy-paste), stored on the task."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    completion_message: str | None = None
 
 
 class PlatformTaskRead(BaseModel):
@@ -123,6 +133,7 @@ class PlatformTaskRead(BaseModel):
     completed_by_agent_id: uuid.UUID | None
     completed_by_name: str | None
     completed_at: datetime | None
+    completion_message: str | None
     created_at: datetime
     updated_at: datetime
 

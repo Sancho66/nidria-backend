@@ -212,6 +212,7 @@ class PlatformTasksManager:
                     agents.get(t.completed_by_agent_id) if t.completed_by_agent_id else None
                 ),
                 completed_at=t.completed_at,
+                completion_message=t.completion_message,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
             )
@@ -299,12 +300,15 @@ class PlatformTasksManager:
         if recipient is None:
             return None
         email_addr, lang = recipient
+        message = (task.completion_message or "").strip()
         content = task_status_changed_email(
             title=task.title,
             new_status=task.status,
             actor_name=self._actor_name(actor),
             tasks_url=f"{get_settings().frontend_url}/admin/tasks",
             lang=lang,
+            # The conditional block: done only, and only a real message.
+            client_message=message if (task.status == "done" and message) else None,
         )
         return email_addr, content
 
@@ -392,6 +396,10 @@ class PlatformTasksManager:
             if payload.agency_id is not None:
                 await self._validate_agency(payload.agency_id)
             task.agency_id = payload.agency_id
+        if "completion_message" in fields:
+            # PATCHable after the fact (correcting a posted note); reopen
+            # never clears it — provided content lives forever.
+            task.completion_message = payload.completion_message
         if "assigned_to_agent_id" in fields and payload.assigned_to_agent_id is not None:
             await self._validate_assignee(payload.assigned_to_agent_id)
             task.assigned_to_agent_id = payload.assigned_to_agent_id
@@ -419,9 +427,15 @@ class PlatformTasksManager:
         return (await self._project([task]))[0]
 
     async def _flip_status(
-        self, actor: Agent, task_id: uuid.UUID, new_status: str
+        self,
+        actor: Agent,
+        task_id: uuid.UUID,
+        new_status: str,
+        completion_message: str | None = None,
     ) -> PlatformTaskRead:
         task = await self._get_or_404(task_id)
+        if completion_message is not None:
+            task.completion_message = completion_message
         changed = task.status != new_status
         self._apply_status(task, new_status, actor)
         await self.db.commit()
@@ -433,8 +447,12 @@ class PlatformTasksManager:
                 await self._notify({creator: mail})
         return (await self._project([task]))[0]
 
-    async def complete(self, actor: Agent, task_id: uuid.UUID) -> PlatformTaskRead:
-        return await self._flip_status(actor, task_id, "done")
+    async def complete(
+        self, actor: Agent, task_id: uuid.UUID, completion_message: str | None = None
+    ) -> PlatformTaskRead:
+        return await self._flip_status(
+            actor, task_id, "done", completion_message=completion_message
+        )
 
     async def reopen(self, actor: Agent, task_id: uuid.UUID) -> PlatformTaskRead:
         return await self._flip_status(actor, task_id, "todo")

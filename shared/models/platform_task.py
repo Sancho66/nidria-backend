@@ -54,3 +54,6 @@ class PlatformTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("agent.id", ondelete="SET NULL")
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Optional operator note carried by the done email (copy-paste for the
+    # client). Provided content lives forever: reopen never clears it.
+    completion_message: Mapped[str | None] = mapped_column(Text)

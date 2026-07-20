@@ -1592,42 +1592,49 @@ _TASK_STATUS_CHANGED = {
         "subject": "Nidria : tâche mise à jour : {title}",
         "title": "Une tâche a changé de statut",
         "intro": '{actor} a fait passer la tâche "{title}" au statut : {status}.',
+        "client_block": "Message pour le client (à copier-coller) :",
         "button": "Ouvrir les tâches",
     },
     "en": {
         "subject": "Nidria: task updated: {title}",
         "title": "A task changed status",
         "intro": '{actor} moved the task "{title}" to the status: {status}.',
+        "client_block": "Message for the client (copy and paste):",
         "button": "Open the tasks",
     },
     "es": {
         "subject": "Nidria: tarea actualizada: {title}",
         "title": "Una tarea ha cambiado de estado",
         "intro": '{actor} ha pasado la tarea "{title}" al estado: {status}.',
+        "client_block": "Mensaje para el cliente (para copiar y pegar):",
         "button": "Abrir las tareas",
     },
     "ru": {
         "subject": "Nidria: задача обновлена: {title}",
         "title": "Статус задачи изменился",
         "intro": '{actor} перевёл(а) задачу "{title}" в статус: {status}.',
+        "client_block": "Сообщение для клиента (скопируйте и вставьте):",
         "button": "Открыть задачи",
     },
     "pt": {
         "subject": "Nidria: tarefa atualizada: {title}",
         "title": "Uma tarefa mudou de estado",
         "intro": '{actor} passou a tarefa "{title}" ao estado: {status}.',
+        "client_block": "Mensagem para o cliente (para copiar e colar):",
         "button": "Abrir as tarefas",
     },
     "it": {
         "subject": "Nidria: compito aggiornato: {title}",
         "title": "Un compito ha cambiato stato",
         "intro": '{actor} ha portato il compito "{title}" allo stato: {status}.',
+        "client_block": "Messaggio per il cliente (da copiare e incollare):",
         "button": "Aprire i compiti",
     },
     "hu": {
         "subject": "Nidria: feladat frissítve: {title}",
         "title": "Egy feladat állapota megváltozott",
         "intro": '{actor} a(z) "{title}" feladatot új állapotba tette: {status}.',
+        "client_block": "Üzenet az ügyfélnek (másolja és illessze be):",
         "button": "Feladatok megnyitása",
     },
 }
@@ -1689,17 +1696,21 @@ def task_status_changed_email(
     actor_name: str,
     tasks_url: str,
     lang: str = "fr",
+    client_message: str | None = None,
 ) -> EmailContent:
     """Prism trigger: status change, to the task CREATOR (when the actor
-    is somebody else)."""
+    is somebody else). `client_message` (done only): the operator's note,
+    VERBATIM — never translated; _render escapes it and preserves the
+    line breaks."""
     s = _pick(_TASK_STATUS_CHANGED, lang)
     labels = _TASK_STATUS_LABELS.get(lang, _TASK_STATUS_LABELS["fr"])
     status_label = labels.get(new_status, new_status)
+    body = f"{s['client_block']}\n{client_message}" if client_message else ""
     return _render(
         subject=s["subject"].format(title=title),
         title=s["title"],
         intro=s["intro"].format(actor=actor_name, title=title, status=status_label),
-        body_text="",
+        body_text=body,
         button_label=s["button"],
         button_url=tasks_url,
         lang=lang,
