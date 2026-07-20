@@ -18,8 +18,10 @@ from shared.models.platform_task import (
     PLATFORM_TASK_STATUSES,
     PlatformTask,
 )
+from shared.models.rbac import Role
 from src.admin.platform_tasks_repository import PlatformTasksRepository
 from src.admin.platform_tasks_schema import (
+    PlatformOperatorRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
     PlatformTaskRead,
@@ -95,6 +97,9 @@ class PlatformTasksManager:
                 assigned_to_name=agents.get(t.assigned_to_agent_id, ""),
                 created_by_agent_id=t.created_by_agent_id,
                 completed_by_agent_id=t.completed_by_agent_id,
+                completed_by_name=(
+                    agents.get(t.completed_by_agent_id) if t.completed_by_agent_id else None
+                ),
                 completed_at=t.completed_at,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
@@ -203,3 +208,21 @@ class PlatformTasksManager:
 
     async def summary(self) -> PlatformTaskSummary:
         return PlatformTaskSummary(**await self.repository.summary())
+
+    async def list_operators(self) -> list[PlatformOperatorRead]:
+        rows = (
+            (
+                await self.db.execute(
+                    select(Agent)
+                    .join(Role, Agent.role_id == Role.id)
+                    .where(Role.is_system.is_(True), Role.name.in_(PLATFORM_ROLE_NAMES))
+                    .order_by(Agent.first_name, Agent.last_name)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            PlatformOperatorRead(agent_id=a.id, name=f"{a.first_name} {a.last_name}".strip())
+            for a in rows
+        ]

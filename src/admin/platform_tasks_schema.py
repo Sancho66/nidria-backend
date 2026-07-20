@@ -59,6 +59,7 @@ class PlatformTaskRead(BaseModel):
     assigned_to_name: str
     created_by_agent_id: uuid.UUID | None
     completed_by_agent_id: uuid.UUID | None
+    completed_by_name: str | None
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -69,6 +70,14 @@ class PlatformTaskListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class PlatformOperatorRead(BaseModel):
+    """One assignable platform operator (superadmin) — the task form
+    selector. No pagination: they are two."""
+
+    agent_id: uuid.UUID
+    name: str
 
 
 class PlatformTaskSummary(BaseModel):

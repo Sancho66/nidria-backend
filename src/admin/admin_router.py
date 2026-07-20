@@ -16,6 +16,7 @@ from src.admin.admin_manager import AdminManager
 from src.admin.admin_schema import AdminAgenciesResponse
 from src.admin.platform_tasks_manager import PlatformTasksManager
 from src.admin.platform_tasks_schema import (
+    PlatformOperatorRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
     PlatformTaskRead,
@@ -41,6 +42,7 @@ BINDINGS = [
     RouteBinding("GET", "/admin/tasks", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE),
     RouteBinding("POST", "/admin/tasks", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE),
     RouteBinding("GET", "/admin/tasks/summary", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE),
+    RouteBinding("GET", "/admin/operators", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE),
     RouteBinding(
         "PATCH", "/admin/tasks/{task_id}", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE
     ),
@@ -173,3 +175,10 @@ async def complete_platform_task(
 @router.post("/tasks/{task_id}/reopen", response_model=PlatformTaskRead)
 async def reopen_platform_task(task_id: uuid.UUID, agent: AgentDep, db: DbDep) -> PlatformTaskRead:
     return await PlatformTasksManager(db).reopen(agent, task_id)
+
+
+@router.get("/operators", response_model=list[PlatformOperatorRead])
+async def list_platform_operators(agent: AgentDep, db: DbDep) -> list[PlatformOperatorRead]:
+    """The assignable platform operators (superadmin role holders) for
+    the task form selector — same gate as the tasks themselves."""
+    return await PlatformTasksManager(db).list_operators()

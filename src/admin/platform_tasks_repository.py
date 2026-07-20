@@ -90,9 +90,12 @@ class PlatformTasksRepository:
     async def display_names(
         self, tasks: list[PlatformTask]
     ) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, str]]:
-        """(agency names, agent full names) for the rows — two IN queries."""
+        """(agency names, agent full names) for the rows — two IN queries.
+        Covers assignees AND completers (one widened IN, not a third query)."""
         agency_ids = {t.agency_id for t in tasks if t.agency_id is not None}
-        agent_ids = {t.assigned_to_agent_id for t in tasks}
+        agent_ids = {t.assigned_to_agent_id for t in tasks} | {
+            t.completed_by_agent_id for t in tasks if t.completed_by_agent_id is not None
+        }
         agencies: dict[uuid.UUID, str] = {}
         if agency_ids:
             rows = await self.db.execute(

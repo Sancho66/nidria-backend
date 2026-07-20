@@ -278,3 +278,34 @@ async def test_agency_deletion_orphans_the_task_not_deletes_it(
         await db_session.execute(select(PlatformTask).where(PlatformTask.id == task_id))
     ).scalar_one()
     assert row.agency_id is None  # SET NULL: the work item survives its subject
+
+
+# --- micro-lot front gaps (2026-07-20): completer name + operators selector -----------
+
+
+async def test_completed_by_name_served(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    done = await client.post(f"/admin/tasks/{task['id']}/complete", headers=headers)
+    body = done.json()
+    expected = f"{superadmin.first_name} {superadmin.last_name}".strip()
+    assert body["completed_by_name"] == expected  # the real name, not an id coincidence
+    listed = await client.get("/admin/tasks", headers=headers)
+    assert listed.json()["items"][0]["completed_by_name"] == expected
+
+
+async def test_operators_list_and_gate(
+    client: AsyncClient,
+    superadmin: Agent,
+    agency_admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    response = await client.get("/admin/operators", headers=agent_headers(superadmin))
+    assert response.status_code == 200, response.text
+    operators = response.json()
+    assert {o["agent_id"] for o in operators} == {str(superadmin.id)}  # superadmins only
+    assert operators[0]["name"]
+    denied = await client.get("/admin/operators", headers=agent_headers(agency_admin))
+    assert denied.status_code == 403
