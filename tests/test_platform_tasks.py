@@ -300,14 +300,16 @@ async def test_completed_by_name_served(
 async def test_operators_list_and_gate(
     client: AsyncClient,
     superadmin: Agent,
+    superadmin2: Agent,
     agency_admin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
     response = await client.get("/admin/operators", headers=agent_headers(superadmin))
     assert response.status_code == 200, response.text
     operators = response.json()
-    assert {o["agent_id"] for o in operators} == {str(superadmin.id)}  # superadmins only
-    assert operators[0]["name"]
+    # BOTH active operators, and ONLY them (the agency admin next door is out).
+    assert {o["agent_id"] for o in operators} == {str(superadmin.id), str(superadmin2.id)}
+    assert all(o["name"] for o in operators)
     denied = await client.get("/admin/operators", headers=agent_headers(agency_admin))
     assert denied.status_code == 403
 

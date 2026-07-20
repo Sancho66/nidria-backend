@@ -102,7 +102,9 @@ async def list_agencies(
     sort: str = "created_at",
     order: str = "desc",
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    # le=200: the task form loads the full agency selector in one page
+    # (the front asks 200; a 422 here silently EMPTIED the selector).
+    page_size: int = Query(20, ge=1, le=200),
     trial_expiring_within_days: int | None = Query(None, ge=0),
     onboarding_incomplete: bool = False,
     billing_status: str | None = Query(None, pattern="^(active|past_due|canceled)$"),

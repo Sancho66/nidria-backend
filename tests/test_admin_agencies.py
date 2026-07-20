@@ -255,3 +255,22 @@ async def test_query_count_is_constant_for_3_and_25_agencies(
     assert await _count_queries(db_session, page_size=1) == count_25
     # A small, fixed number (main + count + the batched adoption queries).
     assert count_25 <= 6
+
+
+async def test_full_selector_page_size_200_serves_everything(
+    client: AsyncClient,
+    superadmin: Agent,
+    make_agency: MakeAgency,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Regression (task form, 2026-07-20): the front loads the agency
+    selector with page_size=200 — the old le=100 cap answered 422 and
+    the form silently emptied the selector."""
+    for i in range(3):
+        await make_agency(name=f"Agence {i}")
+    response = await client.get(
+        "/admin/agencies?page=1&page_size=200", headers=agent_headers(superadmin)
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["page_size"] == 200 and len(body["items"]) >= 3  # never an empty selector
