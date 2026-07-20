@@ -34,6 +34,7 @@ class PlatformTasksRepository:
         status: str | None,
         include_done: bool,
         priority: str | None,
+        task_type: str | None,
         is_overdue: bool,
         due_before: datetime | None,
         due_after: datetime | None,
@@ -49,6 +50,8 @@ class PlatformTasksRepository:
             query = query.where(PlatformTask.status != "done")
         if priority is not None:
             query = query.where(PlatformTask.priority == priority)
+        if task_type is not None:
+            query = query.where(PlatformTask.task_type == task_type)
         if is_overdue:
             query = query.where(
                 PlatformTask.status != "done", PlatformTask.due_at < datetime.now(UTC)

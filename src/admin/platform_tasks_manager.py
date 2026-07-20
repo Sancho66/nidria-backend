@@ -16,6 +16,7 @@ from shared.models.agent import Agent
 from shared.models.platform_task import (
     PLATFORM_TASK_PRIORITIES,
     PLATFORM_TASK_STATUSES,
+    PLATFORM_TASK_TYPES,
     PlatformTask,
 )
 from shared.models.rbac import Role
@@ -55,6 +56,14 @@ class PlatformTasksManager:
                 code="task.priority_unknown",
             )
 
+    @staticmethod
+    def _validate_task_type(task_type: str) -> None:
+        if task_type not in PLATFORM_TASK_TYPES:
+            raise ValidationError(
+                f"Unknown task type {task_type!r}. Allowed: {list(PLATFORM_TASK_TYPES)}.",
+                code="task.type_unknown",
+            )
+
     async def _validate_assignee(self, agent_id: uuid.UUID) -> None:
         """The assignee must be a platform operator (superadmin role) —
         the Prism 'member of the project' check, platform edition."""
@@ -89,6 +98,7 @@ class PlatformTasksManager:
                 description=t.description,
                 status=t.status,
                 priority=t.priority,
+                task_type=t.task_type,
                 due_at=t.due_at,
                 is_overdue=(t.status != "done" and t.due_at is not None and t.due_at < now),
                 agency_id=t.agency_id,
@@ -140,6 +150,7 @@ class PlatformTasksManager:
 
     async def create(self, actor: Agent, payload: PlatformTaskCreate) -> PlatformTaskRead:
         self._validate_priority(payload.priority)
+        self._validate_task_type(payload.task_type)
         assignee = payload.assigned_to_agent_id or actor.id
         await self._validate_assignee(assignee)
         if payload.agency_id is not None:
@@ -148,6 +159,7 @@ class PlatformTasksManager:
             title=payload.title,
             description=payload.description,
             priority=payload.priority,
+            task_type=payload.task_type,
             due_at=payload.due_at,
             agency_id=payload.agency_id,
             assigned_to_agent_id=assignee,
@@ -172,6 +184,9 @@ class PlatformTasksManager:
         if "priority" in fields and payload.priority is not None:
             self._validate_priority(payload.priority)
             task.priority = payload.priority
+        if "task_type" in fields and payload.task_type is not None:
+            self._validate_task_type(payload.task_type)
+            task.task_type = payload.task_type
         if "due_at" in fields:
             task.due_at = payload.due_at
         if "agency_id" in fields:

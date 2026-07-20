@@ -104,6 +104,7 @@ async def list_platform_tasks(
     status: str | None = None,
     include_done: bool = True,
     priority: str | None = None,
+    task_type: str | None = None,
     is_overdue: bool = False,
     due_before: datetime | None = None,
     due_after: datetime | None = None,
@@ -112,7 +113,9 @@ async def list_platform_tasks(
 ) -> PlatformTaskListResponse:
     """The Prism list order, computed: done last, priority desc, due_at
     asc NULLS LAST. Completion precedence: an explicit `status` beats
-    `include_done=false` (Prism)."""
+    `include_done=false` (Prism). No due_this_week param: the pair
+    due_after/due_before covers any window — the front sends the week
+    bounds it displays (timezone-correct on ITS side)."""
     assignee: uuid.UUID | None = None
     if assigned_to is not None:
         if assigned_to == "me":
@@ -133,6 +136,7 @@ async def list_platform_tasks(
         status=status,
         include_done=include_done,
         priority=priority,
+        task_type=task_type,
         is_overdue=is_overdue,
         due_before=due_before,
         due_after=due_after,

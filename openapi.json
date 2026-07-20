@@ -1534,7 +1534,7 @@
           "admin"
         ],
         "summary": "List Platform Tasks",
-        "description": "The Prism list order, computed: done last, priority desc, due_at\nasc NULLS LAST. Completion precedence: an explicit `status` beats\n`include_done=false` (Prism).",
+        "description": "The Prism list order, computed: done last, priority desc, due_at\nasc NULLS LAST. Completion precedence: an explicit `status` beats\n`include_done=false` (Prism). No due_this_week param: the pair\ndue_after/due_before covers any window — the front sends the week\nbounds it displays (timezone-correct on ITS side).",
         "operationId": "list_platform_tasks_admin_tasks_get",
         "security": [
           {
@@ -1617,6 +1617,22 @@
                 }
               ],
               "title": "Priority"
+            }
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Type"
             }
           },
           {
@@ -1973,6 +1989,37 @@
             }
           }
         }
+      }
+    },
+    "/admin/operators": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Platform Operators",
+        "description": "The assignable platform operators (superadmin role holders) for\nthe task form selector — same gate as the tasks themselves.",
+        "operationId": "list_platform_operators_admin_operators_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlatformOperatorRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Platform Operators Admin Operators Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/agencies": {
@@ -23253,6 +23300,26 @@
         "title": "PlannedCostUpdateRequest",
         "description": "Partial correction of a template planned cost."
       },
+      "PlatformOperatorRead": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "name"
+        ],
+        "title": "PlatformOperatorRead",
+        "description": "One assignable platform operator (superadmin) — the task form\nselector. No pagination: they are two."
+      },
       "PlatformTaskCreate": {
         "properties": {
           "title": {
@@ -23289,6 +23356,12 @@
             "title": "Priority",
             "description": "one of ('low', 'medium', 'high', 'urgent')",
             "default": "medium"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type",
+            "description": "one of ('task', 'call', 'meeting', 'follow_up')",
+            "default": "task"
           },
           "due_at": {
             "anyOf": [
@@ -23395,6 +23468,10 @@
             "type": "string",
             "title": "Priority"
           },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
           "due_at": {
             "anyOf": [
               {
@@ -23467,6 +23544,17 @@
             ],
             "title": "Completed By Agent Id"
           },
+          "completed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed By Name"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -23497,6 +23585,7 @@
           "description",
           "status",
           "priority",
+          "task_type",
           "due_at",
           "is_overdue",
           "agency_id",
@@ -23505,6 +23594,7 @@
           "assigned_to_name",
           "created_by_agent_id",
           "completed_by_agent_id",
+          "completed_by_name",
           "completed_at",
           "created_at",
           "updated_at"
@@ -23594,6 +23684,18 @@
             ],
             "title": "Priority",
             "description": "one of ('low', 'medium', 'high', 'urgent')"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type",
+            "description": "one of ('task', 'call', 'meeting', 'follow_up')"
           },
           "due_at": {
             "anyOf": [

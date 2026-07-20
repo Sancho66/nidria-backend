@@ -9,13 +9,18 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from shared.models.platform_task import PLATFORM_TASK_PRIORITIES, PLATFORM_TASK_STATUSES
+from shared.models.platform_task import (
+    PLATFORM_TASK_PRIORITIES,
+    PLATFORM_TASK_STATUSES,
+    PLATFORM_TASK_TYPES,
+)
 
 TaskStatus = str  # validated against PLATFORM_TASK_STATUSES in the manager
 TaskPriority = str  # validated against PLATFORM_TASK_PRIORITIES in the manager
 
 _STATUS_HELP = f"one of {PLATFORM_TASK_STATUSES}"
 _PRIORITY_HELP = f"one of {PLATFORM_TASK_PRIORITIES}"
+_TYPE_HELP = f"one of {PLATFORM_TASK_TYPES}"
 
 
 class PlatformTaskCreate(BaseModel):
@@ -25,6 +30,7 @@ class PlatformTaskCreate(BaseModel):
     description: str | None = None
     status: str | None = Field(default=None, description=_STATUS_HELP)
     priority: str = Field(default="medium", description=_PRIORITY_HELP)
+    task_type: str = Field(default="task", description=_TYPE_HELP)
     due_at: datetime | None = None
     agency_id: uuid.UUID | None = None
     # Defaults to the acting superadmin (the solo-operator fast path).
@@ -38,6 +44,7 @@ class PlatformTaskUpdate(BaseModel):
     description: str | None = None
     status: str | None = Field(default=None, description=_STATUS_HELP)
     priority: str | None = Field(default=None, description=_PRIORITY_HELP)
+    task_type: str | None = Field(default=None, description=_TYPE_HELP)
     due_at: datetime | None = None
     agency_id: uuid.UUID | None = None
     assigned_to_agent_id: uuid.UUID | None = None
@@ -51,6 +58,7 @@ class PlatformTaskRead(BaseModel):
     description: str | None
     status: str
     priority: str
+    task_type: str
     due_at: datetime | None
     is_overdue: bool
     agency_id: uuid.UUID | None

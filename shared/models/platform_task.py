@@ -12,6 +12,7 @@ from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 # migration of every row.
 PLATFORM_TASK_STATUSES: tuple[str, ...] = ("todo", "in_progress", "done")
 PLATFORM_TASK_PRIORITIES: tuple[str, ...] = ("low", "medium", "high", "urgent")
+PLATFORM_TASK_TYPES: tuple[str, ...] = ("task", "call", "meeting", "follow_up")
 
 
 class PlatformTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -29,6 +30,9 @@ class PlatformTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     priority: Mapped[str] = mapped_column(
         String(20), nullable=False, default="medium", server_default="medium"
+    )
+    task_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="task", server_default="task"
     )
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     agency_id: Mapped[uuid.UUID | None] = mapped_column(

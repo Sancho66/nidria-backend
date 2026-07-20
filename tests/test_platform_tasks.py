@@ -309,3 +309,41 @@ async def test_operators_list_and_gate(
     assert operators[0]["name"]
     denied = await client.get("/admin/operators", headers=agent_headers(agency_admin))
     assert denied.status_code == 403
+
+
+# --- task_type (Prism: task/call/meeting/follow_up) -----------------------------------
+
+
+async def test_task_type_at_contract(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    plain = await _create(client, headers)
+    assert plain["task_type"] == "task"  # the default
+    call = await _create(client, headers, title="Appeler Eric", task_type="call")
+    assert call["task_type"] == "call"
+    patched = await client.patch(
+        f"/admin/tasks/{call['id']}", headers=headers, json={"task_type": "meeting"}
+    )
+    assert patched.status_code == 200 and patched.json()["task_type"] == "meeting"
+    bad = await client.post(
+        "/admin/tasks", headers=headers, json={"title": "x", "task_type": "email"}
+    )
+    assert bad.status_code == 422
+    bad_patch = await client.patch(
+        f"/admin/tasks/{call['id']}", headers=headers, json={"task_type": "email"}
+    )
+    assert bad_patch.status_code == 422
+
+
+async def test_task_type_filter(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    await _create(client, headers, title="plain")
+    await _create(client, headers, title="the-call", task_type="call")
+    await _create(client, headers, title="the-followup", task_type="follow_up")
+    response = await client.get("/admin/tasks?task_type=call", headers=headers)
+    assert {t["title"] for t in response.json()["items"]} == {"the-call"}
+    everything = await client.get("/admin/tasks", headers=headers)
+    assert everything.json()["total"] == 3  # no filter, no exclusion
