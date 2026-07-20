@@ -57,7 +57,10 @@ _EXTERNAL_SET = set(EXTERNAL_PERMISSIONS)
 # These gate platform endpoints (agency creation); they convey NO
 # cross-agency data access — the agency_id scoping in repositories and
 # enforce()'s agency-blindness are both untouched.
-PLATFORM_PERMISSIONS: tuple[Permission, ...] = (Permission.AGENCY_CREATE,)
+PLATFORM_PERMISSIONS: tuple[Permission, ...] = (
+    Permission.AGENCY_CREATE,
+    Permission.PLATFORM_TASK_MANAGE,
+)
 _PLATFORM_SET = set(PLATFORM_PERMISSIONS)
 
 SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {

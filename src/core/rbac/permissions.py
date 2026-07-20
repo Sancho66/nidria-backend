@@ -52,6 +52,10 @@ class Permission(StrEnum):
     # per-agency WHERE agency_id scoping in the repositories is untouched and
     # enforce() still ignores agency_id, so a superadmin can read no dossier.
     AGENCY_CREATE = "agency.create"
+    # PLATFORM-scope (same barrier as AGENCY_CREATE): the superadmin internal
+    # task backlog (/admin/tasks). Dedicated so delegating tasks one day never
+    # implies delegating agency creation — recabling is data, not code.
+    PLATFORM_TASK_MANAGE = "platform.task_manage"
     # External-provider permissions (wave B). The `external.` prefix is a
     # STRUCTURAL barrier: these only gate /external/* portal routes (each
     # scoped by assignment), and internal roles never hold them — so an
