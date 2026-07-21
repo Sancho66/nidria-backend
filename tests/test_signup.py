@@ -91,6 +91,11 @@ async def test_full_flow_creates_everything_and_logs_in(
     ).scalar_one()
     assert agency.slug == "neo-agence"
     assert agency.trial_ends_at is not None and agency.referral_code.startswith("NID-")
+    # Self-signup defers the sector choice: born with [] AND flagged so the
+    # front shows the blocking sector-onboarding screen. THIS is the only
+    # path that poses the flag true.
+    assert agency.sectors == []
+    assert agency.sectors_onboarding_required is True
     admin = (
         await db_session.execute(select(Agent).where(Agent.email == "neo@agence.io"))
     ).scalar_one()

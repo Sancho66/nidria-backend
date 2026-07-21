@@ -199,6 +199,7 @@ async def test_wizard_created_agency_demo_case_is_not_counted(
             "admin_email": "boss@wizard.io",
             "admin_first_name": "B",
             "admin_last_name": "O",
+            "sectors": ["consulting"],  # mandatory at superadmin creation
         },
     )
     assert created.status_code == 201, created.text

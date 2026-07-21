@@ -37,6 +37,14 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sectors: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    # True ONLY for a fresh SELF-SIGNUP agency that must still pick its
+    # sector(s) (a blocking onboarding screen). Superadmin-created agencies
+    # (sector mandatory at creation) and ALL existing agencies (migration
+    # default false) are NEVER flagged — the guarantee. Cleared by the
+    # first PATCH that poses >= 1 sector.
+    sectors_onboarding_required: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )
     # ISO 4217 currency (3 letters) for the agency's internal cost tracking.
     # NULL = not set yet (existing agencies): the agency picks it before
     # entering costs — never a fabricated default (EUR ≠ a Paraguay agency).

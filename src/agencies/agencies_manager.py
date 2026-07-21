@@ -184,6 +184,13 @@ class AgenciesManager:
         slug = (payload.slug or _slugify(payload.name)).strip("-")
         if not slug:
             raise ValidationError("Could not derive a slug from the name; provide one explicitly.")
+        # Superadmin creation: at least one sector is mandatory (the
+        # operator knows the agency's business). Self-signup does NOT go
+        # through here — it defers the choice via the onboarding flag.
+        if not payload.sectors:
+            raise ValidationError(
+                "At least one sector is required.", code="agency.sectors_required"
+            )
         if await self.repo.get_agency_by_slug(slug) is not None:
             raise ConflictError(f"Agency slug '{slug}' is already taken.")
         # One human = one agent account at MVP (agent.email is table-unique):
@@ -209,6 +216,7 @@ class AgenciesManager:
             is_founding=payload.is_founding,
             founding_free_seats=payload.founding_free_seats,
             sectors=payload.sectors,
+            sectors_onboarding_required=False,
             event_actor_id=superadmin.id,
         )
         # Reuse the password-reset machinery: create_reset_link only STAGES
@@ -250,6 +258,7 @@ class AgenciesManager:
         is_founding: bool = False,
         founding_free_seats: int = 0,
         sectors: list[str] | None = None,
+        sectors_onboarding_required: bool = False,
         event_actor_id: uuid.UUID | None = None,
     ) -> tuple[Agency, Agent, Role]:
         """THE single agency-creation writer, shared by the superadmin
@@ -271,6 +280,7 @@ class AgenciesManager:
                 raise ValidationError("Unknown referral code.", code="referral.code_unknown")
         agency = self.repo.add_agency(name=name, slug=slug, default_language=default_language)
         agency.sectors = self._validate_sectors(sectors)
+        agency.sectors_onboarding_required = sectors_onboarding_required
         # The agency's OWN shareable code (unique; regenerate on the rare
         # collision — 31^6 space, the loop is theoretical).
         code = _generate_referral_code()
@@ -739,6 +749,8 @@ class AgenciesManager:
             agency.name = payload.name
         if payload.sectors is not None:
             agency.sectors = self._validate_sectors(payload.sectors)
+            if agency.sectors:  # >= 1 sector posed → onboarding satisfied
+                agency.sectors_onboarding_required = False
         if payload.settings is not None:
             agency.settings = payload.settings
         if payload.notification_prefs is not None:

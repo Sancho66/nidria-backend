@@ -15053,6 +15053,11 @@
             "title": "Sectors",
             "default": []
           },
+          "sectors_onboarding_required": {
+            "type": "boolean",
+            "title": "Sectors Onboarding Required",
+            "default": false
+          },
           "default_language": {
             "type": "string",
             "enum": [

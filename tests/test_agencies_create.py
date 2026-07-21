@@ -35,8 +35,13 @@ def _body(**overrides: Any) -> dict[str, Any]:
         "admin_email": "admin@reside-paraguay.com",
         "admin_first_name": "Alexis",
         "admin_last_name": "Renard",
+        # Sector is mandatory at superadmin creation (default for the tests
+        # that don't care about sectors); the no-sector 422 has its own test.
+        "sectors": ["immigration"],
     }
     body.update(overrides)
+    if body.get("sectors") is None:
+        body.pop("sectors", None)  # None → omit the key entirely
     return body
 
 
@@ -355,16 +360,37 @@ async def test_create_agency_with_sectors_persisted_and_exposed(
     assert agency.sectors == ["legal", "accounting"]
 
 
-async def test_create_agency_without_sectors_is_empty(
+async def test_create_agency_without_sectors_is_422_required(
     agencies_client: AsyncClient,
     make_agent: MakeAgent,
     agent_headers: AuthHeaders,
     system_roles: dict[str, Role],
 ) -> None:
+    """Superadmin creation: at least one sector is mandatory."""
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    for empty in (None, []):
+        resp = await agencies_client.post(
+            "/agencies", json=_body(sectors=empty), headers=agent_headers(superadmin)
+        )
+        assert resp.status_code == 422, resp.text
+        assert "agency.sectors_required" in resp.text
+
+
+async def test_superadmin_created_agency_is_not_flagged_for_onboarding(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+    db_session: AsyncSession,
+) -> None:
     superadmin = await make_agent(role=system_roles["superadmin"])
     resp = await agencies_client.post("/agencies", json=_body(), headers=agent_headers(superadmin))
     assert resp.status_code == 201
-    assert resp.json()["agency"]["sectors"] == []  # neutral default
+    assert resp.json()["agency"]["sectors_onboarding_required"] is False  # nothing to re-ask
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.slug == "reside-paraguay"))
+    ).scalar_one()
+    assert agency.sectors_onboarding_required is False
 
 
 async def test_create_agency_unknown_sector_is_422_named(

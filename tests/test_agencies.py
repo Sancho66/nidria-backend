@@ -699,3 +699,55 @@ async def test_patch_foreign_agency_sectors_isolated(
     )
     b_view = (await agencies_client.get("/agencies/me", headers=agent_headers(admin_b))).json()
     assert b_view["sectors"] == []  # B untouched by A's PATCH
+
+
+# --- sectors_onboarding_required flag (self-signup gate, 2026-07-21) -------------------
+
+
+async def test_patch_sectors_clears_onboarding_flag_only_when_non_empty(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    db_session: AsyncSession,
+) -> None:
+    """A self-signup-style flagged agency: posing >= 1 sector clears the
+    flag (onboarding satisfied); posing [] leaves it TRUE (still must pick)."""
+    from sqlalchemy import update as sa_update
+
+    from shared.models.agency import Agency
+
+    agency = await make_agency(name="Flagged Co")
+    await db_session.execute(
+        sa_update(Agency).where(Agency.id == agency.id).values(sectors_onboarding_required=True)
+    )
+    await db_session.commit()
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"])
+    headers = agent_headers(admin)
+
+    # Posing [] does NOT satisfy onboarding → flag stays TRUE.
+    empty = await agencies_client.patch("/agencies/me", headers=headers, json={"sectors": []})
+    assert empty.json()["sectors_onboarding_required"] is True
+
+    # Posing >= 1 sector clears the flag.
+    posed = await agencies_client.patch(
+        "/agencies/me", headers=headers, json={"sectors": ["immigration"]}
+    )
+    assert posed.json()["sectors"] == ["immigration"]
+    assert posed.json()["sectors_onboarding_required"] is False
+
+
+async def test_existing_agency_never_flagged_migration_invariant(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """The critical invariant: an agency created the normal way (== every
+    existing agency after the migration default false) is NEVER flagged."""
+    agency = await make_agency(name="Existing Co")
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"])
+    me = (await agencies_client.get("/agencies/me", headers=agent_headers(admin))).json()
+    assert me["sectors_onboarding_required"] is False  # never bothered

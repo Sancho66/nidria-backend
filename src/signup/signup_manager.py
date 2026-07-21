@@ -164,6 +164,9 @@ class SignupManager:
             admin_last_name=payload.last_name,
             password_hash=hash_password(payload.password),
             referral_code=payload.referral_code,
+            # Self-signup defers the sector choice: the agency must pick it
+            # via a blocking onboarding screen (superadmin/existing = false).
+            sectors_onboarding_required=True,
         )
         # The verification is spent in the SAME transaction as the creation.
         await self.db.delete(row)

@@ -206,6 +206,10 @@ class AgencyResponse(BaseModel):
     # Business sector(s) — multi-sector groundwork, INERT (nothing consumes
     # it yet). [] = neutral (every existing agency).
     sectors: list[AgencySector] = []
+    # True → a fresh self-signup agency must still pick its sector(s) (the
+    # front shows a blocking screen). False for superadmin-created and all
+    # existing agencies. Cleared by a PATCH posing >= 1 sector.
+    sectors_onboarding_required: bool = False
     default_language: Language
     # Branding: derived from logo_path / cover_path (model properties);
     # the images are served by their endpoints, never a raw storage URL.
