@@ -124,6 +124,22 @@ class InvitationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class AgencySector(StrEnum):
+    """The agency's business sector(s) — the SOCLE of the multi-sector
+    groundwork. INERT for now: nothing consumes it yet (no sector default,
+    no adapted vocabulary, no library filter). Extensible. Notariat lives
+    IN `legal` (not separate); 'création de société' is a JOURNEY, not a
+    sector."""
+
+    LEGAL = "legal"
+    ACCOUNTING = "accounting"
+    REAL_ESTATE = "real_estate"
+    WEALTH = "wealth"
+    HR_MOBILITY = "hr_mobility"
+    IMMIGRATION = "immigration"
+    CONSULTING = "consulting"
+
+
 class ContactChannel(StrEnum):
     """A client's PREFERRED contact channel — DISPLAY/preference only, NEVER
     a send router. Reminders keep going out by email regardless (the phone

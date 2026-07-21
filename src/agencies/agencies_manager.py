@@ -45,6 +45,7 @@ from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
 from src.core.enums import (
     ActorType,
+    AgencySector,
     Audience,
     ExternalContactType,
     InvitationStatus,
@@ -155,6 +156,25 @@ class AgenciesManager:
 
     # --- agency creation (PLATFORM operation, gated agency.create) ----------------
 
+    @staticmethod
+    def _validate_sectors(sectors: list[str] | None) -> list[str]:
+        """Deduplicated, each value in AgencySector, else 422 named. None or
+        [] → [] (neutral). INERT: the returned list is stored, never read."""
+        if not sectors:
+            return []
+        seen: list[str] = []
+        valid = {s.value for s in AgencySector}
+        for raw in sectors:
+            if raw not in valid:
+                raise ValidationError(
+                    f"Unknown agency sector {raw!r}.",
+                    code="agency.sector_invalid",
+                    params={"sector": raw, "allowed": sorted(valid)},
+                )
+            if raw not in seen:
+                seen.append(raw)
+        return seen
+
     async def create_agency(self, superadmin: Agent, payload: AgencyCreateRequest) -> AgencyCreated:
         """Create an agency + its first admin ATOMICALLY, then stage one
         activation email. PLATFORM-scoped (superadmin only); introduces NO
@@ -188,6 +208,7 @@ class AgenciesManager:
             referral_code=payload.referral_code,
             is_founding=payload.is_founding,
             founding_free_seats=payload.founding_free_seats,
+            sectors=payload.sectors,
             event_actor_id=superadmin.id,
         )
         # Reuse the password-reset machinery: create_reset_link only STAGES
@@ -228,6 +249,7 @@ class AgenciesManager:
         referral_code: str | None,
         is_founding: bool = False,
         founding_free_seats: int = 0,
+        sectors: list[str] | None = None,
         event_actor_id: uuid.UUID | None = None,
     ) -> tuple[Agency, Agent, Role]:
         """THE single agency-creation writer, shared by the superadmin
@@ -248,6 +270,7 @@ class AgenciesManager:
             if referrer is None:
                 raise ValidationError("Unknown referral code.", code="referral.code_unknown")
         agency = self.repo.add_agency(name=name, slug=slug, default_language=default_language)
+        agency.sectors = self._validate_sectors(sectors)
         # The agency's OWN shareable code (unique; regenerate on the rare
         # collision — 31^6 space, the loop is theoretical).
         code = _generate_referral_code()
@@ -714,6 +737,8 @@ class AgenciesManager:
         agency = await self.get_my_agency(agent)
         if payload.name is not None:
             agency.name = payload.name
+        if payload.sectors is not None:
+            agency.sectors = self._validate_sectors(payload.sectors)
         if payload.settings is not None:
             agency.settings = payload.settings
         if payload.notification_prefs is not None:

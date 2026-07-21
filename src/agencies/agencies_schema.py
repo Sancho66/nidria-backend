@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.currencies import is_supported
 from src.core.email import NormalizedEmailStr
-from src.core.enums import BillingCycle, ExternalContactType, SubscriptionPlan
+from src.core.enums import AgencySector, BillingCycle, ExternalContactType, SubscriptionPlan
 
 # The agency's default content language — the fallback for its i18n blobs.
 # Single source of truth: src.core.i18n (SUPPORTED_LANGUAGES / Language).
@@ -203,6 +203,9 @@ class AgencyResponse(BaseModel):
     name: str
     slug: str
     settings: dict[str, Any]
+    # Business sector(s) — multi-sector groundwork, INERT (nothing consumes
+    # it yet). [] = neutral (every existing agency).
+    sectors: list[AgencySector] = []
     default_language: Language
     # Branding: derived from logo_path / cover_path (model properties);
     # the images are served by their endpoints, never a raw storage URL.
@@ -232,6 +235,9 @@ class AgencyCreateRequest(BaseModel):
     # (same rule as AgencyUpdateRequest — public identifier).
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     default_language: Language = "fr"
+    # Optional; absent → [] (neutral). Validated in the manager (dedup +
+    # each value in AgencySector, else 422 agency.sector_invalid).
+    sectors: list[str] | None = None
     admin_email: NormalizedEmailStr
     admin_first_name: str = Field(min_length=1, max_length=100)
     admin_last_name: str = Field(min_length=1, max_length=100)
@@ -280,6 +286,9 @@ class AgencyUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     settings: dict[str, Any] | None = None
+    # FULL replacement of the sector list (like preferred_channels /
+    # watcher_agent_ids). Manager-validated. INERT — nothing consumes it.
+    sectors: list[str] | None = None
     # Prefs notifications clients : PATCH partiel type (merge cle a cle
     # dans settings.notification_prefs.client), jamais un remplacement du
     # settings brut.

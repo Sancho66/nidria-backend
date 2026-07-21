@@ -614,3 +614,88 @@ async def test_reference_lists_reject_expat_token(
     for path in ("/agencies/me/members", "/agencies/me/roles"):
         response = await agencies_client.get(path, headers=expat_headers(expat))
         assert response.status_code == 401
+
+
+# --- sectors : PATCH replacement + inertness invariant (2026-07-21) --------------------
+
+
+async def test_patch_agency_sectors_full_replacement_and_clear(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    agency = await make_agency()
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"])
+    headers = agent_headers(admin)
+
+    posed = await agencies_client.patch(
+        "/agencies/me", headers=headers, json={"sectors": ["legal"]}
+    )
+    assert posed.json()["sectors"] == ["legal"]
+
+    # FULL replacement (not a merge).
+    replaced = await agencies_client.patch(
+        "/agencies/me", headers=headers, json={"sectors": ["immigration", "consulting"]}
+    )
+    assert replaced.json()["sectors"] == ["immigration", "consulting"]
+
+    # Empty list = valid, back to neutral.
+    cleared = await agencies_client.patch("/agencies/me", headers=headers, json={"sectors": []})
+    assert cleared.json()["sectors"] == []
+
+    # Unknown value → 422 named.
+    bad = await agencies_client.patch(
+        "/agencies/me", headers=headers, json={"sectors": ["banking"]}
+    )
+    assert bad.status_code == 422
+    assert "agency.sector_invalid" in bad.text
+
+
+async def test_sectors_are_inert_no_behaviour_change(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """INVARIANT: an agency WITH sectors and one WITHOUT behave identically
+    on everything else — the field is stored, never consumed. Setting
+    sectors changes nothing but the sectors field itself."""
+    agency = await make_agency(name="Inert Co")
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"])
+    headers = agent_headers(admin)
+
+    before = (await agencies_client.get("/agencies/me", headers=headers)).json()
+    patched = await agencies_client.patch(
+        "/agencies/me", headers=headers, json={"sectors": ["wealth", "hr_mobility"]}
+    )
+    assert patched.json()["sectors"] == ["wealth", "hr_mobility"]
+    # Same endpoint before/after → every OTHER field is untouched by sectors.
+    after = (await agencies_client.get("/agencies/me", headers=headers)).json()
+    assert after["sectors"] == ["wealth", "hr_mobility"]
+    for key in before:
+        if key != "sectors":
+            assert after[key] == before[key], key
+
+
+async def test_patch_foreign_agency_sectors_isolated(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """/agencies/me writes ONLY the caller's own agency — an admin of A
+    never touches agency B's sectors (cross-tenant isolation)."""
+    agency_a = await make_agency(name="A")
+    agency_b = await make_agency(name="B")
+    admin_a = await make_agent(agency_id=agency_a.id, role=system_roles["admin"])
+    admin_b = await make_agent(agency_id=agency_b.id, role=system_roles["admin"])
+
+    await agencies_client.patch(
+        "/agencies/me", headers=agent_headers(admin_a), json={"sectors": ["legal"]}
+    )
+    b_view = (await agencies_client.get("/agencies/me", headers=agent_headers(admin_b))).json()
+    assert b_view["sectors"] == []  # B untouched by A's PATCH

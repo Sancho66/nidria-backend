@@ -14840,6 +14840,20 @@
             "title": "Default Language",
             "default": "fr"
           },
+          "sectors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectors"
+          },
           "admin_email": {
             "type": "string",
             "format": "email",
@@ -15031,6 +15045,14 @@
             "type": "object",
             "title": "Settings"
           },
+          "sectors": {
+            "items": {
+              "$ref": "#/components/schemas/AgencySector"
+            },
+            "type": "array",
+            "title": "Sectors",
+            "default": []
+          },
           "default_language": {
             "type": "string",
             "enum": [
@@ -15110,6 +15132,20 @@
           "default_language"
         ],
         "title": "AgencyResponse"
+      },
+      "AgencySector": {
+        "type": "string",
+        "enum": [
+          "legal",
+          "accounting",
+          "real_estate",
+          "wealth",
+          "hr_mobility",
+          "immigration",
+          "consulting"
+        ],
+        "title": "AgencySector",
+        "description": "The agency's business sector(s) — the SOCLE of the multi-sector\ngroundwork. INERT for now: nothing consumes it yet (no sector default,\nno adapted vocabulary, no library filter). Extensible. Notariat lives\nIN `legal` (not separate); 'création de société' is a JOURNEY, not a\nsector."
       },
       "AgencySubscriptionInfo": {
         "properties": {
@@ -15211,6 +15247,20 @@
               }
             ],
             "title": "Settings"
+          },
+          "sectors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectors"
           },
           "notification_prefs": {
             "anyOf": [

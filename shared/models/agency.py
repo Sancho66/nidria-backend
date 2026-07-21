@@ -31,6 +31,12 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Business sector(s) — multi-sector groundwork. INERT: only the agency
+    # CRUD reads/writes it; nothing branches on it yet. Never null ([] =
+    # neutral, the behaviour of every agency today).
+    sectors: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     # ISO 4217 currency (3 letters) for the agency's internal cost tracking.
     # NULL = not set yet (existing agencies): the agency picks it before
     # entering costs — never a fabricated default (EUR ≠ a Paraguay agency).

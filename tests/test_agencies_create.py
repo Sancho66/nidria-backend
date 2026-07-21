@@ -329,3 +329,71 @@ async def test_onboarding_link_lives_24_hours_and_is_single_use(
         json={"token": token.token, "password": "another-pass-12"},
     )
     assert again.status_code == 400
+
+
+# --- sectors (multi-sector groundwork; INERT — nothing consumes it) --------------------
+
+
+async def test_create_agency_with_sectors_persisted_and_exposed(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+    db_session: AsyncSession,
+) -> None:
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post(
+        "/agencies",
+        json=_body(sectors=["legal", "accounting"]),
+        headers=agent_headers(superadmin),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["agency"]["sectors"] == ["legal", "accounting"]
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.slug == "reside-paraguay"))
+    ).scalar_one()
+    assert agency.sectors == ["legal", "accounting"]
+
+
+async def test_create_agency_without_sectors_is_empty(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post("/agencies", json=_body(), headers=agent_headers(superadmin))
+    assert resp.status_code == 201
+    assert resp.json()["agency"]["sectors"] == []  # neutral default
+
+
+async def test_create_agency_unknown_sector_is_422_named(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post(
+        "/agencies",
+        json=_body(sectors=["legal", "notariat"]),  # notariat lives IN legal
+        headers=agent_headers(superadmin),
+    )
+    assert resp.status_code == 422
+    assert "agency.sector_invalid" in resp.text
+
+
+async def test_create_agency_sectors_deduplicated(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    resp = await agencies_client.post(
+        "/agencies",
+        json=_body(sectors=["legal", "legal", "immigration"]),
+        headers=agent_headers(superadmin),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["agency"]["sectors"] == ["legal", "immigration"]  # deduped, order kept
