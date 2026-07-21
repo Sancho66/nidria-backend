@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -57,6 +58,8 @@ from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
 from src.usage.usage_manager import UsageManager
+
+logger = logging.getLogger(__name__)
 
 
 class CasesManager:
@@ -305,9 +308,20 @@ class CasesManager:
                 )
             )
         else:
-            await asyncio.to_thread(
-                send_email, payload.email, content.subject, content.text, content.html
-            )
+            # After commit, best-effort (_safe_send pattern): the case IS
+            # written — a Resend outage must NEVER turn a created case into
+            # a 503. The invitation stays re-sendable via the existing
+            # action if this mail is lost.
+            try:
+                await asyncio.to_thread(
+                    send_email, payload.email, content.subject, content.text, content.html
+                )
+            except Exception:
+                logger.warning(
+                    "case activation email failed (case %s created; never blocking)",
+                    case.id,
+                    exc_info=True,
+                )
         return case
 
     # --- read ---------------------------------------------------------------------

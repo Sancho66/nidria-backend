@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
 from shared.models.agent import Agent
+from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.invitation import CaseInvitation
 from shared.models.journey import JourneyTemplate
@@ -1155,3 +1156,43 @@ async def test_preferred_channels_default_empty(
         json={"full_name": "Sans Pref", "relationship": "child"},
     )
     assert created.json()["preferred_channels"] == []  # absent → empty, never null
+
+
+async def test_create_case_survives_email_service_down(
+    cases_client: AsyncClient,
+    db_session: AsyncSession,
+    member: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NID-07 resilience: the case is WRITTEN even if Resend is down. The
+    after-commit activation email is best-effort — a provider outage never
+    turns a created case into a 503 (the case existed at that point)."""
+    import src.cases.cases_manager as cm
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("Resend down")
+
+    monkeypatch.setattr(cm, "send_email", _boom)
+    template = JourneyTemplate(agency_id=member.agency_id, name="T")
+    db_session.add(template)
+    await db_session.commit()
+
+    response = await cases_client.post(
+        "/cases",
+        headers=agent_headers(member),
+        json=_payload("resilient@example.com", journey_template_id=str(template.id)),
+    )
+    assert response.status_code == 201, response.text  # NOT a 503
+    body = response.json()
+    # The case IS persisted despite the email failure.
+    case = (
+        await db_session.execute(select(ClientCase).where(ClientCase.id == uuid.UUID(body["id"])))
+    ).scalar_one()
+    assert case is not None
+    # The invitation row exists too → the mail is re-sendable via the
+    # existing action; nothing is lost.
+    invitation = (
+        await db_session.execute(select(CaseInvitation).where(CaseInvitation.case_id == case.id))
+    ).scalar_one()
+    assert invitation.status == "pending"
