@@ -247,9 +247,13 @@ async def test_summary_badge_counts(
     client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
 ) -> None:
     headers = agent_headers(superadmin)
+    # FRESH now (never the module-level _NOW captured at import): the summary
+    # query uses server now(), so a stale _NOW straddling midnight made the
+    # "today" task fall into yesterday → overdue (CI flake at 00:00 UTC).
+    now = datetime.now(UTC)
     await _create(client, headers, title="pending")
-    await _create(client, headers, title="late", due_at=(_NOW - timedelta(days=2)).isoformat())
-    today_end = _NOW.replace(hour=23, minute=59, second=59, microsecond=0)
+    await _create(client, headers, title="late", due_at=(now - timedelta(days=2)).isoformat())
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
     await _create(client, headers, title="today", due_at=today_end.isoformat())
     await _create(client, headers, title="shipped", status="done")
     response = await client.get("/admin/tasks/summary", headers=headers)
