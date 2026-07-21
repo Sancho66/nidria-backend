@@ -51,6 +51,7 @@ async def _create_agency(
             "admin_email": f"admin@{slug}.example.com",
             "admin_first_name": "Ana",
             "admin_last_name": "Boss",
+            "sectors": ["immigration"],  # mandatory at superadmin creation
         },
     )
     assert created.status_code == 201, created.text

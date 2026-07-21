@@ -168,6 +168,7 @@ async def test_wizard_generates_code_and_attributes_referral(
             "admin_email": "marraine@x.io",
             "admin_first_name": "M",
             "admin_last_name": "A",
+            "sectors": ["consulting"],
         },
     )
     assert first.status_code in (200, 201), first.text
@@ -182,6 +183,7 @@ async def test_wizard_generates_code_and_attributes_referral(
             "admin_email": "filleule@x.io",
             "admin_first_name": "F",
             "admin_last_name": "A",
+            "sectors": ["consulting"],
             "referral_code": code.lower(),  # normalisation: la saisie humaine pardonne
         },
     )
@@ -200,6 +202,7 @@ async def test_wizard_generates_code_and_attributes_referral(
             "admin_email": "perdue@x.io",
             "admin_first_name": "P",
             "admin_last_name": "A",
+            "sectors": ["consulting"],
             "referral_code": "NID-ZZZZZZ",
         },
     )

@@ -79,6 +79,7 @@ async def test_wizard_starts_trial_and_emits_activation(
             "admin_email": "trial-admin@example.com",
             "admin_first_name": "A",
             "admin_last_name": "B",
+            "sectors": ["consulting"],
         },
     )
     assert created.status_code == 201, created.text
