@@ -429,10 +429,14 @@ class PlatformTasksManager:
         self.db.add(task)
         await self.db.flush()
         if payload.watcher_agent_ids is None:
-            # Field ABSENT -> the creator is the default observer. (An
-            # explicit [] means "no observers" and is honored as-is; a
-            # provided list is honored as-is, the creator NOT forced in.)
-            await self._replace_watchers(task.id, [actor.id])
+            # Field ABSENT -> the creator observes BY DEFAULT, but ONLY when
+            # they are NOT the assignee: self-observing your own assigned
+            # task is pointless (the assignee already sees everything). The
+            # useful default is "I delegated and want to follow". An explicit
+            # [] still means "no observers"; a provided list is honored
+            # as-is (the creator may opt in, but is never forced in).
+            default_watchers = [actor.id] if assignee != actor.id else []
+            await self._replace_watchers(task.id, default_watchers)
         else:
             watcher_ids = await self._validate_watchers(payload.watcher_agent_ids)
             await self._replace_watchers(task.id, watcher_ids)

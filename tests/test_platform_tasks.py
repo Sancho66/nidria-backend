@@ -960,11 +960,47 @@ async def test_attachment_out_of_task_whitelist_still_415(
 # --- PART 1: creator is the default watcher (2026-07-21) -------------------------------
 
 
-async def test_creator_is_default_watcher_when_field_absent(
+async def test_default_watcher_creator_only_when_not_the_assignee(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    """The default 'creator observes' applies ONLY when creator != assignee
+    (I delegated and want to follow). Assigned to someone else → creator is
+    the default watcher."""
+    task = await _create(
+        client, agent_headers(superadmin), assigned_to_agent_id=str(superadmin2.id)
+    )
+    assert [w["agent_id"] for w in task["watchers"]] == [str(superadmin.id)]
+
+
+async def test_no_default_watcher_on_self_assignment(
     client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    task = await _create(client, agent_headers(superadmin))  # no watcher_agent_ids
+    """The fix: auto-assignment (creator == assignee), no watcher_agent_ids
+    → ZERO default observer (self-observing your own assigned task is
+    pointless — the assignee already sees everything)."""
+    task = await _create(client, agent_headers(superadmin))  # auto-assign, no watchers
+    assert task["watchers"] == []
+
+
+async def test_self_assign_explicit_creator_watcher_is_respected(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Auto-assigned but the creator EXPLICITLY lists themselves → honored
+    (we no longer force it, but we do not block a deliberate choice)."""
+    task = await _create(client, agent_headers(superadmin), watcher_agent_ids=[str(superadmin.id)])
     assert [w["agent_id"] for w in task["watchers"]] == [str(superadmin.id)]
+
+
+async def test_assigned_to_other_explicit_empty_is_zero_watcher(
+    client: AsyncClient, superadmin: Agent, superadmin2: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(
+        client,
+        agent_headers(superadmin),
+        assigned_to_agent_id=str(superadmin2.id),
+        watcher_agent_ids=[],  # explicit empty → nobody, even assigned to other
+    )
+    assert task["watchers"] == []
 
 
 async def test_explicit_empty_list_means_no_watcher(
@@ -997,13 +1033,15 @@ async def test_creator_default_watcher_dedup_single_mail(
     assert [m.to for m in email.outbox] == [superadmin.email]  # ONE, not two
 
 
-async def test_creator_watcher_as_actor_gets_no_mail(
+async def test_self_assigned_self_complete_gets_no_mail(
     client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    task = await _create(client, agent_headers(superadmin))  # creator = default watcher
+    """Non-regression: auto-assigned (no default watcher now), the creator
+    completes their own task → zero mail (never to the actor)."""
+    task = await _create(client, agent_headers(superadmin))
     email.outbox.clear()
     await client.post(f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin))
-    assert email.outbox == []  # never to the actor, even as watcher
+    assert email.outbox == []
 
 
 # --- PART 2: "assigned by X" traceability ---------------------------------------------
