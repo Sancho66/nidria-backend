@@ -26355,6 +26355,7 @@
             "title": "Sectors"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "completion_token",
@@ -26409,12 +26410,13 @@
             "title": "Turnstile Token"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "email"
         ],
         "title": "SignupRequest",
-        "description": "Stage 1: the email to verify. `website` is the HONEYPOT (hidden\nfield): humans leave it empty, bots fill it — non-empty = silent 200,\nnothing created. `turnstile_token` is required only when the\nTURNSTILE_SECRET flag is armed."
+        "description": "Stage 1: the email to verify. `website` is the HONEYPOT (hidden\nfield): humans leave it empty, bots fill it — non-empty = silent 200,\nnothing created. `turnstile_token` is required only when the\nTURNSTILE_SECRET flag is armed. extra=forbid: an unknown field (e.g.\nsectors, which belong to /signup/complete) is a LOUD 422, never a\nsilent swallow."
       },
       "SignupVerifyRequest": {
         "properties": {
@@ -26430,6 +26432,7 @@
             "title": "Code"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "email",

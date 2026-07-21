@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.email import NormalizedEmailStr
 from src.core.i18n import Language
@@ -8,7 +8,11 @@ class SignupRequest(BaseModel):
     """Stage 1: the email to verify. `website` is the HONEYPOT (hidden
     field): humans leave it empty, bots fill it — non-empty = silent 200,
     nothing created. `turnstile_token` is required only when the
-    TURNSTILE_SECRET flag is armed."""
+    TURNSTILE_SECRET flag is armed. extra=forbid: an unknown field (e.g.
+    sectors, which belong to /signup/complete) is a LOUD 422, never a
+    silent swallow."""
+
+    model_config = ConfigDict(extra="forbid")
 
     email: NormalizedEmailStr
     lang: Language = "fr"
@@ -24,6 +28,8 @@ class SignupAccepted(BaseModel):
 
 
 class SignupVerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: NormalizedEmailStr
     code: str = Field(min_length=6, max_length=6)
 
@@ -36,6 +42,8 @@ class SignupVerifyResponse(BaseModel):
 
 
 class SignupCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     completion_token: str = Field(min_length=16, max_length=64)
     agency_name: str = Field(min_length=1, max_length=200)
     first_name: str = Field(min_length=1, max_length=100)

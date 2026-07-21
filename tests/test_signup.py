@@ -372,3 +372,30 @@ async def test_signup_invalid_sector_creates_no_orphan_agency(
     # The token survives → the user can retry with a valid sector.
     retry = await _complete(client, token, sectors=["legal"])
     assert retry.status_code == 200
+
+
+async def test_signup_unknown_field_is_422_not_swallowed(client: AsyncClient) -> None:
+    """extra=forbid on /signup: a field that belongs elsewhere (sectors →
+    /signup/complete) is a LOUD 422, never silently ignored. This is the
+    root-cause hardening of the 'sectors swallowed' confusion."""
+    resp = await client.post(
+        "/signup",
+        json={"email": "x@example.com", "lang": "fr", "sectors": ["legal"]},
+    )
+    assert resp.status_code == 422  # extra=forbid bites — no silent swallow
+
+
+async def test_signup_and_complete_have_sector_parity(client: AsyncClient) -> None:
+    """Parity: /signup does NOT create an agency (stage 1, no sectors), and
+    /signup/complete is the single self-serve creation point where sectors
+    are mandatory + atomic (already covered above)."""
+    # /signup rejects sectors (they belong to complete).
+    r1 = await client.post(
+        "/signup", json={"email": "parity@example.com", "lang": "fr", "sectors": ["legal"]}
+    )
+    assert r1.status_code == 422
+    # The full flow WITHOUT the stray field works and persists sectors.
+    assert (await _request(client, email="parity2@example.com")).status_code == 200
+    token = (await _verify(client, email="parity2@example.com")).json()["completion_token"]
+    ok = await _complete(client, token, sectors=["accounting"])
+    assert ok.status_code == 200
