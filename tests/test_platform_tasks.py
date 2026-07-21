@@ -1130,3 +1130,70 @@ async def test_patch_resend_same_assignee_does_not_restamp(
     body = patched.json()
     assert body["assigned_by"]["agent_id"] == by_before  # no change → no re-stamp
     assert body["assigned_at"] == at_before
+
+
+# --- estimated_minutes (effort estimate; informative, never sorts/overdue) -------------
+
+
+async def test_estimated_minutes_pose_read_and_default_null(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    with_est = await _create(client, headers, estimated_minutes=90)
+    assert with_est["estimated_minutes"] == 90  # persisted + exposed
+    without = await _create(client, headers)
+    assert without["estimated_minutes"] is None  # default: no estimate
+
+
+async def test_estimated_minutes_patch_set_change_clear(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    posed = await client.patch(
+        f"/admin/tasks/{task['id']}", headers=headers, json={"estimated_minutes": 120}
+    )
+    assert posed.json()["estimated_minutes"] == 120
+    changed = await client.patch(
+        f"/admin/tasks/{task['id']}", headers=headers, json={"estimated_minutes": 480}
+    )
+    assert changed.json()["estimated_minutes"] == 480
+    cleared = await client.patch(
+        f"/admin/tasks/{task['id']}", headers=headers, json={"estimated_minutes": None}
+    )
+    assert cleared.json()["estimated_minutes"] is None  # nullable = clearable
+
+
+async def test_estimated_minutes_must_be_positive(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    for bad in (0, -30):
+        response = await client.post(
+            "/admin/tasks", headers=headers, json={"title": "x", "estimated_minutes": bad}
+        )
+        assert response.status_code == 422
+        assert "task.estimated_minutes_invalid" in response.text
+    task = await _create(client, headers)
+    bad_patch = await client.patch(
+        f"/admin/tasks/{task['id']}", headers=headers, json={"estimated_minutes": 0}
+    )
+    assert bad_patch.status_code == 422
+
+
+async def test_estimated_minutes_never_affects_order(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """THE invariant: two tasks, SAME due_at + priority, one with an
+    estimate one without → identical order (the sort is due_at/priority/
+    created_at only; estimated_minutes is never read)."""
+    headers = agent_headers(superadmin)
+    same_due = (_NOW + timedelta(days=3)).isoformat()
+    await _create(client, headers, title="no-estimate", due_at=same_due)
+    await _create(client, headers, title="with-estimate", due_at=same_due, estimated_minutes=999)
+    listed = await client.get("/admin/tasks", headers=headers)
+    titles = [t["title"] for t in listed.json()["items"]]
+    # created_at desc tiebreak → newest first, unchanged by the estimate.
+    assert titles == ["with-estimate", "no-estimate"]
+    # And a long estimate on a NON-overdue task never makes it overdue.
+    assert all(t["is_overdue"] is False for t in listed.json()["items"])

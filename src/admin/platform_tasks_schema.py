@@ -46,6 +46,9 @@ class PlatformTaskCreate(BaseModel):
     priority: str = Field(default="medium", description=_PRIORITY_HELP)
     task_type: str = Field(default="task", description=_TYPE_HELP)
     due_at: datetime | None = None
+    # Effort estimate in minutes (canonical); > 0 if provided (checked in
+    # the manager for a named 422). Informative — no impact on overdue/order.
+    estimated_minutes: int | None = None
     scheduled_at: datetime | None = None
     scheduled_timezone: str | None = None
     duration_minutes: int | None = Field(default=None, ge=1, le=1440)
@@ -76,6 +79,7 @@ class PlatformTaskUpdate(BaseModel):
     priority: str | None = Field(default=None, description=_PRIORITY_HELP)
     task_type: str | None = Field(default=None, description=_TYPE_HELP)
     due_at: datetime | None = None
+    estimated_minutes: int | None = None
     scheduled_at: datetime | None = None
     scheduled_timezone: str | None = None
     duration_minutes: int | None = Field(default=None, ge=1, le=1440)
@@ -123,6 +127,7 @@ class PlatformTaskRead(BaseModel):
     priority: str
     task_type: str
     due_at: datetime | None
+    estimated_minutes: int | None
     scheduled_at: datetime | None
     scheduled_timezone: str | None
     duration_minutes: int | None

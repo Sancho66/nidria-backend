@@ -23854,6 +23854,17 @@
             ],
             "title": "Due At"
           },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes"
+          },
           "scheduled_at": {
             "anyOf": [
               {
@@ -24025,6 +24036,17 @@
               }
             ],
             "title": "Due At"
+          },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes"
           },
           "scheduled_at": {
             "anyOf": [
@@ -24215,6 +24237,7 @@
           "priority",
           "task_type",
           "due_at",
+          "estimated_minutes",
           "scheduled_at",
           "scheduled_timezone",
           "duration_minutes",
@@ -24343,6 +24366,17 @@
               }
             ],
             "title": "Due At"
+          },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes"
           },
           "scheduled_at": {
             "anyOf": [

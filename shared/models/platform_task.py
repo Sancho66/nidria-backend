@@ -35,6 +35,9 @@ class PlatformTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(20), nullable=False, default="task", server_default="task"
     )
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # Effort estimate in MINUTES (canonical unit; the UI enters/shows h or d
+    # and converts). Informative ONLY — never read by overdue/order/timeline.
+    estimated_minutes: Mapped[int | None] = mapped_column()
     # The Prism appointment block (call/meeting): a precise UTC instant
     # paired with the IANA zone it was picked in (required together).
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -162,6 +162,14 @@ class PlatformTasksManager:
                 code="task.type_unknown",
             )
 
+    @staticmethod
+    def _validate_estimated_minutes(estimated_minutes: int | None) -> None:
+        if estimated_minutes is not None and estimated_minutes <= 0:
+            raise ValidationError(
+                "estimated_minutes must be greater than 0.",
+                code="task.estimated_minutes_invalid",
+            )
+
     async def _validate_assignee(self, agent_id: uuid.UUID) -> None:
         """The assignee must be a platform operator (superadmin role) —
         the Prism 'member of the project' check, platform edition."""
@@ -264,6 +272,7 @@ class PlatformTasksManager:
                 priority=t.priority,
                 task_type=t.task_type,
                 due_at=t.due_at,
+                estimated_minutes=t.estimated_minutes,
                 scheduled_at=t.scheduled_at,
                 scheduled_timezone=t.scheduled_timezone,
                 duration_minutes=t.duration_minutes,
@@ -402,6 +411,7 @@ class PlatformTasksManager:
     async def create(self, actor: Agent, payload: PlatformTaskCreate) -> PlatformTaskRead:
         self._validate_priority(payload.priority)
         self._validate_task_type(payload.task_type)
+        self._validate_estimated_minutes(payload.estimated_minutes)
         assignee = payload.assigned_to_agent_id or actor.id
         await self._validate_assignee(assignee)
         if payload.agency_id is not None:
@@ -412,6 +422,7 @@ class PlatformTasksManager:
             priority=payload.priority,
             task_type=payload.task_type,
             due_at=payload.due_at,
+            estimated_minutes=payload.estimated_minutes,
             scheduled_at=payload.scheduled_at,
             scheduled_timezone=payload.scheduled_timezone,
             duration_minutes=payload.duration_minutes,
@@ -466,6 +477,9 @@ class PlatformTasksManager:
             task.task_type = payload.task_type
         if "due_at" in fields:
             task.due_at = payload.due_at
+        if "estimated_minutes" in fields:
+            self._validate_estimated_minutes(payload.estimated_minutes)
+            task.estimated_minutes = payload.estimated_minutes
         if "scheduled_at" in fields:
             task.scheduled_at = payload.scheduled_at
             if payload.scheduled_at is None:
