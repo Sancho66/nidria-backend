@@ -16378,6 +16378,20 @@
             ],
             "title": "Phone"
           },
+          "preferred_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContactChannel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Channels"
+          },
           "birth_name": {
             "anyOf": [
               {
@@ -18146,6 +18160,16 @@
         ],
         "title": "ConsentDocumentType",
         "description": "Legal documents subject to BLOCKING consent (point 16). The two\nagency documents bind the AGENCY and are accepted once per agency\nadmin; the two client documents bind the client PER AGENCY (the\nagency is the data controller, Nidria the processor); the external\ndocument binds a PROVIDER for the agency whose portal they enter."
+      },
+      "ContactChannel": {
+        "type": "string",
+        "enum": [
+          "email",
+          "phone",
+          "whatsapp"
+        ],
+        "title": "ContactChannel",
+        "description": "A client's PREFERRED contact channel — DISPLAY/preference only, NEVER\na send router. Reminders keep going out by email regardless (the phone\nfield is reused for phone/whatsapp; no second number). Extensible."
       },
       "ContactInviteRequest": {
         "properties": {
@@ -22985,6 +23009,20 @@
             ],
             "title": "Phone"
           },
+          "preferred_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContactChannel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Channels"
+          },
           "birth_name": {
             "anyOf": [
               {
@@ -23140,6 +23178,20 @@
               }
             ],
             "title": "Phone"
+          },
+          "preferred_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContactChannel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Channels"
           },
           "birth_name": {
             "anyOf": [
@@ -23384,6 +23436,20 @@
               }
             ],
             "title": "Phone"
+          },
+          "preferred_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContactChannel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Channels"
           },
           "birth_name": {
             "anyOf": [

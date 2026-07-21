@@ -786,3 +786,41 @@ async def test_auto_provider_escalated_line_still_blocks_next_tick(
         .all()
     )
     assert len(provider_rows) == 1  # the escalated line, alone, blocks its threshold
+
+
+# --- INVARIANT: preferred_channels never reroute the dispatch (email-only) -------------
+
+
+async def test_preferred_whatsapp_client_still_gets_email_reminder(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+) -> None:
+    """THE invariant (preferred-channels lot): a client who prefers
+    WhatsApp still receives the reminder by EMAIL — preferred_channels is
+    display-only, the dispatch routing is untouched (100% email)."""
+    from shared.models.case_person import CasePerson
+
+    expat = await make_expat_user(first_name="Nadia", last_name="Client")
+    case = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+    )
+    # The principal prefers WhatsApp (+ phone), display-only.
+    await db_session.execute(
+        update(CasePerson)
+        .where(CasePerson.case_id == case.id, CasePerson.kind == "principal")
+        .values(preferred_channels=["whatsapp", "phone"], phone="+33611111111")
+    )
+    await db_session.commit()
+
+    await make_reminder(case=case, status="approved", scheduled_at=_PAST, recipient_type="expat")
+    email.outbox.clear()
+    stats = _run_dispatch(sync_session_local)
+    assert stats["sent"] == 1
+    # Sent by EMAIL to the client's address — the whatsapp preference
+    # changed NOTHING about the channel.
+    assert [m.to for m in email.outbox] == [expat.email]

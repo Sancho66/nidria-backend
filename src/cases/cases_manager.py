@@ -702,6 +702,7 @@ class CasesManager:
         "sex",
         "marital_status",
         "phone",
+        "preferred_channels",
         "birth_name",
         "profession",
         "employer",
@@ -733,6 +734,7 @@ class CasesManager:
             sex=person.sex,
             marital_status=person.marital_status,
             phone=person.phone,
+            preferred_channels=person.preferred_channels or [],
             birth_name=person.birth_name,
             profession=person.profession,
             employer=person.employer,
@@ -754,6 +756,16 @@ class CasesManager:
         for field in self._CIVIL_FIELDS:
             if field in provided:
                 value = provided[field]
+                if field == "preferred_channels":
+                    # A list of ContactChannel → deduplicated string values
+                    # for the JSONB column (never None → an empty list).
+                    seen: list[str] = []
+                    for c in value or []:
+                        v = c.value if hasattr(c, "value") else c
+                        if v not in seen:
+                            seen.append(v)
+                    person.preferred_channels = seen
+                    continue
                 # Enums (sex, marital_status) → store their .value.
                 setattr(person, field, value.value if hasattr(value, "value") else value)
 

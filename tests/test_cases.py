@@ -1090,3 +1090,68 @@ async def test_advanced_filters_validation_422(
     between_tree = _tree({"field": "created_at", "operator": "between", "value": ["2026-01-01"]})
     bad_between = await cases_client.get(f"/cases?filters={quote(between_tree)}", headers=headers)
     assert bad_between.status_code == 422
+
+
+async def test_preferred_channels_pose_read_multiple_and_phone_reuse(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Preferred contact channels (display only): several at once, and
+    phone/whatsapp reuse the EXISTING phone field (no second number)."""
+    headers = agent_headers(member)
+    case = await make_client_case(agency_id=member.agency_id)
+    created = await cases_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={
+            "full_name": "Lea Martin",
+            "relationship": "spouse",
+            "phone": "+33600000000",
+            "preferred_channels": ["email", "whatsapp", "phone"],  # several at once
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    person_id = body["id"]
+    assert body["preferred_channels"] == ["email", "whatsapp", "phone"]
+    assert body["phone"] == "+33600000000"  # the one number, reused by phone/whatsapp
+
+    # Read-back on the case detail.
+    detail = (await cases_client.get(f"/cases/{case.id}", headers=headers)).json()
+    person = next(p for p in detail["persons"] if p["id"] == person_id)
+    assert set(person["preferred_channels"]) == {"email", "whatsapp", "phone"}
+
+    # PATCH narrows the list; phone untouched.
+    patched = await cases_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"preferred_channels": ["whatsapp"]},
+    )
+    assert patched.json()["preferred_channels"] == ["whatsapp"]
+    assert patched.json()["phone"] == "+33600000000"  # reused, not re-entered
+
+    # An unknown channel is rejected (typed enum → 422).
+    bad = await cases_client.patch(
+        f"/cases/{case.id}/persons/{person_id}",
+        headers=headers,
+        json={"preferred_channels": ["telegram"]},
+    )
+    assert bad.status_code == 422
+
+
+async def test_preferred_channels_default_empty(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(member)
+    case = await make_client_case(agency_id=member.agency_id)
+    created = await cases_client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={"full_name": "Sans Pref", "relationship": "child"},
+    )
+    assert created.json()["preferred_channels"] == []  # absent → empty, never null

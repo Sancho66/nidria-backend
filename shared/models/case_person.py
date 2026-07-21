@@ -56,6 +56,11 @@ class CasePerson(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sex: Mapped[str | None] = mapped_column(String(1))
     marital_status: Mapped[str | None] = mapped_column(String(20))
     phone: Mapped[str | None] = mapped_column(String(50))
+    # Preferred contact channels (DISPLAY ONLY — never a send router; the
+    # reminder dispatch stays email-only). phone/whatsapp reuse `phone`.
+    preferred_channels: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     birth_name: Mapped[str | None] = mapped_column(String(200))
     profession: Mapped[str | None] = mapped_column(String(200))
     employer: Mapped[str | None] = mapped_column(String(200))

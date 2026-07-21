@@ -124,6 +124,16 @@ class InvitationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ContactChannel(StrEnum):
+    """A client's PREFERRED contact channel — DISPLAY/preference only, NEVER
+    a send router. Reminders keep going out by email regardless (the phone
+    field is reused for phone/whatsapp; no second number). Extensible."""
+
+    EMAIL = "email"
+    PHONE = "phone"
+    WHATSAPP = "whatsapp"
+
+
 class CasePersonKind(StrEnum):
     """A person attached to a case. Exactly one PRINCIPAL per case
     (the file holder, linked to the shared expat_user for login);

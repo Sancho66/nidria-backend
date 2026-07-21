@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 from src.cases.filter_schema import AdvancedFilters
 from src.core.currencies import CurrencyCode
 from src.core.email import NormalizedEmailStr
-from src.core.enums import CaseStatus, ExternalContactType, MaritalStatus, Sex
+from src.core.enums import CaseStatus, ContactChannel, ExternalContactType, MaritalStatus, Sex
 from src.progress.progress_schema import StepProgressResponse
 
 _COUNTRY_PATTERN = r"^[A-Z]{2}$"
@@ -25,6 +25,9 @@ class _CivilStatusFields(BaseModel):
     sex: Sex | None = None
     marital_status: MaritalStatus | None = None
     phone: str | None = Field(default=None, max_length=50)
+    # Preferred contact channels (display/preference only — reminders stay
+    # email-only, see reminders_jobs). phone/whatsapp reuse `phone`.
+    preferred_channels: list[ContactChannel] | None = None
     birth_name: str | None = Field(default=None, max_length=200)
     profession: str | None = Field(default=None, max_length=200)
     employer: str | None = Field(default=None, max_length=200)
