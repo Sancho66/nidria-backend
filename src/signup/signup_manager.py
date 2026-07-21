@@ -147,6 +147,15 @@ class SignupManager:
         if await AgenciesRepository(self.db).get_agent_by_email(row.email) is not None:
             raise BadRequestError("Invalid or expired signup session.", code="signup.invalid_token")
         manager = AgenciesManager(self.db)
+        # Sector is now chosen IN the signup form and posed atomically at
+        # creation — no post-signup wall (which risked a 401 window). >= 1
+        # mandatory; validated BEFORE any DB write, so a bad payload creates
+        # nothing (no orphan agency without a sector).
+        if not payload.sectors:
+            raise ValidationError(
+                "At least one sector is required.", code="signup.sectors_required"
+            )
+        sectors = manager._validate_sectors(payload.sectors)  # enum + dedup
         slug = base_slug = _slugify(payload.agency_name).strip("-")
         if not slug:
             raise ValidationError("Could not derive a slug from the agency name.")
@@ -164,9 +173,10 @@ class SignupManager:
             admin_last_name=payload.last_name,
             password_hash=hash_password(payload.password),
             referral_code=payload.referral_code,
-            # Self-signup defers the sector choice: the agency must pick it
-            # via a blocking onboarding screen (superadmin/existing = false).
-            sectors_onboarding_required=True,
+            # Sector chosen in the form → written with the agency, flag false
+            # (nothing to re-ask; the post-signup wall is gone).
+            sectors=sectors,
+            sectors_onboarding_required=False,
         )
         # The verification is spent in the SAME transaction as the creation.
         await self.db.delete(row)

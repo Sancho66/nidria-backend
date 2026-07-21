@@ -60,8 +60,11 @@ async def _complete(client: AsyncClient, token: str, **overrides):
         "last_name": "Fondateur",
         "password": "MotDePasse1!",
         "language": "fr",
+        "sectors": ["legal"],  # chosen in the form (mandatory)
     }
     payload.update(overrides)
+    if payload.get("sectors") is None:
+        payload.pop("sectors", None)  # None → omit the key entirely
     return await client.post("/signup/complete", json=payload)
 
 
@@ -94,8 +97,8 @@ async def test_full_flow_creates_everything_and_logs_in(
     # Self-signup defers the sector choice: born with [] AND flagged so the
     # front shows the blocking sector-onboarding screen. THIS is the only
     # path that poses the flag true.
-    assert agency.sectors == []
-    assert agency.sectors_onboarding_required is True
+    assert agency.sectors == ["legal"]  # chosen in the form, written atomically
+    assert agency.sectors_onboarding_required is False  # no post-signup wall
     admin = (
         await db_session.execute(select(Agent).where(Agent.email == "neo@agence.io"))
     ).scalar_one()
@@ -320,3 +323,52 @@ async def test_nurture_skips_non_french_agencies(
         stats = send_trial_nurture(sync_db, log=lambda m: None, dry_run=True)
     # L'agence EN n'entre meme pas dans le scope du job.
     assert "english-only" not in str(stats)
+
+
+# --- sectors mandatory & atomic at signup (2026-07-21) --------------------------------
+
+
+async def test_signup_complete_without_sectors_is_422(client: AsyncClient) -> None:
+    assert (await _request(client)).status_code == 200
+    token = (await _verify(client)).json()["completion_token"]
+    resp = await _complete(client, token, sectors=None)  # omitted entirely
+    assert resp.status_code == 422
+    assert "signup.sectors_required" in resp.text
+
+
+async def test_signup_complete_empty_sectors_is_422(client: AsyncClient) -> None:
+    assert (await _request(client)).status_code == 200
+    token = (await _verify(client)).json()["completion_token"]
+    resp = await _complete(client, token, sectors=[])
+    assert resp.status_code == 422
+    assert "signup.sectors_required" in resp.text
+
+
+async def test_signup_complete_invalid_sector_is_422(client: AsyncClient) -> None:
+    assert (await _request(client)).status_code == 200
+    token = (await _verify(client)).json()["completion_token"]
+    resp = await _complete(client, token, sectors=["banking"])  # not in the enum
+    assert resp.status_code == 422
+    assert "agency.sector_invalid" in resp.text
+
+
+async def test_signup_invalid_sector_creates_no_orphan_agency(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Atomicity: a bad sector fails BEFORE any DB write — no orphan agency
+    without a sector, and the completion token is NOT consumed."""
+    from shared.models.agency import Agency
+
+    assert (await _request(client)).status_code == 200
+    token = (await _verify(client)).json()["completion_token"]
+    resp = await _complete(client, token, sectors=["banking"])
+    assert resp.status_code == 422
+
+    # Nothing created.
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.name == "Neo Agence"))
+    ).scalar_one_or_none()
+    assert agency is None
+    # The token survives → the user can retry with a valid sector.
+    retry = await _complete(client, token, sectors=["legal"])
+    assert retry.status_code == 200

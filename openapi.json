@@ -26339,6 +26339,20 @@
               }
             ],
             "title": "Referral Code"
+          },
+          "sectors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectors"
           }
         },
         "type": "object",

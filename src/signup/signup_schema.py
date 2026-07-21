@@ -43,3 +43,7 @@ class SignupCompleteRequest(BaseModel):
     password: str = Field(min_length=8)
     language: Language = "fr"
     referral_code: str | None = Field(default=None, min_length=4, max_length=16)
+    # Sector(s) chosen IN the signup form (no post-signup wall): mandatory,
+    # written atomically with the agency. >= 1 else 422 signup.sectors_required;
+    # values validated (enum + dedup) in the manager.
+    sectors: list[str] | None = None
