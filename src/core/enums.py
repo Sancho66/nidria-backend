@@ -36,6 +36,20 @@ class CaseStatus(StrEnum):
     CLOSED = "closed"
 
 
+class CaseUrgency(StrEnum):
+    """Derived per-case urgency for the Dossiers list, priority-ordered (the
+    first that applies wins): a case is OVERDUE if any of its steps is overdue,
+    else TO_VALIDATE if any step awaits the agency's validation, else
+    AWAITING_CLIENT if its status is AWAITING_DOCUMENTS, else NEUTRAL. Same rule
+    as the dashboard worklist, lifted from per-step to per-case (see
+    src/cases/case_urgency.py). The enum order == the sort priority."""
+
+    OVERDUE = "overdue"
+    TO_VALIDATE = "to_validate"
+    AWAITING_CLIENT = "awaiting_client"
+    NEUTRAL = "neutral"
+
+
 class StepStatus(StrEnum):
     TODO = "todo"
     IN_PROGRESS = "in_progress"

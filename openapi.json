@@ -4054,6 +4054,25 @@
             }
           },
           {
+            "name": "urgency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CaseUrgency"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Urgency"
+            }
+          },
+          {
             "name": "origin_country",
             "in": "query",
             "required": false,
@@ -17373,6 +17392,10 @@
               }
             ],
             "title": "Current Step Position"
+          },
+          "urgency": {
+            "$ref": "#/components/schemas/CaseUrgency",
+            "default": "neutral"
           }
         },
         "type": "object",
@@ -17910,6 +17933,17 @@
         },
         "type": "object",
         "title": "CaseUpdateRequest"
+      },
+      "CaseUrgency": {
+        "type": "string",
+        "enum": [
+          "overdue",
+          "to_validate",
+          "awaiting_client",
+          "neutral"
+        ],
+        "title": "CaseUrgency",
+        "description": "Derived per-case urgency for the Dossiers list, priority-ordered (the\nfirst that applies wins): a case is OVERDUE if any of its steps is overdue,\nelse TO_VALIDATE if any step awaits the agency's validation, else\nAWAITING_CLIENT if its status is AWAITING_DOCUMENTS, else NEUTRAL. Same rule\nas the dashboard worklist, lifted from per-step to per-case (see\nsrc/cases/case_urgency.py). The enum order == the sort priority."
       },
       "CatalogPrices": {
         "properties": {

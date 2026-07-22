@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
@@ -15,6 +16,11 @@ from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.invitation import CaseInvitation
 from shared.models.journey import JourneyTemplate
+from src.cases.case_urgency import (
+    case_urgency_subquery,
+    urgency_rank_expr,
+    urgency_value_expr,
+)
 from src.cases.filter_builder import build_advanced_clauses
 
 # Field → column resolution for ?sort_by= (Prism convention: single
@@ -114,33 +120,45 @@ class CasesRepository:
         page: int,
         page_size: int,
         sorts: list[tuple[str, str]] | None = None,
-    ) -> tuple[list[ClientCase], int]:
+    ) -> tuple[list[tuple[ClientCase, str]], int]:
         sorts = sorts or []
         join_principal = any(field in _PRINCIPAL_SORT_FIELDS for field, _ in sorts)
         stmt = self._filtered_stmt(agency_id, filters, join_principal=join_principal)
+        # Derived per-case URGENCY (same rule as the dashboard worklist, see
+        # case_urgency.py): ONE aggregate subquery LEFT JOINed once, reused for
+        # the filter (before count), the sort and the display column — no N+1.
+        urg = case_urgency_subquery(datetime.now(UTC).date())
+        stmt = stmt.outerjoin(urg, urg.c.case_id == ClientCase.id)
+        urgency_val = urgency_value_expr(urg, ClientCase.status)
+        if filters.get("urgency"):
+            wanted = [u.value if hasattr(u, "value") else u for u in filters["urgency"]]
+            stmt = stmt.where(urgency_val.in_(wanted))
         total = (
             await self.db.execute(select(func.count()).select_from(stmt.subquery()))
         ).scalar_one()
         # Stable ordering: id tiebreaker — without it, equal created_at
-        # rows can repeat or vanish across pages (Prism's lesson).
-        # selectinload over add_columns: one extra query for the whole
-        # page (no N+1), and the filter join / pagination stay untouched.
+        # rows can repeat or vanish across pages (Prism's lesson). `urgency`
+        # sorts by the priority rank (overdue on top for order=asc).
         if sorts:
-            clauses = [
-                SORTABLE_FIELD_MAP[field].desc()
-                if direction == "desc"
-                else SORTABLE_FIELD_MAP[field].asc()
-                for field, direction in sorts
-            ]
+            clauses = []
+            for field, direction in sorts:
+                col: Any = (
+                    urgency_rank_expr(urg, ClientCase.status)
+                    if field == "urgency"
+                    else SORTABLE_FIELD_MAP[field]
+                )
+                clauses.append(col.desc() if direction == "desc" else col.asc())
         else:
             clauses = [ClientCase.created_at.desc()]
         stmt = (
-            stmt.options(selectinload(ClientCase.principal))
+            stmt.add_columns(urgency_val.label("urgency"))
+            .options(selectinload(ClientCase.principal))
             .order_by(*clauses, ClientCase.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
-        return list((await self.db.execute(stmt)).scalars()), total
+        rows = (await self.db.execute(stmt)).all()
+        return [(row[0], row.urgency) for row in rows], total
 
     def add_case(self, **kwargs: Any) -> ClientCase:
         case = ClientCase(**kwargs)

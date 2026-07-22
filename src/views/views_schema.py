@@ -113,6 +113,7 @@ CASE_COLUMNS: Final[tuple[AvailableColumn, ...]] = (
     AvailableColumn(key="current_step", label="Étape en cours", type="text"),
     AvailableColumn(key="owner", label="Responsable", type="agent"),
     AvailableColumn(key="status", label="Statut", type="badge"),
+    AvailableColumn(key="urgency", label="Urgence", type="badge"),
     AvailableColumn(key="created_at", label="Créé le", type="datetime"),
     AvailableColumn(key="updated_at", label="Mis à jour", type="datetime"),
     AvailableColumn(key="origin_country", label="Origine", type="country", default=False),

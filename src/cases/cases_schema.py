@@ -8,7 +8,14 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 from src.cases.filter_schema import AdvancedFilters
 from src.core.currencies import CurrencyCode
 from src.core.email import NormalizedEmailStr
-from src.core.enums import CaseStatus, ContactChannel, ExternalContactType, MaritalStatus, Sex
+from src.core.enums import (
+    CaseStatus,
+    CaseUrgency,
+    ContactChannel,
+    ExternalContactType,
+    MaritalStatus,
+    Sex,
+)
 from src.progress.progress_schema import StepProgressResponse
 
 _COUNTRY_PATTERN = r"^[A-Z]{2}$"
@@ -161,6 +168,10 @@ class CaseListItemResponse(CaseResponse):
     # when everything is validated.
     current_step_name: str | None = None
     current_step_position: str | None = None
+    # Derived urgency (same rule as the dashboard worklist, lifted to the case
+    # — see src/cases/case_urgency.py): overdue > to_validate > awaiting_client
+    # > neutral. Sortable (?sort_by=urgency) and filterable (?urgency=…).
+    urgency: CaseUrgency = CaseUrgency.NEUTRAL
 
 
 class CaseListResponse(BaseModel):
@@ -342,6 +353,8 @@ class CaseFilters(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     status: list[CaseStatus] | None = None
+    # Derived urgency filter (OR within, AND-combined with `status`).
+    urgency: list[CaseUrgency] | None = None
     origin_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
     dest_country: str | None = Field(default=None, pattern=_COUNTRY_PATTERN)
     owner_agent_id: uuid.UUID | None = None

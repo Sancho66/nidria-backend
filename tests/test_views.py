@@ -69,6 +69,7 @@ async def test_columns_catalog(
         "current_step",
         "owner",
         "status",
+        "urgency",
         "created_at",
         "updated_at",
     ]

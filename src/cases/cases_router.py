@@ -32,7 +32,7 @@ from src.cases.cases_schema import (
 )
 from src.cases.filter_schema import AdvancedFilters
 from src.core.dependencies import get_current_agent, get_db
-from src.core.enums import Audience, CaseStatus
+from src.core.enums import Audience, CaseStatus, CaseUrgency
 from src.core.exceptions import ValidationError
 from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
@@ -136,6 +136,7 @@ async def list_cases(
     db: DbDep,
     lang: RequestLang,
     status: Annotated[list[CaseStatus] | None, Query()] = None,
+    urgency: Annotated[list[CaseUrgency] | None, Query()] = None,
     origin_country: Annotated[str | None, Query(pattern=r"^[A-Z]{2}$")] = None,
     dest_country: Annotated[str | None, Query(pattern=r"^[A-Z]{2}$")] = None,
     owner_agent_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -180,6 +181,7 @@ async def list_cases(
 
     case_filters = CaseFilters(
         status=status,
+        urgency=urgency,
         origin_country=origin_country,
         dest_country=dest_country,
         owner_agent_id=owner_agent_id,

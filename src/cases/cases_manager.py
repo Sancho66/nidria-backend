@@ -399,9 +399,11 @@ class CasesManager:
         sorts: list[tuple[str, str]] | None = None,
         lang: str = DEFAULT_LANG,
     ) -> CaseListResponse:
-        cases, total = await self.repo.list_cases(
+        rows, total = await self.repo.list_cases(
             agent.agency_id, filters.as_dict(), page, page_size, sorts=sorts
         )
+        cases = [case for case, _urgency in rows]
+        urgencies = {case.id: urgency for case, urgency in rows}
         journey_names = await self._resolve_journey_names(agent, cases, lang)
         current_steps = await self._resolve_current_steps(agent, cases, lang)
         return CaseListResponse(
@@ -409,6 +411,7 @@ class CasesManager:
                 CaseListItemResponse.model_validate(case).model_copy(
                     update={
                         "journey_name": journey_names.get(case.id),
+                        "urgency": urgencies[case.id],
                         **current_steps.get(case.id, {}),
                     }
                 )
@@ -1245,7 +1248,9 @@ class CasesManager:
 # `?sort_by=a,b&order=asc,desc`, paired 1-to-1, strict 422 on unknown
 # field/direction or length mismatch.
 
-ALLOWED_SORTABLE_FIELDS: frozenset[str] = frozenset(SORTABLE_FIELD_MAP.keys())
+# `urgency` is not a plain column (derived subquery, resolved in the repo via
+# urgency_rank_expr) — allowed for sorting alongside the mapped columns.
+ALLOWED_SORTABLE_FIELDS: frozenset[str] = frozenset(SORTABLE_FIELD_MAP.keys()) | {"urgency"}
 _ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
 
 
