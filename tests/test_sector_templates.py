@@ -32,6 +32,7 @@ from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME
 from src.journeys.field_catalog import SECTION_TYPES
 from src.journeys.sector_seed import SECTOR_SECTIONS
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
+from tests.plugins.journey_plugin import MakeJourneyTemplate
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline", "sector_templates")
 
@@ -236,7 +237,7 @@ async def test_one_sector_clones_one_journey(
     journeys = await _agency_journeys(db_session, agency_id)
     assert len(journeys) == 1
     clone = journeys[0]
-    assert clone.name == "Vente d'un bien"
+    assert clone.name == "[Exemple] Vente d'un bien"
     assert clone.sector == "real_estate"  # provenance kept
     assert clone.is_sample is False
     # Independent copy: a different row from the global template.
@@ -272,8 +273,8 @@ async def test_two_sectors_clone_two_journeys_and_demo_rides_the_first(
     agency_id = uuid.UUID(agency["id"])
     journeys = await _agency_journeys(db_session, agency_id)
     assert {j.name for j in journeys} == {
-        "Contentieux civil",
-        "Établissement des comptes annuels",
+        "[Exemple] Contentieux civil",
+        "[Exemple] Établissement des comptes annuels",
     }
     # The demo case rides the FIRST checked sector (legal → "Contentieux civil").
     demo = (
@@ -284,7 +285,7 @@ async def test_two_sectors_clone_two_journeys_and_demo_rides_the_first(
         )
     ).scalar_one()
     demo_journey = await db_session.get(JourneyTemplate, demo.journey_template_id)
-    assert demo_journey is not None and demo_journey.name == "Contentieux civil"
+    assert demo_journey is not None and demo_journey.name == "[Exemple] Contentieux civil"
 
 
 # --- (c) the clone is INDEPENDENT of the template -------------------------------------------
@@ -342,7 +343,7 @@ async def test_legacy_expat_example_is_no_longer_seeded(
     agency_id = uuid.UUID(agency["id"])
     names = {j.name for j in await _agency_journeys(db_session, agency_id)}
     assert DEMO_JOURNEY_NAME not in names
-    assert names == {"Mission de conseil"}
+    assert names == {"[Exemple] Mission de conseil"}
 
 
 # --- (e) a sector with no library template → 0 journeys, no error ---------------------------
@@ -487,7 +488,7 @@ async def test_real_estate_clone_has_populated_section_independent_of_template(
     )
     agency_id = uuid.UUID(agency["id"])
     clone = (await _agency_journeys(db_session, agency_id))[0]
-    assert clone.name == "Vente d'un bien"
+    assert clone.name == "[Exemple] Vente d'un bien"
 
     # The clone carries identity + real_estate_deal sections, populated.
     sections = await _sections_of(db_session, clone.id)
@@ -522,3 +523,39 @@ async def test_real_estate_clone_has_populated_section_independent_of_template(
         ).scalars()
     }
     assert "property_deal_type" in defs
+
+
+# --- (h) the "[Exemple]" prefix on the global templates ------------------------------------
+
+
+async def test_global_templates_are_prefixed_example(db_session: AsyncSession) -> None:
+    for sector in SECTOR_SECTIONS:
+        tpl = await _global_template(db_session, sector)
+        assert tpl.name.startswith("[Exemple] "), sector
+        assert tpl.name_i18n["fr"] == tpl.name  # blob stays in sync
+    real_estate = await _global_template(db_session, "real_estate")
+    assert real_estate.name == "[Exemple] Vente d'un bien"
+
+
+async def test_reconcile_does_not_stack_the_prefix(db_session: AsyncSession) -> None:
+    from src.journeys.sector_seed import seed_sector_templates
+
+    await seed_sector_templates(db_session)  # 2nd boot
+    await seed_sector_templates(db_session)  # 3rd boot
+    tpl = await _global_template(db_session, "real_estate")
+    assert tpl.name == "[Exemple] Vente d'un bien"  # single prefix, never stacked
+    assert tpl.name.count("[Exemple]") == 1
+
+
+async def test_reconcile_never_renames_an_agency_template(
+    db_session: AsyncSession,
+    make_journey_template: MakeJourneyTemplate,
+) -> None:
+    from src.journeys.sector_seed import seed_sector_templates
+
+    # An agency's OWN journey named exactly like a sector base name (agency_id
+    # set → out of the reconcile's reach, which filters agency_id IS NULL).
+    owned = await make_journey_template(name="Vente d'un bien", sector="real_estate")
+    await seed_sector_templates(db_session)  # reconcile the GLOBAL library
+    await db_session.refresh(owned)
+    assert owned.name == "Vente d'un bien"  # untouched, never prefixed

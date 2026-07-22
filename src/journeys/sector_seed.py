@@ -379,6 +379,19 @@ SECTOR_SECTIONS: dict[str, tuple[str, ...]] = {
     AgencySector.CONSULTING.value: ("identity", "consulting_mission"),
 }
 
+# The GLOBAL templates are ready-made EXAMPLES the agency clones and edits —
+# the prefix makes that plain in the library. A universal bracket TAG (not
+# prose): kept identical across the i18n blob (which is fr-only today; a future
+# EN/ES name would translate it, "[Example]"/"[Ejemplo]"). NEVER a logical key
+# — the discriminant is `sector IS NOT NULL`, never the name.
+EXAMPLE_PREFIX = "[Exemple] "
+
+
+def _example_name(name: str) -> str:
+    """Idempotent by construction (computed from the un-prefixed catalog name)
+    AND guarded by startswith — a re-seed never stacks '[Exemple] [Exemple] …'."""
+    return name if name.startswith(EXAMPLE_PREFIX) else f"{EXAMPLE_PREFIX}{name}"
+
 
 def _add_participants(db: AsyncSession, step_id: uuid.UUID, doers: list[str]) -> None:
     """The step's DOER(s). Only 'agent' (agency in general, agent_id NULL) and
@@ -475,20 +488,21 @@ async def _seed_one_sector(db: AsyncSession, sector: str, name: str, steps: list
             )
         )
     ).scalar_one_or_none()
+    display_name = _example_name(name)
     if tpl is None:
         tpl = JourneyTemplate(
             id=uuid.uuid4(),
             agency_id=None,
             is_sample=True,
             sector=sector,
-            name=name,
-            name_i18n={"fr": name},
+            name=display_name,
+            name_i18n={"fr": display_name},
         )
         db.add(tpl)
         await db.flush()
     else:
-        tpl.name = name
-        tpl.name_i18n = {"fr": name}
+        tpl.name = display_name
+        tpl.name_i18n = {"fr": display_name}
 
     # --- steps: reconcile by position (count is fixed per sector) ---------------------
     existing_steps = {
