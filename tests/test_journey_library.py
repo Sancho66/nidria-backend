@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
+from src.core.enums import AgencySector
 from src.core.exceptions import NotFoundError
 from src.journeys.journeys_manager import JourneysManager
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -75,6 +76,31 @@ async def test_library_lists_samples_agency_list_excludes_them(
     lib_ids = {t["id"] for t in (await lib_client.get("/journeys/library", headers=ah)).json()}
     assert str(sample.id) in lib_ids
     assert own["id"] not in lib_ids
+
+
+async def test_library_exposes_sample_sector(
+    lib_client: AsyncClient,
+    admin: Agent,
+    db_session: AsyncSession,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A sectoral library sample carries its `sector` in the response (the
+    front splits the library into a by-sector axis); a plain/country sample
+    has sector null."""
+    ah = agent_headers(admin)
+    sectoral = JourneyTemplate(
+        agency_id=None,
+        is_sample=True,
+        name="Vente d'un bien",
+        sector=AgencySector.REAL_ESTATE,
+    )
+    db_session.add(sectoral)
+    plain = await _sample(db_session, name="Sans secteur")
+
+    lib = (await lib_client.get("/journeys/library", headers=ah)).json()
+    by_id = {t["id"]: t for t in lib}
+    assert by_id[str(sectoral.id)]["sector"] == AgencySector.REAL_ESTATE.value
+    assert by_id[str(plain.id)]["sector"] is None
 
 
 async def test_library_route_is_not_captured_as_template_id(

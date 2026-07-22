@@ -22297,6 +22297,16 @@
               }
             ],
             "title": "Country"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgencySector"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

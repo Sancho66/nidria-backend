@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from src.core.currencies import CurrencyCode
 from src.core.enums import (
+    AgencySector,
     CompletionMode,
     ResponsibleType,
     StepParticipantRole,
@@ -541,6 +542,11 @@ class JourneyTemplateResponse(BaseModel):
     # ISO 3166-1 alpha-2 (e.g. "PY") for sample grouping/flag/search; NULL
     # for an ordinary agency template. Flag + localized name are front-side.
     country: str | None = None
+    # Business sector of a LIBRARY sample (the 7 sectoral models); NULL for a
+    # country sample and for ordinary agency templates. Lets the front split the
+    # model library into a "by sector" axis (group + recommend agency.sectors)
+    # distinct from the "by country" axis. Read straight off the ORM column.
+    sector: AgencySector | None = None
 
 
 class JourneyCloneRequest(BaseModel):
