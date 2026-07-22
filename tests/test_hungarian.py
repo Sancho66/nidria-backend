@@ -63,7 +63,8 @@ def test_field_catalog_is_x7() -> None:
                 if isinstance(d["fr"], list):
                     assert len(d["hu"]) == len(d["fr"])  # les options en parite
                 blobs += 1
-    assert blobs == 77  # 69 libelles + 8 listes d'options
+    # 101 libelles (69 + 32 des packs sectoriels) + 20 listes d'options (8 + 12).
+    assert blobs == 121
 
 
 async def test_signup_code_email_leaves_in_hungarian(client: AsyncClient) -> None:
