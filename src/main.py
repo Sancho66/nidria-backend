@@ -44,6 +44,7 @@ from src.imports.imports_router import router as imports_router
 from src.jobs.jobs_router import router as jobs_router
 from src.journeys.journeys_router import router as journeys_router
 from src.journeys.sample_seed import seed_sample_journeys
+from src.journeys.sector_seed import seed_sector_templates
 from src.profile.profile_router import router as profile_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
@@ -93,6 +94,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         # Library samples (shared, read-only) — idempotent, like the system
         # roles. Agencies consume them by cloning.
         await seed_sample_journeys(session)
+        # Sector library (7 global sector templates) — same pattern, keyed on
+        # `sector`; cloned into an agency at creation (demo_case_seed).
+        await seed_sector_templates(session)
         # Consent documents (point 16) — reconcile with the canonical
         # texts (consents_texts.py = source of truth): a text edited in
         # code publishes a NEW version at boot and re-gates everyone.

@@ -80,7 +80,9 @@ class AdminRepository:
                 AgencyUsageMilestone.key == "premier_parcours_cree",
             ),
             exists().where(
-                JourneyTemplate.agency_id == Agency.id, JourneyTemplate.name != DEMO_JOURNEY_NAME
+                JourneyTemplate.agency_id == Agency.id,
+                JourneyTemplate.name != DEMO_JOURNEY_NAME,  # legacy pre-sector demo
+                JourneyTemplate.sector.is_(None),  # exclude gifted sector clones
             ),
         )
         has_viewed = exists().where(
@@ -211,7 +213,8 @@ class AdminRepository:
             select(JourneyTemplate.agency_id, func.min(JourneyTemplate.created_at))
             .where(
                 JourneyTemplate.agency_id.in_(agency_ids),
-                JourneyTemplate.name != DEMO_JOURNEY_NAME,
+                JourneyTemplate.name != DEMO_JOURNEY_NAME,  # legacy pre-sector demo
+                JourneyTemplate.sector.is_(None),  # exclude gifted sector clones
             )
             .group_by(JourneyTemplate.agency_id)
         )

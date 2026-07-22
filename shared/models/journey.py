@@ -47,6 +47,14 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # a sample carries one. No country table/referential — the flag + the
     # localized name are a FRONT concern (Intl.DisplayNames from the code).
     country: Mapped[str | None] = mapped_column(String(2))
+    # Multi-sector library, mirror of `country`. Set on (a) the 7 GLOBAL
+    # sector templates (agency_id NULL, is_sample=true) AND (b) an agency's
+    # GIFTED CLONE of one (agency_id set, is_sample=false) — the provenance is
+    # kept. NULL on the 78 country samples AND on every agency HAND-MADE
+    # journey. So `sector IS NULL` (among an agency's own rows) = "a journey
+    # the agency actually created" — the adoption-signal discriminant (with
+    # the legacy demo-journey name, kept for pre-sector agencies).
+    sector: Mapped[str | None] = mapped_column(String(20))
     # Visual canvas editor (MVP-1): pure-presentation node positions,
     # { "<step_id>": {"x": float, "y": float} }. NULL = never opened in
     # canvas (the front auto-lays-out with dagre). Never affects journey

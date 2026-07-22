@@ -30,6 +30,16 @@ async def make_journey_template(
 
 
 @pytest_asyncio.fixture
+async def sector_templates(db_session: AsyncSession) -> None:
+    """Seed the 7 GLOBAL sector library templates on the testcontainer, like
+    the boot does — so agency creation clones its sector gift (and the demo
+    case rides it). Function-scoped: re-seeded after the truncate isolation."""
+    from src.journeys.sector_seed import seed_sector_templates
+
+    await seed_sector_templates(db_session)
+
+
+@pytest_asyncio.fixture
 async def make_template_step(db_session: AsyncSession) -> MakeTemplateStep:
     counters: dict[uuid.UUID, int] = {}
 

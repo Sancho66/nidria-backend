@@ -38,7 +38,12 @@ from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
-from shared.models.journey import JourneyTemplate, JourneyTemplateStep, StepPrerequisite
+from shared.models.journey import (
+    JourneyStepParticipant,
+    JourneyTemplate,
+    JourneyTemplateStep,
+    StepPrerequisite,
+)
 from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
 from src.core import storage
@@ -50,49 +55,13 @@ logger = logging.getLogger(__name__)
 
 DEMO_SEED_MARKER = "demo_case_seeded_at"
 
+# Legacy name of the pre-sector demo journey. NO LONGER CREATED (the demo
+# case now rides the FIRST cloned sector journey). Kept ONLY as the adoption-
+# signal discriminant for agencies seeded BEFORE the sector library — their
+# "Exemple : …" journey stays excluded from `premier_parcours_cree` exactly as
+# before (the zero-impact invariant). Paired with `sector IS NULL` for the new
+# gifted journeys. See admin_repository / agencies_manager.
 DEMO_JOURNEY_NAME = "Exemple : Installation à l'étranger"
-
-# (name, estimated_days, content_note, status) — linear AND chain, the
-# agency validates every step (template defaults). Generic on purpose:
-# the same example must speak to a Paraguay agency and a Cyprus one.
-_DEMO_STEPS: list[tuple[str, int | None, str, str]] = [
-    (
-        "Premier rendez-vous & recueil des informations",
-        7,
-        "Échange initial avec le client : situation, objectifs, calendrier. "
-        "Les informations recueillies alimentent la page d'infos du dossier.",
-        StepStatus.DONE.value,
-    ),
-    (
-        "Constitution du dossier & pièces justificatives",
-        14,
-        "Le client dépose ses pièces directement dans son espace : chaque "
-        "document arrive au bon endroit, plus rien ne se perd dans les mails.",
-        StepStatus.DONE.value,
-    ),
-    (
-        "Dépôt de la demande auprès de l'administration",
-        30,
-        "L'agence dépose le dossier complet. Le client suit l'avancement en "
-        "temps réel depuis son espace, sans avoir besoin d'appeler.",
-        StepStatus.IN_PROGRESS.value,
-    ),
-    (
-        "Réception de la décision & titre de résidence",
-        21,
-        "Dès la décision reçue, l'étape est validée et le client est prévenu automatiquement.",
-        StepStatus.TODO.value,
-    ),
-    (
-        "Installation & suivi sur place",
-        None,
-        "Dernière ligne droite : installation, démarches locales et suivi par votre équipe.",
-        StepStatus.TODO.value,
-    ),
-]
-
-# Document requirements shown on step 2 (what the client is asked for).
-_DEMO_REQUIREMENTS = ("Copie du passeport", "Justificatif de domicile")
 
 _DEMO_COMMENT = (
     "Bonjour ! Je viens de déposer mes pièces justificatives, "
@@ -124,6 +93,107 @@ def _demo_settings(agency: Agency, now: datetime) -> dict[str, object]:
     return {**agency.settings, DEMO_SEED_MARKER: now.isoformat()}
 
 
+async def _clone_sector_into_agency(
+    db: AsyncSession, src: JourneyTemplate, agency: Agency
+) -> tuple[JourneyTemplate, list[JourneyTemplateStep]]:
+    """Deep-copy a GLOBAL sector template into `agency` as a REAL reusable
+    journey (the gift). Keeps `sector` (provenance + the adoption-signal
+    discriminant); is_sample=False. Emits NO activity and does NOT commit —
+    it runs inside seed_demo_case's transaction, invisible to every signal.
+
+    Sector templates carry ONLY agent/expat participants (agent_id/external_id
+    NULL — résolution A), so copying them verbatim leaks no cross-agency FK."""
+    new_tpl = JourneyTemplate(
+        id=uuid.uuid4(),
+        agency_id=agency.id,
+        is_sample=False,
+        sector=src.sector,
+        name=src.name,
+        name_i18n=dict(src.name_i18n or {}),
+    )
+    db.add(new_tpl)
+    await db.flush()
+
+    src_steps = (
+        (
+            await db.execute(
+                select(JourneyTemplateStep)
+                .where(JourneyTemplateStep.template_id == src.id)
+                .order_by(JourneyTemplateStep.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    id_map: dict[uuid.UUID, uuid.UUID] = {}
+    new_steps: list[JourneyTemplateStep] = []
+    for src_step in src_steps:
+        nid = uuid.uuid4()
+        id_map[src_step.id] = nid
+        step = JourneyTemplateStep(
+            id=nid,
+            template_id=new_tpl.id,
+            name=src_step.name,
+            position=src_step.position,
+            estimated_days=src_step.estimated_days,
+            content_note=src_step.content_note,
+            completion_mode=src_step.completion_mode,
+            default_validated_by_type=src_step.default_validated_by_type,
+        )
+        new_steps.append(step)
+        db.add(step)
+    await db.flush()
+
+    src_ids = list(id_map.keys())
+    prereqs = (
+        (await db.execute(select(StepPrerequisite).where(StepPrerequisite.step_id.in_(src_ids))))
+        .scalars()
+        .all()
+    )
+    for prereq in prereqs:
+        db.add(
+            StepPrerequisite(
+                step_id=id_map[prereq.step_id],
+                prerequisite_step_id=id_map[prereq.prerequisite_step_id],
+            )
+        )
+    requirements = (
+        (await db.execute(select(StepRequirement).where(StepRequirement.step_id.in_(src_ids))))
+        .scalars()
+        .all()
+    )
+    for req in requirements:
+        db.add(
+            StepRequirement(
+                step_id=id_map[req.step_id],
+                kind=req.kind,
+                reference=req.reference,
+                scope=req.scope,
+                position=req.position,
+            )
+        )
+    participants = (
+        (
+            await db.execute(
+                select(JourneyStepParticipant).where(JourneyStepParticipant.step_id.in_(src_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for part in participants:
+        db.add(
+            JourneyStepParticipant(
+                step_id=id_map[part.step_id],
+                type=part.type,
+                agent_id=part.agent_id,
+                external_id=part.external_id,
+                role=part.role,
+            )
+        )
+    return new_tpl, new_steps
+
+
 async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> ClientCase | None:
     """Create the example dossier for `agency`, owned by `owner` (its
     first admin at creation; the earliest member for backfills). COMMITS.
@@ -135,6 +205,47 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
     if agency.settings.get(DEMO_SEED_MARKER):
         return None
     now = datetime.now(UTC)
+
+    # --- the gift: clone each checked sector's library journey into the agency -----
+    # Real reusable journeys (sector kept = provenance + adoption-signal
+    # discriminant), NOT counted as agency-created (see admin_repository).
+    cloned: list[tuple[JourneyTemplate, list[JourneyTemplateStep]]] = []
+    for sector in agency.sectors:
+        src = (
+            await db.execute(
+                select(JourneyTemplate).where(
+                    JourneyTemplate.agency_id.is_(None),
+                    JourneyTemplate.is_sample.is_(True),
+                    JourneyTemplate.sector == sector,
+                )
+            )
+        ).scalar_one_or_none()
+        if src is None:
+            continue  # a sector with no library template → 0 journey, no error
+        cloned.append(await _clone_sector_into_agency(db, src, agency))
+
+    if not cloned:
+        # No sector matched (defensive: the 7 all exist, sectors is mandatory
+        # at creation). Mark so nothing retries behind the agency's back; no
+        # demo case without a journey to ride.
+        agency.settings = _demo_settings(agency, now)
+        await db.commit()
+        return None
+
+    # The demo case rides the FIRST cloned sector journey.
+    demo_template, demo_steps = cloned[0]
+    expat_step_ids = set(
+        (
+            await db.execute(
+                select(JourneyStepParticipant.step_id).where(
+                    JourneyStepParticipant.step_id.in_([s.id for s in demo_steps]),
+                    JourneyStepParticipant.type == "expat",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     # --- the demo client, activation SIMULATED (badge true, no email ever) ---------
     email = demo_expat_email(agency.slug)
@@ -155,42 +266,12 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
         db.add(expat)
         await db.flush()
 
-    # --- the journey: a NORMAL agency template (reusable gift) ---------------------
-    template = JourneyTemplate(agency_id=agency.id, name=DEMO_JOURNEY_NAME)
-    db.add(template)
-    await db.flush()
-    steps: list[JourneyTemplateStep] = []
-    for position, (name, days, note, _status) in enumerate(_DEMO_STEPS):
-        step = JourneyTemplateStep(
-            template_id=template.id,
-            name=name,
-            position=position,
-            estimated_days=days,
-            content_note=note,
-            default_validated_by_type="agent",
-        )
-        steps.append(step)
-        db.add(step)
-    await db.flush()
-    for i in range(1, len(steps)):
-        db.add(StepPrerequisite(step_id=steps[i].id, prerequisite_step_id=steps[i - 1].id))
-    for position, label in enumerate(_DEMO_REQUIREMENTS):
-        db.add(
-            StepRequirement(
-                step_id=steps[1].id,
-                kind="document",
-                reference=label,
-                scope="principal",
-                position=position,
-            )
-        )
-
     # --- the case itself: is_demo=TRUE is THE exclusion switch ---------------------
     case = ClientCase(
         agency_id=agency.id,
         principal_expat_user_id=expat.id,
         owner_agent_id=owner.id,
-        journey_template_id=template.id,
+        journey_template_id=demo_template.id,
         origin_country="FR",
         origin_city="Lyon",
         dest_country="PT",
@@ -217,19 +298,26 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
         )
     )
 
-    # --- a lived-in timeline: 2 DONE, 1 IN_PROGRESS, 2 TODO ------------------------
+    # --- a lived-in timeline: first 2 DONE, 3rd IN_PROGRESS, rest TODO -------------
+    # Responsible mirrors the cloned journey's participants: a step with an
+    # expat doer → the client carries it (CHECK: type 'expat' ⇒ no agent FK);
+    # otherwise the agency owner (a step with no participant included).
     progresses: list[CaseStepProgress] = []
-    for i, ((_name, _days, _note, status), step) in enumerate(zip(_DEMO_STEPS, steps, strict=True)):
+    for i, step in enumerate(demo_steps):
+        if i < 2:
+            status = StepStatus.DONE.value
+        elif i == 2:
+            status = StepStatus.IN_PROGRESS.value
+        else:
+            status = StepStatus.TODO.value
         done = status == StepStatus.DONE.value
+        is_expat = step.id in expat_step_ids
         progress = CaseStepProgress(
             case_id=case.id,
             template_step_id=step.id,
             status=status,
-            # Client steps (2 and 5) belong to the client; the agency
-            # owner carries the others — real interlocutors on the
-            # timeline. CHECK: type 'agent' requires the agent FK.
-            responsible_type="expat" if i in (1, 4) else "agent",
-            responsible_agent_id=None if i in (1, 4) else owner.id,
+            responsible_type="expat" if is_expat else "agent",
+            responsible_agent_id=None if is_expat else owner.id,
             validated_by_type="agent",
             completed_at=(now - timedelta(days=20 - 4 * i)) if done else None,
             completed_by_agent_id=owner.id if done else None,

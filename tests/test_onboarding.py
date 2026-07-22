@@ -114,12 +114,17 @@ async def test_ai_import_checks_create_journey(
 # --- (c) the demo: creation checks nothing, consultation checks open_case ------------
 
 
+@pytest.mark.usefixtures("sector_templates")
 async def test_demo_checks_nothing_by_creation_but_consultation_checks_open_case(
     client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
     headers = agent_headers(admin)
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
+    # The demo case now rides a cloned SECTOR journey — the agency needs a
+    # sector for the gift to exist (fixtures create bare agencies).
+    agency.sectors = ["immigration"]
+    await db_session.commit()
     demo_case = await seed_demo_case(db_session, agency, admin)
     assert demo_case is not None and demo_case.is_demo
 

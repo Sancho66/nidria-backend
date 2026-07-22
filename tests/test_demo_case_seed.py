@@ -30,7 +30,7 @@ from src.core.storage import mock_store
 from src.usage.usage_manager import UsageManager
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
-pytestmark = pytest.mark.usefixtures("rbac_baseline")
+pytestmark = pytest.mark.usefixtures("rbac_baseline", "sector_templates")
 
 
 async def _create_agency(
@@ -93,7 +93,8 @@ async def test_agency_creation_seeds_a_filled_demo_case(
     assert expat.email == "demo+demo-agency@nidria.app"
     assert expat.activated_at is not None
 
-    # Lived-in timeline: 5 steps, 2 DONE (dated), 1 IN_PROGRESS.
+    # Lived-in timeline on the cloned immigration journey (6 steps): 2 DONE
+    # (dated), 1 IN_PROGRESS, the rest TODO.
     progresses = list(
         (
             await db_session.execute(
@@ -101,9 +102,9 @@ async def test_agency_creation_seeds_a_filled_demo_case(
             )
         ).scalars()
     )
-    assert len(progresses) == 5
+    assert len(progresses) == 6
     statuses = sorted(p.status for p in progresses)
-    assert statuses == ["done", "done", "in_progress", "todo", "todo"]
+    assert statuses == ["done", "done", "in_progress", "todo", "todo", "todo"]
     assert all(p.completed_at is not None for p in progresses if p.status == "done")
 
     # Filled info page, one document (really stored), one client message.

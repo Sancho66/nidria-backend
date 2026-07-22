@@ -713,7 +713,8 @@ class AgenciesManager:
                 await self.db.execute(
                     select(func.min(JourneyTemplate.created_at)).where(
                         JourneyTemplate.agency_id == agent.agency_id,
-                        JourneyTemplate.name != DEMO_JOURNEY_NAME,
+                        JourneyTemplate.name != DEMO_JOURNEY_NAME,  # legacy pre-sector demo
+                        JourneyTemplate.sector.is_(None),  # exclude gifted sector clones
                     )
                 )
             ).scalar_one_or_none()
