@@ -172,6 +172,7 @@ class CasesManager:
             dest_postal_code=payload.dest_postal_code,
             status=payload.status.value,
             source=payload.source,
+            reference=payload.reference,
             tags=payload.tags,
         )
         # Optional billed price at creation — same gate and money rules as the

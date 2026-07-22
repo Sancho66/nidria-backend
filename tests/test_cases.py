@@ -1196,3 +1196,93 @@ async def test_create_case_survives_email_service_down(
         await db_session.execute(select(CaseInvitation).where(CaseInvitation.case_id == case.id))
     ).scalar_one()
     assert invitation.status == "pending"
+
+
+# --- reference (agency internal case reference) --------------------------------------------
+
+
+async def test_create_case_with_reference_persists_and_exposes(
+    cases_client: AsyncClient,
+    db_session: AsyncSession,
+    member: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    template = JourneyTemplate(agency_id=member.agency_id, name="T")
+    db_session.add(template)
+    await db_session.commit()
+    response = await cases_client.post(
+        "/cases",
+        headers=agent_headers(member),
+        json=_payload(
+            "ref@example.com", journey_template_id=str(template.id), reference="DOSSIER-2026-A"
+        ),
+    )
+    assert response.status_code == 201
+    assert response.json()["reference"] == "DOSSIER-2026-A"
+    case_id = uuid.UUID(response.json()["id"])
+    case = (
+        await db_session.execute(select(ClientCase).where(ClientCase.id == case_id))
+    ).scalar_one()
+    assert case.reference == "DOSSIER-2026-A"
+
+
+async def test_create_case_without_reference_is_null(
+    cases_client: AsyncClient,
+    db_session: AsyncSession,
+    member: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    template = JourneyTemplate(agency_id=member.agency_id, name="T")
+    db_session.add(template)
+    await db_session.commit()
+    response = await cases_client.post(
+        "/cases",
+        headers=agent_headers(member),
+        json=_payload("noref@example.com", journey_template_id=str(template.id)),
+    )
+    assert response.status_code == 201
+    assert response.json()["reference"] is None
+
+
+async def test_patch_case_reference(
+    cases_client: AsyncClient,
+    db_session: AsyncSession,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    case = await make_client_case(agency_id=member.agency_id, reference=None)
+    response = await cases_client.patch(
+        f"/cases/{case.id}",
+        headers=agent_headers(member),
+        json={"reference": "REF-42"},
+    )
+    assert response.status_code == 200
+    assert response.json()["reference"] == "REF-42"
+    await db_session.refresh(case)
+    assert case.reference == "REF-42"
+
+
+async def test_search_q_matches_reference(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    hit = await make_client_case(agency_id=member.agency_id, reference="ALPHA-9000")
+    await make_client_case(agency_id=member.agency_id, reference="BETA-1")
+    found = await cases_client.get("/cases?q=alpha-90", headers=agent_headers(member))
+    assert {c["id"] for c in found.json()["items"]} == {str(hit.id)}
+
+
+async def test_two_cases_may_share_a_reference(
+    cases_client: AsyncClient,
+    member: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    # No uniqueness: a reference is a human label, not an identifier.
+    a = await make_client_case(agency_id=member.agency_id, reference="SHARED-REF")
+    b = await make_client_case(agency_id=member.agency_id, reference="SHARED-REF")
+    found = await cases_client.get("/cases?q=shared-ref", headers=agent_headers(member))
+    assert {c["id"] for c in found.json()["items"]} == {str(a.id), str(b.id)}

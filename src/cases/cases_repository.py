@@ -95,6 +95,9 @@ class CasesRepository:
                     ExpatUser.first_name.ilike(pattern),
                     ExpatUser.last_name.ilike(pattern),
                     ExpatUser.email.ilike(pattern),
+                    # Agency's internal case reference — searchable alongside
+                    # the client identity (free text, may be NULL → skipped).
+                    ClientCase.reference.ilike(pattern),
                 )
             )
         if filters.get("advanced") is not None:

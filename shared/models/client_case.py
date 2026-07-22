@@ -53,6 +53,11 @@ class ClientCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(30), default=CaseStatus.PROSPECT, index=True, nullable=False
     )
     source: Mapped[str | None] = mapped_column(String(100))
+    # Agency's internal case reference — free text, NULLABLE, NOT unique (two
+    # dossiers may share one; it's a human label, never an identifier). Set at
+    # creation or later, searchable alongside the client name in the case
+    # search. Agency-facing only.
+    reference: Mapped[str | None] = mapped_column(String(100))
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     # The price the agency bills for THIS dossier (optional, editable) — ONE
     # price per case, not a ledger (the costs are the detail). With the real

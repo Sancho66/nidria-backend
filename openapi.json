@@ -16619,6 +16619,18 @@
             ],
             "title": "Source"
           },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -16841,6 +16853,17 @@
             ],
             "title": "Source"
           },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -16959,6 +16982,7 @@
           "dest_postal_code",
           "status",
           "source",
+          "reference",
           "tags",
           "created_at",
           "updated_at",
@@ -17286,6 +17310,17 @@
             ],
             "title": "Source"
           },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -17357,6 +17392,7 @@
           "dest_postal_code",
           "status",
           "source",
+          "reference",
           "tags",
           "created_at",
           "updated_at",
@@ -17622,6 +17658,17 @@
             ],
             "title": "Source"
           },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -17657,6 +17704,7 @@
           "dest_postal_code",
           "status",
           "source",
+          "reference",
           "tags",
           "created_at",
           "updated_at"
@@ -17794,6 +17842,18 @@
               }
             ],
             "title": "Source"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
           },
           "tags": {
             "anyOf": [

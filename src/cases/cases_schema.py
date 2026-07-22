@@ -63,6 +63,8 @@ class CaseCreateRequest(_CivilStatusFields):
     dest_postal_code: str | None = Field(default=None, max_length=20)
     status: CaseStatus = CaseStatus.PROSPECT
     source: str | None = Field(default=None, max_length=100)
+    # Agency's internal case reference (free text, not unique).
+    reference: str | None = Field(default=None, max_length=100)
     tags: list[str] = Field(default_factory=list)
     owner_agent_id: uuid.UUID | None = None  # default: the creator
     # REQUIRED — see the class docstring (a journey-less case is a dead shell).
@@ -99,6 +101,7 @@ class CaseUpdateRequest(BaseModel):
     dest_postal_code: str | None = Field(default=None, max_length=20)
     status: CaseStatus | None = None
     source: str | None = Field(default=None, max_length=100)
+    reference: str | None = Field(default=None, max_length=100)
     tags: list[str] | None = None
     owner_agent_id: uuid.UUID | None = None
     # Billed price (cost.manage enforced in the manager). exclude_unset
@@ -128,6 +131,7 @@ class CaseResponse(BaseModel):
     dest_postal_code: str | None
     status: str
     source: str | None
+    reference: str | None
     tags: list[str]
     created_at: datetime
     updated_at: datetime
