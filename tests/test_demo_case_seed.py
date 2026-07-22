@@ -85,12 +85,12 @@ async def test_agency_creation_seeds_a_filled_demo_case(
     assert case is not None
     assert case.journey_template_id is not None
     assert case.owner_agent_id is not None
-    assert case.origin_country == "FR" and case.dest_country == "PT"
+    assert case.origin_country == "PT" and case.dest_country == "DE"
 
     # Simulated activation: the "account active" badge is TRUE.
     expat = await db_session.get(ExpatUser, case.principal_expat_user_id)
     assert expat is not None
-    assert expat.email == "demo+demo-agency@nidria.app"
+    assert expat.email == "demo+demo-agency-1@nidria.app"  # per-dossier index
     assert expat.activated_at is not None
 
     # Lived-in timeline on the cloned immigration journey (6 steps): 2 DONE
@@ -184,7 +184,7 @@ async def test_no_email_to_the_demo_client(
     agent_headers: AuthHeaders,
 ) -> None:
     await _create_agency(client, make_agent, system_roles, agent_headers, slug="no-mail")
-    demo_address = "demo+no-mail@nidria.app"
+    demo_address = "demo+no-mail-1@nidria.app"
     assert all(sent.to != demo_address for sent in email.outbox)
 
     # Even an explicit forgot-password answers 200 and sends NOTHING —

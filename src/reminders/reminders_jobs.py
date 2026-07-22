@@ -260,6 +260,9 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                 CaseStepProgress.updated_at <= cutoff,
                 # No auto follow-up on a soft-deleted case.
                 ClientCase.deleted_at.is_(None),
+                # Demo dossiers ([Exemple], is_demo) never enter the approval
+                # queue — the seeded examples must not generate TO_APPROVE work.
+                ClientCase.is_demo.is_(False),
                 ~already,
             )
         )

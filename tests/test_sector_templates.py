@@ -10,6 +10,7 @@ template → 0 journeys, no error; (f) THE invariant — creating an agency touc
 NO pre-existing agency (bit-for-bit)."""
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
@@ -17,8 +18,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.custom_field import CustomFieldDefinition
+from shared.models.expat_user import ExpatUser
 from shared.models.journey import (
     JourneySection,
     JourneyStepParticipant,
@@ -28,9 +31,10 @@ from shared.models.journey import (
 )
 from shared.models.rbac import Role
 from shared.models.step_requirement import StepRequirement
-from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME
+from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME, seed_demo_case
 from src.journeys.field_catalog import SECTION_TYPES
 from src.journeys.sector_seed import SECTOR_SECTIONS
+from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.journey_plugin import MakeJourneyTemplate
 
@@ -255,7 +259,7 @@ async def test_one_sector_clones_one_journey(
     assert len(n_steps) == 7  # real_estate has 7 steps
 
 
-async def test_two_sectors_clone_two_journeys_and_demo_rides_the_first(
+async def test_two_sectors_clone_two_journeys_and_one_demo_each(
     client: AsyncClient,
     db_session: AsyncSession,
     make_agent: MakeAgent,
@@ -276,16 +280,19 @@ async def test_two_sectors_clone_two_journeys_and_demo_rides_the_first(
         "[Exemple] Contentieux civil",
         "[Exemple] Établissement des comptes annuels",
     }
-    # The demo case rides the FIRST checked sector (legal → "Contentieux civil").
-    demo = (
-        await db_session.execute(
-            select(ClientCase).where(
-                ClientCase.agency_id == agency_id, ClientCase.is_demo.is_(True)
+    # ONE demo dossier PER cloned journey (supersedes the single generalist).
+    demos = list(
+        (
+            await db_session.execute(
+                select(ClientCase).where(
+                    ClientCase.agency_id == agency_id, ClientCase.is_demo.is_(True)
+                )
             )
-        )
-    ).scalar_one()
-    demo_journey = await db_session.get(JourneyTemplate, demo.journey_template_id)
-    assert demo_journey is not None and demo_journey.name == "[Exemple] Contentieux civil"
+        ).scalars()
+    )
+    assert len(demos) == 2
+    demo_journey_ids = {d.journey_template_id for d in demos}
+    assert demo_journey_ids == {j.id for j in journeys}  # each journey has its demo
 
 
 # --- (c) the clone is INDEPENDENT of the template -------------------------------------------
@@ -559,3 +566,56 @@ async def test_reconcile_never_renames_an_agency_template(
     await seed_sector_templates(db_session)  # reconcile the GLOBAL library
     await db_session.refresh(owned)
     assert owned.name == "Vente d'un bien"  # untouched, never prefixed
+
+
+# --- (i) filled demo dossier: prefixed client + pre-filled section fields ------------------
+
+
+async def test_demo_dossier_is_filled_with_sector_custom_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    agency = await _create_agency(
+        client, make_agent, system_roles, agent_headers, slug="filled-re", sectors=["real_estate"]
+    )
+    agency_id = uuid.UUID(agency["id"])
+    demo = (
+        await db_session.execute(
+            select(ClientCase).where(
+                ClientCase.agency_id == agency_id, ClientCase.is_demo.is_(True)
+            )
+        )
+    ).scalar_one()
+    person = (
+        await db_session.execute(select(CasePerson).where(CasePerson.case_id == demo.id))
+    ).scalar_one()
+    # The section fields are pre-filled (raw coercer forms), select = real option.
+    cf = person.custom_fields
+    assert cf["property_deal_type"] == "Vente"
+    assert cf["property_kind"] == "Appartement"
+    assert cf["property_price"] == 320000
+    assert cf["property_address"]["country"] == "PT"
+    assert cf["expected_signing_date"] == "2026-05-15"
+    # Prefixed demo client name.
+    expat = await db_session.get(ExpatUser, demo.principal_expat_user_id)
+    assert expat is not None and expat.first_name == "[Exemple]"
+    assert expat.email == "demo+filled-re-1@nidria.app"
+
+
+async def test_seed_demo_case_emits_no_email(
+    db_session: AsyncSession,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+) -> None:
+    """Invariant: the seed sends NOTHING — proven by patching the sink and
+    asserting zero calls (not merely 'suppressed at the sink')."""
+    agency = await make_agency(slug="silent-seed", sectors=["real_estate", "consulting"])
+    admin = await make_agent(agency_id=agency.id, role=system_roles["admin"])
+    with patch("src.core.email.send_email") as mock_send:
+        result = await seed_demo_case(db_session, agency, admin)
+    assert result is not None  # dossiers were created
+    assert mock_send.call_count == 0  # the seed never touched the send path

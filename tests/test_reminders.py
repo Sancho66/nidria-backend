@@ -477,6 +477,38 @@ async def test_auto_reminders_disabled_by_agency_settings(
     assert _run_auto(sync_session_local)["created"] == 0
 
 
+async def test_auto_reminders_skip_demo_cases(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    make_agent: MakeAgent,
+    make_client_case: MakeClientCase,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """A demo dossier ([Exemple], is_demo) never enters the approval queue —
+    two identical stalled cases, one flipped to is_demo, → only ONE reminder."""
+    agent = await make_agent(role=system_roles["case_manager"])
+    headers = agent_headers(agent)
+    real = await _stalled_step(rem_client, db_session, agent, make_client_case, headers, days=25)
+    demo = await _stalled_step(rem_client, db_session, agent, make_client_case, headers, days=25)
+    await db_session.execute(
+        update(ClientCase).where(ClientCase.id == demo.id).values(is_demo=True)
+    )
+    await db_session.commit()
+
+    result = _run_auto(sync_session_local)
+    assert result["created"] == 1  # only the non-demo case
+    created = list(
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == real.id))).scalars()
+    )
+    assert len(created) == 1
+    none_for_demo = list(
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == demo.id))).scalars()
+    )
+    assert none_for_demo == []
+
+
 # --- calendar + permissions --------------------------------------------------------------------
 
 

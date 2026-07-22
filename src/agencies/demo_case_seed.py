@@ -28,6 +28,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,6 +92,109 @@ _DEMO_DOCUMENT_PDF = (
     b"trailer<</Root 1 0 R>>\n"
     b"%%EOF\n"
 )
+
+
+# Per-sector demo dossier: the example client's last name (first name is the
+# universal "[Exemple]" tag) + the pre-filled section custom_fields. Values are
+# RAW coercer forms (select = exact option, date = "YYYY-MM-DD", number = int,
+# country = ISO-2, address = {street,city,postal_code,country} subset) and only
+# reference slugs that EXIST in the sector's sections (the definitions are
+# materialized by _clone_sector_into_agency, so the values render). Sector-
+# neutral / international (PT, DE) by design. NO em/en dash (dash guard).
+_DEMO_BY_SECTOR: dict[str, dict[str, Any]] = {
+    "real_estate": {
+        "last_name": "Bien immobilier - Residence Horizon",
+        "custom_fields": {
+            "property_deal_type": "Vente",
+            "property_kind": "Appartement",
+            "property_address": {
+                "street": "12 Ocean View Avenue",
+                "city": "Lisboa",
+                "postal_code": "1990-095",
+                "country": "PT",
+            },
+            "property_surface": 78,
+            "property_rooms": 3,
+            "property_price": 320000,
+            "mandate_type": "Exclusif",
+            "mandate_number": "MND-2026-014",
+            "transaction_stage": "Visites",
+            "energy_performance": "B",
+            "expected_signing_date": "2026-05-15",
+            "agency_fee_percent": 4,
+        },
+    },
+    "wealth": {
+        "last_name": "Client patrimonial - A. Meyer",
+        "custom_fields": {
+            "risk_profile": "Équilibré",
+            "wealth_objective": "Transmission",
+            "investment_horizon": "Long terme",
+            "estimated_wealth": 850000,
+            "savings_capacity": 2500,
+            "funds_origin": "Cession",
+            "held_products": "Assurance-vie, comptes-titres, immobilier locatif",
+            "esg_preference": "Oui",
+        },
+    },
+    "consulting": {
+        "last_name": "Client conseil - Nord Digital",
+        "custom_fields": {
+            "mission_type": "Diagnostic",
+            "billing_mode": "Forfait",
+            "daily_rate": 850,
+            "sold_budget": 42000,
+            "sold_days": 45,
+            "completion_rate": 35,
+            "consumed_days": 16,
+            "expected_deliverables": (
+                "Rapport de diagnostic, feuille de route priorisée, restitution comité de pilotage"
+            ),
+            "steering_committee_freq": "Bi-mensuel",
+        },
+    },
+    "legal": {
+        "last_name": "Dossier contentieux - Voss / Delta Trading",
+        "custom_fields": {
+            "legal_form": "Private limited company",
+            "company_registration_number": "HRB 128455",
+            "company_name": "Delta Trading Ltd",
+        },
+    },
+    "accounting": {
+        # fiscal_year_end OMITTED: no such catalog slug in the tax section.
+        "last_name": "Client comptable - Brightwave GmbH",
+        "custom_fields": {
+            "legal_form": "Limited company",
+            "company_registration_number": "DE 811 405 folder",
+            "company_name": "Brightwave GmbH",
+            "tax_id": "DE299872249",
+        },
+    },
+    "hr_mobility": {
+        # "position" -> job_title (the real professional slug). mobility_type
+        # OMITTED (no such slug). origin/dest are NATIVE case columns.
+        "last_name": "Salarié en mobilité - J. Almeida",
+        "origin_country": "PT",
+        "dest_country": "DE",
+        "custom_fields": {
+            "job_title": "Ingénieur logiciel senior",
+        },
+    },
+    "immigration": {
+        # Mapped onto REAL immigration slugs, values = REAL select options:
+        # "Permis de travail"/motif "Travail" -> visa_type "Travail";
+        # "Premiere demande" -> immigration_status "En cours de demande";
+        # "foreign_id_number" -> residence_permit_number. competent_authority
+        # OMITTED (no slug).
+        "last_name": "Demandeur - S. Okoro",
+        "custom_fields": {
+            "visa_type": "Travail",
+            "immigration_status": "En cours de demande",
+            "residence_permit_number": "X-2026-55810",
+        },
+    },
+}
 
 
 def _demo_settings(agency: Agency, now: datetime) -> dict[str, object]:
@@ -327,129 +431,132 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
         return None
 
     # The demo case rides the FIRST cloned sector journey.
-    demo_template, demo_steps = cloned[0]
-    expat_step_ids = set(
-        (
-            await db.execute(
-                select(JourneyStepParticipant.step_id).where(
-                    JourneyStepParticipant.step_id.in_([s.id for s in demo_steps]),
-                    JourneyStepParticipant.type == "expat",
+    # One demo dossier PER cloned sector journey (supersedes Eric's single
+    # generalist example, 2026-07-03): each rides its own journey and pre-
+    # fills that sector's section fields.
+    first_case: ClientCase | None = None
+    for index, (template, steps) in enumerate(cloned, start=1):
+        spec = _DEMO_BY_SECTOR.get(template.sector or "", {})
+        custom_fields: dict[str, Any] = dict(spec.get("custom_fields", {}))
+        expat_step_ids = set(
+            (
+                await db.execute(
+                    select(JourneyStepParticipant.step_id).where(
+                        JourneyStepParticipant.step_id.in_([s.id for s in steps]),
+                        JourneyStepParticipant.type == "expat",
+                    )
                 )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
 
-    # --- the demo client, activation SIMULATED (badge true, no email ever) ---------
-    email = demo_expat_email(agency.slug)
-    expat = (
-        await db.execute(select(ExpatUser).where(ExpatUser.email == email))
-    ).scalar_one_or_none()
-    if expat is None:
-        expat = ExpatUser(
-            first_name="Client",
-            last_name="Exemple",
-            email=email,
-            preferred_lang=agency.default_language,
-            # Throwaway: nobody ever logs in as the demo client directly
-            # (the agency uses "voir comme le client" / impersonation).
-            password_hash=hash_password(uuid.uuid4().hex + uuid.uuid4().hex),
-            activated_at=now - timedelta(days=15),
+        # --- the demo client, activation SIMULATED (badge true, no email ever) -----
+        email = demo_expat_email(agency.slug, index)
+        expat = (
+            await db.execute(select(ExpatUser).where(ExpatUser.email == email))
+        ).scalar_one_or_none()
+        if expat is None:
+            expat = ExpatUser(
+                first_name="[Exemple]",
+                last_name=str(spec.get("last_name", "Dossier exemple")),
+                email=email,
+                preferred_lang=agency.default_language,
+                # Throwaway: nobody logs in as the demo client (impersonation).
+                password_hash=hash_password(uuid.uuid4().hex + uuid.uuid4().hex),
+                activated_at=now - timedelta(days=15),
+            )
+            db.add(expat)
+            await db.flush()
+
+        # --- the case: is_demo=TRUE is THE exclusion switch, tags=["exemple"] -------
+        case = ClientCase(
+            agency_id=agency.id,
+            principal_expat_user_id=expat.id,
+            owner_agent_id=owner.id,
+            journey_template_id=template.id,
+            origin_country=str(spec.get("origin_country", "PT")),
+            dest_country=str(spec.get("dest_country", "DE")),
+            status=CaseStatus.IN_PROGRESS.value,
+            source="Dossier d'exemple",
+            tags=["exemple"],
+            is_demo=True,
+            created_at=now - timedelta(days=21),
         )
-        db.add(expat)
+        db.add(case)
+        await db.flush()
+        db.add(
+            CasePerson(
+                case_id=case.id,
+                kind="principal",
+                expat_user_id=expat.id,
+                nationality="Portugaise",
+                date_of_birth=date(1988, 5, 14),
+                place_of_birth="Porto",
+                phone="+351 912 345 678",
+                profession="Client exemple",
+                # Pre-filled sector fields (raw coercer forms; definitions already
+                # materialized by _clone_sector_into_agency → the values render).
+                custom_fields=custom_fields,
+            )
+        )
+
+        # --- lived-in timeline: first 2 DONE, 3rd IN_PROGRESS, rest TODO -----------
+        progresses: list[CaseStepProgress] = []
+        for i, step in enumerate(steps):
+            if i < 2:
+                status = StepStatus.DONE.value
+            elif i == 2:
+                status = StepStatus.IN_PROGRESS.value
+            else:
+                status = StepStatus.TODO.value
+            done = status == StepStatus.DONE.value
+            is_expat = step.id in expat_step_ids
+            progresses.append(
+                CaseStepProgress(
+                    case_id=case.id,
+                    template_step_id=step.id,
+                    status=status,
+                    responsible_type="expat" if is_expat else "agent",
+                    responsible_agent_id=None if is_expat else owner.id,
+                    validated_by_type="agent",
+                    completed_at=(now - timedelta(days=20 - 4 * i)) if done else None,
+                    completed_by_agent_id=owner.id if done else None,
+                )
+            )
+        db.add_all(progresses)
         await db.flush()
 
-    # --- the case itself: is_demo=TRUE is THE exclusion switch ---------------------
-    case = ClientCase(
-        agency_id=agency.id,
-        principal_expat_user_id=expat.id,
-        owner_agent_id=owner.id,
-        journey_template_id=demo_template.id,
-        origin_country="FR",
-        origin_city="Lyon",
-        dest_country="PT",
-        dest_city="Lisbonne",
-        status=CaseStatus.IN_PROGRESS.value,
-        source="Dossier d'exemple",
-        tags=["exemple"],
-        is_demo=True,
-        created_at=now - timedelta(days=21),
-    )
-    db.add(case)
-    await db.flush()
-    db.add(
-        CasePerson(
-            case_id=case.id,
-            kind="principal",
-            expat_user_id=expat.id,
-            nationality="Française",
-            date_of_birth=date(1988, 5, 14),
-            place_of_birth="Lyon, France",
-            phone="+33 6 12 34 56 78",
-            profession="Consultante indépendante",
-            custom_fields={},
+        # --- one sample document + one client message (the thread feels real) ------
+        document_id = uuid.uuid4()
+        path = f"{case.id}/{document_id}/{storage.sanitize_filename(_DEMO_DOCUMENT_FILENAME)}"
+        await asyncio.to_thread(storage.upload, path, _DEMO_DOCUMENT_PDF, "application/pdf")
+        db.add(
+            Document(
+                id=document_id,
+                case_id=case.id,
+                step_progress_id=progresses[1].id,
+                filename=_DEMO_DOCUMENT_FILENAME,
+                storage_path=path,
+                uploaded_by_type=ActorType.EXPAT.value,
+                uploaded_by_id=expat.id,
+                validation_status=DocValidationStatus.OK.value,
+                created_at=now - timedelta(days=17),
+            )
         )
-    )
-
-    # --- a lived-in timeline: first 2 DONE, 3rd IN_PROGRESS, rest TODO -------------
-    # Responsible mirrors the cloned journey's participants: a step with an
-    # expat doer → the client carries it (CHECK: type 'expat' ⇒ no agent FK);
-    # otherwise the agency owner (a step with no participant included).
-    progresses: list[CaseStepProgress] = []
-    for i, step in enumerate(demo_steps):
-        if i < 2:
-            status = StepStatus.DONE.value
-        elif i == 2:
-            status = StepStatus.IN_PROGRESS.value
-        else:
-            status = StepStatus.TODO.value
-        done = status == StepStatus.DONE.value
-        is_expat = step.id in expat_step_ids
-        progress = CaseStepProgress(
-            case_id=case.id,
-            template_step_id=step.id,
-            status=status,
-            responsible_type="expat" if is_expat else "agent",
-            responsible_agent_id=None if is_expat else owner.id,
-            validated_by_type="agent",
-            completed_at=(now - timedelta(days=20 - 4 * i)) if done else None,
-            completed_by_agent_id=owner.id if done else None,
+        db.add(
+            StepComment(
+                case_step_progress_id=progresses[2].id,
+                author_type=ActorType.EXPAT.value,
+                author_id=expat.id,
+                body=_DEMO_COMMENT,
+                created_at=now - timedelta(days=2),
+            )
         )
-        progresses.append(progress)
-        db.add(progress)
-    await db.flush()
-
-    # --- one sample document on the done "pièces" step ------------------------------
-    document_id = uuid.uuid4()
-    path = f"{case.id}/{document_id}/{storage.sanitize_filename(_DEMO_DOCUMENT_FILENAME)}"
-    await asyncio.to_thread(storage.upload, path, _DEMO_DOCUMENT_PDF, "application/pdf")
-    db.add(
-        Document(
-            id=document_id,
-            case_id=case.id,
-            step_progress_id=progresses[1].id,
-            filename=_DEMO_DOCUMENT_FILENAME,
-            storage_path=path,
-            uploaded_by_type=ActorType.EXPAT.value,
-            uploaded_by_id=expat.id,
-            validation_status=DocValidationStatus.OK.value,
-            created_at=now - timedelta(days=17),
-        )
-    )
-
-    # --- one client message on the live step (the thread feels real) ----------------
-    db.add(
-        StepComment(
-            case_step_progress_id=progresses[2].id,
-            author_type=ActorType.EXPAT.value,
-            author_id=expat.id,
-            body=_DEMO_COMMENT,
-            created_at=now - timedelta(days=2),
-        )
-    )
+        if first_case is None:
+            first_case = case
 
     agency.settings = _demo_settings(agency, now)
     await db.commit()
-    logger.info("demo case seeded for agency %s (case %s)", agency.slug, case.id)
-    return case
+    logger.info("demo cases seeded for agency %s (%d dossiers)", agency.slug, len(cloned))
+    return first_case

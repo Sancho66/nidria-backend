@@ -63,10 +63,13 @@ outbox: list[OutboxEmail] = []
 _DEMO_RECIPIENT_RE = re.compile(r"^demo\+[a-z0-9-]+@nidria\.app$")
 
 
-def demo_expat_email(agency_slug: str) -> str:
-    """Deterministic per-agency demo-client address (globally unique
-    because the slug is). Must stay matched by `is_demo_recipient`."""
-    return f"demo+{agency_slug}@nidria.app"
+def demo_expat_email(agency_slug: str, index: int) -> str:
+    """Deterministic per-agency, per-dossier demo-client address (globally
+    unique: slug + 1-based index). The index is DIGITS only, so the address
+    stays within `is_demo_recipient`'s [a-z0-9-] local part (a sector value
+    like 'real_estate' would smuggle an underscore past the regex — never
+    used here). Must stay matched by `is_demo_recipient`."""
+    return f"demo+{agency_slug}-{index}@nidria.app"
 
 
 def is_demo_recipient(to: str) -> bool:
