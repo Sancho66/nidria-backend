@@ -8,7 +8,7 @@ LINT_PATHS := src/ shared/ tests/ scripts/ alembic/env.py
 
 .PHONY: help dev dev-scheduler openapi hooks db-upgrade db-downgrade db-current \
 	db-history db-migration db-reset seed lint format format-check \
-	typecheck test test-cov check
+	typecheck test test-cov check check-fast
 
 # --- Help ----------------------------------------------------------------
 
@@ -95,5 +95,14 @@ test: ## Full test suite (testcontainers PG, parallel)
 test-cov: ## Test suite with coverage on src/
 	uv run pytest tests/ -q -n auto --cov=src
 
-check: lint format-check typecheck test ## The full pre-push gate in one command
+# check-fast: lint + types only, NO database — the quick per-lot gate (seconds).
+# Catches lint/format/type regressions before each commit; run `check` (below)
+# before PUSH for the full suite. NOT a substitute for `check`.
+check-fast: lint format-check typecheck ## Fast per-lot gate: lint + types, no DB (run before each commit)
+	@echo "Fast checks passed — run 'make check' (full, with DB) before pushing."
+
+# check: the full pre-push reference — lint + format + types + the WHOLE test
+# suite on a real Postgres (testcontainers, parallel). Slow (minutes); the
+# stable gate whose green == CI green. Unchanged.
+check: lint format-check typecheck test ## Full pre-push gate: lint + types + tests (testcontainers DB)
 	@echo "All checks passed — CI should be green."
