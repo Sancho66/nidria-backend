@@ -38,6 +38,7 @@ from src.core.rbac.baseline import seed_system_roles  # noqa: E402
 SUPERADMIN_EMAILS: tuple[str, ...] = (
     "alexandre.montilla@gmail.com",
     "mr.schalk.eric@gmail.com",
+    "bonjour.dare.to.explode.consulting@protonmail.com",
 )
 
 
