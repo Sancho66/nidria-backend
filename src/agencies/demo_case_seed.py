@@ -26,6 +26,7 @@ the example behind the agency's back (deleting it is a valid choice)."""
 import asyncio
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
@@ -36,11 +37,14 @@ from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.custom_field import CustomFieldDefinition
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import (
+    JourneySection,
     JourneyStepParticipant,
     JourneyTemplate,
+    JourneyTemplateField,
     JourneyTemplateStep,
     StepPrerequisite,
 )
@@ -50,6 +54,7 @@ from src.core import storage
 from src.core.email import demo_expat_email
 from src.core.enums import ActorType, CaseStatus, DocValidationStatus, StepStatus
 from src.core.security import hash_password
+from src.journeys.field_catalog import FIELD_PRESETS, field_kind
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +196,96 @@ async def _clone_sector_into_agency(
                 role=part.role,
             )
         )
+
+    # --- "Informations du dossier" sections + fields (the sector field pack) ---------
+    # Copied like the steps (snapshot): the agency edits its clone freely.
+    src_sections = (
+        (await db.execute(select(JourneySection).where(JourneySection.template_id == src.id)))
+        .scalars()
+        .all()
+    )
+    section_map: dict[uuid.UUID, uuid.UUID] = {}
+    for sec in src_sections:
+        nid = uuid.uuid4()
+        section_map[sec.id] = nid
+        db.add(
+            JourneySection(
+                id=nid,
+                template_id=new_tpl.id,
+                name=sec.name,
+                description=sec.description,
+                name_i18n=dict(sec.name_i18n),
+                description_i18n=dict(sec.description_i18n),
+                seed_key=sec.seed_key,
+                position=sec.position,
+            )
+        )
+    src_fields = (
+        (
+            await db.execute(
+                select(JourneyTemplateField).where(JourneyTemplateField.template_id == src.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for fld in src_fields:
+        db.add(
+            JourneyTemplateField(
+                template_id=new_tpl.id,
+                kind=fld.kind,
+                reference=fld.reference,
+                position=fld.position,
+                required_at_creation=fld.required_at_creation,
+                section_id=section_map.get(fld.section_id) if fld.section_id else None,
+            )
+        )
+    # The catalogue fields reference custom keys with NO definition in this
+    # agency (the source is agency-less) — materialize the missing ones so the
+    # clone renders resolved, never orphaned (same as clone_template).
+    await _materialize_field_definitions(db, agency, src_fields)
     return new_tpl, new_steps
+
+
+async def _materialize_field_definitions(
+    db: AsyncSession, agency: Agency, fields: Sequence[JourneyTemplateField]
+) -> None:
+    """Create the agency's custom_field_definition rows for the catalogue keys
+    referenced by the copied fields and absent from the agency (any state).
+    Base fields (not in FIELD_PRESETS) need no definition. Label / options in
+    the agency language, full label_i18n. Mirror of clone_template's
+    _materialize_catalog_definitions, side-effect-free (no event, no commit)."""
+    wanted = {
+        f.reference
+        for f in fields
+        if f.reference in FIELD_PRESETS and field_kind(f.reference) == "custom_field"
+    }
+    if not wanted:
+        return
+    existing = {
+        d.key
+        for d in (
+            await db.execute(
+                select(CustomFieldDefinition).where(CustomFieldDefinition.agency_id == agency.id)
+            )
+        ).scalars()
+    }
+    lang = agency.default_language
+    for key in sorted(wanted - existing):
+        preset = FIELD_PRESETS[key]
+        options = None
+        if preset.options is not None:
+            options = preset.options.get(lang) or preset.options["fr"]
+        db.add(
+            CustomFieldDefinition(
+                agency_id=agency.id,
+                key=key,
+                label=preset.labels.get(lang) or preset.labels["fr"],
+                label_i18n=dict(preset.labels),
+                field_type=preset.field_type,
+                options=options,
+            )
+        )
 
 
 async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> ClientCase | None:

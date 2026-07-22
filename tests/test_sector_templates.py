@@ -18,14 +18,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.client_case import ClientCase
+from shared.models.custom_field import CustomFieldDefinition
 from shared.models.journey import (
+    JourneySection,
     JourneyStepParticipant,
     JourneyTemplate,
+    JourneyTemplateField,
     JourneyTemplateStep,
 )
 from shared.models.rbac import Role
 from shared.models.step_requirement import StepRequirement
 from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME
+from src.journeys.field_catalog import SECTION_TYPES
+from src.journeys.sector_seed import SECTOR_SECTIONS
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline", "sector_templates")
@@ -174,9 +179,9 @@ async def test_delays_are_low_bound_and_provider_is_named_in_content_note(
     assert steps[3].estimated_days == 120  # "Mise en état" (120-300)
     assert steps[4].estimated_days is None  # "Audience de plaidoirie" (variable)
 
-    # Provider NAMED in content_note (not a vague "prestataire") + NO participant.
+    # Provider NAMED in content_note (sector-neutral wording) + NO participant.
     jugement = steps[5]  # "Jugement et notification" — provider-only step
-    assert "commissaire de justice" in jugement.content_note
+    assert "autorité judiciaire compétente" in jugement.content_note
     doers = (
         (
             await db_session.execute(
@@ -431,3 +436,89 @@ async def test_creating_an_agency_leaves_a_preexisting_agency_bit_for_bit(
     assert after_journeys == before_journeys  # same ids, names, no updated_at bump
     assert after_steps == before_steps
     assert after_case == before_case
+
+
+# --- (g) sections (the sector field pack) on the templates ---------------------------------
+
+
+async def _sections_of(db: AsyncSession, template_id: uuid.UUID) -> list[JourneySection]:
+    return list(
+        (
+            await db.execute(
+                select(JourneySection)
+                .where(JourneySection.template_id == template_id)
+                .order_by(JourneySection.position)
+            )
+        ).scalars()
+    )
+
+
+async def test_global_sector_templates_carry_their_mapped_sections(
+    db_session: AsyncSession,
+) -> None:
+    for sector, section_keys in SECTOR_SECTIONS.items():
+        tpl = await _global_template(db_session, sector)
+        sections = await _sections_of(db_session, tpl.id)
+        assert [s.seed_key for s in sections] == list(section_keys), sector
+        assert sections, f"{sector}: sections must not be empty"
+        # every field_key of every section is materialized as a template field.
+        fields = {
+            f.reference
+            for f in (
+                await db_session.execute(
+                    select(JourneyTemplateField).where(JourneyTemplateField.template_id == tpl.id)
+                )
+            ).scalars()
+        }
+        for key in section_keys:
+            for field_key in SECTION_TYPES[key].field_keys:
+                assert field_key in fields, f"{sector}/{key}/{field_key}"
+
+
+async def test_real_estate_clone_has_populated_section_independent_of_template(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    agency = await _create_agency(
+        client, make_agent, system_roles, agent_headers, slug="re-sections", sectors=["real_estate"]
+    )
+    agency_id = uuid.UUID(agency["id"])
+    clone = (await _agency_journeys(db_session, agency_id))[0]
+    assert clone.name == "Vente d'un bien"
+
+    # The clone carries identity + real_estate_deal sections, populated.
+    sections = await _sections_of(db_session, clone.id)
+    assert [s.seed_key for s in sections] == ["identity", "real_estate_deal"]
+    deal = next(s for s in sections if s.seed_key == "real_estate_deal")
+    assert deal.name == "Transaction immobilière"
+
+    clone_fields = {
+        f.reference
+        for f in (
+            await db_session.execute(
+                select(JourneyTemplateField).where(JourneyTemplateField.template_id == clone.id)
+            )
+        ).scalars()
+    }
+    # the sector-specific catalog fields are present (a step could require them).
+    assert {"property_deal_type", "property_price", "transaction_stage"} <= clone_fields
+
+    # Independent copy: the clone's sections are DIFFERENT rows from the template's.
+    global_re = await _global_template(db_session, "real_estate")
+    global_section_ids = {s.id for s in await _sections_of(db_session, global_re.id)}
+    assert {s.id for s in sections}.isdisjoint(global_section_ids)
+
+    # The agency's custom_field_definition rows were materialized (else the
+    # Informations tab renders orphaned) — a sector-specific custom key exists.
+    defs = {
+        d.key
+        for d in (
+            await db_session.execute(
+                select(CustomFieldDefinition).where(CustomFieldDefinition.agency_id == agency_id)
+            )
+        ).scalars()
+    }
+    assert "property_deal_type" in defs
