@@ -124,6 +124,27 @@ def resolve_step_name_for_notif(name_i18n: dict[str, str] | None, scalar: str, l
     return resolved if resolved is not None else scalar
 
 
+def case_label_for_notif(
+    client_first_name: str | None,
+    client_last_name: str | None,
+    journey_name: str | None,
+    journey_name_i18n: dict[str, str] | None,
+    lang: str,
+) -> str:
+    """Human, agent-facing label for a case in a notification — the CLIENT
+    name then the JOURNEY name, NEVER the technical UUID (which means nothing
+    to an adviser). E.g. "Camille Martin - Création d'un Autónomo en Espagne".
+    `lang` is the already-resolved recipient language (journey name resolved
+    in it). Degrades gracefully: no journey → the client alone; no client
+    name → the journey alone."""
+    client = " ".join(p.strip() for p in (client_first_name, client_last_name) if p and p.strip())
+    journey = resolve_i18n(journey_name_i18n, lang, lang, journey_name) if journey_name else None
+    journey = (journey or "").strip()
+    if client and journey:
+        return f"{client} - {journey}"
+    return client or journey
+
+
 def resolve_request_language(request: Request) -> str:
     """The USER's display language, mirroring the UI. Channel (first match):
       1. explicit `?lang=` query param,

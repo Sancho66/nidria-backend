@@ -38,6 +38,7 @@ from src.core.enums import (
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.i18n import (
     DEFAULT_LANG,
+    case_label_for_notif,
     resolve_i18n,
     resolve_notification_lang_agent,
     resolve_notification_lang_client,
@@ -1306,8 +1307,12 @@ class ProgressManager:
             await self.repo.agency_default_language(case.agency_id)
         )
         step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang)
+        # HUMAN case label (client + journey), never the technical UUID — the
+        # UUID stays only in the link/button URL below (invisible to the agent).
+        first, last, j_name, j_i18n = await self.repo.get_case_label_parts(case)
+        case_label = case_label_for_notif(first, last, j_name, j_i18n, lang)
         link = f"{get_settings().frontend_url}/app/cases/{case.id}"
-        content = ready_to_validate_email(str(case.id), step_name, link, lang)
+        content = ready_to_validate_email(case_label, step_name, link, lang)
         return PendingMail(to=email, content=content)
 
     async def _client_step_mail_for_row(

@@ -468,3 +468,33 @@ class ProgressRepository:
         email, lang = (row[0], row[1]) if row is not None else (None, None)
         name, slug = (agency_row[0], agency_row[1]) if agency_row is not None else (None, None)
         return email, (name or "Votre agence"), lang, slug
+
+    async def get_case_label_parts(
+        self, case: ClientCase
+    ) -> tuple[str | None, str | None, str | None, dict[str, str] | None]:
+        """(client first_name, last_name, journey name, journey name_i18n) —
+        the raw parts for a HUMAN case label in notifications (never the UUID).
+        Principal via principal_expat_user_id; journey via journey_template_id
+        (journey parts None when the case has no journey yet)."""
+        principal = (
+            await self.db.execute(
+                select(ExpatUser.first_name, ExpatUser.last_name).where(
+                    ExpatUser.id == case.principal_expat_user_id
+                )
+            )
+        ).first()
+        journey_name: str | None = None
+        journey_name_i18n: dict[str, str] | None = None
+        if case.journey_template_id is not None:
+            journey = (
+                await self.db.execute(
+                    select(JourneyTemplate.name, JourneyTemplate.name_i18n).where(
+                        JourneyTemplate.id == case.journey_template_id
+                    )
+                )
+            ).first()
+            if journey is not None:
+                journey_name, journey_name_i18n = journey[0], journey[1]
+        first = principal[0] if principal is not None else None
+        last = principal[1] if principal is not None else None
+        return first, last, journey_name, journey_name_i18n
