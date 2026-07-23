@@ -930,6 +930,7 @@ async def test_slot_resolved_by_no_account_contact(
         if p["type"] == "external"
     ]
     assert ext and ext[0]["external_id"] == str(contact.id) and ext[0]["name"] == "Trad Sans Compte"
+    assert ext[0]["agent_id"] is None  # external slot, no account: never an agent_id
 
 
 async def test_imported_external_participant_propagates_to_case(
@@ -1013,3 +1014,54 @@ async def test_assignable_never_leaks_ids_across_types(
     # No external entry carries an agent id, and no agent entry a contact id.
     assert by_type["external"]["id"] != str(translator.id)
     assert by_type["agent"]["id"] != str(contact.id)
+
+
+async def test_preview_is_idempotent_same_json_same_payload(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The preview is a PURE projection: re-previewing the SAME JSON (here a
+    no-account contact resolving the slot) yields a BYTE-IDENTICAL payload and
+    writes nothing. This is the front's create-then-re-preview flow: no server
+    state, so the two payloads are equal and no template is born."""
+    headers = agent_headers(admin)
+    contact = await _directory_contact(db_session, admin.agency_id, "Trad Idempotent")
+    body = {
+        **_SLOT_JSON,
+        "provider_assignments": {"traducteur": {"type": "external", "id": str(contact.id)}},
+    }
+    templates_before = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(JourneyTemplate)
+            .where(JourneyTemplate.agency_id == admin.agency_id)
+        )
+    ).scalar_one()
+
+    first = await client.post("/journeys/import?preview=true", headers=headers, json=body)
+    second = await client.post("/journeys/import?preview=true", headers=headers, json=body)
+    assert first.status_code == 200 and second.status_code == 200, second.text
+
+    # Same input → identical output, to the byte. The slot is resolved both times.
+    assert first.json() == second.json()
+    assert first.json()["created"] is False
+    assert first.json()["participants"]["external_slots"] == []
+
+    # Pure projection: neither preview wrote a template...
+    templates_after = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(JourneyTemplate)
+            .where(JourneyTemplate.agency_id == admin.agency_id)
+        )
+    ).scalar_one()
+    assert templates_after == templates_before
+    # ...nor touched the contact (still no account).
+    fresh = (
+        await db_session.execute(
+            select(ExternalContact.agent_id).where(ExternalContact.id == contact.id)
+        )
+    ).scalar_one()
+    assert fresh is None
