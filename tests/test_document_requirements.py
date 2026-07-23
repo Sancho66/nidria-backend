@@ -308,3 +308,192 @@ async def test_expat_list_no_internal_uuid_and_enriched(
     assert by_name["mine.pdf"]["is_mine"] is True
     assert by_name["mine.pdf"]["is_requirement"] is False
     assert pid  # silence unused
+
+
+# --- deleting a requirement's file returns it to NON-provided (integrity fix) --------
+#
+# A document requirement's provided state is its STORED status, not the file's
+# presence. Before the fix, deleting the file left status=PROVIDED with a NULL
+# document_id — 'provided on nothing'. Deletion now resets the requirement.
+
+
+async def test_agent_delete_requirement_document_reverts_to_pending(
+    d_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    ah = agent_headers(admin)
+    tid, sid = await _step(d_client, ah)  # agency_validation → stays in_progress
+    await _add_doc_req(d_client, ah, tid, sid, "Passeport")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(d_client, ah, str(case.id), tid)
+    rid = await _concrete_req_id(d_client, ah, str(case.id), pid, "Passeport")
+    doc_id = (
+        await d_client.post(
+            f"/cases/{case.id}/requirements/{rid}/document", headers=ah, files={"file": PDF}
+        )
+    ).json()["id"]
+
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    assert _req_status(detail, pid, "Passeport")["status"] == "provided"
+
+    deleted = await d_client.delete(f"/cases/{case.id}/documents/{doc_id}", headers=ah)
+    assert deleted.status_code == 200, deleted.text
+
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    state = _req_status(detail, pid, "Passeport")
+    assert state["status"] == "pending"  # back to non-provided (was 'provided on nothing')
+    assert state["document_id"] is None
+    step = next(s for s in detail["progress"] if s["id"] == pid)
+    assert step["status"] == "in_progress"  # never auto-closed (agency_validation)
+
+
+async def test_expat_delete_own_requirement_document_reverts_to_pending(
+    d_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    ah, eh = agent_headers(admin), expat_headers(expat)
+    tid, sid = await _step(d_client, ah)
+    await _add_doc_req(d_client, ah, tid, sid, "Passeport")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(d_client, ah, str(case.id), tid)
+    rid = await _concrete_req_id(d_client, ah, str(case.id), pid, "Passeport")
+    up = await d_client.post(
+        f"/expat/cases/{case.id}/requirements/{rid}/document", headers=eh, files={"file": PDF}
+    )
+    assert up.status_code == 200, up.text  # returns the case detail, not the doc row
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    doc_id = _req_status(detail, pid, "Passeport")["document_id"]
+    assert doc_id is not None
+
+    deleted = await d_client.delete(f"/expat/cases/{case.id}/documents/{doc_id}", headers=eh)
+    assert deleted.status_code == 200, deleted.text
+
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    state = _req_status(detail, pid, "Passeport")
+    assert state["status"] == "pending"
+    assert state["document_id"] is None
+
+
+async def test_agency_delete_validated_document_reverts_requirement(
+    d_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The agency face can delete an OK-validated document (the expat cannot).
+    That deletion must ALSO revert the requirement — a validated piece is no
+    less a piece."""
+    ah = agent_headers(admin)
+    tid, sid = await _step(d_client, ah)
+    await _add_doc_req(d_client, ah, tid, sid, "Passeport")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(d_client, ah, str(case.id), tid)
+    rid = await _concrete_req_id(d_client, ah, str(case.id), pid, "Passeport")
+    doc_id = (
+        await d_client.post(
+            f"/cases/{case.id}/requirements/{rid}/document", headers=ah, files={"file": PDF}
+        )
+    ).json()["id"]
+    validated = await d_client.patch(
+        f"/cases/{case.id}/documents/{doc_id}/validation",
+        headers=ah,
+        json={"validation_status": "ok"},
+    )
+    assert validated.status_code == 200, validated.text
+
+    deleted = await d_client.delete(f"/cases/{case.id}/documents/{doc_id}", headers=ah)
+    assert deleted.status_code == 200, deleted.text
+
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    state = _req_status(detail, pid, "Passeport")
+    assert state["status"] == "pending"
+    assert state["document_id"] is None
+
+
+async def test_delete_free_document_leaves_requirement_untouched(
+    d_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A freely-uploaded document answers no requirement — deleting it must
+    have zero side effect on the fulfilled requirement (no over-reach)."""
+    ah = agent_headers(admin)
+    tid, sid = await _step(d_client, ah)
+    await _add_doc_req(d_client, ah, tid, sid, "Passeport")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(d_client, ah, str(case.id), tid)
+    rid = await _concrete_req_id(d_client, ah, str(case.id), pid, "Passeport")
+    await d_client.post(
+        f"/cases/{case.id}/requirements/{rid}/document", headers=ah, files={"file": PDF}
+    )
+    free_id = (
+        await d_client.post(
+            f"/cases/{case.id}/documents",
+            headers=ah,
+            files={"file": ("free.pdf", b"%PDF free", "application/pdf")},
+        )
+    ).json()["id"]
+
+    deleted = await d_client.delete(f"/cases/{case.id}/documents/{free_id}", headers=ah)
+    assert deleted.status_code == 200, deleted.text
+
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    state = _req_status(detail, pid, "Passeport")
+    assert state["status"] == "provided"  # untouched by the free-doc deletion
+
+
+async def test_delete_document_from_auto_completed_step_reverts_req_but_step_stays_done(
+    d_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """NAMED behaviour (product decision pending, see rapport.md §3): removing
+    the file behind an AUTO step that self-completed reverts the requirement to
+    pending — the 'provided on nothing' lie is gone — but recompute_active only
+    ADVANCES in_progress steps, so the already-DONE step is NOT reopened. This
+    test PINS the current behaviour; changing it is a separate decision."""
+    ah = agent_headers(admin)
+    tid, sid = await _step(d_client, ah, mode="auto")
+    await _add_doc_req(d_client, ah, tid, sid, "Passeport")
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    pid = await _assign_start(d_client, ah, str(case.id), tid)
+    rid = await _concrete_req_id(d_client, ah, str(case.id), pid, "Passeport")
+    doc_id = (
+        await d_client.post(
+            f"/cases/{case.id}/requirements/{rid}/document", headers=ah, files={"file": PDF}
+        )
+    ).json()["id"]
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    assert next(s for s in detail["progress"] if s["id"] == pid)["status"] == "done"  # auto-closed
+
+    deleted = await d_client.delete(f"/cases/{case.id}/documents/{doc_id}", headers=ah)
+    assert deleted.status_code == 200, deleted.text
+
+    detail = (await d_client.get(f"/cases/{case.id}", headers=ah)).json()
+    state = _req_status(detail, pid, "Passeport")
+    assert state["status"] == "pending"  # the lie is gone
+    assert state["document_id"] is None
+    step = next(s for s in detail["progress"] if s["id"] == pid)
+    assert step["status"] == "done"  # NOT reopened — deliberate (see rapport §3)

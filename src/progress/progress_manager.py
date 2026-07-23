@@ -1161,6 +1161,33 @@ class ProgressManager:
         requirement.document_id = document_id
         return await self.recompute_active(case, before)
 
+    async def clear_document_requirement(
+        self, case: ClientCase, document_id: uuid.UUID
+    ) -> list[PendingMail]:
+        """Inverse of fulfill_document_requirement: when the file backing a
+        document requirement is DELETED, the requirement returns to
+        NON-provided (status/provided_at/document_id reset), then the active
+        steps are recomputed. A document requirement's provided state is the
+        STORED status, NOT the file's presence — without this reset it would
+        stay 'provided' with no file (the integrity hole). Returns [] when the
+        document answered no requirement (freely uploaded). The caller commits,
+        then sends the returned mails.
+
+        NOTE (deliberately not decided here): recompute_active only ADVANCES
+        in_progress steps (→DONE). A step already validated/DONE is therefore
+        NOT reopened when its backing file is removed — reopening a closed step
+        on a file deletion is a separate product decision (locked-step /
+        agent-validation semantics), left untouched by this fix."""
+        requirements = await self.repo.list_requirements_by_document(document_id)
+        if not requirements:
+            return []
+        before = await self.snapshot_active_completion(case)  # still provided here
+        for requirement in requirements:
+            requirement.status = RequirementStatus.PENDING.value
+            requirement.provided_at = None
+            requirement.document_id = None
+        return await self.recompute_active(case, before)
+
     async def snapshot_active_completion(self, case: ClientCase) -> dict[uuid.UUID, bool]:
         """all_met per IN_PROGRESS step BEFORE a write — lets recompute
         fire the agency_validation mail only on the pending→met

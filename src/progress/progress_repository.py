@@ -385,6 +385,16 @@ class ProgressRepository:
         )
         return list((await self.db.execute(stmt)).scalars())
 
+    async def list_requirements_by_document(
+        self, document_id: uuid.UUID
+    ) -> list[CaseStepRequirement]:
+        """The concrete requirement(s) whose fulfilling file IS this document
+        (the document_id link). Empty for a freely-uploaded document that
+        answers no requirement — only document-kind requirements ever carry a
+        document_id."""
+        stmt = select(CaseStepRequirement).where(CaseStepRequirement.document_id == document_id)
+        return list((await self.db.execute(stmt)).scalars())
+
     async def requirement_instances_for_definition(
         self, step_requirement_id: uuid.UUID
     ) -> list[Row[Any]]:

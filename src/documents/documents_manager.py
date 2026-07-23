@@ -501,10 +501,19 @@ class DocumentsManager:
         actor_id: uuid.UUID,
     ) -> None:
         details = {"document_id": str(document.id), "filename": document.filename}
+        # A document requirement's provided state is its STORED status, not the
+        # file's presence — so removing the file must reset the linked
+        # requirement to non-provided (else it stays 'provided' on nothing). Do
+        # it BEFORE the row delete: the FK's SET NULL would otherwise erase the
+        # document_id link before we can find the requirement. No-op (empty) for
+        # a freely-uploaded document that answers no requirement.
+        progress_mgr = ProgressManager(self.db)
+        pending = await progress_mgr.clear_document_requirement(case, document.id)
         await asyncio.to_thread(storage.delete, document.storage_path)
         await self.repo.delete_row(document)
         self._log(case.id, actor_type, actor_id, "document.deleted", details)
         await self.db.commit()
+        await progress_mgr.send_pending(pending)  # best-effort, after commit
 
     async def delete_as_agent(
         self, agent: Agent, case_id: uuid.UUID, document_id: uuid.UUID
