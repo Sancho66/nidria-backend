@@ -64,6 +64,7 @@ from src.progress.requirements_eval import (
     case_is_provided,
     current_value,
     is_provided,
+    step_all_met,
 )
 from src.usage.usage_manager import UsageManager
 
@@ -1125,13 +1126,9 @@ class ProgressManager:
         persons_by_id: dict[uuid.UUID, Any],
         case: ClientCase,
     ) -> bool:
-        """True iff the step has ≥1 requirement (person OR case) and every
-        one is provided — person fields/documents via is_provided, case
-        fields via the live client_case value (vague C). Empty set → False:
-        an auto step with no requirements never self-completes."""
-        person_ok = all(is_provided(req, persons_by_id.get(req.person_id)) for req in person_reqs)
-        case_ok = all(case_is_provided(creq, case) for creq in case_reqs)
-        return (bool(person_reqs) or bool(case_reqs)) and person_ok and case_ok
+        """The all-met fold — delegates to requirements_eval.step_all_met,
+        THE single implementation (the sync auto-reminder cron shares it)."""
+        return step_all_met(person_reqs, case_reqs, persons_by_id, case)
 
     async def _notifications_enabled(self, case: ClientCase) -> bool:
         """Client pref `requirement_request` (lot preferences 2026-07-18):

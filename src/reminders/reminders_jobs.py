@@ -9,7 +9,8 @@ WhatsApp mark-sent endpoint requires APPROVED too).
 
 import logging
 import uuid
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -28,6 +29,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.reminder import Reminder
+from shared.models.step_case_requirement import StepCaseRequirement
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import (
@@ -44,6 +46,7 @@ from src.core.enums import (
 )
 from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
 from src.core.notification_prefs import client_pref
+from src.progress.requirements_eval import step_all_met
 from src.reminders.reminders_targeting import targeted_member
 
 logger = logging.getLogger(__name__)
@@ -237,6 +240,54 @@ def resolve_auto_reminder_thresholds(
     return list(default)
 
 
+def _steps_with_all_requirements_met(db: Session, rows: Sequence[Any]) -> set[Any]:
+    """The candidate steps whose requirements are ALL provided — i.e. the
+    client has nothing left to hand over. Batched (3 queries for the whole
+    tick, no N+1) and folded by requirements_eval.step_all_met, THE shared
+    all-met decision the async engine uses: the cron cannot drift from what
+    the client's own timeline shows him.
+
+    A step with NO requirement is NOT met (step_all_met returns False on an
+    empty set) — it keeps being chased, since nothing proves the client is
+    done waiting."""
+    if not rows:
+        return set()
+    progress_ids = [r[0].id for r in rows]
+    step_ids = [r[0].template_step_id for r in rows]
+    cases_by_id = {r[2].id: r[2] for r in rows}
+
+    person_reqs: dict[Any, list[Any]] = defaultdict(list)
+    for req in db.execute(
+        select(CaseStepRequirement).where(
+            CaseStepRequirement.case_step_progress_id.in_(progress_ids)
+        )
+    ).scalars():
+        person_reqs[req.case_step_progress_id].append(req)
+
+    case_reqs: dict[Any, list[Any]] = defaultdict(list)
+    for creq in db.execute(
+        select(StepCaseRequirement).where(StepCaseRequirement.step_id.in_(step_ids))
+    ).scalars():
+        case_reqs[creq.step_id].append(creq)
+
+    persons: dict[Any, Any] = {
+        p.id: p
+        for p in db.execute(
+            select(CasePerson).where(CasePerson.case_id.in_(list(cases_by_id)))
+        ).scalars()
+    }
+    return {
+        progress.id
+        for progress, _step, case, *_rest in rows
+        if step_all_met(
+            person_reqs.get(progress.id, []),
+            case_reqs.get(progress.template_step_id, []),
+            persons,
+            case,
+        )
+    }
+
+
 def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
     """Auto follow-ups on stalled steps — created TO_APPROVE, never more:
     the system proposes, a human approves. TWO passes on the SAME clock
@@ -305,8 +356,17 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
             ClientCase.is_demo.is_(False),
         )
     )
-    for progress, step, case, agency, expat, journey in db.execute(stmt).all():
+    client_rows = db.execute(stmt).all()
+    # A step whose requirements are ALL provided is no longer waiting on the
+    # client — the ball is in the AGENCY's court (validation). Chasing the
+    # client there is pure noise in the approval queue, so those steps leave
+    # the CLIENT scan (the provider pass below is deliberately untouched:
+    # a provider's own follow-up doesn't depend on the client's paperwork).
+    met_progress_ids = _steps_with_all_requirements_met(db, client_rows)
+    for progress, step, case, agency, expat, journey in client_rows:
         if not (agency.settings or {}).get("auto_reminders_enabled", True):
+            continue
+        if progress.id in met_progress_ids:
             continue
         for threshold in resolve_auto_reminder_thresholds(journey, agency, default_thresholds):
             if not _age_reached(progress.updated_at, threshold):

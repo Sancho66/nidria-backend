@@ -153,3 +153,28 @@ def case_is_provided(case_requirement: Any, case: ClientCase) -> bool:
 def case_current_value(case_requirement: Any, case: ClientCase) -> Any:
     """The live value of a case-level requirement, read on client_case."""
     return resolve_value(FieldPlane.CASE, case_requirement.case_field, case=case)
+
+
+# --- the step-level fold (the SINGLE all-met decision) -------------------------------
+
+
+def step_all_met(
+    person_reqs: list[Any],
+    case_reqs: list[Any],
+    persons_by_id: dict[Any, Any],
+    case: ClientCase,
+) -> bool:
+    """True iff the step has ≥1 requirement (person OR case) and every one is
+    provided — person fields/documents via is_provided, case fields via the
+    live client_case value (vague C). Empty set → False: an auto step with no
+    requirements never self-completes, and (auto-reminders) a step that asks
+    the client for nothing is never "done waiting on the client".
+
+    THE single all-met fold, shared by the async engine (ProgressManager,
+    which delegates here) and the SYNC auto-reminder cron — so "the client
+    has nothing left to provide" means exactly the same thing on both sides.
+    Lives here, with the leaf predicates it composes, and depends on no
+    session: callers load the rows however their world allows."""
+    person_ok = all(is_provided(req, persons_by_id.get(req.person_id)) for req in person_reqs)
+    case_ok = all(case_is_provided(creq, case) for creq in case_reqs)
+    return (bool(person_reqs) or bool(case_reqs)) and person_ok and case_ok

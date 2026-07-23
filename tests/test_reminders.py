@@ -17,6 +17,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
@@ -1151,3 +1152,183 @@ async def test_template_detail_exposes_journey_thresholds(
     assert plain_detail["auto_reminder_days_2"] is None
     assert plain_detail["country"] is None
     assert plain_detail["sector"] is None  # the adoption-signal discriminant
+
+
+# --- NID-18 : une étape dont tout est fourni n'appelle plus le client ---------------
+
+
+async def _stalled_step_with_document(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    agent: Agent,
+    make_client_case: MakeClientCase,
+    headers: dict[str, str],
+    days: int,
+) -> tuple[ClientCase, uuid.UUID]:
+    """Twin of _stalled_step, but the step carries ONE document requirement
+    (whose provided state is the STORED status — the honest lever for
+    "the client handed it over" / "the piece was removed")."""
+    template = (await rem_client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    step = (
+        await rem_client.post(
+            f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Stalled step"}
+        )
+    ).json()
+    await rem_client.post(
+        f"/journeys/{template['id']}/steps/{step['id']}/requirements",
+        headers=headers,
+        json={"kind": "document", "reference": "passeport", "scope": "principal"},
+    )
+    case = await make_client_case(agency_id=agent.agency_id)
+    timeline = (
+        await rem_client.post(
+            f"/cases/{case.id}/journey",
+            headers=headers,
+            json={"journey_template_id": template["id"]},
+        )
+    ).json()
+    # Concrete requirements materialize at ACTIVATION, not at assignment.
+    await rem_client.patch(
+        f"/cases/{case.id}/steps/{timeline[0]['id']}",
+        headers=headers,
+        json={"status": "in_progress"},
+    )
+    requirement_id = (
+        await db_session.execute(
+            select(CaseStepRequirement.id)
+            .join(
+                CaseStepProgress,
+                CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+            )
+            .where(CaseStepProgress.case_id == case.id)
+        )
+    ).scalar_one()
+    # Backdated LAST: materializing the requirements touches the rows.
+    await db_session.execute(
+        update(CaseStepProgress)
+        .where(CaseStepProgress.case_id == case.id)
+        .values(updated_at=datetime.now(UTC) - timedelta(days=days))
+    )
+    await db_session.commit()
+    return case, requirement_id
+
+
+async def _set_requirement_status(
+    db_session: AsyncSession, requirement_id: uuid.UUID, status: str
+) -> None:
+    await db_session.execute(
+        update(CaseStepRequirement)
+        .where(CaseStepRequirement.id == requirement_id)
+        .values(status=status)
+    )
+    await db_session.commit()
+
+
+async def test_incomplete_stalled_step_still_reminds_the_client(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The control: something is STILL expected from the client, so the
+    stalled step keeps producing its TO_APPROVE follow-up."""
+    headers = agent_headers(manager_agent)
+    case, _req = await _stalled_step_with_document(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    assert _run_auto(sync_session_local)["created"] == 1
+    reminder = (
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == case.id)))
+        .scalars()
+        .one()
+    )
+    assert reminder.status == "to_approve"  # the absolute invariant holds
+
+
+async def test_step_with_all_requirements_met_stops_client_reminders(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """THE lot: everything expected has been provided — the ball is in the
+    AGENCY's court (validation), not the client's. Chasing him there is
+    noise in the approval queue, so the step leaves the client scan even
+    though it is just as old (same 21 days as the control above)."""
+    headers = agent_headers(manager_agent)
+    case, requirement_id = await _stalled_step_with_document(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    await _set_requirement_status(db_session, requirement_id, "provided")
+
+    assert _run_auto(sync_session_local)["created"] == 0
+    assert (
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == case.id)))
+        .scalars()
+        .all()
+    ) == []
+
+
+async def test_removing_the_document_makes_the_step_eligible_again(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The exclusion is a LIVE read, never a latch: a piece removed puts the
+    requirement back to non-provided, and the client is chased again."""
+    headers = agent_headers(manager_agent)
+    case, requirement_id = await _stalled_step_with_document(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    await _set_requirement_status(db_session, requirement_id, "provided")
+    assert _run_auto(sync_session_local)["created"] == 0
+
+    await _set_requirement_status(db_session, requirement_id, "pending")  # the piece is removed
+    assert _run_auto(sync_session_local)["created"] == 1
+    assert (
+        len(
+            (await db_session.execute(select(Reminder).where(Reminder.case_id == case.id)))
+            .scalars()
+            .all()
+        )
+        == 1
+    )
+
+
+async def test_provider_pass_untouched_by_a_fully_met_step(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    """PIN: the all-met exclusion is CLIENT-ONLY. A provider's follow-up does
+    not depend on the client's paperwork — the notary is still chased on a
+    step where the client has handed everything over. Exactly ONE reminder,
+    external, TO_APPROVE."""
+    headers = agent_headers(manager_agent)
+    case, requirement_id = await _stalled_step_with_document(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    contact = await make_external_contact(case=case, email="notaire@example.com")
+    await _external_participant(db_session, case, contact.id)
+    await _set_requirement_status(db_session, requirement_id, "provided")
+
+    assert _run_auto(sync_session_local)["created"] == 1  # the provider one, not the client one
+    reminder = (
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == case.id)))
+        .scalars()
+        .one()
+    )
+    assert reminder.recipient_type == "external"
+    assert reminder.recipient_external_id == contact.id
+    assert reminder.status == "to_approve"
