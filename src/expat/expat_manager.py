@@ -302,8 +302,10 @@ class ExpatPortalManager:
     ) -> None:
         """Write the value onto case_person (the single source of truth).
         base_field → type-validated via PersonUpdateRequest; custom_field
-        → validated against the agency's active definitions. Null clears
-        the field (requirement returns to pending)."""
+        → validated against the agency's active definitions. An empty value
+        CLEARS the field — EVEN a required one on this client path
+        (allow_clear=True): the requirement returns to pending and the step
+        reopens. The agency paths keep required enforced (allow_clear=False)."""
         if requirement.kind == StepRequirementKind.BASE_FIELD.value:
             try:
                 validated = PersonUpdateRequest.model_validate({requirement.reference: value})
@@ -315,7 +317,10 @@ class ExpatPortalManager:
         else:  # custom_field
             definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
             person.custom_fields = validate_and_merge(
-                definitions, person.custom_fields or {}, {requirement.reference: value}
+                definitions,
+                person.custom_fields or {},
+                {requirement.reference: value},
+                allow_clear=True,  # the client may retract a required value (dégel)
             )
 
     # --- CASE-level requirement fulfillment (sections chantier, vague C2) -----------

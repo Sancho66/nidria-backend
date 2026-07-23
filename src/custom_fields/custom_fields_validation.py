@@ -140,13 +140,19 @@ def validate_and_merge(
     active_definitions: Iterable[CustomFieldDefinition],
     current: dict[str, Any],
     submitted: dict[str, Any],
+    *,
+    allow_clear: bool = False,
 ) -> dict[str, Any]:
     """Return the merged custom_fields after validating `submitted`.
 
     - Unknown / archived key in the payload → 422 (strict).
     - Each submitted value coerced/validated by its type; errors are
       ACCUMULATED (all bad fields reported, not the first).
-    - required + present-but-empty → 422 (the bounded rule of point 1).
+    - required + present-but-empty → 422 (the bounded rule of point 1),
+      UNLESS `allow_clear`: the EXPLICIT client-side "retirer ma valeur"
+      intention (expat fulfill_value ONLY) — the key is popped and the
+      requirement returns to pending. Every agency path keeps allow_clear=
+      False, so required stays enforced where it makes sense (unchanged).
     - A null/empty value on a non-required field clears the key.
     """
     by_key = {d.key: d for d in active_definitions}
@@ -160,10 +166,10 @@ def validate_and_merge(
             continue
         label = f"'{definition.label}' ({key})"
         if _is_empty(value):
-            if definition.required:
+            if definition.required and not allow_clear:
                 errors.append(f"Field {label}: required, cannot be empty.")
             else:
-                merged.pop(key, None)  # clear
+                merged.pop(key, None)  # clear (non-required, or an authorized clear)
             continue
         try:
             merged[key] = _coerce_one(definition, value)

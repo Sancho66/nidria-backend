@@ -216,6 +216,57 @@ async def test_value_null_clears_back_to_pending(
     assert cleared.json()["timeline"][0]["requirements"][0]["status"] == "pending"
 
 
+async def test_client_can_clear_a_required_custom_field_back_to_pending(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """DÉGEL — the client may RETRACT a REQUIRED custom-field value it filled
+    itself (allow_clear, EXPAT path only): the key is popped and the
+    requirement returns to pending (was a 422 that wrote nothing → display
+    lied). The agency PATCH keeps required enforced — test_custom_fields.py."""
+    headers = agent_headers(admin)
+    await rf_client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={"key": "visa_ref", "label": "Réf. visa", "field_type": "text", "required": True},
+    )
+    tid, sid = await _step(rf_client, headers)
+    await _add_req(
+        rf_client, headers, tid, sid, kind="custom_field", reference="visa_ref", scope="principal"
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    req = await _find_req(rf_client, expat_headers, expat, str(case.id), "visa_ref")
+
+    filled = await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "VZ-42"},
+    )
+    assert filled.status_code == 200, filled.text
+    assert filled.json()["timeline"][0]["requirements"][0]["status"] == "provided"
+
+    cleared = await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{req['id']}",
+        headers=expat_headers(expat),
+        json={"value": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["timeline"][0]["requirements"][0]["status"] == "pending"
+
+    # is_provided reads key PRESENCE → the pending above proves the pop; assert
+    # the person's stored shape too (the key is removed, not stored empty).
+    persons = (await rf_client.get(f"/cases/{case.id}", headers=headers)).json()["persons"]
+    principal = next(p for p in persons if p["kind"] == "principal")
+    assert "visa_ref" not in principal["custom_fields"]
+
+
 # --- document fulfillment -------------------------------------------------------------
 
 
