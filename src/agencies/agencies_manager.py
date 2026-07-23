@@ -39,6 +39,7 @@ from src.agencies.agencies_schema import (
 from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME, seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
+from src.consents.consents_seed import publish_if_changed, withdraw_agency_document
 from src.core import storage
 from src.core.config import get_settings
 from src.core.currencies import default_currency_for_language
@@ -48,6 +49,7 @@ from src.core.enums import (
     ActorType,
     AgencySector,
     Audience,
+    ConsentDocumentType,
     ExternalContactType,
     InvitationStatus,
     SubscriptionPlan,
@@ -61,6 +63,7 @@ from src.core.exceptions import (
 from src.core.i18n import resolve_notification_lang_agent
 from src.core.images import process_cover, process_logo
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
+from src.core.rbac.consent_gate import active_documents_by_type
 from src.core.security import hash_password
 from src.usage.usage_manager import UsageManager
 
@@ -749,6 +752,16 @@ class AgenciesManager:
             await self.db.commit()
         return await self.onboarding_state(agent)
 
+    async def own_client_terms(self, agency: Agency) -> str | None:
+        """The agency's OWN active client terms, or None when it has none
+        (its clients then see the Nidria text). Read from the published
+        consent_document — the text has no home on `agency`."""
+        active = await active_documents_by_type(
+            self.db, frozenset({ConsentDocumentType.CLIENT_TERMS.value}), agency.id
+        )
+        doc = active.get(ConsentDocumentType.CLIENT_TERMS.value)
+        return doc.content_md if doc is not None and doc.agency_id is not None else None
+
     async def update_my_agency(self, agent: Agent, payload: AgencyUpdateRequest) -> Agency:
         agency = await self.get_my_agency(agent)
         if payload.name is not None:
@@ -777,6 +790,26 @@ class AgenciesManager:
             # default reconverts NOTHING and is always allowed — the old
             # cost.currency_change_forbidden guard is gone.
             agency.currency = payload.currency
+        if payload.client_terms_md is not None:
+            # Blank = withdraw (clients fall back to the Nidria text); any
+            # other content = publish a new version if it actually changed.
+            # Same publication act as the canonical seed, so the agency's
+            # clients are re-gated at their next request, and acceptances
+            # already recorded keep pointing at the version they signed.
+            # strip() decides blank-vs-content ONLY; the text itself is
+            # stored VERBATIM. A legal document is served exactly as its
+            # author wrote it, and the hash covers those very bytes.
+            if payload.client_terms_md.strip():
+                await publish_if_changed(
+                    self.db,
+                    ConsentDocumentType.CLIENT_TERMS.value,
+                    payload.client_terms_md,
+                    agency_id=agency.id,
+                )
+            else:
+                await withdraw_agency_document(
+                    self.db, ConsentDocumentType.CLIENT_TERMS.value, agency.id
+                )
         await self.db.commit()
         await self.db.refresh(agency)
         return agency

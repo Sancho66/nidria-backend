@@ -15132,6 +15132,17 @@
               }
             ]
           },
+          "client_terms_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Terms Md"
+          },
           "notification_prefs": {
             "anyOf": [
               {
@@ -15326,6 +15337,18 @@
               }
             ],
             "title": "Currency"
+          },
+          "client_terms_md": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Terms Md"
           }
         },
         "type": "object",

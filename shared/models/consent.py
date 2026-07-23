@@ -21,7 +21,15 @@ class ConsentDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     RAW content (token unresolved), copied onto every acceptance."""
 
     __tablename__ = "consent_document"
-    __table_args__ = (UniqueConstraint("type", "version", name="uq_consent_document_type_version"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "type",
+            "version",
+            "agency_id",
+            name="uq_consent_document_type_version",
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
 
     type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     version: Mapped[int] = mapped_column(nullable=False)
@@ -29,6 +37,13 @@ class ConsentDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # NULL = the CANONICAL Nidria text (consents_texts.py, the only kind
+    # that existed before). Set = an agency's OWN version of that document,
+    # shown to ITS clients in place of Nidria's. Versions are numbered per
+    # (type, agency_id), so an agency's v1 and Nidria's v1 coexist — which
+    # is exactly why an acceptance must record WHICH of the two it signed
+    # (ConsentAcceptance.document_agency_id).
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
 
 
 class ConsentAcceptance(UUIDPrimaryKeyMixin, Base):
@@ -54,6 +69,7 @@ class ConsentAcceptance(UUIDPrimaryKeyMixin, Base):
             "document_type",
             "document_version",
             "agency_id",
+            "document_agency_id",
             name="uq_consent_acceptance",
             postgresql_nulls_not_distinct=True,
         ),
@@ -70,3 +86,15 @@ class ConsentAcceptance(UUIDPrimaryKeyMixin, Base):
     # First X-Forwarded-For hop behind Fly, else the direct client host.
     ip: Mapped[str | None] = mapped_column(String(45))
     agency_id: Mapped[uuid.UUID | None] = mapped_column()
+    # WHICH text was signed: NULL = the canonical Nidria one, set = that
+    # agency's own version. Distinct from `agency_id` above, which says on
+    # behalf of which data controller the acceptance was given — for a
+    # client both are usually the same agency, but an agency WITHOUT its
+    # own terms yields (agency_id=A, document_agency_id=NULL).
+    #
+    # Load-bearing, not decorative: versions are numbered per document
+    # owner, so "client_terms v1" is ambiguous without it — the gate would
+    # take Nidria's accepted v1 for the agency's unaccepted v1. Existing
+    # rows stay NULL, which is precisely what they signed. Never
+    # backfilled: the trace is insert-only.
+    document_agency_id: Mapped[uuid.UUID | None] = mapped_column()

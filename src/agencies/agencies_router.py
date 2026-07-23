@@ -263,6 +263,7 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     # (plan, cycle, seats); the conversion itself goes through Eric.
     response.subscription = await manager.subscription_info(agency)
     response.notification_prefs = effective_client_prefs(agency)
+    response.client_terms_md = await manager.own_client_terms(agency)
     return response
 
 

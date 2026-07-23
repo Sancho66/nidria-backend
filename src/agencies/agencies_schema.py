@@ -225,6 +225,12 @@ class AgencyResponse(BaseModel):
     # Filled on GET /agencies/me only (the settings read); other call
     # sites leave it None.
     subscription: AgencySubscriptionInfo | None = None
+    # The agency's OWN client terms, when it published some — NULL means
+    # "none, my clients see Nidria's". Filled on GET /agencies/me only, so
+    # the Settings textarea can show what is currently in force (a written
+    # field must be re-readable). Read from the active consent_document,
+    # never from a column on `agency`.
+    client_terms_md: str | None = None
     # EFFECTIVE client notification prefs (defaults merged) — the front
     # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
     notification_prefs: dict[str, str] | None = None
@@ -303,6 +309,13 @@ class AgencyUpdateRequest(BaseModel):
     # of a real currency (the iso4217 library is the source of truth) — "EURO",
     # "eur", "XYZ" → 422. Changing it once costs exist is refused in the manager.
     currency: str | None = None
+    # "Vos conditions générales" — the agency's OWN client terms, shown to
+    # ITS clients in place of Nidria's. Multiline markdown. Absent = leave
+    # untouched; "" (or blank) = withdraw them and fall back to Nidria's.
+    # Not stored on `agency`: writing it PUBLISHES a versioned
+    # consent_document, so the text gets a hash, a version and the same
+    # automatic re-gating as every other legal document.
+    client_terms_md: str | None = Field(default=None, max_length=100_000)
 
     @field_validator("currency")
     @classmethod

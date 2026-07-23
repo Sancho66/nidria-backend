@@ -143,6 +143,8 @@ class ConsentsManager:
             payload=payload,
             agency_id=payload.agency_id,
             ip=ip,
+            # The client face is the one where an agency's own text wins.
+            resolve_for_agency=payload.agency_id,
         )
 
     async def accept_as_external(
@@ -182,9 +184,17 @@ class ConsentsManager:
         payload: ConsentAcceptRequest,
         agency_id: uuid.UUID,
         ip: str | None,
+        resolve_for_agency: uuid.UUID | None = None,
     ) -> ConsentAcceptResponse:
+        """`resolve_for_agency` is the agency whose OWN version may override
+        the canonical text — set for the client face, None for the agency
+        and provider faces (their documents are Nidria's contract and are
+        not overridable). The resolved document decides what is signed AND
+        what the trace records, so the two can never diverge."""
         doc_type = payload.document_type.value
-        active = (await active_documents_by_type(self.db, frozenset({doc_type}))).get(doc_type)
+        active = (
+            await active_documents_by_type(self.db, frozenset({doc_type}), resolve_for_agency)
+        ).get(doc_type)
         if active is None:
             raise NotFoundError(
                 "No active document of this type.",
@@ -202,7 +212,7 @@ class ConsentsManager:
                 },
             )
         existing = await self.repo.get_acceptance(
-            actor_type.value, actor_id, doc_type, active.version, agency_id
+            actor_type.value, actor_id, doc_type, active.version, agency_id, active.agency_id
         )
         if existing is not None:
             # Idempotent no-op: the original trace stays untouched.
@@ -221,6 +231,8 @@ class ConsentsManager:
             accepted_at=datetime.now(UTC),  # server clock, never the client's
             ip=ip,
             agency_id=agency_id,
+            # WHICH text: the agency's own, or NULL for the canonical one.
+            document_agency_id=active.agency_id,
         )
         await self.db.commit()
         return ConsentAcceptResponse(

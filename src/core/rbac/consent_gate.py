@@ -26,7 +26,7 @@ concerned with zero extra machinery."""
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -43,33 +43,64 @@ from src.core.rbac.admin_roles import is_admin_role_clause
 
 
 async def active_documents_by_type(
-    db: AsyncSession, types: frozenset[str]
+    db: AsyncSession, types: frozenset[str], agency_id: uuid.UUID | None = None
 ) -> dict[str, ConsentDocument]:
     """The latest ACTIVE version per type (highest version wins if a
-    script left several actives)."""
+    script left several actives).
+
+    With `agency_id`, the agency's OWN version of a document takes
+    precedence over the canonical Nidria one for that type — that is the
+    whole override: an agency that wrote its own client terms shows them
+    to its clients, an agency that did not keeps Nidria's, and no other
+    document of the bundle is affected. Without `agency_id` (or with no
+    agency row for a type), the canonical text answers, exactly as before."""
     stmt = select(ConsentDocument).where(
-        ConsentDocument.type.in_(types), ConsentDocument.is_active.is_(True)
+        ConsentDocument.type.in_(types),
+        ConsentDocument.is_active.is_(True),
+        (
+            ConsentDocument.agency_id.is_(None)
+            if agency_id is None
+            # NOT `.in_([agency_id, None])`: in SQL, `x IN (v, NULL)` never
+            # matches a NULL row (it evaluates to UNKNOWN), which would hide
+            # every canonical document and 404 the whole client face.
+            else or_(ConsentDocument.agency_id == agency_id, ConsentDocument.agency_id.is_(None))
+        ),
     )
     latest: dict[str, ConsentDocument] = {}
     for doc in (await db.execute(stmt)).scalars():
         current = latest.get(doc.type)
-        if current is None or doc.version > current.version:
+        if current is None or _outranks(doc, current):
             latest[doc.type] = doc
     return latest
 
 
+def _outranks(candidate: ConsentDocument, current: ConsentDocument) -> bool:
+    """An AGENCY document always beats the canonical one for the same type
+    (the override), whatever the version numbers — they are two independent
+    sequences. Between two documents of the same owner, the highest version
+    wins."""
+    if (candidate.agency_id is not None) != (current.agency_id is not None):
+        return candidate.agency_id is not None
+    return candidate.version > current.version
+
+
 async def _accepted_keys(
     db: AsyncSession, actor_type: ActorType, actor_id: uuid.UUID
-) -> set[tuple[str, int, uuid.UUID | None]]:
+) -> set[tuple[str, int, uuid.UUID | None, uuid.UUID | None]]:
+    """(document_type, version, agency_id, document_agency_id). The last
+    member is what makes an agency's own text distinguishable from
+    Nidria's: both sequences number from 1, so without it an accepted
+    canonical v1 would silently satisfy an agency's brand-new v1."""
     stmt = select(
         ConsentAcceptance.document_type,
         ConsentAcceptance.document_version,
         ConsentAcceptance.agency_id,
+        ConsentAcceptance.document_agency_id,
     ).where(
         ConsentAcceptance.actor_type == actor_type.value,
         ConsentAcceptance.actor_id == actor_id,
     )
-    return {(t, v, a) for t, v, a in (await db.execute(stmt)).all()}
+    return {(t, v, a, d) for t, v, a, d in (await db.execute(stmt)).all()}
 
 
 async def is_agency_admin(db: AsyncSession, agent: Agent) -> bool:
@@ -91,7 +122,7 @@ async def missing_for_agent(db: AsyncSession, agent: Agent) -> list[ConsentDocum
     if not required:
         return []
     accepted = await _accepted_keys(db, ActorType.AGENT, agent.id)
-    accepted_versions = {(t, v) for t, v, _ in accepted}
+    accepted_versions = {(t, v) for t, v, _, _ in accepted}
     return [
         doc
         for doc in sorted(required.values(), key=lambda d: d.type)
@@ -120,16 +151,18 @@ async def missing_for_expat(
     agency_ids = await expat_agency_ids(db, expat_id)
     if not agency_ids:
         return []
-    required = await active_documents_by_type(db, EXPAT_CONSENT_TYPES)
-    if not required:
-        return []
     accepted = await _accepted_keys(db, ActorType.EXPAT, expat_id)
-    return [
-        (agency_id, doc)
-        for agency_id in sorted(agency_ids)
-        for doc in sorted(required.values(), key=lambda d: d.type)
-        if (doc.type, doc.version, agency_id) not in accepted
-    ]
+    # Resolved PER AGENCY: each controller may serve its own client terms,
+    # so the required set is no longer the same for every agency.
+    pairs: list[tuple[uuid.UUID, ConsentDocument]] = []
+    for agency_id in sorted(agency_ids):
+        required = await active_documents_by_type(db, EXPAT_CONSENT_TYPES, agency_id)
+        pairs.extend(
+            (agency_id, doc)
+            for doc in sorted(required.values(), key=lambda d: d.type)
+            if (doc.type, doc.version, agency_id, doc.agency_id) not in accepted
+        )
+    return pairs
 
 
 def external_agency_ids(agent: Agent) -> list[uuid.UUID]:
@@ -151,9 +184,11 @@ async def missing_for_external(
     if not required:
         return []
     accepted = await _accepted_keys(db, ActorType.EXTERNAL, external_agent.id)
+    # Provider terms are NOT overridable in this lot: the canonical text
+    # only, hence document_agency_id NULL in the key.
     return [
         (agency_id, doc)
         for agency_id in sorted(external_agency_ids(external_agent))
         for doc in sorted(required.values(), key=lambda d: d.type)
-        if (doc.type, doc.version, agency_id) not in accepted
+        if (doc.type, doc.version, agency_id, None) not in accepted
     ]

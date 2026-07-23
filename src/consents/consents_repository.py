@@ -23,6 +23,7 @@ class ConsentsRepository:
         document_type: str,
         document_version: int,
         agency_id: uuid.UUID | None,
+        document_agency_id: uuid.UUID | None = None,
     ) -> ConsentAcceptance | None:
         stmt = select(ConsentAcceptance).where(
             ConsentAcceptance.actor_type == actor_type,
@@ -33,6 +34,13 @@ class ConsentsRepository:
                 ConsentAcceptance.agency_id.is_(None)
                 if agency_id is None
                 else ConsentAcceptance.agency_id == agency_id
+            ),
+            # Mirrors the unique key: the canonical text and an agency's own
+            # both number from v1, so idempotence must tell them apart.
+            (
+                ConsentAcceptance.document_agency_id.is_(None)
+                if document_agency_id is None
+                else ConsentAcceptance.document_agency_id == document_agency_id
             ),
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
