@@ -10,6 +10,7 @@ from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.impersonation import ImpersonationLog
 from shared.models.rbac import Role
+from src.core.rbac.admin_roles import is_admin_role_clause
 
 
 class ImpersonationRepository:
@@ -17,10 +18,12 @@ class ImpersonationRepository:
         self.db = db
 
     async def get_an_admin_of_agency(self, agency_id: uuid.UUID) -> Agent | None:
-        """An INTERNAL holder of the SYSTEM 'admin' role in the agency — the
-        identity a superadmin steps in AS (full agency control, never platform
-        power: the system 'admin' role excludes agency.create). Wizard- and
-        seed-created agencies always have one; deterministic pick (oldest)."""
+        """An INTERNAL, active holder of the agency-admin role — the identity a
+        superadmin steps in AS (full agency control, never platform power: the
+        admin role excludes agency.create). 'Admin' means the SYSTEM 'admin'
+        role OR its copy-on-write clone, via the shared `is_admin_role_clause`
+        (same definition consent_gate uses, so an agency that customized its
+        admin role stays impersonable). Deterministic pick (oldest)."""
         stmt = (
             select(Agent)
             .join(Role, Role.id == Agent.role_id)
@@ -28,8 +31,7 @@ class ImpersonationRepository:
                 Agent.agency_id == agency_id,
                 Agent.is_external.is_(False),
                 Agent.deactivated_at.is_(None),
-                Role.is_system,
-                Role.name == "admin",
+                is_admin_role_clause(Role),
             )
             .order_by(Agent.created_at)
             .limit(1)

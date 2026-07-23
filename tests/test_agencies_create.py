@@ -21,6 +21,7 @@ from src.core import email
 from src.core.currencies import default_currency_for_language
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
+from tests.plugins.rbac_plugin import MakeRole
 
 
 @pytest.fixture
@@ -280,6 +281,65 @@ async def test_enter_agency_without_admin_is_404(
     superadmin = await make_agent(role=system_roles["superadmin"])
     resp = await agencies_client.post(
         f"/agencies/{empty.id}/enter", headers=agent_headers(superadmin)
+    )
+    assert resp.status_code == 404
+
+
+async def test_superadmin_enters_agency_whose_admin_is_a_clone(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    make_role: MakeRole,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    """The prod bug (Expatriation.io): the agency CUSTOMIZED its admin role,
+    so its admin wears a copy-on-write CLONE (is_system=false, renamed) whose
+    origin is the system 'admin'. That agent IS the admin — entering must
+    succeed, exactly like an untouched system-admin agency."""
+    target = await make_agency()
+    clone = await make_role(
+        name="Administrateur",  # the agency renamed it, French label
+        is_system=False,
+        agency_id=target.id,
+        cloned_from_role_id=system_roles["admin"].id,
+    )
+    await make_agent(agency_id=target.id, role=clone)
+    superadmin = await make_agent(role=system_roles["superadmin"])
+
+    enter = await agencies_client.post(
+        f"/agencies/{target.id}/enter", headers=agent_headers(superadmin)
+    )
+    assert enter.status_code == 200, enter.text
+    token = enter.json()["access_token"]
+    me = await agencies_client.get("/agencies/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["id"] == str(target.id)  # scoped to the entered agency
+
+
+async def test_enter_agency_whose_only_agent_clones_a_non_admin_role_is_404(
+    agencies_client: AsyncClient,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    make_role: MakeRole,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    """A clone is only 'the admin' when its ORIGIN is the system 'admin'. An
+    agency whose sole agent wears a clone of a NON-admin system role (viewer)
+    has no admin to enter as — 404, the widened rule does not over-match."""
+    target = await make_agency()
+    viewer_clone = await make_role(
+        name="Lecteur",
+        is_system=False,
+        agency_id=target.id,
+        cloned_from_role_id=system_roles["viewer"].id,
+    )
+    await make_agent(agency_id=target.id, role=viewer_clone)
+    superadmin = await make_agent(role=system_roles["superadmin"])
+
+    resp = await agencies_client.post(
+        f"/agencies/{target.id}/enter", headers=agent_headers(superadmin)
     )
     assert resp.status_code == 404
 

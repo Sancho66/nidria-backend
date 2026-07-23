@@ -39,6 +39,7 @@ from src.core.enums import (
     EXTERNAL_CONSENT_TYPES,
     ActorType,
 )
+from src.core.rbac.admin_roles import is_admin_role_clause
 
 
 async def active_documents_by_type(
@@ -74,14 +75,11 @@ async def _accepted_keys(
 async def is_agency_admin(db: AsyncSession, agent: Agent) -> bool:
     """The agency admin: holder of the SYSTEM 'admin' role, or of its
     copy-on-write clone (an agency that edited the admin role rebinds its
-    agents onto the clone; they are still 'the admin')."""
-    role = agent.role
-    if role.is_system and role.name == "admin":
-        return True
-    if role.cloned_from_role_id is None:
-        return False
-    origin = await db.get(Role, role.cloned_from_role_id)
-    return origin is not None and origin.is_system and origin.name == "admin"
+    agents onto the clone; they are still 'the admin'). Consumes the single
+    `is_admin_role_clause` definition shared with impersonation — the gate
+    and the agency switcher can never disagree about who the admin is."""
+    stmt = select(Role.id).where(Role.id == agent.role_id, is_admin_role_clause()).limit(1)
+    return (await db.execute(stmt)).first() is not None
 
 
 async def missing_for_agent(db: AsyncSession, agent: Agent) -> list[ConsentDocument]:
