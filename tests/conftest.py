@@ -61,6 +61,18 @@ pytest_plugins = [
 ]
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-tag the slow alembic-roundtrip tests (every tests/*migration*.py,
+    ~12-19s each) with the `migration` marker — like `seed`, they only matter
+    when you touch migrations. `make check` skips them (-m "not seed and not
+    migration") for a fast local loop; `make test-migrations` runs them, and
+    CI runs the WHOLE suite (marker filter is local-only). New *migration* files
+    are covered automatically (no per-file edit)."""
+    for item in items:
+        if "migration" in item.path.name:
+            item.add_marker(pytest.mark.migration)
+
+
 @pytest.fixture(autouse=True)
 def clear_mock_sinks() -> Generator[None, None, None]:
     from src.core import email, storage
@@ -140,10 +152,14 @@ async def db_session(async_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, 
             await session.close()
             # Clean state for the next test (managers call commit() so a
             # simple rollback would not undo the writes) — Q6 decision:
-            # truncate in teardown, Prism approach.
+            # truncate in teardown, Prism approach. ONE TRUNCATE of every
+            # table (vs a per-table DELETE loop: 62 round-trips/test) —
+            # identical isolation (all tables emptied), one statement.
+            # No RESTART IDENTITY (matches DELETE: sequences untouched);
+            # CASCADE is a no-op safety net since ALL tables are listed.
             async with async_engine.begin() as conn:
-                for table in reversed(Base.metadata.sorted_tables):
-                    await conn.execute(table.delete())
+                tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+                await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
 
 
 @pytest.fixture(scope="session")
