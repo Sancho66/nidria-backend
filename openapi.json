@@ -6713,6 +6713,54 @@
         }
       }
     },
+    "/consents/preview": {
+      "get": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Preview Canonical Document",
+        "description": "The CANONICAL Nidria text for a document type, tokens resolved for\nthe calling agency — what its clients see by default. An agency with\nits own terms still gets the canonical text here: this is a preview of\nthe DEFAULT, not of its own version. Unknown type or no active document\n→ 404 consent.document_not_found.\n\n`type` is a plain str, not the enum, so an unknown value answers the\nnamed 404 of the contract rather than FastAPI's generic 422.",
+        "operationId": "preview_canonical_document_consents_preview_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingDocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/consents/agent/pending": {
       "get": {
         "tags": [

@@ -18,6 +18,7 @@ from src.core.enums import (
     EXPAT_CONSENT_TYPES,
     EXTERNAL_CONSENT_TYPES,
     ActorType,
+    ConsentDocumentType,
 )
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.core.rbac.consent_gate import (
@@ -49,6 +50,36 @@ class ConsentsManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.repo = ConsentsRepository(db)
+
+    # --- preview ---------------------------------------------------------------------
+
+    async def preview_canonical(self, agent: Agent, doc_type: str) -> PendingDocumentResponse:
+        """The CANONICAL Nidria text of a document type, tokens resolved for
+        the CALLING agency — the "here is the default" preview next to the
+        Settings textarea.
+
+        Deliberately canonical: an agency that wrote its own terms still gets
+        Nidria's here, because the point is to show what its clients WOULD
+        see, not to echo back what it just typed (GET /agencies/me already
+        does that). Hence the agency-blind resolution (agency_id None).
+
+        Parameterized by type, not frozen on client_terms: the day
+        client_privacy becomes customizable, this endpoint already serves it."""
+        if doc_type not in {t.value for t in ConsentDocumentType}:
+            raise NotFoundError(
+                "Unknown consent document type.",
+                code="consent.document_not_found",
+                params={"type": doc_type},
+            )
+        active = (await active_documents_by_type(self.db, frozenset({doc_type}))).get(doc_type)
+        if active is None:
+            raise NotFoundError(
+                "No active document of this type.",
+                code="consent.document_not_found",
+                params={"type": doc_type},
+            )
+        names = await self.repo.agency_names([agent.agency_id])
+        return _resolve(active, names.get(agent.agency_id, ""))
 
     # --- pending ---------------------------------------------------------------------
 

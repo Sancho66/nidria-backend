@@ -447,3 +447,91 @@ async def test_another_agencys_clients_are_unaffected(
     }
     assert by_agency[admin.agency_id] == _AGENCY_CGV
     assert by_agency[other_agency.id] != _AGENCY_CGV
+
+
+# --- preview of the CANONICAL text (settings side) -----------------------------------
+
+
+async def test_preview_returns_canonical_text_with_own_agency_name(
+    cs_client: AsyncClient,
+    db_session: AsyncSession,
+    consent_docs: None,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The Settings preview: Nidria's own client terms, with {agency_name}
+    resolved to the CALLING agency — never left as a raw token."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.id == admin.agency_id))
+    ).scalar_one()
+
+    r = await cs_client.get("/consents/preview", headers=headers, params={"type": "client_terms"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["type"] == "client_terms"
+    assert "{agency_name}" not in body["content"]  # resolved, not raw
+    assert agency.name in body["content"]
+    # The hash still covers the RAW text (what an acceptance would carry).
+    assert body["content_hash"] != content_sha256(body["content"])
+
+
+async def test_preview_serves_the_default_even_to_an_agency_with_its_own_terms(
+    cs_client: AsyncClient,
+    consent_docs: None,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """It is a preview of the DEFAULT, not an echo: an agency that wrote
+    its own CGV still sees Nidria's here (GET /agencies/me returns its own)."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    await _set_agency_terms(cs_client, headers, _AGENCY_CGV)
+
+    r = await cs_client.get("/consents/preview", headers=headers, params={"type": "client_terms"})
+    assert r.status_code == 200, r.text
+    assert r.json()["content"] != _AGENCY_CGV
+    assert "espace client" in r.json()["content"]
+    # ...while its own text stays readable where it belongs.
+    assert (await cs_client.get("/agencies/me", headers=headers)).json()[
+        "client_terms_md"
+    ] == _AGENCY_CGV
+
+
+async def test_preview_is_parameterized_by_type(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Not frozen on client_terms — the day another document becomes
+    customizable, the endpoint already serves it."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    r = await cs_client.get("/consents/preview", headers=headers, params={"type": "client_privacy"})
+    assert r.status_code == 200, r.text
+    assert "Note d'information sur vos données" in r.json()["content"]
+
+
+async def test_preview_unknown_type_is_a_named_404(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    r = await cs_client.get("/consents/preview", headers=headers, params={"type": "not_a_document"})
+    assert r.status_code == 404, r.text
+    assert r.json()["code"] == "consent.document_not_found"
+
+
+async def test_preview_requires_the_settings_permission(
+    cs_client: AsyncClient,
+    consent_docs: None,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Gated like the sensitive settings it belongs to: a viewer (no
+    agency.manage) is refused."""
+    viewer = await make_agent(role=system_roles["viewer"])
+    r = await cs_client.get(
+        "/consents/preview", headers=agent_headers(viewer), params={"type": "client_terms"}
+    )
+    assert r.status_code == 403

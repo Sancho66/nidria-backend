@@ -15,6 +15,7 @@ from src.consents.consents_schema import (
 from src.core.dependencies import get_current_agent, get_current_expat, get_db
 from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
+from src.core.rbac.permissions import Permission
 
 router = APIRouter(prefix="/consents", tags=["consents"])
 
@@ -24,6 +25,11 @@ router = APIRouter(prefix="/consents", tags=["consents"])
 BINDINGS = [
     RouteBinding("GET", "/consents/agent/pending", Audience.AGENT),
     RouteBinding("POST", "/consents/agent/accept", Audience.AGENT),
+    # Settings-side preview of the canonical text. NOT an identity concern
+    # and NOT in CONSENT_EXEMPT: it is a sensitive-settings READ, gated like
+    # the rest of them, and an admin who has not consented is blocked here
+    # exactly as on any other settings route.
+    RouteBinding("GET", "/consents/preview", Audience.AGENT, Permission.AGENCY_MANAGE),
     RouteBinding("GET", "/consents/expat/pending", Audience.EXPAT),
     RouteBinding("POST", "/consents/expat/accept", Audience.EXPAT),
     # Provider face: a provider is an is_external AGENT, so audience AGENT.
@@ -45,6 +51,21 @@ def _client_ip(request: Request) -> str | None:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+@router.get("/preview", response_model=PendingDocumentResponse)
+async def preview_canonical_document(
+    agent: AgentDep, db: DbDep, type: str
+) -> PendingDocumentResponse:
+    """The CANONICAL Nidria text for a document type, tokens resolved for
+    the calling agency — what its clients see by default. An agency with
+    its own terms still gets the canonical text here: this is a preview of
+    the DEFAULT, not of its own version. Unknown type or no active document
+    → 404 consent.document_not_found.
+
+    `type` is a plain str, not the enum, so an unknown value answers the
+    named 404 of the contract rather than FastAPI's generic 422."""
+    return await ConsentsManager(db).preview_canonical(agent, type)
 
 
 @router.get("/agent/pending", response_model=list[PendingDocumentResponse])
