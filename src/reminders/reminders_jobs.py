@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.models.activity import ActivityLog
@@ -26,7 +26,7 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
-from shared.models.journey import JourneyTemplateStep
+from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.reminder import Reminder
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
@@ -219,55 +219,99 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     return {"due": len(rows), "sent": sent}
 
 
+def resolve_auto_reminder_thresholds(
+    journey: JourneyTemplate, agency: Agency, default: list[int]
+) -> list[int]:
+    """NID-18 fallback chain for the two auto-reminder thresholds (days):
+    the CASE's journey pair (both set) → the agency's settings pair (both
+    set) → the system default ([20, 30]). NULL/absent = inherit the next
+    level. The journey pair is validated (1 ≤ d1 < d2 ≤ 365) at write time,
+    so a resolved pair is always ordered."""
+    d1, d2 = journey.auto_reminder_days_1, journey.auto_reminder_days_2
+    if d1 is not None and d2 is not None:
+        return [d1, d2]
+    settings = agency.settings or {}
+    a1, a2 = settings.get("auto_reminder_days_1"), settings.get("auto_reminder_days_2")
+    if isinstance(a1, int) and isinstance(a2, int):
+        return [a1, a2]
+    return list(default)
+
+
 def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
-    """J+20/J+30 follow-ups on stalled steps — created TO_APPROVE, never
-    more: the system proposes, a human approves. TWO passes on the SAME
-    clock (step_progress.updated_at as the last-movement proxy): the
-    client one (principal/member), and since P2 the PROVIDER one — every
-    external participant of a stalled step gets its own proposed
-    follow-up, in the AGENCY's language (the manual-reminder rule), the
-    dispatch escalation (no email → case owner) applying unchanged.
-    Idempotence is PHYSICAL (unique on (step, threshold, recipient_type,
-    provider) — the widened belt); the NOT EXISTS here keeps repeat
-    ticks quiet. Per-agency toggle: agency.settings
+    """Auto follow-ups on stalled steps — created TO_APPROVE, never more:
+    the system proposes, a human approves. TWO passes on the SAME clock
+    (step_progress.updated_at as the last-movement proxy): the client one
+    (principal/member), and since P2 the PROVIDER one — every external
+    participant of a stalled step gets its own proposed follow-up, in the
+    AGENCY's language (the manual-reminder rule), the dispatch escalation
+    (no email → case owner) applying unchanged.
+
+    NID-18: the two thresholds are PER-JOURNEY — resolve_auto_reminder_
+    thresholds(case's journey → agency settings → system default). A stalled
+    step gets, per threshold it has crossed, one follow-up. Idempotence is
+    PHYSICAL (unique on (step, threshold, recipient_type, provider)); we
+    also pre-load the existing (step, threshold[, provider]) keys so repeat
+    ticks stay quiet. Per-agency toggle: agency.settings
     ["auto_reminders_enabled"]. Actor: SYSTEM."""
     settings = get_settings()
+    default_thresholds = settings.auto_reminder_thresholds_days
     now = datetime.now(UTC)
     created = 0
     would_create = 0
-    for threshold in settings.auto_reminder_thresholds_days:
-        cutoff = now - timedelta(days=threshold)
-        already = exists(
-            select(Reminder.id).where(
-                Reminder.step_progress_id == CaseStepProgress.id,
-                Reminder.auto_threshold_days == threshold,
-            )
+    # The smallest threshold the system can ever resolve is the validation
+    # floor (1 day) — a step touched more recently can't have crossed any
+    # threshold, so it never becomes a candidate.
+    floor_cutoff = now - timedelta(days=1)
+
+    # Idempotence, pre-loaded once (mirrors the former NOT EXISTS): client =
+    # (step, threshold) for ANY reminder; provider = (step, threshold, ext).
+    existing = db.execute(
+        select(
+            Reminder.step_progress_id,
+            Reminder.auto_threshold_days,
+            Reminder.recipient_external_id,
+        ).where(Reminder.auto_threshold_days.is_not(None))
+    ).all()
+    # Client keys are external_id-NULL rows only; provider keys carry the
+    # contact. They are DISJOINT (the unique is on (step, threshold,
+    # recipient_type, provider)) — a provider follow-up must never suppress
+    # the client one at the same (step, threshold), nor the reverse.
+    seen_any: set[tuple[Any, int]] = {(r[0], r[1]) for r in existing if r[2] is None}
+    seen_provider: set[tuple[Any, int, Any]] = {
+        (r[0], r[1], r[2]) for r in existing if r[2] is not None
+    }
+
+    def _age_reached(updated_at: datetime, threshold: int) -> bool:
+        return updated_at <= now - timedelta(days=threshold)
+
+    # --- client pass (principal) ------------------------------------------------------
+    stmt = (
+        select(
+            CaseStepProgress, JourneyTemplateStep, ClientCase, Agency, ExpatUser, JourneyTemplate
         )
-        stmt = (
-            select(CaseStepProgress, JourneyTemplateStep, ClientCase, Agency, ExpatUser)
-            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
-            .join(Agency, Agency.id == ClientCase.agency_id)
-            .join(
-                JourneyTemplateStep,
-                JourneyTemplateStep.id == CaseStepProgress.template_step_id,
-            )
-            # The recipient (case principal) — its preferred_lang drives the
-            # SYSTEM-authored body's language.
-            .join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
-            .where(
-                CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
-                # updated_at as the "last movement" proxy.
-                CaseStepProgress.updated_at <= cutoff,
-                # No auto follow-up on a soft-deleted case.
-                ClientCase.deleted_at.is_(None),
-                # Demo dossiers ([Exemple], is_demo) never enter the approval
-                # queue — the seeded examples must not generate TO_APPROVE work.
-                ClientCase.is_demo.is_(False),
-                ~already,
-            )
+        .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
+        .join(Agency, Agency.id == ClientCase.agency_id)
+        .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
+        # The CASE's journey carries the per-journey thresholds (NID-18).
+        .join(JourneyTemplate, JourneyTemplate.id == ClientCase.journey_template_id)
+        # The recipient (case principal) — its preferred_lang drives the
+        # SYSTEM-authored body's language.
+        .join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
+        .where(
+            CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
+            CaseStepProgress.updated_at <= floor_cutoff,
+            ClientCase.deleted_at.is_(None),
+            # Demo dossiers ([Exemple], is_demo) never enter the approval queue.
+            ClientCase.is_demo.is_(False),
         )
-        for progress, step, case, agency, expat in db.execute(stmt).all():
-            if not (agency.settings or {}).get("auto_reminders_enabled", True):
+    )
+    for progress, step, case, agency, expat, journey in db.execute(stmt).all():
+        if not (agency.settings or {}).get("auto_reminders_enabled", True):
+            continue
+        for threshold in resolve_auto_reminder_thresholds(journey, agency, default_thresholds):
+            if not _age_reached(progress.updated_at, threshold):
+                continue
+            if (progress.id, threshold) in seen_any:
                 continue
             if dry_run:
                 would_create += 1
@@ -280,8 +324,7 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     scheduled_at=now,
                     status=ReminderStatus.TO_APPROVE.value,
                     recipient_type=RecipientType.EXPAT.value,
-                    # Translated into the CLIENT's language (resolved like the
-                    # dispatch chrome), not a hardcoded English string.
+                    # Translated into the CLIENT's language.
                     message_body=auto_reminder_body(
                         step.name,
                         threshold,
@@ -296,54 +339,49 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     actor_type=ActorType.SYSTEM.value,
                     actor_id=None,
                     action_type="reminder.auto_created",
-                    details={
-                        "step_progress_id": str(progress.id),
-                        "threshold": threshold,
-                    },
+                    details={"step_progress_id": str(progress.id), "threshold": threshold},
                 )
             )
+            seen_any.add((progress.id, threshold))
             created += 1
             log(f"auto follow-up J+{threshold} for step {progress.id}")
-    # --- provider pass (P2): same clock, same toggle, per external
-    # participant. The join on ExternalContact.case_id == ClientCase.id
-    # IS the "contact of the case" validation of the manual flow,
-    # expressed in SQL (a foreign-case contact wired on a participant
-    # creates nothing).
-    for threshold in settings.auto_reminder_thresholds_days:
-        cutoff = now - timedelta(days=threshold)
-        # No recipient_type filter: an ESCALATED line (rewritten to agent,
-        # provenance kept) still blocks its (step, threshold, provider).
-        already_provider = exists(
-            select(Reminder.id).where(
-                Reminder.step_progress_id == CaseStepProgress.id,
-                Reminder.auto_threshold_days == threshold,
-                Reminder.recipient_external_id == ExternalContact.id,
-            )
+
+    # --- provider pass (P2): same clock, same toggle, same per-journey thresholds,
+    # per external participant. The join on ExternalContact.case_id == ClientCase.id
+    # IS the "contact of the case" validation of the manual flow (a foreign-case
+    # contact wired on a participant creates nothing). UNCHANGED by NID-18 except
+    # the thresholds are now the case's journey's.
+    provider_stmt = (
+        select(
+            CaseStepProgress,
+            JourneyTemplateStep,
+            ClientCase,
+            Agency,
+            ExternalContact,
+            JourneyTemplate,
         )
-        provider_stmt = (
-            select(CaseStepProgress, JourneyTemplateStep, ClientCase, Agency, ExternalContact)
-            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
-            .join(Agency, Agency.id == ClientCase.agency_id)
-            .join(
-                JourneyTemplateStep,
-                JourneyTemplateStep.id == CaseStepProgress.template_step_id,
-            )
-            .join(
-                CaseStepParticipant,
-                CaseStepParticipant.case_step_progress_id == CaseStepProgress.id,
-            )
-            .join(ExternalContact, ExternalContact.id == CaseStepParticipant.external_id)
-            .where(
-                CaseStepParticipant.type == "external",
-                ExternalContact.case_id == ClientCase.id,
-                CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
-                CaseStepProgress.updated_at <= cutoff,
-                ClientCase.deleted_at.is_(None),
-                ~already_provider,
-            )
+        .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
+        .join(Agency, Agency.id == ClientCase.agency_id)
+        .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
+        .join(JourneyTemplate, JourneyTemplate.id == ClientCase.journey_template_id)
+        .join(CaseStepParticipant, CaseStepParticipant.case_step_progress_id == CaseStepProgress.id)
+        .join(ExternalContact, ExternalContact.id == CaseStepParticipant.external_id)
+        .where(
+            CaseStepParticipant.type == "external",
+            ExternalContact.case_id == ClientCase.id,
+            CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
+            CaseStepProgress.updated_at <= floor_cutoff,
+            ClientCase.deleted_at.is_(None),
+            ClientCase.is_demo.is_(False),
         )
-        for progress, step, case, agency, contact in db.execute(provider_stmt).all():
-            if not (agency.settings or {}).get("auto_reminders_enabled", True):
+    )
+    for progress, step, case, agency, contact, journey in db.execute(provider_stmt).all():
+        if not (agency.settings or {}).get("auto_reminders_enabled", True):
+            continue
+        for threshold in resolve_auto_reminder_thresholds(journey, agency, default_thresholds):
+            if not _age_reached(progress.updated_at, threshold):
+                continue
+            if (progress.id, threshold, contact.id) in seen_provider:
                 continue
             if dry_run:
                 would_create += 1
@@ -380,6 +418,7 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     },
                 )
             )
+            seen_provider.add((progress.id, threshold, contact.id))
             created += 1
             log(f"auto follow-up J+{threshold} for provider {contact.id} on step {progress.id}")
     db.commit()

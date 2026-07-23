@@ -390,8 +390,12 @@ async def _stalled_step(
     make_client_case: MakeClientCase,
     headers: dict[str, str],
     days: int,
+    thresholds: tuple[int, int] | None = None,
 ) -> ClientCase:
-    template = (await rem_client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    body: dict[str, object] = {"name": "T"}
+    if thresholds is not None:
+        body["auto_reminder_days_1"], body["auto_reminder_days_2"] = thresholds
+    template = (await rem_client.post("/journeys", headers=headers, json=body)).json()
     await rem_client.post(
         f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Stalled step"}
     )
@@ -856,3 +860,239 @@ async def test_preferred_whatsapp_client_still_gets_email_reminder(
     # Sent by EMAIL to the client's address — the whatsapp preference
     # changed NOTHING about the channel.
     assert [m.to for m in email.outbox] == [expat.email]
+
+
+# --- NID-18: per-journey auto-reminder thresholds -------------------------------------------
+
+
+async def test_per_journey_thresholds_override_the_default(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """A journey carrying (10, 15) fires at J+10 / J+15 — NOT the system
+    default (20, 30). At 11 days stalled the default would create nothing."""
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client,
+        db_session,
+        manager_agent,
+        make_client_case,
+        headers,
+        days=11,
+        thresholds=(10, 15),
+    )
+
+    assert _run_auto(sync_session_local)["created"] == 1  # J+10 crossed, default 20 would be 0
+    assert _run_auto(sync_session_local)["created"] == 0  # idempotent
+    [threshold] = (
+        (
+            await db_session.execute(
+                select(Reminder.auto_threshold_days).where(Reminder.case_id == case.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert threshold == 10
+
+    # 16 days → the second journey tier (15) joins; 10 not duplicated.
+    await db_session.execute(
+        update(CaseStepProgress)
+        .where(CaseStepProgress.case_id == case.id)
+        .values(updated_at=datetime.now(UTC) - timedelta(days=16))
+    )
+    await db_session.commit()
+    assert _run_auto(sync_session_local)["created"] == 1
+    thresholds = (
+        await db_session.execute(
+            select(Reminder.auto_threshold_days).where(Reminder.case_id == case.id)
+        )
+    ).scalars()
+    assert sorted(thresholds) == [10, 15]
+
+
+async def test_journey_without_thresholds_falls_back_to_system_default(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """No per-journey values (both NULL) → the chain resolves to [20, 30].
+    Pins that pre-NID-18 journeys behave EXACTLY as before (additive column,
+    zero behaviour change)."""
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=21
+    )
+    assert _run_auto(sync_session_local)["created"] == 1
+    [threshold] = (
+        (
+            await db_session.execute(
+                select(Reminder.auto_threshold_days).where(Reminder.case_id == case.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert threshold == 20
+
+
+async def test_agency_toggle_is_master_over_journey_thresholds(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    make_client_case: MakeClientCase,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Agency auto_reminders_enabled=False wins even with aggressive journey
+    thresholds set — the master switch is unconditional."""
+    agency = await make_agency(settings={"auto_reminders_enabled": False})
+    agent = await make_agent(agency_id=agency.id, role=system_roles["case_manager"])
+    await _stalled_step(
+        rem_client,
+        db_session,
+        agent,
+        make_client_case,
+        agent_headers(agent),
+        days=6,
+        thresholds=(5, 10),
+    )
+    assert _run_auto(sync_session_local)["created"] == 0
+
+
+@pytest.mark.parametrize(
+    "pair",
+    [
+        {"auto_reminder_days_1": 30, "auto_reminder_days_2": 20},  # p2 <= p1
+        {"auto_reminder_days_1": 20, "auto_reminder_days_2": 20},  # equal
+        {"auto_reminder_days_1": 0, "auto_reminder_days_2": 10},  # below 1
+        {"auto_reminder_days_1": -5, "auto_reminder_days_2": 10},  # negative
+        {"auto_reminder_days_1": 10, "auto_reminder_days_2": 400},  # above 365
+        {"auto_reminder_days_1": 10},  # partial pair (only first)
+        {"auto_reminder_days_2": 15},  # partial pair (only second)
+    ],
+)
+async def test_create_journey_rejects_invalid_threshold_pair(
+    rem_client: AsyncClient,
+    manager_agent: Agent,
+    agent_headers: AuthHeaders,
+    pair: dict[str, int],
+) -> None:
+    response = await rem_client.post(
+        "/journeys", headers=agent_headers(manager_agent), json={"name": "Bad", **pair}
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "journey.auto_reminder_days_invalid"
+
+
+async def test_update_journey_threshold_pair_semantics(
+    rem_client: AsyncClient,
+    manager_agent: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(manager_agent)
+    template = (await rem_client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    tid = template["id"]
+
+    # Set the pair.
+    set_ok = await rem_client.patch(
+        f"/journeys/{tid}",
+        headers=headers,
+        json={"auto_reminder_days_1": 10, "auto_reminder_days_2": 15},
+    )
+    assert set_ok.status_code == 200, set_ok.text
+    assert (set_ok.json()["auto_reminder_days_1"], set_ok.json()["auto_reminder_days_2"]) == (
+        10,
+        15,
+    )
+
+    # A single field in the payload → partial pair → 422 (the other stays 10/15).
+    partial = await rem_client.patch(
+        f"/journeys/{tid}", headers=headers, json={"auto_reminder_days_1": 12}
+    )
+    assert partial.status_code == 422
+    assert partial.json()["code"] == "journey.auto_reminder_days_invalid"
+
+    # Both explicit null → clear to inherit.
+    cleared = await rem_client.patch(
+        f"/journeys/{tid}",
+        headers=headers,
+        json={"auto_reminder_days_1": None, "auto_reminder_days_2": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["auto_reminder_days_1"] is None
+    assert cleared.json()["auto_reminder_days_2"] is None
+
+    # Neither field present → untouched (name-only edit keeps the cleared state).
+    untouched = await rem_client.patch(f"/journeys/{tid}", headers=headers, json={"name": "T2"})
+    assert untouched.status_code == 200
+    assert untouched.json()["auto_reminder_days_1"] is None
+
+
+async def test_clone_snapshots_journey_thresholds(
+    rem_client: AsyncClient,
+    manager_agent: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """clone_template copies the per-journey pair into the clone (snapshot)."""
+    headers = agent_headers(manager_agent)
+    source = (
+        await rem_client.post(
+            "/journeys",
+            headers=headers,
+            json={"name": "Src", "auto_reminder_days_1": 10, "auto_reminder_days_2": 15},
+        )
+    ).json()
+    clone = await rem_client.post(f"/journeys/{source['id']}/clone", headers=headers, json={})
+    assert clone.status_code == 201, clone.text
+    body = clone.json()
+    assert body["id"] != source["id"]
+    assert (body["auto_reminder_days_1"], body["auto_reminder_days_2"]) == (10, 15)
+
+
+async def test_provider_pass_honors_per_journey_thresholds(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_external_contact: MakeExternalContact,
+    agent_headers: AuthHeaders,
+) -> None:
+    """PIN (NID-18): the provider pass is DELIBERATELY kept — an external
+    participant of a stalled step receives its own TO_APPROVE follow-up, at
+    the JOURNEY's thresholds (5, 10), never auto-sent. If we ever drop the
+    provider pass it must be an explicit choice, caught by this test, not a
+    silent regression."""
+    headers = agent_headers(manager_agent)
+    case = await _stalled_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, days=6, thresholds=(5, 10)
+    )
+    contact = await make_external_contact(case=case, email="notaire@example.com")
+    await _external_participant(db_session, case, contact.id)
+
+    # J+5 crossed (6 days stalled): client + provider, both at threshold 5.
+    assert _run_auto(sync_session_local)["created"] == 2
+    provider = (
+        (
+            await db_session.execute(
+                select(Reminder).where(
+                    Reminder.case_id == case.id, Reminder.recipient_type == "external"
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert provider.status == "to_approve"  # NEVER auto-sent
+    assert provider.recipient_external_id == contact.id
+    assert provider.auto_threshold_days == 5  # the journey threshold, not the default 20

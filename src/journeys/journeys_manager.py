@@ -420,13 +420,40 @@ class JourneysManager:
         await self.db.commit()
         return {k: CanvasNodePosition(**v) for k, v in blob.items()}
 
+    @staticmethod
+    def _validate_auto_reminder_pair(d1: int | None, d2: int | None) -> None:
+        """NID-18 bounds: both set or both NULL (a partial pair is rejected);
+        when set, 1 ≤ d1 < d2 ≤ 365. One named 422 code for every violation."""
+        both_none = d1 is None and d2 is None
+        both_set = d1 is not None and d2 is not None
+        if not (both_none or both_set):
+            raise ValidationError(
+                "The two auto-reminder thresholds must be set together, or both left empty.",
+                code="journey.auto_reminder_days_invalid",
+            )
+        if both_set and not (1 <= d1 < d2 <= 365):  # type: ignore[operator]
+            raise ValidationError(
+                "Auto-reminder thresholds must satisfy 1 <= first < second <= 365.",
+                code="journey.auto_reminder_days_invalid",
+                params={"first": d1, "second": d2},
+            )
+
     async def create_template(
-        self, agent: Agent, name: str, name_i18n: dict[str, str] | None = None
+        self,
+        agent: Agent,
+        name: str,
+        name_i18n: dict[str, str] | None = None,
+        *,
+        auto_reminder_days_1: int | None = None,
+        auto_reminder_days_2: int | None = None,
     ) -> JourneyTemplate:
+        self._validate_auto_reminder_pair(auto_reminder_days_1, auto_reminder_days_2)
         agency_default = await self.agency_default(agent.agency_id)
         scalar, blob = apply_i18n_write(name_i18n, name, agency_default, None, {})
         template = self.repo.add_template(agent.agency_id, scalar or name)
         template.name_i18n = blob
+        template.auto_reminder_days_1 = auto_reminder_days_1
+        template.auto_reminder_days_2 = auto_reminder_days_2
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
             event_type="journey.created",
@@ -470,6 +497,11 @@ class JourneysManager:
             # the new scalar and the blob is dropped (it described the source).
             name_i18n=dict(source.name_i18n) if name is None else {},
             country=source.country,  # keep the model's country of origin
+            # NID-18 — snapshot the per-journey thresholds into the clone.
+            # Library samples carry NULL (inherit), so a cloned sample also
+            # inherits until the agency configures it.
+            auto_reminder_days_1=source.auto_reminder_days_1,
+            auto_reminder_days_2=source.auto_reminder_days_2,
         )
         self.db.add(new_template)
         # Insert the template FIRST so sections/steps FK it (no ORM
@@ -642,6 +674,24 @@ class JourneysManager:
                     params={"language": language, "allowed": sorted(SUPPORTED_LANGUAGES)},
                 )
             template.editing_language = language
+        # NID-18 — the auto-reminder pair is edited TOGETHER. Both fields in
+        # the payload → validate + set (both ints = configure, both null =
+        # clear→inherit); only ONE present → a partial pair, 422; neither →
+        # untouched.
+        fields_set = payload.model_fields_set
+        d1_set = "auto_reminder_days_1" in fields_set
+        d2_set = "auto_reminder_days_2" in fields_set
+        if d1_set or d2_set:
+            d1 = payload.auto_reminder_days_1 if d1_set else template.auto_reminder_days_1
+            d2 = payload.auto_reminder_days_2 if d2_set else template.auto_reminder_days_2
+            if not (d1_set and d2_set):
+                raise ValidationError(
+                    "The two auto-reminder thresholds must be sent together.",
+                    code="journey.auto_reminder_days_invalid",
+                )
+            self._validate_auto_reminder_pair(d1, d2)
+            template.auto_reminder_days_1 = d1
+            template.auto_reminder_days_2 = d2
         await self.db.commit()
         await self.db.refresh(template)
         return template

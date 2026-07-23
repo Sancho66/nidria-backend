@@ -193,6 +193,11 @@ class TranslationJobResponse(BaseModel):
 class JourneyTemplateCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     name_i18n: I18nBlob | None = None
+    # NID-18 — per-journey auto-reminder thresholds (days). A PAIR: both set
+    # (validated 1 ≤ d1 < d2 ≤ 365 in the manager) or both NULL = inherit
+    # (agency setting → system default [20, 30]).
+    auto_reminder_days_1: int | None = None
+    auto_reminder_days_2: int | None = None
 
 
 class JourneyTemplateUpdateRequest(BaseModel):
@@ -202,6 +207,11 @@ class JourneyTemplateUpdateRequest(BaseModel):
     # against SUPPORTED_LANGUAGES in the manager (catalogue error code);
     # exclude_unset distinguishes "untouched" from an explicit null reset.
     editing_language: str | None = Field(default=None, max_length=5)
+    # NID-18 — the auto-reminder pair (see create). Sent TOGETHER (both ints
+    # to set, both null to clear→inherit); a partial pair 422s. `model_fields_
+    # set` in the manager distinguishes "untouched" from an explicit change.
+    auto_reminder_days_1: int | None = None
+    auto_reminder_days_2: int | None = None
 
 
 class TemplateStepCreateRequest(BaseModel):
@@ -547,6 +557,11 @@ class JourneyTemplateResponse(BaseModel):
     # model library into a "by sector" axis (group + recommend agency.sectors)
     # distinct from the "by country" axis. Read straight off the ORM column.
     sector: AgencySector | None = None
+    # NID-18 — per-journey auto-reminder thresholds (days), or NULL = inherit
+    # (agency → system default). Read straight off the ORM columns so the
+    # front can display/edit them.
+    auto_reminder_days_1: int | None = None
+    auto_reminder_days_2: int | None = None
 
 
 class JourneyCloneRequest(BaseModel):

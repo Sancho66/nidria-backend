@@ -22202,6 +22202,28 @@
               }
             ],
             "title": "Name I18N"
+          },
+          "auto_reminder_days_1": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 1"
+          },
+          "auto_reminder_days_2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 2"
           }
         },
         "type": "object",
@@ -22341,6 +22363,28 @@
                 "type": "null"
               }
             ]
+          },
+          "auto_reminder_days_1": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 1"
+          },
+          "auto_reminder_days_2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 2"
           }
         },
         "type": "object",
@@ -22390,6 +22434,28 @@
               }
             ],
             "title": "Editing Language"
+          },
+          "auto_reminder_days_1": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 1"
+          },
+          "auto_reminder_days_2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 2"
           }
         },
         "type": "object",

@@ -384,7 +384,13 @@ async def list_sample_templates(
 async def create_template(
     body: JourneyTemplateCreateRequest, agent: AgentDep, db: DbDep
 ) -> JourneyTemplateResponse:
-    template = await JourneysManager(db).create_template(agent, body.name, body.name_i18n)
+    template = await JourneysManager(db).create_template(
+        agent,
+        body.name,
+        body.name_i18n,
+        auto_reminder_days_1=body.auto_reminder_days_1,
+        auto_reminder_days_2=body.auto_reminder_days_2,
+    )
     return JourneyTemplateResponse.model_validate(template)
 
 

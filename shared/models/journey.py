@@ -66,6 +66,14 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # resolution path: client-facing resolution stays client language →
     # agency default → fr, notifications untouched. NULL = no preference.
     editing_language: Mapped[str | None] = mapped_column(String(5))
+    # NID-18 — per-journey auto-reminder thresholds (days on a stalled step
+    # before the SYSTEM proposes a TO_APPROVE follow-up). A PAIR: both set
+    # (1 ≤ d1 < d2 ≤ 365) or both NULL. NULL = inherit → agency setting →
+    # system default [20, 30]. The two agency-clone values are COPIED at
+    # clone (snapshot); library samples stay NULL (inherit). The cron reads
+    # them live off the case's journey.
+    auto_reminder_days_1: Mapped[int | None] = mapped_column()
+    auto_reminder_days_2: Mapped[int | None] = mapped_column()
 
 
 class JourneySection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
