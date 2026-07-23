@@ -74,8 +74,27 @@ def clear_mock_sinks() -> Generator[None, None, None]:
 
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer, None, None]:
-    with PostgresContainer("postgres:16-alpine") as pg:
-        yield pg
+    # TEST-ONLY durability OFF. A test DB is thrown away on every run, so
+    # fsync / WAL sync / full-page-writes buy nothing but disk I/O — a
+    # dominant per-test cost (commit + TRUNCATE). With fsync=off +
+    # synchronous_commit=off the writes stay in the OS page cache (RAM) and
+    # are never forced to disk, so an explicit tmpfs adds nothing (and the
+    # postgres image declares its data dir a VOLUME, which shadows a tmpfs
+    # mount anyway). SAME Postgres, SAME engine, SAME SQL/DDL/JSONB/enums:
+    # ZERO semantic change, only durability a test never needs is removed —
+    # proven ~37% on isolated I/O (commit+truncate); the whole-suite wall gain
+    # is real but not cleanly measurable on a loaded box (run-to-run variance
+    # ~135s); 1292 passed IDENTICAL, no flaky. NEVER apply to a real database.
+    # PYTEST_PG_DURABLE=1 opts out (A/B / paranoia; the app has no durability
+    # edge that needs it).
+    pg = PostgresContainer("postgres:16-alpine")
+    if not os.environ.get("PYTEST_PG_DURABLE"):
+        pg = pg.with_command(
+            "postgres -c fsync=off -c synchronous_commit=off "
+            "-c full_page_writes=off -c autovacuum=off"
+        )
+    with pg as container:
+        yield container
 
 
 @pytest_asyncio.fixture(scope="session")
