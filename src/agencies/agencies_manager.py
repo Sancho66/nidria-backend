@@ -41,6 +41,7 @@ from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.core import storage
 from src.core.config import get_settings
+from src.core.currencies import default_currency_for_language
 from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
 from src.core.enums import (
@@ -279,6 +280,10 @@ class AgenciesManager:
             if referrer is None:
                 raise ValidationError("Unknown referral code.", code="referral.code_unknown")
         agency = self.repo.add_agency(name=name, slug=slug, default_language=default_language)
+        # NID-16a: a fresh agency must never carry a NULL currency (its first
+        # cost would hit the "set the agency currency" wall). Posed from the UI
+        # language where unambiguous, else EUR — always editable in Settings.
+        agency.currency = default_currency_for_language(default_language)
         agency.sectors = self._validate_sectors(sectors)
         agency.sectors_onboarding_required = sectors_onboarding_required
         # The agency's OWN shareable code (unique; regenerate on the rare

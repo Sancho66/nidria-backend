@@ -57,3 +57,26 @@ def _validate_currency_code(value: str) -> str:
 # A request-schema currency field: an exact ISO-4217 code of a real currency, or
 # 422. Shared by every cost/planned-cost request (one catalogue, one validator).
 CurrencyCode = Annotated[str, AfterValidator(_validate_currency_code)]
+
+
+# ── Default currency at agency creation (NID-16a) ─────────────────────────────
+# A fresh agency must never carry a NULL currency, else its first cost hits the
+# "set the agency currency" wall (cost.currency_required). No country is
+# collected at signup, so the currency is DERIVED FROM THE UI LANGUAGE — but
+# only where a language maps to one obvious currency zone; every ambiguous
+# language falls back to EUR. Deliberately tiny and ASSUMED — NOT a
+# language→country→currency table. Reverses the earlier "no fabricated default"
+# stance in favour of onboarding; an agency billing elsewhere (e.g. es → a
+# Latin-American currency) changes it in Settings → Profile & brand.
+DEFAULT_CURRENCY = "EUR"
+_CURRENCY_BY_LANGUAGE: dict[str, str] = {
+    "hu": "HUF",  # Hungarian → Hungary (unambiguous)
+    "ru": "RUB",  # Russian → Russia (the dominant zone)
+}
+
+
+def default_currency_for_language(language: str) -> str:
+    """The non-NULL currency posed on a new agency. Language → currency only
+    where unambiguous (hu, ru); every other language → EUR. Always editable
+    afterwards. All returned codes are real ISO-4217 currencies."""
+    return _CURRENCY_BY_LANGUAGE.get(language, DEFAULT_CURRENCY)

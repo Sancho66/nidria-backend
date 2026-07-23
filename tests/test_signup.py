@@ -99,6 +99,9 @@ async def test_full_flow_creates_everything_and_logs_in(
     # path that poses the flag true.
     assert agency.sectors == ["legal"]  # chosen in the form, written atomically
     assert agency.sectors_onboarding_required is False  # no post-signup wall
+    # NID-16a: signup poses a currency too (fr → EUR) — never NULL, so a
+    # fresh self-serve agency never hits the cost.currency_required wall.
+    assert agency.currency == "EUR"
     admin = (
         await db_session.execute(select(Agent).where(Agent.email == "neo@agence.io"))
     ).scalar_one()

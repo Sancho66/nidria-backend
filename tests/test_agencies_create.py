@@ -18,6 +18,7 @@ from shared.models.agent import Agent
 from shared.models.auth_tokens import PasswordResetToken
 from shared.models.rbac import Role
 from src.core import email
+from src.core.currencies import default_currency_for_language
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
@@ -423,3 +424,47 @@ async def test_create_agency_sectors_deduplicated(
     )
     assert resp.status_code == 201
     assert resp.json()["agency"]["sectors"] == ["legal", "immigration"]  # deduped, order kept
+
+
+# --- NID-16a: a fresh agency is never left without a currency ------------------
+
+
+@pytest.mark.parametrize(
+    "language, expected",
+    [
+        ("hu", "HUF"),  # unambiguous (Hungarian → Hungary)
+        ("ru", "RUB"),  # unambiguous (Russian → Russia, dominant zone)
+        ("fr", "EUR"),
+        ("en", "EUR"),
+        ("es", "EUR"),  # ambiguous (Spain vs Latin America) → EUR default
+        ("pt", "EUR"),  # ambiguous (Portugal vs Brazil) → EUR default
+        ("it", "EUR"),
+    ],
+)
+def test_default_currency_for_language(language: str, expected: str) -> None:
+    assert default_currency_for_language(language) == expected
+
+
+async def test_created_agency_gets_non_null_currency(
+    agencies_client: AsyncClient,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    """POST /agencies poses a currency at creation, so a fresh agency never
+    hits the cost.currency_required wall. Derived from the UI language: es
+    (ambiguous) → EUR, hu → HUF, ru → RUB. Editable via PATCH afterwards."""
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    for lang, expected in [("es", "EUR"), ("hu", "HUF"), ("ru", "RUB")]:
+        resp = await agencies_client.post(
+            "/agencies",
+            json=_body(
+                name=f"Agency {lang}",
+                slug=f"agency-{lang}",
+                admin_email=f"admin-{lang}@example.com",
+                default_language=lang,
+            ),
+            headers=agent_headers(superadmin),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["agency"]["currency"] == expected, lang

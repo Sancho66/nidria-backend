@@ -46,8 +46,10 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=False, server_default=text("false"), nullable=False
     )
     # ISO 4217 currency (3 letters) for the agency's internal cost tracking.
-    # NULL = not set yet (existing agencies): the agency picks it before
-    # entering costs — never a fabricated default (EUR ≠ a Paraguay agency).
+    # Posed at creation (NID-16a) from the UI language where unambiguous, else
+    # EUR — always editable in Settings. NULL only on LEGACY agencies created
+    # before NID-16a (the add-currency migration ran no backfill): those still
+    # pick it before entering costs. Column stays nullable for them.
     # It drives the DISPLAYED decimals; amounts are stored DECIMAL(18,4).
     currency: Mapped[str | None] = mapped_column(String(3))
     # Trial model (usage trackers bloc 1): NULL = no trial running (or
