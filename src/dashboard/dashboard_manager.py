@@ -124,13 +124,21 @@ class DashboardManager:
         for _case_id, status in active:
             by_status[status] += 1
 
-        monday = today - timedelta(days=today.weekday())
-        week = [monday + timedelta(days=offset) for offset in range(7)]
-        load = dict.fromkeys(week, 0)
-        for item in items:
-            if item.target_date in load:
-                load[item.target_date] += 1
-        weekly_load = [DashboardWeeklyLoadDay(date=day, count=load[day]) for day in week]
+        # "Ma charge · 7 jours" (NID-17): a ROLLING today→+6 window that mirrors
+        # the "À traiter" queue — every item awaiting me or my agency (agency
+        # validations on my cases, my overdue steps, documents to review,
+        # reminders to approve) placed on its date; an overdue / undated / "now"
+        # item lands on today, an item due beyond the window is out of frame.
+        # The COUNTS above stay strictly me-named — only this chart follows the
+        # queue (so agency-level work shows as load without inflating à-valider).
+        window = [today + timedelta(days=offset) for offset in range(7)]
+        window_end = window[-1]
+        load = dict.fromkeys(window, 0)
+        for ref in await self._worklist_load_dates(agent):
+            bucket = today if ref is None or ref < today else ref
+            if bucket <= window_end:
+                load[bucket] += 1
+        weekly_load = [DashboardWeeklyLoadDay(date=day, count=load[day]) for day in window]
 
         return DashboardMeResponse(
             first_name=agent.first_name,
@@ -144,6 +152,46 @@ class DashboardManager:
             by_status=dict(by_status),
             weekly_load=weekly_load,
         )
+
+    async def _worklist_load_dates(self, agent: Agent) -> list[date | None]:
+        """The per-item "load date" of the 'À traiter' queue, one entry per
+        item, for the weekly-load chart. SAME four sources (and owner-scoping)
+        as WorklistManager.get_worklist — keep the two in sync: a step → its
+        resolved deadline; a document → None (handled now); a reminder → its
+        scheduled day. None or a past date means "now" → the caller buckets it
+        on today."""
+        repo = WorklistRepository(self.db)
+        prog = ProgressRepository(self.db)
+        now = datetime.now(UTC)
+
+        validate_rows = await repo.steps_to_validate(agent.agency_id, agent.id)
+        open_rows = await repo.my_open_steps(agent.agency_id, agent.id)
+        started = await prog.started_ats(
+            list({r.id for r in validate_rows} | {r.id for r in open_rows})
+        )
+
+        dates: list[date | None] = []
+        # 1) steps awaiting a validation on my desk (mine, or the agency's on a
+        #    case I own — the query scopes it) → their deadline.
+        validated_ids = set()
+        for r in validate_rows:
+            validated_ids.add(r.id)
+            c = _deadline_counter(r.due_at, r.estimated_days, started.get(r.id), now)
+            dates.append(c.target_date.date() if c.target_date else None)
+        # 2) my OVERDUE responsible steps not already queued (worklist source 2).
+        for r in open_rows:
+            if r.id in validated_ids or r.responsible_agent_id != agent.id:
+                continue
+            c = _deadline_counter(r.due_at, r.estimated_days, started.get(r.id), now)
+            if c.days_remaining is not None and c.days_remaining < 0:
+                dates.append(c.target_date.date() if c.target_date else None)
+        # 3) documents to review → handled now.
+        for _d in await repo.documents_to_review(agent.agency_id, agent.id):
+            dates.append(None)
+        # 4) reminders to approve → their scheduled day.
+        for r in await repo.reminders_to_approve(agent.agency_id, agent.id):
+            dates.append(r.scheduled_at.date())
+        return dates
 
 
 class WorklistManager(DashboardManager):

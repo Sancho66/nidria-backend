@@ -42,7 +42,7 @@ class DashboardTodoItem(BaseModel):
 
 class DashboardWeeklyLoadDay(BaseModel):
     date: date
-    count: int  # my actionable steps whose deadline falls on this day
+    count: int  # "À traiter" items landing on this day; overdue/undated/now → today
 
 
 class DashboardMeResponse(BaseModel):
@@ -54,7 +54,7 @@ class DashboardMeResponse(BaseModel):
     counts: DashboardMeCounts
     todo: list[DashboardTodoItem]  # overdue first, then by target_date
     by_status: dict[str, int]  # MY active cases by status
-    weekly_load: list[DashboardWeeklyLoadDay]  # Mon→Sun of the current week
+    weekly_load: list[DashboardWeeklyLoadDay]  # rolling today→+6 (7 days)
 
 
 class WorklistItem(BaseModel):

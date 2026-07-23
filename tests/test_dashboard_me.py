@@ -8,6 +8,8 @@ Plus the 4 figures, the unified to-do (badges, overdue-first sort, blocked
 shown-not-hidden) and the weekly load shape.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -188,9 +190,84 @@ async def test_dashboard_me_status_and_weekly_shape(
     body = (await dm.get("/dashboard/me", headers=agent_headers(me))).json()
     assert body["first_name"] == "Alex"
     assert body["by_status"] == {"in_progress": 1}  # my one active case
-    # Weekly load = 7 days (Mon→Sun), well-formed.
+    # Weekly load = 7 days (rolling today→+6), well-formed.
     assert len(body["weekly_load"]) == 7
     assert all(set(d) == {"date", "count"} for d in body["weekly_load"])
+
+
+async def test_dashboard_me_weekly_load_actionable(
+    dm: AsyncClient,
+    me: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """NID-17 — "Ma charge" mirrors the "À traiter" queue over a ROLLING
+    today→+6 window. From `_scenario`: p0 (overdue, agency-validated on my
+    case) and p1 (my validation, undated) both land on today; p2 (TODO, not in
+    the queue) is out. Dating p1 in-window then moves it onto its own bar."""
+    ah = agent_headers(me)
+    await _scenario(dm, ah, me, expat, make_client_case)
+
+    board = (await dm.get("/dashboard/me", headers=ah)).json()
+    load = board["weekly_load"]
+    assert len(load) == 7
+    # today's bar = p0 (overdue → today) + p1 (undated → today); p2 blocked out.
+    assert load[0]["count"] == 2
+    assert all(d["count"] == 0 for d in load[1:])
+    assert sum(d["count"] for d in load) == 2
+
+    # Give p1 a firm deadline three days out → it leaves today for its own day.
+    p1 = next(i for i in board["todo"] if i["step_name"] == "S1")
+    due = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    await dm.patch(
+        f"/cases/{p1['case_id']}/steps/{p1['progress_id']}", headers=ah, json={"due_at": due}
+    )
+    load2 = (await dm.get("/dashboard/me", headers=ah)).json()["weekly_load"]
+    target = (datetime.now(UTC) + timedelta(days=3)).date().isoformat()
+    assert load2[0]["count"] == 1  # only p0 (overdue) remains on today
+    assert next(d for d in load2 if d["date"] == target)["count"] == 1  # p1 on its day
+    assert sum(d["count"] for d in load2) == 2
+
+
+async def test_weekly_load_follows_worklist_not_counts(
+    dm: AsyncClient,
+    me: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """NID-17 — the exact reported gap: a step validated by "the agency" (no
+    named person — the DEFAULT) on a case I OWN is invisible to the me-named
+    counts (à-valider stays 0), yet it MUST appear in "Ma charge" because it is
+    in the "À traiter" queue. Overdue → today."""
+    ah = agent_headers(me)
+    tid = (await dm.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    await dm.post(f"/journeys/{tid}/steps", headers=ah, json={"name": "S"})
+    case = await make_client_case(
+        agency_id=me.agency_id,
+        principal_expat_user_id=expat.id,
+        owner_agent_id=me.id,
+        status="in_progress",
+    )
+    p = (
+        await dm.post(f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid})
+    ).json()[0]["id"]
+    # Default validator = "the agency" (type=agent, no named agent); make it
+    # active + overdue. Responsible/validator are NOT me by name.
+    await dm.patch(
+        f"/cases/{case.id}/steps/{p}", headers=ah, json={"status": "in_progress", "due_at": PAST}
+    )
+
+    body = (await dm.get("/dashboard/me", headers=ah)).json()
+    # Counts stay strictly me-named → this agency-level step counts for none.
+    assert body["counts"]["to_validate"] == 0
+    assert body["counts"]["to_realize"] == 0
+    assert body["todo"] == []
+    # But "Ma charge" follows the queue → the overdue agency validation on my
+    # case lands on today.
+    assert body["weekly_load"][0]["count"] == 1
+    assert sum(d["count"] for d in body["weekly_load"]) == 1
 
 
 async def test_dashboard_me_excludes_closed_and_validated(
