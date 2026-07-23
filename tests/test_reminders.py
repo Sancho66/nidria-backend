@@ -18,6 +18,7 @@ from shared.models.agent import Agent
 from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
 from src.core import email
@@ -1096,3 +1097,57 @@ async def test_provider_pass_honors_per_journey_thresholds(
     assert provider.status == "to_approve"  # NEVER auto-sent
     assert provider.recipient_external_id == contact.id
     assert provider.auto_threshold_days == 5  # the journey threshold, not the default 20
+
+
+async def test_template_detail_exposes_journey_thresholds(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """GET /journeys/{id} — the endpoint the EDITOR loads — is a SUPERSET of
+    the list: the threshold pair AND the provenance (country, sector), posed
+    values AND null. All four were served by the list but not here, forcing
+    the front to filter the list by id to read them."""
+    headers = agent_headers(manager_agent)
+
+    # Posed values: the detail returns them, no list round-trip needed.
+    posed = (
+        await rem_client.post(
+            "/journeys",
+            headers=headers,
+            json={"name": "Configured", "auto_reminder_days_1": 10, "auto_reminder_days_2": 15},
+        )
+    ).json()
+    # Provenance is NOT settable through the API — clone_template carries the
+    # country over, the onboarding gift the sector. Posed at the source, the
+    # way those two paths do it.
+    await db_session.execute(
+        update(JourneyTemplate)
+        .where(JourneyTemplate.id == uuid.UUID(posed["id"]))
+        .values(country="PY", sector="immigration")
+    )
+    await db_session.commit()
+
+    detail = await rem_client.get(f"/journeys/{posed['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert (body["auto_reminder_days_1"], body["auto_reminder_days_2"]) == (10, 15)
+    assert (body["country"], body["sector"]) == ("PY", "immigration")
+    # The detail is a SUPERSET of the list: every shared key agrees.
+    listed = next(
+        t
+        for t in (await rem_client.get("/journeys", headers=headers)).json()
+        if t["id"] == posed["id"]
+    )
+    for key in ("auto_reminder_days_1", "auto_reminder_days_2", "country", "sector"):
+        assert body[key] == listed[key], key
+
+    # Hand-made journey: the keys are PRESENT and null (not absent) — the
+    # editor distinguishes "inherits / no provenance" from "field not served".
+    plain = (await rem_client.post("/journeys", headers=headers, json={"name": "Inherit"})).json()
+    plain_detail = (await rem_client.get(f"/journeys/{plain['id']}", headers=headers)).json()
+    assert plain_detail["auto_reminder_days_1"] is None
+    assert plain_detail["auto_reminder_days_2"] is None
+    assert plain_detail["country"] is None
+    assert plain_detail["sector"] is None  # the adoption-signal discriminant

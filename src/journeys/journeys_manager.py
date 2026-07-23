@@ -337,6 +337,12 @@ class JourneysManager:
             # agency's settings language (demande 2026-07-05) — templates
             # without a preference follow the agency, live.
             editing_language=template.editing_language or agency_default,
+            # NID-18 — read straight off the ORM columns (NULL = inherit).
+            auto_reminder_days_1=template.auto_reminder_days_1,
+            auto_reminder_days_2=template.auto_reminder_days_2,
+            # Provenance, same source as the list (detail = superset).
+            country=template.country,
+            sector=template.sector,
         )
 
     # --- planned costs (template step) -----------------------------------------

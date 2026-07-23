@@ -22313,6 +22313,49 @@
               }
             ],
             "title": "Editing Language"
+          },
+          "auto_reminder_days_1": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 1"
+          },
+          "auto_reminder_days_2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminder Days 2"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgencySector"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

@@ -670,3 +670,14 @@ class JourneyTemplateDetailResponse(BaseModel):
     archived_cases_count: int
     # Point 6c — editor preference (front-only consumption), NULL = none.
     editing_language: str | None
+    # NID-18 — per-journey auto-reminder thresholds (days), or NULL = inherit
+    # (agency → system default). Mirrors JourneyTemplateResponse: the editor
+    # loads THIS endpoint, so it must not have to filter the list by id.
+    auto_reminder_days_1: int | None = None
+    auto_reminder_days_2: int | None = None
+    # Provenance, mirrored from the list so the detail is a SUPERSET of it.
+    # Both are real on an agency row: `country` is carried over by
+    # clone_template, `sector` by the onboarding gift (NULL on a hand-made
+    # journey — the adoption-signal discriminant).
+    country: str | None = None
+    sector: AgencySector | None = None
