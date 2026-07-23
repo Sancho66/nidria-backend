@@ -72,6 +72,15 @@ disallow_untyped_decorators = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    # Heavy library-seed tests (~475s: they seed the 77 country samples per
+    # test). `make check` skips them (-m "not seed") for a fast local loop;
+    # `make test-seeds` runs them, and CI runs the FULL suite (seeds included).
+    "seed: library-seed tests, slow — skipped by make check, run in CI + make test-seeds",
+    # Alembic-roundtrip migration tests (tests/*migration*.py, auto-tagged in
+    # conftest). Same deal: skipped by make check, run in CI + make test-migrations.
+    "migration: alembic-roundtrip tests, slow — skipped by make check, run in CI + make test-migrations",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]

@@ -24,7 +24,7 @@ from src.journeys.field_catalog import FIELD_PRESETS, SECTION_TYPES, field_kind
 from src.journeys.sample_seed import _SAMPLE_SECTIONS, _SAMPLES, PY1_NAME, seed_sample_journeys
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
-pytestmark = pytest.mark.usefixtures("rbac_baseline")
+pytestmark = [pytest.mark.usefixtures("rbac_baseline"), pytest.mark.seed]
 
 
 @pytest_asyncio.fixture

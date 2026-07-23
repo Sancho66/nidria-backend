@@ -8,7 +8,7 @@ LINT_PATHS := src/ shared/ tests/ scripts/ alembic/env.py
 
 .PHONY: help dev dev-scheduler openapi hooks db-upgrade db-downgrade db-current \
 	db-history db-migration db-reset seed lint format format-check \
-	typecheck test test-cov check check-fast
+	typecheck test test-seeds test-migrations test-cov check check-fast
 
 # --- Help ----------------------------------------------------------------
 
@@ -89,8 +89,18 @@ format-check: ## ruff format --check (CI mode, no writes)
 typecheck: ## mypy strict on src/ shared/ (same as CI)
 	uv run mypy src/ shared/
 
-test: ## Full test suite (testcontainers PG, parallel)
-	uv run pytest tests/ -x -q -n auto
+# Local `test`/`check` SKIP the slow `seed` (library) and `migration` (alembic
+# roundtrip) markers for a fast loop. CI runs the WHOLE suite (its own
+# `pytest tests/` command, no filter) — the prod gate stays complete. Run the
+# targeted targets locally when you touch that area.
+test: ## Test suite MINUS slow seed+migration tests (testcontainers PG, parallel)
+	uv run pytest tests/ -x -q -n auto -m "not seed and not migration"
+
+test-seeds: ## ONLY the slow library-seed tests (run when touching seed code)
+	uv run pytest tests/ -q -n auto -m seed
+
+test-migrations: ## ONLY the slow alembic-roundtrip tests (run when touching migrations)
+	uv run pytest tests/ -q -n auto -m migration
 
 test-cov: ## Test suite with coverage on src/
 	uv run pytest tests/ -q -n auto --cov=src
@@ -101,8 +111,9 @@ test-cov: ## Test suite with coverage on src/
 check-fast: lint format-check typecheck ## Fast per-lot gate: lint + types, no DB (run before each commit)
 	@echo "Fast checks passed — run 'make check' (full, with DB) before pushing."
 
-# check: the full pre-push reference — lint + format + types + the WHOLE test
-# suite on a real Postgres (testcontainers, parallel). Slow (minutes); the
-# stable gate whose green == CI green. Unchanged.
-check: lint format-check typecheck test ## Full pre-push gate: lint + types + tests (testcontainers DB)
-	@echo "All checks passed — CI should be green."
+# check: the pre-push gate — lint + format + types + tests on a real Postgres
+# (testcontainers, parallel), MINUS the slow `seed` tests (see `test`). CI runs
+# the full suite including seeds, so a seed regression is still caught before
+# prod; run `make test-seeds` locally when you touch seed code.
+check: lint format-check typecheck test ## Pre-push gate: lint + types + tests (no seed tests; CI runs them)
+	@echo "All checks passed (seed tests skipped — CI runs them; use 'make test-seeds' on seed changes)."

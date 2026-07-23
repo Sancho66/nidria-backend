@@ -20,6 +20,10 @@ from src.journeys.sample_seed import (
 )
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
+# Heavy library-seed tests (77 samples/test) — skipped by `make check`
+# (-m "not seed"), run in CI + `make test-seeds`. See pyproject markers.
+pytestmark = pytest.mark.seed
+
 # An agency-doer step of PY-1 (role None in the spec → "the agency in general").
 _PY1_AGENCY_STEP = "Dépôt du dossier à l'immigration (DNM)"
 

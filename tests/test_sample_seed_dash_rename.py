@@ -13,7 +13,7 @@ from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from src.journeys.sample_seed import PY1_NAME, seed_sample_journeys
 from tests.plugins.agency_plugin import MakeAgency
 
-pytestmark = pytest.mark.usefixtures("rbac_baseline")
+pytestmark = [pytest.mark.usefixtures("rbac_baseline"), pytest.mark.seed]
 
 
 async def _sample_count(db: AsyncSession) -> int:
