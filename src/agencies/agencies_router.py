@@ -296,6 +296,10 @@ async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep
     # leaves it None. Same source as the GET (own_client_terms), so the two
     # can never disagree about what is in force.
     response.client_terms_md = await manager.own_client_terms(agency)
+    # Same rule for the EFFECTIVE client prefs (defaults merged): this PATCH
+    # writes them, so it answers them. Same function as the GET, so a
+    # patched pref reads back identically on both routes.
+    response.notification_prefs = effective_client_prefs(agency)
     return response
 
 

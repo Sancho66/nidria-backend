@@ -586,3 +586,68 @@ async def test_patch_untouching_the_terms_still_reports_them(
     renamed = await cs_client.patch("/agencies/me", headers=headers, json={"name": "Nouveau nom"})
     assert renamed.status_code == 200, renamed.text
     assert renamed.json()["client_terms_md"] == _AGENCY_CGV
+
+
+async def test_patch_response_carries_the_written_notification_prefs(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """The twin of client_terms_md: the PATCH writes the client prefs, so
+    it answers them — EFFECTIVE (defaults merged), like the GET."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+
+    patched = await cs_client.patch(
+        "/agencies/me",
+        headers=headers,
+        json={"notification_prefs": {"reminders": "off", "comments": "on"}},
+    )
+    assert patched.status_code == 200, patched.text
+    prefs = patched.json()["notification_prefs"]
+    assert prefs is not None
+    assert prefs["reminders"] == "off"  # what was just written
+    assert prefs["comments"] == "on"
+    # EFFECTIVE: the untouched keys come back at their default, not absent.
+    assert prefs["requirement_request"] == "on"
+    assert prefs["progress_digest"] == "weekly"
+    # ...and the GET agrees on the very same state.
+    assert (await cs_client.get("/agencies/me", headers=headers)).json()[
+        "notification_prefs"
+    ] == prefs
+
+
+async def test_unrelated_patch_still_reports_notification_prefs(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """A rename must not blank the prefs in the response (the bug was that
+    EVERY patch answered null)."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    await cs_client.patch(
+        "/agencies/me", headers=headers, json={"notification_prefs": {"reminders": "off"}}
+    )
+
+    renamed = await cs_client.patch("/agencies/me", headers=headers, json={"name": "Nouveau nom"})
+    assert renamed.status_code == 200, renamed.text
+    prefs = renamed.json()["notification_prefs"]
+    assert prefs is not None
+    assert prefs["reminders"] == "off"  # the earlier write survives the rename
+    assert (await cs_client.get("/agencies/me", headers=headers)).json()[
+        "notification_prefs"
+    ] == prefs
+
+
+async def test_patch_without_any_prefs_history_reports_the_defaults(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """An agency that never touched its prefs still gets the full effective
+    map — never null, so the front has nothing to mirror locally."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    patched = await cs_client.patch("/agencies/me", headers=headers, json={"name": "Encore un nom"})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["notification_prefs"] == {
+        "requirement_request": "on",
+        "comments": "grouped",
+        "reminders": "on",
+        "progress_digest": "weekly",
+    }
