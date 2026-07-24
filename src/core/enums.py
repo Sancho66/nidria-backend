@@ -138,6 +138,22 @@ class InvitationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ClientSpaceState(StrEnum):
+    """Can this person reach their client space RIGHT NOW? DERIVED at read
+    time (never stored): ACTIVE = the account is activated; PENDING = a live
+    invitation link exists; EXPIRED = no usable link left — every case where
+    the person must be re-invited (link past `expires_at`, or invitation
+    cancelled/absent). NULL on a person without an account at all.
+
+    Deliberately NOT `InvitationStatus`: that one traces the invitation ROW
+    (audit), this one answers the agency's question — "why has my client
+    never logged in, and can I do something about it?"."""
+
+    ACTIVE = "active"
+    PENDING = "pending"
+    EXPIRED = "expired"
+
+
 class AgencySector(StrEnum):
     """The agency's business sector(s) — the SOCLE of the multi-sector
     groundwork. INERT for now: nothing consumes it yet (no sector default,

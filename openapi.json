@@ -5012,6 +5012,65 @@
         }
       }
     },
+    "/cases/{case_id}/persons/{person_id}/resend-invitation": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Resend Invitation",
+        "description": "Re-send the client-space invitation (fresh token + expiry, the old link\ndies). 409 if the space is already active or the person has no account,\n429 inside the resend cooldown. Returns the person with its NEW state.",
+        "operationId": "resend_invitation_cases__case_id__persons__person_id__resend_invitation_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/external-contacts": {
       "post": {
         "tags": [
@@ -17711,6 +17770,16 @@
           "urgency": {
             "$ref": "#/components/schemas/CaseUrgency",
             "default": "neutral"
+          },
+          "client_space_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientSpaceState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -18407,6 +18476,16 @@
         "type": "object",
         "title": "ClientNotificationPrefsPatch",
         "description": "Ce que l'agence regle pour SES clients (audit §5). Strict : une\nvaleur hors enum = 422, une cle inconnue = 422 (extra=forbid). Le\nCRITIQUE (invitations, codes, acces) n'apparait pas — non reglable\npar construction. progress_digest est INERTE tant que le job digest\nn'existe pas (lot suivant)."
+      },
+      "ClientSpaceState": {
+        "type": "string",
+        "enum": [
+          "active",
+          "pending",
+          "expired"
+        ],
+        "title": "ClientSpaceState",
+        "description": "Can this person reach their client space RIGHT NOW? DERIVED at read\ntime (never stored): ACTIVE = the account is activated; PENDING = a live\ninvitation link exists; EXPIRED = no usable link left — every case where\nthe person must be re-invited (link past `expires_at`, or invitation\ncancelled/absent). NULL on a person without an account at all.\n\nDeliberately NOT `InvitationStatus`: that one traces the invitation ROW\n(audit), this one answers the agency's question — \"why has my client\nnever logged in, and can I do something about it?\"."
       },
       "CommentCreateRequest": {
         "properties": {
@@ -23914,6 +23993,40 @@
               }
             ],
             "title": "Activated"
+          },
+          "client_space_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientSpaceState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "invitation_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Expires At"
           },
           "custom_fields": {
             "additionalProperties": true,

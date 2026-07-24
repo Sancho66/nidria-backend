@@ -80,6 +80,11 @@ BINDINGS = [
     RouteBinding("POST", "/cases/{case_id}/persons", Audience.AGENT, _EDIT),
     RouteBinding("PATCH", "/cases/{case_id}/persons/{person_id}", Audience.AGENT, _EDIT),
     RouteBinding("DELETE", "/cases/{case_id}/persons/{person_id}", Audience.AGENT, _EDIT),
+    # Re-inviting a client is an edit of the dossier's access, not a new
+    # surface: same gate as the PATCH that could already re-send it.
+    RouteBinding(
+        "POST", "/cases/{case_id}/persons/{person_id}/resend-invitation", Audience.AGENT, _EDIT
+    ),
     RouteBinding("POST", "/cases/{case_id}/external-contacts", Audience.AGENT, _EDIT),
     RouteBinding("PATCH", "/cases/{case_id}/external-contacts/{contact_id}", Audience.AGENT, _EDIT),
     RouteBinding(
@@ -261,6 +266,16 @@ async def update_person(
     """Edit any person's civil status. The PRINCIPAL's name stays on
     expat_user (full_name/relationship ignored for it)."""
     return await CasesManager(db).update_person(agent, case_id, person_id, body)
+
+
+@router.post("/{case_id}/persons/{person_id}/resend-invitation", response_model=PersonResponse)
+async def resend_invitation(
+    case_id: uuid.UUID, person_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> PersonResponse:
+    """Re-send the client-space invitation (fresh token + expiry, the old link
+    dies). 409 if the space is already active or the person has no account,
+    429 inside the resend cooldown. Returns the person with its NEW state."""
+    return await CasesManager(db).resend_invitation(agent, case_id, person_id)
 
 
 @router.delete("/{case_id}/persons/{person_id}", response_model=MessageResponse)

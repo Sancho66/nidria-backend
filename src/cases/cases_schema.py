@@ -11,6 +11,7 @@ from src.core.email import NormalizedEmailStr
 from src.core.enums import (
     CaseStatus,
     CaseUrgency,
+    ClientSpaceState,
     ContactChannel,
     ExternalContactType,
     MaritalStatus,
@@ -172,6 +173,10 @@ class CaseListItemResponse(CaseResponse):
     # — see src/cases/case_urgency.py): overdue > to_validate > awaiting_client
     # > neutral. Sortable (?sort_by=urgency) and filterable (?urgency=…).
     urgency: CaseUrgency = CaseUrgency.NEUTRAL
+    # The PRINCIPAL's client-space access (same rule as the detail's persons,
+    # one batched query for the page). The listing is where an agency spots
+    # "5 dossiers dont le client n'est jamais entré" without opening each one.
+    client_space_state: ClientSpaceState | None = None
 
 
 class CaseListResponse(BaseModel):
@@ -204,6 +209,14 @@ class PersonResponse(_CivilStatusFields):
     email: str | None
     preferred_lang: str | None
     activated: bool | None
+    # Client-space access, derived (see ClientSpaceState). `activated` stays
+    # for what it always meant; these three say WHY the client never came in
+    # and whether a resend is the answer. NULL on a person without account.
+    client_space_state: ClientSpaceState | None = None
+    # ACTIVE → when the client activated; PENDING/EXPIRED → when the current
+    # link dies/died (NULL when no invitation row exists at all).
+    activated_at: datetime | None = None
+    invitation_expires_at: datetime | None = None
     # Agency custom-field values — only keys with an ACTIVE definition.
     custom_fields: dict[str, Any]
 

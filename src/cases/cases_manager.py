@@ -44,8 +44,14 @@ from src.cases.cases_schema import (
 from src.core.config import get_settings
 from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
-from src.core.enums import ActorType, CasePersonKind, InvitationStatus
-from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from src.core.enums import ActorType, CasePersonKind, ClientSpaceState, InvitationStatus
+from src.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    TooManyRequestsError,
+    ValidationError,
+)
 from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
 from src.core.notification_window import record_send
 from src.core.rbac.enforcement import effective_permissions
@@ -60,6 +66,33 @@ from src.progress.progress_repository import ProgressRepository
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
+
+# Anti-burst on the invitation resend: the SIMPLEST guard that needs no new
+# column and no new table — the last invitation's `created_at` for this
+# (case, email) IS the last-sent timestamp. Two clicks inside the window →
+# 429, the first mail is still on its way. Also covers the creation burst
+# (a case created 2 minutes ago cannot be "re-invited" already).
+RESEND_COOLDOWN = timedelta(minutes=10)
+
+
+def client_space_state(
+    expat: ExpatUser | None, pending_until: dict[str, datetime]
+) -> tuple[ClientSpaceState | None, datetime | None]:
+    """(state, invitation expiry) for one person — DERIVED, never stored.
+
+    `pending_until` maps email → the furthest PENDING invitation expiry of
+    the case (cancelled/accepted rows are already out). A person whose link
+    is past that date is EXPIRED, exactly like one with no invitation at
+    all: in both cases the only way back in is a resend.
+    """
+    if expat is None:
+        return None, None
+    if expat.activated_at is not None:
+        return ClientSpaceState.ACTIVE, None
+    expires_at = pending_until.get(expat.email)
+    if expires_at is not None and expires_at > datetime.now(UTC):
+        return ClientSpaceState.PENDING, expires_at
+    return ClientSpaceState.EXPIRED, expires_at
 
 
 class CasesManager:
@@ -82,6 +115,48 @@ class CasesManager:
             raise ValidationError(
                 "Owner must be an agent of this agency.", code="case.owner_not_in_agency"
             )
+
+    async def _pending_invitations(self, case_id: uuid.UUID) -> dict[str, datetime]:
+        """email → furthest PENDING invitation expiry, for ONE case. Inline
+        query: cases_repository is a frozen ecosystem file (same rule and
+        same reason as `_account_used_elsewhere`)."""
+        rows = await self.db.execute(
+            select(CaseInvitation.email, func.max(CaseInvitation.expires_at))
+            .where(
+                CaseInvitation.case_id == case_id,
+                CaseInvitation.status == InvitationStatus.PENDING.value,
+            )
+            .group_by(CaseInvitation.email)
+        )
+        return {email: expires_at for email, expires_at in rows}
+
+    async def _resolve_client_space(
+        self, cases: list[ClientCase]
+    ) -> dict[uuid.UUID, ClientSpaceState | None]:
+        """The PRINCIPAL's client-space state per case id — ONE query for the
+        whole page, no N+1 (same batching rule as journey_name / current_step).
+        `case.principal` is already selectinload-ed by the listing query."""
+        if not cases:
+            return {}
+        rows = await self.db.execute(
+            select(
+                CaseInvitation.case_id,
+                CaseInvitation.email,
+                func.max(CaseInvitation.expires_at),
+            )
+            .where(
+                CaseInvitation.case_id.in_([c.id for c in cases]),
+                CaseInvitation.status == InvitationStatus.PENDING.value,
+            )
+            .group_by(CaseInvitation.case_id, CaseInvitation.email)
+        )
+        pending: dict[uuid.UUID, dict[str, datetime]] = {}
+        for case_id, email, expires_at in rows:
+            pending.setdefault(case_id, {})[email] = expires_at
+        return {
+            case.id: client_space_state(case.principal, pending.get(case.id, {}))[0]
+            for case in cases
+        }
 
     def _log(
         self,
@@ -406,12 +481,14 @@ class CasesManager:
         urgencies = {case.id: urgency for case, urgency in rows}
         journey_names = await self._resolve_journey_names(agent, cases, lang)
         current_steps = await self._resolve_current_steps(agent, cases, lang)
+        client_spaces = await self._resolve_client_space(cases)
         return CaseListResponse(
             items=[
                 CaseListItemResponse.model_validate(case).model_copy(
                     update={
                         "journey_name": journey_names.get(case.id),
                         "urgency": urgencies[case.id],
+                        "client_space_state": client_spaces.get(case.id),
                         **current_steps.get(case.id, {}),
                     }
                 )
@@ -430,6 +507,7 @@ class CasesManager:
             agent
         )
         persons = await self.repo.list_persons(case_id)
+        pending_until = await self._pending_invitations(case_id)
         principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         journey_names = await self._resolve_journey_names(agent, [case], lang)
@@ -445,7 +523,7 @@ class CasesManager:
             journey_name=journey_names.get(case.id),
             current_step_name=current.get("current_step_name"),
             current_step_position=current.get("current_step_position"),
-            persons=[self._person_response(p, definitions) for p in persons],
+            persons=[self._person_response(p, definitions, pending_until) for p in persons],
             principal_person_id=principal_person.id,
             custom_field_definitions=[
                 CustomFieldDefinitionInline.model_validate(d) for d in definitions
@@ -728,13 +806,22 @@ class CasesManager:
 
     @staticmethod
     def _person_response(
-        person: CasePerson, active_definitions: list[CustomFieldDefinition]
+        person: CasePerson,
+        active_definitions: list[CustomFieldDefinition],
+        pending_until: dict[str, datetime],
     ) -> PersonResponse:
         """Homogeneous shape: PRINCIPAL resolves identity from the shared
         expat_user (full_name NULL), FAMILY carries full_name. custom_fields
-        exposes only keys with an ACTIVE definition (orphans hidden)."""
+        exposes only keys with an ACTIVE definition (orphans hidden).
+
+        `pending_until` is REQUIRED (no default): a caller that forgot it
+        would silently report EXPIRED on a perfectly live invitation."""
         expat = person.expat_user
+        state, invitation_expires_at = client_space_state(expat, pending_until)
         return PersonResponse(
+            client_space_state=state,
+            activated_at=expat.activated_at if expat else None,
+            invitation_expires_at=invitation_expires_at,
             id=person.id,
             kind=person.kind,
             relationship=person.relationship,
@@ -894,17 +981,27 @@ class CasesManager:
             await asyncio.to_thread(send_email, *mail)  # best-effort, after commit
         reloaded = await self.repo.get_person(case.id, person.id)
         assert reloaded is not None
-        return self._person_response(reloaded, definitions)
+        return self._person_response(
+            reloaded, definitions, await self._pending_invitations(case.id)
+        )
 
     async def _prepare_member_invite(
-        self, agent: Agent, case: ClientCase, email: str, expat: ExpatUser
+        self,
+        agent: Agent,
+        case: ClientCase,
+        email: str,
+        expat: ExpatUser,
+        action_type: str = "case.member_invited",
     ) -> tuple[str, str, str, str]:
         """Persist the member's case_invitation (in the current tx) and build
         its mail — same infra as the principal: an activation link for a NEW
         account, a 'a dossier awaits you' mail for an existing (activated) one.
         The membership READ access is the case_person link; this invitation is
         notification + activation path, never the write surface (a member has
-        none). Returns the (to, subject, text, html) to send AFTER commit."""
+        none). Returns the (to, subject, text, html) to send AFTER commit.
+
+        `action_type`: the RESEND logs its own verb (`case.invitation_resent`)
+        — the audit trail must not read like a first invitation."""
         settings = get_settings()
         invitation = self.repo.add_case_invitation(
             case_id=case.id,
@@ -912,7 +1009,7 @@ class CasesManager:
             token=secrets.token_urlsafe(24),
             expires_at=datetime.now(UTC) + timedelta(days=settings.case_invitation_expires_days),
         )
-        self._log(case.id, agent, "case.member_invited", {"email": email})
+        self._log(case.id, agent, action_type, {"email": email})
         agency = await self.repo.get_agency(agent.agency_id)
         agency_name = agency.name if agency else "Votre agence"
         agency_slug = agency.slug if agency else None
@@ -1052,8 +1149,82 @@ class CasesManager:
         await progress.send_pending(pending)
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
-        response = self._person_response(reloaded, definitions)
+        response = self._person_response(
+            reloaded, definitions, await self._pending_invitations(case.id)
+        )
         response.invitation_resent = invitation_resent
+        return response
+
+    async def resend_invitation(
+        self, agent: Agent, case_id: uuid.UUID, person_id: uuid.UUID
+    ) -> PersonResponse:
+        """Re-send the client-space invitation to a person who never activated:
+        the current link dies, a FRESH token + expiry go out to the SAME address.
+
+        The hole this closes: until now the only way to re-invite was to PATCH
+        the person to a DIFFERENT email (update_person), so a client whose
+        14-day link had expired was unreachable — no agency lever, and no
+        client one either (forgot-password stays silent on a non-activated
+        account). 5 real dossiers were in that state in prod on 2026-07-24.
+        """
+        case = await self._get_case(agent, case_id)
+        person = await self.repo.get_person(case.id, person_id)
+        if person is None:
+            raise NotFoundError("Person not found.", code="case.person_not_found")
+        if person.expat_user_id is None:
+            # A family member without an account has no space to be invited to.
+            # Giving them an email (PATCH person) is what creates the access —
+            # and that path already sends the first invitation.
+            raise ConflictError(
+                "This person has no client access; add an email first.",
+                code="person.no_account",
+            )
+        expat = await self.db.get(ExpatUser, person.expat_user_id)
+        assert expat is not None
+        if expat.activated_at is not None:
+            # Nothing to re-send — and re-issuing an activation token on a LIVE
+            # account would be an takeover vector by mail (the same reason
+            # activate_expat never resets the password of an active account).
+            raise ConflictError(
+                "This person's client space is already active.",
+                code="invitation.already_accepted",
+            )
+        last_sent = (
+            await self.db.execute(
+                select(func.max(CaseInvitation.created_at)).where(
+                    CaseInvitation.case_id == case.id, CaseInvitation.email == expat.email
+                )
+            )
+        ).scalar_one_or_none()
+        now = datetime.now(UTC)
+        if last_sent is not None and now - last_sent < RESEND_COOLDOWN:
+            raise TooManyRequestsError(
+                "An invitation was just sent to this address; try again in a few minutes.",
+                code="invitation.resend_too_soon",
+            )
+        # The old link dies with its token (idempotent: zero pending rows is a
+        # clean no-op) so a case never carries two live activation tokens.
+        await self._cancel_pending_invitations(case.id, expat.email)
+        invite_mail = await self._prepare_member_invite(
+            agent, case, expat.email, expat, action_type="case.invitation_resent"
+        )
+        await self.db.commit()
+        # Best-effort after commit, the house rule: the token IS rotated, so a
+        # Resend outage must not 502 an action whose DB effect already landed —
+        # the state flips to PENDING and the agent can retry after the cooldown.
+        try:
+            await asyncio.to_thread(send_email, *invite_mail)
+        except Exception:
+            logger.warning(
+                "invitation resend mail failed (case %s, token rotated)", case.id, exc_info=True
+            )
+        definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
+        reloaded = await self.repo.get_person(case.id, person_id)
+        assert reloaded is not None
+        response = self._person_response(
+            reloaded, definitions, await self._pending_invitations(case.id)
+        )
+        response.invitation_resent = True
         return response
 
     async def delete_person(self, agent: Agent, case_id: uuid.UUID, person_id: uuid.UUID) -> None:
