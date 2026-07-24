@@ -238,3 +238,95 @@ async def test_no_journey_status_never_touched(
     )
     assert manual.status_code == 200
     assert await _status(client, headers, case_id) == "in_progress"
+
+
+# --- (f) NID-24 suite : assigner un parcours fait basculer un PROSPECT en client --------------
+
+
+async def test_assigning_a_journey_flips_a_prospect_to_in_progress(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """L'assignation EST le moment où le prospect devient client : statut
+    in_progress dans la même transaction que les étapes, tracé avec le
+    sillage de l'automate (SYSTEM + auto), et le dossier sort du filtre
+    Prospects de la liste."""
+    headers = agent_headers(admin)
+    case_id, _ = await _make_case(client, headers, "flip@example.com", None)
+    assert await _status(client, headers, case_id) == "prospect"
+    journey_id = await _make_journey(client, headers, ["Kickoff", "Dépôt"])
+
+    r = await client.post(
+        f"/cases/{case_id}/journey", headers=headers, json={"journey_template_id": journey_id}
+    )
+    assert r.status_code == 201, r.text
+    assert len(r.json()) == 2  # les étapes sont bien là
+
+    assert await _status(client, headers, case_id) == "in_progress"
+    log = (
+        await db_session.execute(
+            select(ActivityLog).where(
+                ActivityLog.case_id == uuid.UUID(case_id),
+                ActivityLog.action_type == "case.status_changed",
+            )
+        )
+    ).scalar_one()
+    assert log.actor_type == "system"
+    assert log.details == {"old": "prospect", "new": "in_progress", "auto": True}
+    event = (
+        await db_session.execute(
+            select(UsageEvent).where(
+                UsageEvent.case_id == uuid.UUID(case_id),
+                UsageEvent.event_type == "case.status_changed",
+            )
+        )
+    ).scalar_one()
+    assert event.actor_type == "system"
+
+    # L'« onglet Prospects » = le filtre status : le dossier en sort et
+    # apparaît côté clients en cours.
+    prospects = (await client.get("/cases?status=prospect", headers=headers)).json()["items"]
+    assert case_id not in {i["id"] for i in prospects}
+    clients = (await client.get("/cases?status=in_progress", headers=headers)).json()["items"]
+    assert case_id in {i["id"] for i in clients}
+
+
+async def test_assigning_a_journey_never_overwrites_an_advanced_status(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """UNIQUEMENT depuis PROSPECT : un statut posé (in_progress, closed)
+    tient — un dossier clos ne revient jamais en cours, et aucune
+    transition fantôme n'est loguée."""
+    headers = agent_headers(admin)
+
+    for posed in ("in_progress", "closed"):
+        case_id, _ = await _make_case(client, headers, f"hold-{posed}@example.com", None)
+        r = await client.patch(f"/cases/{case_id}", headers=headers, json={"status": posed})
+        assert r.status_code == 200
+        journey_id = await _make_journey(client, headers, ["Kickoff"])
+        assigned = await client.post(
+            f"/cases/{case_id}/journey", headers=headers, json={"journey_template_id": journey_id}
+        )
+        assert assigned.status_code == 201, assigned.text
+        assert await _status(client, headers, case_id) == posed
+        auto_logs = (
+            (
+                await db_session.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.case_id == uuid.UUID(case_id),
+                        ActivityLog.action_type == "case.status_changed",
+                        ActivityLog.actor_type == "system",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert auto_logs == []  # aucune transition automatique
+
+        # Non-régression : re-POST sur un dossier qui a désormais son
+        # parcours → toujours 409, et le statut ne bouge pas davantage.
+        again = await client.post(
+            f"/cases/{case_id}/journey", headers=headers, json={"journey_template_id": journey_id}
+        )
+        assert again.status_code == 409
+        assert await _status(client, headers, case_id) == posed

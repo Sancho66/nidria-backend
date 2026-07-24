@@ -234,7 +234,10 @@ async def test_detail_projected_timeline_and_referent(
     assert by_name["Residence card"]["status"] == "blocked"
     assert by_name["Residence card"]["blocked_by"] == ["Visa"]  # NAMES, no ids
     assert detail["referent"]["email"] == manager_agent.email
-    assert detail["status"] == "prospect"  # raw data; labels are frontend
+    # raw data; labels are frontend. in_progress: the journey was assigned
+    # via POST /cases/{id}/journey, which flips a PROSPECT to client
+    # (NID-24 follow-up — pinned in test_case_status_sync).
+    assert detail["status"] == "in_progress"
 
 
 async def test_responsible_displayable(

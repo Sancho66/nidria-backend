@@ -338,6 +338,15 @@ class ProgressManager:
     ) -> list[StepProgressResponse]:
         case = await self._get_case(agent, case_id)
         await self.apply_journey(agent, case, template_id)
+        # Assigning a journey IS the moment a PROSPECT becomes a client
+        # (NID-24 follow-up): flip to IN_PROGRESS in the SAME transaction as
+        # the steps, with the automaton's own trail (_auto_status_change).
+        # ONLY from PROSPECT — an advanced status (IN_PROGRESS / VALIDATED /
+        # CLOSED) is never overwritten. Lives HERE and not in apply_journey:
+        # direct creation with a journey and the CRM import share that core
+        # and must keep producing PROSPECT dossiers.
+        if case.status == CaseStatus.PROSPECT.value:
+            await self._auto_status_change(case, CaseStatus.IN_PROGRESS.value)
         # Anti-burst J1: the assignment announces the journey ONCE ("your
         # journey starts, N pieces expected"), and opens the "steps" window
         # so the starts that follow in the setup session mail nothing more.
@@ -991,8 +1000,13 @@ class ProgressManager:
             new_status = CaseStatus.IN_PROGRESS.value
         if new_status is None or new_status == case.status:
             return
-        # The normal status-change trail (activity + usage event), with
-        # the SYSTEM actor and the auto marker.
+        await self._auto_status_change(case, new_status)
+
+    async def _auto_status_change(self, case: ClientCase, new_status: str) -> None:
+        """The normal status-change trail (activity + usage event), with the
+        SYSTEM actor and the auto marker — ONE writer shared by the step
+        automaton above and the assignment flip in assign_journey, so an
+        automated transition always reads the same in the activity log."""
         self.activity.log_action(
             case_id=case.id,
             actor_type=ActorType.SYSTEM,
