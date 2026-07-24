@@ -41,6 +41,7 @@ from src.cases.cases_schema import (
     PersonUpdateRequest,
     PrefillSourceResponse,
 )
+from src.cases.client_space import client_space_state
 from src.core.config import get_settings
 from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
@@ -73,26 +74,6 @@ logger = logging.getLogger(__name__)
 # 429, the first mail is still on its way. Also covers the creation burst
 # (a case created 2 minutes ago cannot be "re-invited" already).
 RESEND_COOLDOWN = timedelta(minutes=10)
-
-
-def client_space_state(
-    expat: ExpatUser | None, pending_until: dict[str, datetime]
-) -> tuple[ClientSpaceState | None, datetime | None]:
-    """(state, invitation expiry) for one person — DERIVED, never stored.
-
-    `pending_until` maps email → the furthest PENDING invitation expiry of
-    the case (cancelled/accepted rows are already out). A person whose link
-    is past that date is EXPIRED, exactly like one with no invitation at
-    all: in both cases the only way back in is a resend.
-    """
-    if expat is None:
-        return None, None
-    if expat.activated_at is not None:
-        return ClientSpaceState.ACTIVE, None
-    expires_at = pending_until.get(expat.email)
-    if expires_at is not None and expires_at > datetime.now(UTC):
-        return ClientSpaceState.PENDING, expires_at
-    return ClientSpaceState.EXPIRED, expires_at
 
 
 class CasesManager:

@@ -36,6 +36,7 @@ from shared.models.client_case import ClientCase
 from shared.models.digest import DigestCursor
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplateStep
+from src.cases.client_space import client_space_is_active
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import digest_email
@@ -57,7 +58,15 @@ def run_notification_digest(
     now = now or datetime.now(UTC)
     is_monday = now.weekday() == 0
     agencies = db.execute(select(Agency).where(Agency.is_internal.is_(False))).scalars().all()
-    stats = {"agencies": 0, "mails": 0, "cases": 0, "dry_run": dry_run}
+    # `skipped_no_client_space` always present (0 included) — the run history
+    # must state how many client recipients were deliberately left out.
+    stats = {
+        "agencies": 0,
+        "mails": 0,
+        "cases": 0,
+        "skipped_no_client_space": 0,
+        "dry_run": dry_run,
+    }
     for agency in agencies:
         mode = client_pref(agency, "progress_digest")
         if mode == "off" or (mode == "weekly" and not is_monday):
@@ -74,6 +83,7 @@ def run_notification_digest(
         mails = _agency_digest(db, agency, mode, since, now, log, dry_run=dry_run)
         stats["mails"] += mails["mails"]
         stats["cases"] += mails["cases"]
+        stats["skipped_no_client_space"] += mails["skipped_no_client_space"]
         if not dry_run:
             if cursor is None:
                 db.add(DigestCursor(agency_id=agency.id, last_sent_at=now))
@@ -82,7 +92,8 @@ def run_notification_digest(
             db.commit()
     log(
         f"digest: {stats['mails']} mail(s), {stats['cases']} case(s), "
-        f"{stats['agencies']} agency(ies) in scope"
+        f"{stats['agencies']} agency(ies) in scope, "
+        f"{stats['skipped_no_client_space']} recipient(s) without an active space"
     )
     return stats
 
@@ -118,6 +129,7 @@ def _agency_digest(
     settings = get_settings()
     link = space_link(settings.frontend_url, "/space", agency.slug)
     sent = 0
+    skipped_no_client_space = 0
     for case_id, events in by_case.items():
         case = cases[case_id]
         content = _case_content(db, events)
@@ -125,7 +137,11 @@ def _agency_digest(
             continue  # nothing whitelisted survived (e.g. validations not OK)
         completed_ids, started_ids, docs = content
         step_names = _step_names(db, completed_ids + started_ids)
-        for email, lang in _client_recipients(db, case):
+        recipients, skipped = _client_recipients(db, case)
+        if skipped:
+            skipped_no_client_space += skipped
+            log(f"digest skipped: case {case.id} — {skipped} recipient(s) without an active space")
+        for email, lang in recipients:
             completed = [
                 resolve_step_name_for_notif(i18n, name, lang)
                 for name, i18n in (step_names[pid] for pid in completed_ids if pid in step_names)
@@ -144,7 +160,11 @@ def _agency_digest(
                     logger.exception("digest mail failed (best-effort) to=%s", email)
                     continue
             sent += 1
-    return {"mails": sent, "cases": len(by_case)}
+    return {
+        "mails": sent,
+        "cases": len(by_case),
+        "skipped_no_client_space": skipped_no_client_space,
+    }
 
 
 def _case_content(
@@ -182,26 +202,47 @@ def _step_names(db: Session, progress_ids: list[str]) -> dict[str, tuple[str, An
     return {str(row[0]): (row[1], row[2]) for row in rows}
 
 
-def _client_recipients(db: Session, case: ClientCase) -> list[tuple[str, str]]:
-    """(email, lang) for the principal + every member with an access —
-    each in THEIR language, never the principal's."""
+def _client_recipients(db: Session, case: ClientCase) -> tuple[list[tuple[str, str]], int]:
+    """((email, lang) for the principal + every member with an access, each in
+    THEIR language, never the principal's ; skipped count).
+
+    NID-23 follow-up: a person who never activated is DROPPED. The digest's
+    whole payload is "voici ce qui a avancé, allez voir" — sending it to
+    someone who cannot enter the space is an invitation to a locked door.
+    The rule comes from `client_space_is_active`, the same derivation as the
+    badge on the fiche; it is never re-tested on `activated_at` here.
+    """
     recipients: list[tuple[str, str]] = []
+    skipped = 0
     principal = db.execute(
-        select(ExpatUser.email, ExpatUser.preferred_lang)
+        select(ExpatUser)
         .join(ClientCase, ClientCase.principal_expat_user_id == ExpatUser.id)
         .where(ClientCase.id == case.id)
-    ).first()
-    if principal is not None and principal[0]:
-        recipients.append((str(principal[0]), resolve_notification_lang_client(principal[1])))
-    members = db.execute(
-        select(ExpatUser.email, ExpatUser.preferred_lang)
-        .join(CasePerson, CasePerson.expat_user_id == ExpatUser.id)
-        .where(
-            CasePerson.case_id == case.id,
-            CasePerson.kind != CasePersonKind.PRINCIPAL.value,
+    ).scalar_one_or_none()
+    if principal is not None and principal.email:
+        if client_space_is_active(principal):
+            recipients.append(
+                (principal.email, resolve_notification_lang_client(principal.preferred_lang))
+            )
+        else:
+            skipped += 1
+    members = (
+        db.execute(
+            select(ExpatUser)
+            .join(CasePerson, CasePerson.expat_user_id == ExpatUser.id)
+            .where(
+                CasePerson.case_id == case.id,
+                CasePerson.kind != CasePersonKind.PRINCIPAL.value,
+            )
         )
-    ).all()
-    for email, lang in members:
-        if email and all(email != existing for existing, _ in recipients):
-            recipients.append((str(email), resolve_notification_lang_client(lang)))
-    return recipients
+        .scalars()
+        .all()
+    )
+    for member in members:
+        if not member.email or any(member.email == existing for existing, _ in recipients):
+            continue
+        if not client_space_is_active(member):
+            skipped += 1
+            continue
+        recipients.append((member.email, resolve_notification_lang_client(member.preferred_lang)))
+    return recipients, skipped

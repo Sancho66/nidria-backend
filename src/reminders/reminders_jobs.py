@@ -30,6 +30,7 @@ from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.reminder import Reminder
 from shared.models.step_case_requirement import StepCaseRequirement
+from src.cases.client_space import client_space_is_active
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import (
@@ -67,15 +68,19 @@ def _owner_delivery(db: Session, case_id: uuid.UUID, agency: Agency) -> tuple[st
     return str(row[0]), resolve_notification_lang_agent(agency.default_language)
 
 
-def _targeted_member_user(db: Session, reminder: Reminder) -> ExpatUser | None:
-    """The member the reminder's step points at (see reminders_targeting) —
-    None routes to the principal path."""
-    if reminder.step_progress_id is None:
+def _targeted_member_user(
+    db: Session, case_id: uuid.UUID, step_progress_id: uuid.UUID | None
+) -> ExpatUser | None:
+    """The member a step points at (see reminders_targeting) — None routes to
+    the principal path. Takes the ids rather than the Reminder so the CREATION
+    pass can resolve the SAME recipient the dispatch will, before any row
+    exists (the client-space exclusion must judge the real addressee)."""
+    if step_progress_id is None:
         return None
     requirements = (
         db.execute(
             select(CaseStepRequirement).where(
-                CaseStepRequirement.case_step_progress_id == reminder.step_progress_id
+                CaseStepRequirement.case_step_progress_id == step_progress_id
             )
         )
         .scalars()
@@ -83,9 +88,7 @@ def _targeted_member_user(db: Session, reminder: Reminder) -> ExpatUser | None:
     )
     persons = {
         p.id: p
-        for p in db.execute(select(CasePerson).where(CasePerson.case_id == reminder.case_id))
-        .scalars()
-        .all()
+        for p in db.execute(select(CasePerson).where(CasePerson.case_id == case_id)).scalars().all()
     }
     person = targeted_member(list(requirements), persons)
     if person is None or person.expat_user_id is None:
@@ -108,7 +111,7 @@ def _recipient(
         # Routing (2026-07-18): the step's pending requirements may all
         # point at ONE member with an access — the reminder goes to HER,
         # in HER language. Otherwise the principal, as before. Never both.
-        member = _targeted_member_user(db, reminder)
+        member = _targeted_member_user(db, reminder.case_id, reminder.step_progress_id)
         if member is not None:
             return member.email, resolve_notification_lang_client(member.preferred_lang), None
         row = db.execute(
@@ -309,6 +312,13 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
     now = datetime.now(UTC)
     created = 0
     would_create = 0
+    # Client follow-ups suppressed because the addressee never activated their
+    # space (NID-23 follow-up). Counted and logged, NEVER silent: a dossier that
+    # stops relancing is a fact the agency must be able to read back.
+    skipped_no_client_space = 0
+    # The step's real addressee (member-or-principal), resolved ONCE per step —
+    # the thresholds loop must not re-query it.
+    routed: dict[Any, ExpatUser | None] = {}
     # The smallest threshold the system can ever resolve is the validation
     # floor (1 day) — a step touched more recently can't have crossed any
     # threshold, so it never becomes a candidate.
@@ -367,6 +377,21 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
         if not (agency.settings or {}).get("auto_reminders_enabled", True):
             continue
         if progress.id in met_progress_ids:
+            continue
+        # NID-23 follow-up: never chase a client toward a space they cannot
+        # enter. The addressee is resolved EXACTLY as the dispatch will resolve
+        # it (targeted member, else the principal) — so a stalled step aimed at
+        # an activated member still relances even if the principal never came
+        # in, and the reverse. Same derivation as the fiche's badge.
+        if progress.id not in routed:
+            routed[progress.id] = _targeted_member_user(db, case.id, progress.id) or expat
+        addressee = routed[progress.id]
+        if not client_space_is_active(addressee):
+            skipped_no_client_space += 1
+            log(
+                f"skipped: case {case.id} — client space not active "
+                f"({addressee.email if addressee else 'no recipient'})"
+            )
             continue
         for threshold in resolve_auto_reminder_thresholds(journey, agency, default_thresholds):
             if not _age_reached(progress.updated_at, threshold):
@@ -483,6 +508,10 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
             log(f"auto follow-up J+{threshold} for provider {contact.id} on step {progress.id}")
     db.commit()
     stats: dict[str, Any] = {"created": created}
+    # Always present (0 included): a key that appears only when it fires reads
+    # like an anomaly, and the run history must state plainly how many dossiers
+    # are not being relanced.
+    stats["skipped_no_client_space"] = skipped_no_client_space
     if dry_run:
         stats |= {"would_create": would_create, "dry_run": True}
     return stats

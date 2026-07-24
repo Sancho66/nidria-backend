@@ -19,6 +19,7 @@ from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
+from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
@@ -385,6 +386,19 @@ async def test_sent_and_cancelled_are_immutable(
 # --- auto follow-ups (J+20 / J+30) ----------------------------------------------------------
 
 
+async def _activate_client_space(db_session: AsyncSession, case: ClientCase) -> None:
+    """The fixture's principal is created NON-activated; an auto follow-up is
+    only ever created for a client who can actually read it (NID-23 follow-up
+    — see test_auto_reminders_skip_a_client_who_never_activated). These
+    threshold tests are about the CLOCK, so they start from an active space."""
+    await db_session.execute(
+        update(ExpatUser)
+        .where(ExpatUser.id == case.principal_expat_user_id)
+        .values(activated_at=datetime.now(UTC))
+    )
+    await db_session.commit()
+
+
 async def _stalled_step(
     rem_client: AsyncClient,
     db_session: AsyncSession,
@@ -402,6 +416,7 @@ async def _stalled_step(
         f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Stalled step"}
     )
     case = await make_client_case(agency_id=agent.agency_id)
+    await _activate_client_space(db_session, case)
     await rem_client.post(
         f"/cases/{case.id}/journey",
         headers=headers,
@@ -1180,6 +1195,7 @@ async def _stalled_step_with_document(
         json={"kind": "document", "reference": "passeport", "scope": "principal"},
     )
     case = await make_client_case(agency_id=agent.agency_id)
+    await _activate_client_space(db_session, case)
     timeline = (
         await rem_client.post(
             f"/cases/{case.id}/journey",
