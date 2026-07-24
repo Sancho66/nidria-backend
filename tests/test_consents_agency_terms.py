@@ -535,3 +535,54 @@ async def test_preview_requires_the_settings_permission(
         "/consents/preview", headers=agent_headers(viewer), params={"type": "client_terms"}
     )
     assert r.status_code == 403
+
+
+# --- PATCH echoes what it writes -----------------------------------------------------
+
+
+async def test_patch_response_carries_the_written_terms(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """A written field must be re-readable in the very response that writes
+    it — the front should not need a second GET to know what it just saved."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+
+    patched = await cs_client.patch(
+        "/agencies/me", headers=headers, json={"client_terms_md": _AGENCY_CGV}
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["client_terms_md"] == _AGENCY_CGV
+    # ...and it agrees with the GET on the very same state.
+    assert (await cs_client.get("/agencies/me", headers=headers)).json()[
+        "client_terms_md"
+    ] == _AGENCY_CGV
+
+
+async def test_patch_response_reflects_the_withdrawal(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Blanking withdraws the terms: the PATCH answers NULL (back to the
+    Nidria text), not the text it just dropped."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    await _set_agency_terms(cs_client, headers, _AGENCY_CGV)
+
+    cleared = await cs_client.patch("/agencies/me", headers=headers, json={"client_terms_md": ""})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["client_terms_md"] is None
+    assert (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"] is None
+
+
+async def test_patch_untouching_the_terms_still_reports_them(
+    cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """PATCH ↔ GET coherence on an unrelated edit: renaming the agency does
+    not blank the terms in the response."""
+    headers = agent_headers(admin)
+    await _accept_agent_docs(cs_client, headers)
+    await _set_agency_terms(cs_client, headers, _AGENCY_CGV)
+
+    renamed = await cs_client.patch("/agencies/me", headers=headers, json={"name": "Nouveau nom"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["client_terms_md"] == _AGENCY_CGV

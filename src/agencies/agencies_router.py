@@ -288,8 +288,15 @@ async def update_subscription(
 
 @router.patch("/me", response_model=AgencyResponse)
 async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep) -> AgencyResponse:
-    agency = await AgenciesManager(db).update_my_agency(agent, body)
-    return AgencyResponse.model_validate(agency)
+    manager = AgenciesManager(db)
+    agency = await manager.update_my_agency(agent, body)
+    response = AgencyResponse.model_validate(agency)
+    # A written field must be re-readable in the very response that writes
+    # it: client_terms_md lives in consent_document, so model_validate alone
+    # leaves it None. Same source as the GET (own_client_terms), so the two
+    # can never disagree about what is in force.
+    response.client_terms_md = await manager.own_client_terms(agency)
+    return response
 
 
 def _member_response(member: Agent) -> AgencyMemberResponse:
