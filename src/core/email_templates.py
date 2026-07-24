@@ -1690,6 +1690,39 @@ def task_assigned_email(
     )
 
 
+def task_watcher_digest_email(
+    title: str,
+    status_changes: list[tuple[str, str]],
+    comments: list[tuple[str, str]],
+    tasks_url: str,
+) -> EmailContent:
+    """The 20-minute watcher digest for a platform task: what changed since
+    the window opened. FR-ONLY on purpose — the admin surface is not
+    translated (no ×7 introduced here). `status_changes` are
+    (old_label, new_label) pairs; `comments` are (author, excerpt) pairs.
+    The caller guarantees at least one of the two lists is non-empty (never
+    an empty digest)."""
+    labels = _TASK_STATUS_LABELS["fr"]
+    sections: list[str] = []
+    if status_changes:
+        lines = [
+            f"• {labels.get(old, old)} → {labels.get(new, new)}" for old, new in status_changes
+        ]
+        sections.append("Changements de statut :\n" + "\n".join(lines))
+    if comments:
+        lines = [f"• {author} : {excerpt}" for author, excerpt in comments]
+        sections.append("Nouveaux commentaires :\n" + "\n".join(lines))
+    return _render(
+        subject=f"Nidria : activité sur la tâche : {title}",
+        title="Du nouveau sur une tâche que vous suivez",
+        intro=f'Récapitulatif de l\'activité récente sur la tâche "{title}".',
+        body_text="\n\n".join(sections),
+        button_label="Ouvrir les tâches",
+        button_url=tasks_url,
+        lang="fr",
+    )
+
+
 def task_status_changed_email(
     title: str,
     new_status: str,

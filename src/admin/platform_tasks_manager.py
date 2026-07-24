@@ -29,6 +29,7 @@ from shared.models.platform_task import (
 )
 from shared.models.platform_task_attachment import PlatformTaskAttachment
 from shared.models.platform_task_comment import PlatformTaskComment
+from shared.models.platform_task_event import PlatformTaskEvent
 from shared.models.platform_task_watcher import PlatformTaskWatcher
 from shared.models.rbac import Role
 from src.admin.platform_tasks_repository import PlatformTasksRepository
@@ -230,17 +231,6 @@ class PlatformTasksManager:
         for agent_id in watcher_ids:
             self.db.add(PlatformTaskWatcher(task_id=task_id, agent_id=agent_id))
 
-    async def _watcher_ids(self, task_id: uuid.UUID) -> list[uuid.UUID]:
-        return list(
-            (
-                await self.db.execute(
-                    select(PlatformTaskWatcher.agent_id).where(
-                        PlatformTaskWatcher.task_id == task_id
-                    )
-                )
-            ).scalars()
-        )
-
     async def _validate_agency(self, agency_id: uuid.UUID) -> None:
         if await self.db.get(Agency, agency_id) is None:
             raise NotFoundError("Agency not found.", code="agency.not_found")
@@ -402,6 +392,42 @@ class PlatformTasksManager:
         )
         return email_addr, content
 
+    # --- watcher digest events (queued, sent by the 20-min window job) --------
+
+    def _queue_status_event(
+        self, task: PlatformTask, actor: Agent, old_status: str, new_status: str
+    ) -> None:
+        """Queue a status change for the watcher digest. Added to the
+        session; the caller commits. Watchers are NOT emailed immediately
+        (that fan-out moved here): the digest batches status + comments over
+        a 20-minute window, so an active task never spams its observers."""
+        self.db.add(
+            PlatformTaskEvent(
+                task_id=task.id,
+                event_type="status_change",
+                actor_agent_id=actor.id,
+                actor_name=self._actor_name(actor),
+                old_status=old_status,
+                new_status=new_status,
+            )
+        )
+
+    def _queue_comment_event(self, task_id: uuid.UUID, actor: Agent, body: str) -> None:
+        """Queue a new comment for the watcher digest (excerpt snapshotted,
+        so a later deletion still reads correctly)."""
+        excerpt = body.strip().replace("\n", " ")
+        if len(excerpt) > 200:
+            excerpt = excerpt[:197] + "…"
+        self.db.add(
+            PlatformTaskEvent(
+                task_id=task_id,
+                event_type="comment",
+                actor_agent_id=actor.id,
+                actor_name=self._actor_name(actor),
+                excerpt=excerpt,
+            )
+        )
+
     # --- use cases ------------------------------------------------------------
 
     async def list_tasks(
@@ -528,6 +554,10 @@ class PlatformTasksManager:
             await self._replace_watchers(task.id, watcher_ids)
         if "status" in fields and payload.status is not None:
             self._apply_status(task, payload.status, actor)
+        if task.status != prev_status:
+            # Watchers no longer get an immediate mail here — the status
+            # change is queued for the 20-minute digest instead.
+            self._queue_status_event(task, actor, prev_status, task.status)
         await self.db.commit()
         await self.db.refresh(task)
         mails: dict[uuid.UUID, tuple[str, EmailContent]] = {}
@@ -545,15 +575,6 @@ class PlatformTasksManager:
                 mail = None
             if mail is not None:
                 mails[creator] = mail
-        if task.status != prev_status:
-            # Watchers join on the SAME trigger (a real status change) —
-            # the dedup dict absorbs creator/assignee overlaps, the actor
-            # is never a recipient.
-            for watcher_id in await self._watcher_ids(task.id):
-                if watcher_id != actor.id and watcher_id not in mails:
-                    mail = await self._status_mail(task, watcher_id, actor)
-                    if mail is not None:
-                        mails[watcher_id] = mail
         if mails:
             await self._notify(mails)
         return (await self._project([task]))[0]
@@ -568,8 +589,12 @@ class PlatformTasksManager:
         task = await self._get_or_404(task_id)
         if completion_message is not None:
             task.completion_message = completion_message
+        prev_status = task.status
         changed = task.status != new_status
         self._apply_status(task, new_status, actor)
+        if changed:
+            # Watchers are notified through the 20-minute digest, not here.
+            self._queue_status_event(task, actor, prev_status, task.status)
         await self.db.commit()
         await self.db.refresh(task)
         mails: dict[uuid.UUID, tuple[str, EmailContent]] = {}
@@ -578,12 +603,6 @@ class PlatformTasksManager:
             mail = await self._status_mail(task, creator, actor)
             if mail is not None:
                 mails[creator] = mail
-        if changed:
-            for watcher_id in await self._watcher_ids(task.id):
-                if watcher_id != actor.id and watcher_id not in mails:
-                    mail = await self._status_mail(task, watcher_id, actor)
-                    if mail is not None:
-                        mails[watcher_id] = mail
         if mails:
             await self._notify(mails)
         return (await self._project([task]))[0]
@@ -825,6 +844,8 @@ class PlatformTasksManager:
         await self._get_or_404(task_id)
         row = PlatformTaskComment(task_id=task_id, author_agent_id=actor.id, body=payload.body)
         self.db.add(row)
+        # Queue the comment for the watcher digest (same transaction).
+        self._queue_comment_event(task_id, actor, payload.body)
         await self.db.commit()
         await self.db.refresh(row)
         return PlatformTaskCommentRead(

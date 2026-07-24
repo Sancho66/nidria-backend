@@ -802,14 +802,18 @@ async def test_message_patchable_after_done_and_survives_reopen(
 # --- watchers (Nidria-pure: Prism has no watcher/follower concept) --------------------
 
 
-async def test_watcher_joins_status_mail_and_actor_excluded(
+async def test_status_change_mails_creator_immediately_not_watchers(
     client: AsyncClient,
     superadmin: Agent,
     superadmin2: Agent,
     superadmin3: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    # Creator A, assignee B, watcher C: B completes -> mails to A + C.
+    """Behaviour change (watcher-digest lot): the CREATOR still gets an
+    immediate status mail, but WATCHERS no longer do — their status
+    notification moved into the 20-minute digest (see the digest battery).
+    Creator A, assignee B, watcher C: B completes -> immediate mail to A
+    only; C is queued for the digest, not mailed now."""
     task = await _create(
         client,
         agent_headers(superadmin),
@@ -819,12 +823,7 @@ async def test_watcher_joins_status_mail_and_actor_excluded(
     assert [w["agent_id"] for w in task["watchers"]] == [str(superadmin3.id)]
     email.outbox.clear()
     await client.post(f"/admin/tasks/{task['id']}/complete", headers=agent_headers(superadmin2))
-    assert sorted(m.to for m in email.outbox) == sorted([superadmin.email, superadmin3.email])
-
-    # Watcher = the ACTOR: excluded. C (watcher) reopens -> only creator A mailed.
-    email.outbox.clear()
-    await client.post(f"/admin/tasks/{task['id']}/reopen", headers=agent_headers(superadmin3))
-    assert [m.to for m in email.outbox] == [superadmin.email]
+    assert [m.to for m in email.outbox] == [superadmin.email]  # creator only, not watcher C
 
 
 async def test_watcher_equals_creator_single_mail(
@@ -1359,3 +1358,193 @@ async def test_comments_403_for_agency_admin(
         f"/admin/tasks/{task['id']}/comments", headers=agent_headers(agency_admin)
     )
     assert refused.status_code == 403
+
+
+# --- watcher digest (20-minute sliding window) ----------------------------------------
+
+from datetime import UTC as _UTC  # noqa: E402
+from datetime import datetime as _dt  # noqa: E402
+from datetime import timedelta as _td  # noqa: E402
+
+from sqlalchemy import update as _update  # noqa: E402
+from sqlalchemy.orm import Session as _Session  # noqa: E402
+from sqlalchemy.orm import sessionmaker as _sessionmaker  # noqa: E402
+
+from shared.models.agent import Agent as _Agent  # noqa: E402
+from shared.models.platform_task_event import PlatformTaskEvent as _Event  # noqa: E402
+from src.admin.platform_task_digest_job import (  # noqa: E402
+    send_platform_task_watcher_digests,
+)
+
+
+def _run_digest(session_local: _sessionmaker[_Session], at: _dt) -> dict:
+    with session_local() as db:
+        return send_platform_task_watcher_digests(db, log=lambda _: None, now=at)
+
+
+async def _comment(client: AsyncClient, headers: dict, task_id: str, body: str) -> None:
+    r = await client.post(f"/admin/tasks/{task_id}/comments", headers=headers, json={"body": body})
+    assert r.status_code == 201, r.text
+
+
+async def test_digest_batches_three_events_into_one_email(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    """3 events within 5 minutes → exactly ONE email after 20 min. Creator A
+    acts (status + 2 comments), watcher B observes."""
+    a = agent_headers(superadmin)
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    await client.patch(f"/admin/tasks/{task['id']}", headers=a, json={"status": "in_progress"})
+    await _comment(client, a, task["id"], "premier point")
+    await _comment(client, a, task["id"], "second point")
+
+    email.outbox.clear()
+    # Window still open at +10 min → nothing.
+    assert _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=10))["mails"] == 0
+    assert email.outbox == []
+
+    # Window closed at +25 min → ONE email to B, covering all three events.
+    stats = _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=25))
+    assert stats["mails"] == 1
+    assert [m.to for m in email.outbox] == [superadmin2.email]
+    body = email.outbox[0].body
+    assert "à faire → en cours" in body
+    assert "premier point" in body and "second point" in body
+
+
+async def test_digest_single_event(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    a = agent_headers(superadmin)
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    await _comment(client, a, task["id"], "une seule note")
+    email.outbox.clear()
+    assert _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=25))["mails"] == 1
+    assert [m.to for m in email.outbox] == [superadmin2.email]
+
+
+async def test_digest_never_notifies_the_actor_of_their_own_events(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    """The watcher is ALSO the only actor: every event is theirs → no mail.
+    A second watcher who did nothing still receives the digest."""
+    a = agent_headers(superadmin)
+    # Watcher B is the sole watcher; B is also the actor of every event.
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    b = agent_headers(superadmin2)
+    await _comment(client, b, task["id"], "je me parle à moi-même")
+    email.outbox.clear()
+    assert _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=25))["mails"] == 0
+    assert email.outbox == []
+
+
+async def test_digest_skips_watcher_without_email(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    """A watcher with no usable email is ignored silently — no error, no
+    mail, and the events are still processed."""
+    a = agent_headers(superadmin)
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    await _comment(client, a, task["id"], "note")
+    # Strip the watcher's email at the source.
+    await db_session.execute(_update(_Agent).where(_Agent.id == superadmin2.id).values(email=""))
+    await db_session.commit()
+
+    email.outbox.clear()
+    stats = _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=25))
+    assert stats["mails"] == 0
+    assert email.outbox == []
+
+
+async def test_digest_is_idempotent_on_replay(
+    client: AsyncClient,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    """A processed event never re-enters a digest: a second run sends
+    nothing (notified_at marker)."""
+    a = agent_headers(superadmin)
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    await _comment(client, a, task["id"], "note")
+    at = _dt.now(_UTC) + _td(minutes=25)
+
+    email.outbox.clear()
+    assert _run_digest(sync_session_local, at)["mails"] == 1
+    email.outbox.clear()
+    assert _run_digest(sync_session_local, at)["mails"] == 0  # replay → nothing
+    assert email.outbox == []
+
+
+async def test_digest_suppresses_demo_recipient(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    """A demo address never receives a real send — the send_email sink
+    covers it (single send path)."""
+    a = agent_headers(superadmin)
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    await _comment(client, a, task["id"], "note")
+    await db_session.execute(
+        _update(_Agent).where(_Agent.id == superadmin2.id).values(email="demo+acme@nidria.app")
+    )
+    await db_session.commit()
+
+    email.outbox.clear()
+    # The job counts a send attempt, but the sink drops it before the outbox.
+    _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=25))
+    assert email.outbox == []
+
+
+async def test_window_not_pushed_by_later_events(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    superadmin: Agent,
+    superadmin2: Agent,
+    sync_session_local: _sessionmaker[_Session],
+    agent_headers: AuthHeaders,
+) -> None:
+    """A later event joins the window WITHOUT extending it: an active
+    discussion still fires on the FIRST event's 20-minute mark."""
+    a = agent_headers(superadmin)
+    task = await _create(client, a, watcher_agent_ids=[str(superadmin2.id)])
+    await _comment(client, a, task["id"], "premier")
+    # Backdate the first event to 19 minutes ago (window opened then).
+    await db_session.execute(
+        _update(_Event)
+        .where(_Event.task_id == task["id"])
+        .values(created_at=_dt.now(_UTC) - _td(minutes=19))
+    )
+    await db_session.commit()
+    # A fresh event now (inside the window) must NOT push the anchor.
+    await _comment(client, a, task["id"], "deuxième")
+
+    email.outbox.clear()
+    # 2 minutes later, the FIRST event has crossed 20 min → send fires,
+    # carrying both events, even though the second is brand new.
+    stats = _run_digest(sync_session_local, _dt.now(_UTC) + _td(minutes=2))
+    assert stats["mails"] == 1
+    body = email.outbox[0].body
+    assert "premier" in body and "deuxième" in body

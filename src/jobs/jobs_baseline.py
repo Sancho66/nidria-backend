@@ -28,6 +28,13 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         "name": "Progress digest (weekly on Monday / daily per agency pref)",
         "cron_expression": "0 9 * * *",
     },
+    {
+        "job_id": "platform_task_watcher_digest",
+        "name": "Platform task watcher digest (20-minute sliding window)",
+        # Every minute: the window is 20 min, this only decides how promptly
+        # a closed window is flushed (at most ~1 min late).
+        "cron_expression": "* * * * *",
+    },
 ]
 
 
