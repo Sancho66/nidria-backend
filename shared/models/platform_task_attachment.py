@@ -20,6 +20,14 @@ class PlatformTaskAttachment(UUIDPrimaryKeyMixin, Base):
     task_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("platform_task.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    # NULL = attached to the task directly (the "Fichiers" tab). Set =
+    # attached to a message in the "Commentaires" thread. The upload path is
+    # the same; this column only says WHERE the file shows. CASCADE: deleting
+    # a comment drops its attachment rows (the manager wipes the blobs first,
+    # the documents order).
+    comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("platform_task_comment.id", ondelete="CASCADE"), index=True
+    )
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)

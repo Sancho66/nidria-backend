@@ -42,6 +42,7 @@ from shared.models.nurture import NurtureSend
 from shared.models.paddle_event import PaddleWebhookEvent
 from shared.models.platform_task import PlatformTask
 from shared.models.platform_task_attachment import PlatformTaskAttachment
+from shared.models.platform_task_comment import PlatformTaskComment
 from shared.models.platform_task_watcher import PlatformTaskWatcher
 from shared.models.rbac import Permission, ProtectedResource, Role, RolePermission
 from shared.models.referral import ReferralCredit
@@ -81,6 +82,7 @@ __all__ = [
     "JobConfig",
     "PlatformTask",
     "PlatformTaskAttachment",
+    "PlatformTaskComment",
     "PlatformTaskWatcher",
     "JobRun",
     "JourneySection",

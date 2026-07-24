@@ -1197,3 +1197,165 @@ async def test_estimated_minutes_never_affects_order(
     assert titles == ["with-estimate", "no-estimate"]
     # And a long estimate on a NON-overdue task never makes it overdue.
     assert all(t["is_overdue"] is False for t in listed.json()["items"])
+
+
+# --- "Commentaires" tab (thread + attachments) ----------------------------------------
+
+
+async def test_comment_posts_and_appears_in_the_thread(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+
+    posted = await client.post(
+        f"/admin/tasks/{task['id']}/comments", headers=headers, json={"body": "Relancé par mail."}
+    )
+    assert posted.status_code == 201, posted.text
+    body = posted.json()
+    assert body["body"] == "Relancé par mail."
+    assert body["author_agent_id"] == str(superadmin.id)
+    assert body["author_name"]  # resolved from the agent, not the payload
+    assert body["attachments"] == []
+
+    thread = await client.get(f"/admin/tasks/{task['id']}/comments", headers=headers)
+    assert thread.status_code == 200
+    assert [c["id"] for c in thread.json()] == [body["id"]]
+
+
+async def test_thread_is_oldest_first(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Newest at the bottom — the read order stated in the manager."""
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    first = (
+        await client.post(
+            f"/admin/tasks/{task['id']}/comments", headers=headers, json={"body": "premier"}
+        )
+    ).json()
+    second = (
+        await client.post(
+            f"/admin/tasks/{task['id']}/comments", headers=headers, json={"body": "second"}
+        )
+    ).json()
+    thread = await client.get(f"/admin/tasks/{task['id']}/comments", headers=headers)
+    assert [c["id"] for c in thread.json()] == [first["id"], second["id"]]
+
+
+async def test_comment_carries_an_attachment(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    comment = (
+        await client.post(
+            f"/admin/tasks/{task['id']}/comments", headers=headers, json={"body": "voir pièce"}
+        )
+    ).json()
+
+    uploaded = await client.post(
+        f"/admin/tasks/{task['id']}/comments/{comment['id']}/attachments",
+        headers=headers,
+        files=_pdf(),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    attachment_id = uploaded.json()["id"]
+
+    # The file surfaces UNDER its comment in the thread...
+    thread = await client.get(f"/admin/tasks/{task['id']}/comments", headers=headers)
+    [entry] = thread.json()
+    assert [a["id"] for a in entry["attachments"]] == [attachment_id]
+    # ...and NOT in the task-level "Fichiers" tab (it belongs to the thread).
+    files = await client.get(f"/admin/tasks/{task['id']}/attachments", headers=headers)
+    assert files.json() == []
+    # It is downloadable through the existing attachment path.
+    dl = await client.get(
+        f"/admin/tasks/{task['id']}/attachments/{attachment_id}/download", headers=headers
+    )
+    assert dl.status_code == 200 and dl.content == b"x" * 100
+
+
+async def test_author_deletes_own_comment_and_its_blob(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    comment = (
+        await client.post(
+            f"/admin/tasks/{task['id']}/comments", headers=headers, json={"body": "à supprimer"}
+        )
+    ).json()
+    await client.post(
+        f"/admin/tasks/{task['id']}/comments/{comment['id']}/attachments",
+        headers=headers,
+        files=_pdf(),
+    )
+    assert storage.mock_store  # a blob exists
+
+    deleted = await client.delete(
+        f"/admin/tasks/{task['id']}/comments/{comment['id']}", headers=headers
+    )
+    assert deleted.status_code == 204
+    assert (await client.get(f"/admin/tasks/{task['id']}/comments", headers=headers)).json() == []
+    assert storage.mock_store == {}  # the attachment blob is physically gone (CASCADE + wipe)
+
+
+async def test_only_the_author_can_delete_a_comment(
+    client: AsyncClient,
+    superadmin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Another superadmin — with the same permission — is still not the
+    author: 403, the comment survives."""
+    headers = agent_headers(superadmin)
+    task = await _create(client, headers)
+    comment = (
+        await client.post(
+            f"/admin/tasks/{task['id']}/comments", headers=headers, json={"body": "à moi"}
+        )
+    ).json()
+
+    other = await make_agent(role=system_roles["superadmin"], email="other@platform.io")
+    refused = await client.delete(
+        f"/admin/tasks/{task['id']}/comments/{comment['id']}", headers=agent_headers(other)
+    )
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "task.comment_not_author"
+    thread = await client.get(f"/admin/tasks/{task['id']}/comments", headers=headers)
+    assert [c["id"] for c in thread.json()] == [comment["id"]]
+
+
+async def test_comments_do_not_leak_across_tasks(
+    client: AsyncClient, superadmin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Isolation: a comment of task A never shows on task B, and reaching it
+    through B's URL is a 404 (no id traversal)."""
+    headers = agent_headers(superadmin)
+    task_a = await _create(client, headers, title="A")
+    task_b = await _create(client, headers, title="B")
+    comment_a = (
+        await client.post(
+            f"/admin/tasks/{task_a['id']}/comments", headers=headers, json={"body": "chez A"}
+        )
+    ).json()
+
+    assert (await client.get(f"/admin/tasks/{task_b['id']}/comments", headers=headers)).json() == []
+    # Deleting A's comment through B's URL is a 404, not a cross-task delete.
+    crossed = await client.delete(
+        f"/admin/tasks/{task_b['id']}/comments/{comment_a['id']}", headers=headers
+    )
+    assert crossed.status_code == 404
+    assert crossed.json()["code"] == "task.comment_not_found"
+
+
+async def test_comments_403_for_agency_admin(
+    client: AsyncClient, superadmin: Agent, agency_admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    task = await _create(client, agent_headers(superadmin))
+    refused = await client.get(
+        f"/admin/tasks/{task['id']}/comments", headers=agent_headers(agency_admin)
+    )
+    assert refused.status_code == 403

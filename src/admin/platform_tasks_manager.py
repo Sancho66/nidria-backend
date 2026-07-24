@@ -28,6 +28,7 @@ from shared.models.platform_task import (
     PlatformTask,
 )
 from shared.models.platform_task_attachment import PlatformTaskAttachment
+from shared.models.platform_task_comment import PlatformTaskComment
 from shared.models.platform_task_watcher import PlatformTaskWatcher
 from shared.models.rbac import Role
 from src.admin.platform_tasks_repository import PlatformTasksRepository
@@ -35,6 +36,8 @@ from src.admin.platform_tasks_schema import (
     CalendarLinkResponse,
     PlatformOperatorRead,
     PlatformTaskAttachmentRead,
+    PlatformTaskCommentCreate,
+    PlatformTaskCommentRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
     PlatformTaskRead,
@@ -51,6 +54,7 @@ from src.core.email_templates import (
 )
 from src.core.exceptions import (
     BadRequestError,
+    ForbiddenError,
     NotFoundError,
     PayloadTooLargeError,
     UnsupportedMediaTypeError,
@@ -624,12 +628,17 @@ class PlatformTasksManager:
     # --- attachments (Prism port; limits ALIGNED on case documents) -----------
 
     async def list_attachments(self, task_id: uuid.UUID) -> list[PlatformTaskAttachmentRead]:
+        """Task-level attachments only (the "Fichiers" tab). A file attached
+        to a message carries comment_id and belongs to the thread, not here."""
         await self._get_or_404(task_id)
         rows = (
             (
                 await self.db.execute(
                     select(PlatformTaskAttachment)
-                    .where(PlatformTaskAttachment.task_id == task_id)
+                    .where(
+                        PlatformTaskAttachment.task_id == task_id,
+                        PlatformTaskAttachment.comment_id.is_(None),
+                    )
                     .order_by(PlatformTaskAttachment.created_at)
                 )
             )
@@ -638,10 +647,16 @@ class PlatformTasksManager:
         )
         return [PlatformTaskAttachmentRead.model_validate(r) for r in rows]
 
-    async def upload_attachment(
-        self, actor: Agent, task_id: uuid.UUID, file: UploadFile
-    ) -> PlatformTaskAttachmentRead:
-        await self._get_or_404(task_id)
+    async def _store_attachment(
+        self,
+        actor: Agent,
+        task_id: uuid.UUID,
+        file: UploadFile,
+        comment_id: uuid.UUID | None,
+    ) -> PlatformTaskAttachment:
+        """THE single upload path (storage + validation + limits), shared by
+        the task-level "Fichiers" tab and the comment thread — a file behaves
+        identically wherever it lands. Adds the row, does NOT commit."""
         settings = get_settings()
         filename = (file.filename or "").strip()
         if not filename:
@@ -667,6 +682,7 @@ class PlatformTasksManager:
         row = PlatformTaskAttachment(
             id=attachment_id,
             task_id=task_id,
+            comment_id=comment_id,
             file_name=filename[:255],
             content_type=content_type,
             size_bytes=len(content),
@@ -674,6 +690,13 @@ class PlatformTasksManager:
             uploaded_by_agent_id=actor.id,
         )
         self.db.add(row)
+        return row
+
+    async def upload_attachment(
+        self, actor: Agent, task_id: uuid.UUID, file: UploadFile
+    ) -> PlatformTaskAttachmentRead:
+        await self._get_or_404(task_id)
+        row = await self._store_attachment(actor, task_id, file, comment_id=None)
         await self.db.commit()
         await self.db.refresh(row)
         return PlatformTaskAttachmentRead.model_validate(row)
@@ -708,6 +731,150 @@ class PlatformTasksManager:
         # recoverable orphan row, never a dangling blob.
         await asyncio.to_thread(storage.delete, row.storage_path)
         await self.db.delete(row)
+        await self.db.commit()
+
+    # --- comments (the "Commentaires" tab) ------------------------------------
+
+    async def _comment_attachments(
+        self, comment_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[PlatformTaskAttachmentRead]]:
+        """Attachments grouped by comment_id, batched (no N+1 over the
+        thread)."""
+        if not comment_ids:
+            return {}
+        rows = (
+            (
+                await self.db.execute(
+                    select(PlatformTaskAttachment)
+                    .where(PlatformTaskAttachment.comment_id.in_(comment_ids))
+                    .order_by(PlatformTaskAttachment.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        grouped: dict[uuid.UUID, list[PlatformTaskAttachmentRead]] = {}
+        for r in rows:
+            assert r.comment_id is not None  # the filter guarantees it
+            grouped.setdefault(r.comment_id, []).append(
+                PlatformTaskAttachmentRead.model_validate(r)
+            )
+        return grouped
+
+    async def list_comments(self, task_id: uuid.UUID) -> list[PlatformTaskCommentRead]:
+        """The thread, OLDEST first (newest at the bottom — the chat/read
+        order, matching the per-step StepComment thread)."""
+        await self._get_or_404(task_id)
+        rows = (
+            (
+                await self.db.execute(
+                    select(PlatformTaskComment)
+                    .where(PlatformTaskComment.task_id == task_id)
+                    .order_by(PlatformTaskComment.created_at, PlatformTaskComment.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        names = await self._agent_names([r.author_agent_id for r in rows])
+        attachments = await self._comment_attachments([r.id for r in rows])
+        return [
+            PlatformTaskCommentRead(
+                id=r.id,
+                task_id=r.task_id,
+                body=r.body,
+                author_agent_id=r.author_agent_id,
+                author_name=names.get(r.author_agent_id) if r.author_agent_id else None,
+                created_at=r.created_at,
+                attachments=attachments.get(r.id, []),
+            )
+            for r in rows
+        ]
+
+    async def _agent_names(self, agent_ids: list[uuid.UUID | None]) -> dict[uuid.UUID, str]:
+        wanted = [a for a in agent_ids if a is not None]
+        if not wanted:
+            return {}
+        rows = (
+            await self.db.execute(
+                select(Agent.id, Agent.first_name, Agent.last_name).where(Agent.id.in_(wanted))
+            )
+        ).all()
+        return {row[0]: f"{row[1]} {row[2]}".strip() for row in rows}
+
+    async def _comment_or_404(
+        self, task_id: uuid.UUID, comment_id: uuid.UUID
+    ) -> PlatformTaskComment:
+        """Scoped by task_id: a comment of ANOTHER task is a 404 — no id
+        traversal through the URL (the attachment rule, mirrored)."""
+        row = (
+            await self.db.execute(
+                select(PlatformTaskComment).where(
+                    PlatformTaskComment.id == comment_id,
+                    PlatformTaskComment.task_id == task_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Comment not found.", code="task.comment_not_found")
+        return row
+
+    async def create_comment(
+        self, actor: Agent, task_id: uuid.UUID, payload: PlatformTaskCommentCreate
+    ) -> PlatformTaskCommentRead:
+        await self._get_or_404(task_id)
+        row = PlatformTaskComment(task_id=task_id, author_agent_id=actor.id, body=payload.body)
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return PlatformTaskCommentRead(
+            id=row.id,
+            task_id=row.task_id,
+            body=row.body,
+            author_agent_id=row.author_agent_id,
+            author_name=self._actor_name(actor),
+            created_at=row.created_at,
+            attachments=[],
+        )
+
+    async def upload_comment_attachment(
+        self, actor: Agent, task_id: uuid.UUID, comment_id: uuid.UUID, file: UploadFile
+    ) -> PlatformTaskAttachmentRead:
+        await self._get_or_404(task_id)
+        await self._comment_or_404(task_id, comment_id)
+        row = await self._store_attachment(actor, task_id, file, comment_id=comment_id)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return PlatformTaskAttachmentRead.model_validate(row)
+
+    async def delete_comment(self, actor: Agent, task_id: uuid.UUID, comment_id: uuid.UUID) -> None:
+        """Author-only, HARD delete. The author is read from the JWT
+        identity, never the payload; a non-author (including another
+        superadmin) gets 403. Attachment blobs are wiped FIRST (the
+        documents order), then the row — the FK CASCADE clears the
+        attachment rows."""
+        comment = await self._comment_or_404(task_id, comment_id)
+        if comment.author_agent_id != actor.id:
+            raise ForbiddenError(
+                "Only the author can delete this comment.", code="task.comment_not_author"
+            )
+        attachments = (
+            (
+                await self.db.execute(
+                    select(PlatformTaskAttachment).where(
+                        PlatformTaskAttachment.comment_id == comment_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for attachment in attachments:
+            try:
+                await asyncio.to_thread(storage.delete, attachment.storage_path)
+            except Exception:
+                logger.warning("comment blob cleanup failed: %s", attachment.storage_path)
+        await self.db.delete(comment)
         await self.db.commit()
 
     async def summary(self) -> PlatformTaskSummary:

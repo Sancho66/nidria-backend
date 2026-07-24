@@ -20,6 +20,8 @@ from src.admin.platform_tasks_schema import (
     CompleteTaskRequest,
     PlatformOperatorRead,
     PlatformTaskAttachmentRead,
+    PlatformTaskCommentCreate,
+    PlatformTaskCommentRead,
     PlatformTaskCreate,
     PlatformTaskListResponse,
     PlatformTaskRead,
@@ -86,6 +88,25 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/admin/tasks/{task_id}/attachments/{attachment_id}",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
+    ),
+    # "Commentaires" tab — same superadmin gate as the rest of the surface.
+    RouteBinding(
+        "GET", "/admin/tasks/{task_id}/comments", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE
+    ),
+    RouteBinding(
+        "POST", "/admin/tasks/{task_id}/comments", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE
+    ),
+    RouteBinding(
+        "POST",
+        "/admin/tasks/{task_id}/comments/{comment_id}/attachments",
+        Audience.AGENT,
+        Permission.PLATFORM_TASK_MANAGE,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/admin/tasks/{task_id}/comments/{comment_id}",
         Audience.AGENT,
         Permission.PLATFORM_TASK_MANAGE,
     ),
@@ -281,3 +302,45 @@ async def delete_platform_task_attachment(
     task_id: uuid.UUID, attachment_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> None:
     await PlatformTasksManager(db).delete_attachment(task_id, attachment_id)
+
+
+# --- comments ("Commentaires" tab) --------------------------------------------
+
+
+@router.get("/tasks/{task_id}/comments", response_model=list[PlatformTaskCommentRead])
+async def list_platform_task_comments(
+    task_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[PlatformTaskCommentRead]:
+    """The task discussion, oldest first (newest at the bottom), each
+    message with its attachments."""
+    return await PlatformTasksManager(db).list_comments(task_id)
+
+
+@router.post("/tasks/{task_id}/comments", response_model=PlatformTaskCommentRead, status_code=201)
+async def create_platform_task_comment(
+    task_id: uuid.UUID, body: PlatformTaskCommentCreate, agent: AgentDep, db: DbDep
+) -> PlatformTaskCommentRead:
+    return await PlatformTasksManager(db).create_comment(agent, task_id, body)
+
+
+@router.post(
+    "/tasks/{task_id}/comments/{comment_id}/attachments",
+    response_model=PlatformTaskAttachmentRead,
+    status_code=201,
+)
+async def upload_platform_task_comment_attachment(
+    task_id: uuid.UUID, comment_id: uuid.UUID, file: UploadFile, agent: AgentDep, db: DbDep
+) -> PlatformTaskAttachmentRead:
+    """Attach a file to a message. Same upload path as task-level files:
+    same size cap (413) and extension whitelist (415)."""
+    return await PlatformTasksManager(db).upload_comment_attachment(
+        agent, task_id, comment_id, file
+    )
+
+
+@router.delete("/tasks/{task_id}/comments/{comment_id}", status_code=204)
+async def delete_platform_task_comment(
+    task_id: uuid.UUID, comment_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> None:
+    """Author-only, hard delete (403 task.comment_not_author otherwise)."""
+    await PlatformTasksManager(db).delete_comment(agent, task_id, comment_id)

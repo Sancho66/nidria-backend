@@ -182,6 +182,29 @@ class PlatformTaskAttachmentRead(BaseModel):
     created_at: datetime
 
 
+class PlatformTaskCommentCreate(BaseModel):
+    """A new message in the task discussion. Body only — the author is the
+    JWT identity, never the payload."""
+
+    body: str = Field(min_length=1, max_length=10_000)
+
+
+class PlatformTaskCommentRead(BaseModel):
+    """One message in the "Commentaires" thread, with its attachments.
+    `author_name` is None only when the author agent was removed
+    (author_agent_id SET NULL)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    body: str
+    author_agent_id: uuid.UUID | None
+    author_name: str | None
+    created_at: datetime
+    attachments: list["PlatformTaskAttachmentRead"] = []
+
+
 class PlatformOperatorRead(BaseModel):
     """One assignable platform operator (superadmin) — the task form
     selector. No pagination: they are two."""
