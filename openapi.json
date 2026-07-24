@@ -17044,8 +17044,15 @@
             "title": "Owner Agent Id"
           },
           "journey_template_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Journey Template Id"
           },
           "custom_fields": {
@@ -17096,11 +17103,10 @@
         "required": [
           "first_name",
           "last_name",
-          "email",
-          "journey_template_id"
+          "email"
         ],
         "title": "CaseCreateRequest",
-        "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\n`journey_template_id` is REQUIRED (product decision 2026-07-11): a case\nwithout a journey is an empty shell — no steps, no timeline, nothing in\nthe worklist, an empty client space. \"I'll assign later\" produced dead\ndossiers. Missing → an explicit 422. The CRM import composes this same\nschema and always injects its (already mandatory) template per row —\nexempt by construction; existing journey-less cases keep assign_journey."
+        "description": "Principal-only create: family members and external contacts go\nthrough their own endpoints.\n\n`journey_template_id` is OPTIONAL again (NID-24, 2026-07-24, reversing\nthe 2026-07-11 decision): a prospect does not always have a defined\njourney at intake. The old fear — \"I'll assign later\" produced dead\ndossiers — is answered by SURFACING, not blocking: the detail page\nreplaces the timeline with an assign call-to-action (AssignJourneyCard →\nPOST /cases/{id}/journey) and the list marks journey-less dossiers. The\nCRM import keeps its OWN mandatory template per row (its request schema,\nnot this one)."
       },
       "CaseDetailResponse": {
         "properties": {

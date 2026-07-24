@@ -288,9 +288,11 @@ class CasesManager:
         # blocking at creation; it became a non-blocking completeness
         # indicator surfaced on the case detail. The principal's optional
         # values (above) are still written when the enriched POST sends them.
-        # journey_template_id is REQUIRED since 2026-07-11 (a journey-less
-        # case is a dead shell) — every creation instantiates its steps here.
-        await ProgressManager(self.db).apply_journey(agent, case, payload.journey_template_id)
+        # journey_template_id is OPTIONAL again (NID-24): None = "decide
+        # later" — zero steps now, the detail page carries the assign CTA and
+        # POST /cases/{id}/journey instantiates them when the agency decides.
+        if payload.journey_template_id is not None:
+            await ProgressManager(self.db).apply_journey(agent, case, payload.journey_template_id)
         # Anti-burst J1 : le dossier nait AVEC son parcours et l'invitation
         # part a l'instant — elle suffit (l'espace montrera tout a
         # l'activation). On ouvre la fenetre "steps" pour que les

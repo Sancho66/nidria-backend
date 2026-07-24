@@ -45,12 +45,14 @@ class CaseCreateRequest(_CivilStatusFields):
     """Principal-only create: family members and external contacts go
     through their own endpoints.
 
-    `journey_template_id` is REQUIRED (product decision 2026-07-11): a case
-    without a journey is an empty shell — no steps, no timeline, nothing in
-    the worklist, an empty client space. "I'll assign later" produced dead
-    dossiers. Missing → an explicit 422. The CRM import composes this same
-    schema and always injects its (already mandatory) template per row —
-    exempt by construction; existing journey-less cases keep assign_journey."""
+    `journey_template_id` is OPTIONAL again (NID-24, 2026-07-24, reversing
+    the 2026-07-11 decision): a prospect does not always have a defined
+    journey at intake. The old fear — "I'll assign later" produced dead
+    dossiers — is answered by SURFACING, not blocking: the detail page
+    replaces the timeline with an assign call-to-action (AssignJourneyCard →
+    POST /cases/{id}/journey) and the list marks journey-less dossiers. The
+    CRM import keeps its OWN mandatory template per row (its request schema,
+    not this one)."""
 
     # Principal expat (linked-or-created by email; an EXISTING user's
     # identity is never overwritten by this payload).
@@ -75,8 +77,9 @@ class CaseCreateRequest(_CivilStatusFields):
     reference: str | None = Field(default=None, max_length=100)
     tags: list[str] = Field(default_factory=list)
     owner_agent_id: uuid.UUID | None = None  # default: the creator
-    # REQUIRED — see the class docstring (a journey-less case is a dead shell).
-    journey_template_id: uuid.UUID
+    # OPTIONAL — see the class docstring (None = "decide later", the detail
+    # page carries the assign call-to-action).
+    journey_template_id: uuid.UUID | None = None
     custom_fields: dict[str, Any] = Field(default_factory=dict)
     # Opt-in prefill: copy the PERSON data (principal + family, civil +
     # custom fields) from a previous dossier of the SAME client in the

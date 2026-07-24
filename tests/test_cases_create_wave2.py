@@ -85,17 +85,17 @@ async def _template_with_case_field(
 # --- strict retrocompat --------------------------------------------------------------
 
 
-async def test_create_case_without_journey_is_422(
+async def test_create_case_without_journey_is_201_again(
     w2_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """Product decision 2026-07-11: a case without a journey is a dead shell
-    — the nu call (no journey_template_id) is now an EXPLICIT 422 naming the
-    missing field. Existing journey-less cases keep assign_journey."""
+    """NID-24 (2026-07-24) reverses the 2026-07-11 decision: a prospect does
+    not always have a defined journey at intake — the nu call creates the
+    case with NO steps; the assign CTA on the detail page takes over. The
+    full journey-less contract lives in test_case_without_journey.py."""
     headers = agent_headers(admin)
     resp = await w2_client.post("/cases", headers=headers, json=_payload("nu@example.com"))
-    assert resp.status_code == 422, resp.text
-    locs = {str(err["loc"][-1]) for err in resp.json()["detail"]}
-    assert "journey_template_id" in locs
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["journey_template_id"] is None
 
 
 # --- enriched creation ---------------------------------------------------------------
