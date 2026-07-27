@@ -56,6 +56,13 @@ async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
     return await make_agent(role=system_roles["admin"])
 
 
+# The mocked subscription's NEXT invoice — always comfortably in the future.
+# Was the literal "2026-08-01": a time bomb — test_drop_is_posed_before_the_
+# next_invoice poses a credit dying at now+5d and needs it strictly BEFORE
+# the invoice, which collapsed the day now+5d reached Aug 1 (2026-07-27).
+_NEXT_BILLED_AT = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
+
+
 @pytest_asyncio.fixture
 async def superadmin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
     return await make_agent(role=system_roles["superadmin"], email="root-ref@platform.io")
@@ -72,7 +79,7 @@ def _mock_paddle(
     sub = sub or {
         "id": "sub_ref",
         "status": "active",
-        "next_billed_at": "2026-08-01T00:00:00Z",
+        "next_billed_at": _NEXT_BILLED_AT,
         "items": [],
         "discount": None,
     }
@@ -420,7 +427,7 @@ async def test_drop_is_posed_before_the_next_invoice(
         sub={
             "id": "sub_drop",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_30"},
         },
@@ -544,7 +551,7 @@ async def test_lazy_tick_reposes_next_tier_and_archives_the_old(
         sub={
             "id": "sub_123",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_old"},
         },
@@ -576,7 +583,7 @@ async def test_foreign_discount_is_never_clobbered(
         sub={
             "id": "sub_ref",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_promo_eric"},
         },
@@ -610,7 +617,7 @@ async def test_expired_credits_remove_our_discount(
         sub={
             "id": "sub_ref",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_ours"},
         },
@@ -638,7 +645,7 @@ async def test_matching_posed_state_is_a_noop(
         sub={
             "id": "sub_ref",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_ours"},
         },
@@ -708,7 +715,7 @@ async def test_state_exposes_the_posed_referral_discount(
         sub={
             "id": "sub_refd1",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_ours_1", "ends_at": "2026-11-01T00:00:00Z"},
         },
@@ -742,7 +749,7 @@ async def test_state_never_dresses_a_foreign_discount_as_referral(
         sub={
             "id": "sub_refd2",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": {"id": "dsc_promo_eric", "ends_at": "2026-09-01T00:00:00Z"},
         },
@@ -770,7 +777,7 @@ async def test_state_without_discount_reads_null(
         sub={
             "id": "sub_refd3",
             "status": "active",
-            "next_billed_at": "2026-08-01T00:00:00Z",
+            "next_billed_at": _NEXT_BILLED_AT,
             "items": [],
             "discount": None,
         },
