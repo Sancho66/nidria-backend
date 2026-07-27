@@ -495,6 +495,7 @@ async def _seed_one_sector(db: AsyncSession, sector: str, name: str, steps: list
             agency_id=None,
             is_sample=True,
             sector=sector,
+            origin="seed",
             name=display_name,
             name_i18n={"fr": display_name},
         )

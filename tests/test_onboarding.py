@@ -162,3 +162,91 @@ async def test_dismiss_persists(
 
     body = await _state(client, headers)
     assert body["dismissed"] is True  # persisted; no un-dismiss endpoint exists
+
+
+# --- (e) note Eric 26/07 : le seed ne coche jamais, meme via le backfill de boot ------
+
+
+@pytest.mark.usefixtures("sector_templates")
+async def test_boot_backfill_never_stamps_the_milestone_from_the_seeded_gift(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """LA fuite constatee : backfill_usage_milestones tourne A CHAQUE BOOT et
+    stampait premier_parcours_cree depuis min(created_at) de TOUS les
+    templates — clones sectoriels offerts inclus. Une agence neuve seedee se
+    reveillait l'etape 1 cochee. Le filtre origin='user' la ferme."""
+    from shared.models.usage import AgencyUsageMilestone
+    from src.usage.usage_backfill import backfill_usage_milestones
+
+    headers = agent_headers(admin)
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    agency.sectors = ["immigration"]
+    await db_session.commit()
+    assert await seed_demo_case(db_session, agency, admin) is not None
+
+    # Le boot d'apres : le backfill tourne — et ne stampe RIEN pour cette
+    # agence (ses seuls parcours sont d'origine seed).
+    await backfill_usage_milestones(db_session)
+    milestone = (
+        await db_session.execute(
+            select(AgencyUsageMilestone).where(
+                AgencyUsageMilestone.agency_id == agency.id,
+                AgencyUsageMilestone.key == "premier_parcours_cree",
+            )
+        )
+    ).scalar_one_or_none()
+    assert milestone is None
+    steps = _by_key(await _state(client, headers))
+    assert steps["create_journey"]["done"] is False
+
+
+@pytest.mark.usefixtures("sector_templates")
+async def test_library_clone_checks_create_journey(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Un import VOLONTAIRE depuis la bibliotheque est une action reelle :
+    le clone nait origin='user' et coche l'etape — seul le seed automatique
+    est exclu."""
+    from shared.models.journey import JourneyTemplate
+
+    headers = agent_headers(admin)
+    sample = (
+        (
+            await db_session.execute(
+                select(JourneyTemplate).where(
+                    JourneyTemplate.agency_id.is_(None), JourneyTemplate.is_sample.is_(True)
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert sample is not None, "the harness seeds the library at boot"
+    assert sample.origin == "seed"
+
+    r = await client.post(f"/journeys/{sample.id}/clone", headers=headers, json={})
+    assert r.status_code == 201, r.text
+    clone = await db_session.get(JourneyTemplate, uuid.UUID(r.json()["id"]))
+    assert clone is not None and clone.origin == "user"
+
+    steps = _by_key(await _state(client, headers))
+    assert steps["create_journey"]["done"] is True
+
+
+async def test_existing_agency_handmade_history_still_checks(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Temoin retro : une agence d'AVANT le milestone (aucun usage_event)
+    avec un parcours fait main (origin='user', le defaut) — le backfill de
+    boot stampe, l'etape est cochee. L'histoire reelle ne se decoche pas."""
+    from shared.models.journey import JourneyTemplate
+    from src.usage.usage_backfill import backfill_usage_milestones
+
+    headers = agent_headers(admin)
+    db_session.add(JourneyTemplate(agency_id=admin.agency_id, name="Parcours historique"))
+    await db_session.commit()
+
+    await backfill_usage_milestones(db_session)
+    steps = _by_key(await _state(client, headers))
+    assert steps["create_journey"]["done"] is True

@@ -174,7 +174,7 @@ async def get_or_create_template(
         )
         return steps
 
-    template = JourneyTemplate(agency_id=agency.id, name=name)
+    template = JourneyTemplate(agency_id=agency.id, name=name, origin="seed")
     db.add(template)
     await db.flush()
     steps = []

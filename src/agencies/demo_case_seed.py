@@ -217,6 +217,7 @@ async def _clone_sector_into_agency(
         agency_id=agency.id,
         is_sample=False,
         sector=src.sector,
+        origin="seed",  # un cadeau système, jamais un geste d'agence
         name=src.name,
         name_i18n=dict(src.name_i18n or {}),
     )

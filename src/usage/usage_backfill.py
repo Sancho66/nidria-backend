@@ -62,8 +62,13 @@ async def compute_state_milestones(db: AsyncSession, agency_id: uuid.UUID) -> Mi
     pairs: list[tuple[str, Select[Any]]] = [
         (
             "premier_parcours_cree",
+            # origin='user' only (note Eric 26/07) : ce backfill tourne À
+            # CHAQUE BOOT — sans ce filtre il re-stampait le milestone depuis
+            # les parcours SEEDÉS (clones sectoriels offerts), cochant
+            # « créer son parcours » pour une agence qui n'a rien créé.
             select(func.min(JourneyTemplate.created_at), func.count()).where(
-                JourneyTemplate.agency_id == agency_id
+                JourneyTemplate.agency_id == agency_id,
+                JourneyTemplate.origin == "user",
             ),
         ),
         (

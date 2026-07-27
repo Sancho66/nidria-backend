@@ -36,7 +36,7 @@ from src.agencies.agencies_schema import (
     SeatUsage,
     SubscriptionUpdateRequest,
 )
-from src.agencies.demo_case_seed import DEMO_JOURNEY_NAME, seed_demo_case
+from src.agencies.demo_case_seed import seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.consents.consents_seed import publish_if_changed, withdraw_agency_document
@@ -699,8 +699,9 @@ class AgenciesManager:
         """The activation checklist, computed LIVE from the milestones
         and events (zero checkbox state - the trackers are the truth):
         - create_journey: milestone premier_parcours_cree (demo excluded
-          as always) OR any agency template besides the seeded demo gift
-          (covers histories predating the import/clone milestone fix);
+          as always) OR any agency template of origin 'user' (note Eric
+          26/07 : le discriminant structurel — un parcours seedé ne coche
+          jamais ; un clone/import volontaire coche, il naît 'user');
         - open_case: milestone premier_dossier_cree OR the closest
           existing trace of a demo consultation - the case.viewed_as_client
           event (a plain GET leaves no trace BY DESIGN, no new tracker);
@@ -721,8 +722,9 @@ class AgenciesManager:
                 await self.db.execute(
                     select(func.min(JourneyTemplate.created_at)).where(
                         JourneyTemplate.agency_id == agent.agency_id,
-                        JourneyTemplate.name != DEMO_JOURNEY_NAME,  # legacy pre-sector demo
-                        JourneyTemplate.sector.is_(None),  # exclude gifted sector clones
+                        # Le discriminant structurel (la migration backfille le
+                        # legacy demo et les clones sectoriels en 'seed').
+                        JourneyTemplate.origin == "user",
                     )
                 )
             ).scalar_one_or_none()

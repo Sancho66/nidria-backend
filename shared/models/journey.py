@@ -55,6 +55,16 @@ class JourneyTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # the agency actually created" — the adoption-signal discriminant (with
     # the legacy demo-journey name, kept for pre-sector agencies).
     sector: Mapped[str | None] = mapped_column(String(20))
+    # Provenance of the ROW ITSELF (note Eric 26/07) : 'seed' = créé par un
+    # seed système (bibliothèque d'exemples, clones sectoriels offerts à la
+    # création d'agence, parcours démo legacy) ; 'user' = un geste réel de
+    # l'agence (création, clone/import — cloner un exemple est une action
+    # DÉLIBÉRÉE, donc 'user'). LE discriminant structurel du milestone
+    # d'onboarding « créer son parcours » — jamais le préfixe « [Exemple] »
+    # (texte affiché ≠ clé logique).
+    origin: Mapped[str] = mapped_column(
+        String(10), default="user", server_default=text("'user'"), nullable=False
+    )
     # Visual canvas editor (MVP-1): pure-presentation node positions,
     # { "<step_id>": {"x": float, "y": float} }. NULL = never opened in
     # canvas (the front auto-lays-out with dagre). Never affects journey

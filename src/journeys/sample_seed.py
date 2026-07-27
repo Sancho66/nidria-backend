@@ -14837,7 +14837,7 @@ async def _seed_one(db: AsyncSession, name: str, country: str, steps: list[_Step
         return
 
     tpl = JourneyTemplate(
-        id=uuid.uuid4(), agency_id=None, is_sample=True, name=name, country=country
+        id=uuid.uuid4(), agency_id=None, is_sample=True, origin="seed", name=name, country=country
     )
     db.add(tpl)
     await db.flush()  # template before its children FK it
