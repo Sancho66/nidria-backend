@@ -914,19 +914,28 @@ class CasesManager:
             invitation.status = InvitationStatus.CANCELLED.value
         return len(rows)
 
-    async def _get_or_create_member_account(self, email: str, full_name: str) -> ExpatUser:
+    async def _get_or_create_member_account(
+        self, agent: Agent, email: str, full_name: str
+    ) -> ExpatUser:
         """The member-account pivot, ONE implementation for creation AND email
         edition (Arthur): linked-or-created expat_user by email, NEVER a blind
         insert — the email is globally unique, an existing user of ANOTHER
-        agency is reused (one login, every dossier in its own context)."""
+        agency is reused (one login, every dossier in its own context).
+
+        Language (décision 27/07): the person's OWN language when known — an
+        EXISTING account keeps its preferred_lang untouched — else the
+        agency's default_language seeds the NEW account (it used to be the
+        system 'fr': an English agency's member got a French invite)."""
         expat = await self.repo.get_expat_by_email(email)
         if expat is None:
+            agency = await self.repo.get_agency(agent.agency_id)
             first, _, last = full_name.partition(" ")
             expat = self.repo.add_expat(
                 first_name=first or full_name,
                 last_name=last,
                 email=email,
-                preferred_lang=DEFAULT_LANG,
+                preferred_lang=(agency.default_language if agency else DEFAULT_LANG)
+                or DEFAULT_LANG,
             )
             await self.db.flush()
         return expat
@@ -942,7 +951,9 @@ class CasesManager:
         # function (_get_or_create_member_account), never a copy.
         expat: ExpatUser | None = None
         if payload.email is not None:
-            expat = await self._get_or_create_member_account(payload.email, payload.full_name)
+            expat = await self._get_or_create_member_account(
+                agent, payload.email, payload.full_name
+            )
         person = self.repo.add_person(
             case_id=case.id,
             kind=CasePersonKind.FAMILY.value,
@@ -1046,7 +1057,7 @@ class CasesManager:
             new_email = provided["email"]
             if person.expat_user_id is None:
                 expat = await self._get_or_create_member_account(
-                    new_email, person.full_name or new_email
+                    agent, new_email, person.full_name or new_email
                 )
                 person.expat_user_id = expat.id
                 invite_mail = await self._prepare_member_invite(agent, case, new_email, expat)
@@ -1099,7 +1110,9 @@ class CasesManager:
                     fallback_name = person.full_name or (
                         f"{current.first_name} {current.last_name}" if current else new_email
                     )
-                    expat = await self._get_or_create_member_account(new_email, fallback_name)
+                    expat = await self._get_or_create_member_account(
+                        agent, new_email, fallback_name
+                    )
                     person.expat_user_id = expat.id
                     if person.kind == CasePersonKind.PRINCIPAL.value:
                         case.principal_expat_user_id = expat.id
@@ -1130,6 +1143,13 @@ class CasesManager:
         if invite_mail is not None:
             await asyncio.to_thread(send_email, *invite_mail)  # best-effort, after commit
         await progress.send_pending(pending)
+        # expire_on_commit=False + identity map: this person was first loaded
+        # WITH expat_user=None, and a selectinload never overwrites an
+        # already-loaded relationship — after an email link-or-create, the
+        # response would deny the account it just created (client_space_state
+        # null on a live invitation). Expire the relationship so the reload
+        # repopulates it. Pinned by test_member_access_email.
+        self.db.expire(person, ["expat_user"])
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
         response = self._person_response(
