@@ -10,9 +10,11 @@ from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 class CaseStepRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A CONCRETE requirement, materialized when a step becomes active
     on a case (NEW WAVE). Reads the case composition AT THAT INSTANT:
-    one row per (requirement, targeted person). FROZEN — later changes
-    to the case composition never add/remove concrete requirements on an
-    already-activated step.
+    one row per (requirement, targeted person). Composition catch-ups
+    (2026-07-27, fin du gel) : a person ADDED later gains their
+    `each_person` rows on the ACTIVE steps (materialize_for_person, wired
+    to add_person) ; a person REMOVED takes her rows with her (person_id
+    CASCADE). A DONE step is never touched (it catches up at reopen).
 
     `kind`/`reference` are SNAPSHOTTED from the definition (stable even
     if the definition changes or is deleted). `step_requirement_id` is

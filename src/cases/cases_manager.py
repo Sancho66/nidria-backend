@@ -11,11 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
+from shared.models.case_step_progress import CaseStepProgress
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.invitation import CaseInvitation
+from shared.models.journey import JourneyTemplateStep
 from src.activity.activity_manager import ActivityManager
 from src.cases.case_export import build_case_pdf
 from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
@@ -53,7 +56,12 @@ from src.core.exceptions import (
     TooManyRequestsError,
     ValidationError,
 )
-from src.core.i18n import DEFAULT_LANG, resolve_i18n, resolve_notification_lang_client
+from src.core.i18n import (
+    DEFAULT_LANG,
+    resolve_i18n,
+    resolve_notification_lang_client,
+    resolve_step_name_for_notif,
+)
 from src.core.notification_window import record_send
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
@@ -64,6 +72,7 @@ from src.custom_fields.custom_fields_validation import validate_and_merge, visib
 from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
+from src.progress.requirements_eval import is_provided
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
@@ -964,6 +973,11 @@ class CasesManager:
         )
         self._apply_civil_fields(person, payload)
         await self.db.flush()
+        # Fin du gel de composition (Nicolas, repro b) : la personne ajoutée
+        # gagne ses lignes each_person sur les étapes déjà actives, dans
+        # CETTE transaction — les deux chemins d'ajout (assistant de création
+        # et fiche) convergent ici.
+        await ProgressManager(self.db).materialize_for_person(case, person)
         self._log(case.id, agent, "person.added", {"person_id": str(person.id)})
         mail = (
             await self._prepare_member_invite(agent, case, payload.email, expat)
@@ -978,6 +992,62 @@ class CasesManager:
         return self._person_response(
             reloaded, definitions, await self._pending_invitations(case.id)
         )
+
+    async def _member_pending_items(
+        self, case: ClientCase, expat: ExpatUser, lang: str
+    ) -> list[tuple[str, int]]:
+        """(resolved step name, pending count) for THIS person's own
+        requirement rows — the invitation's « déjà attendu de vous » block
+        (lot 27/07). The invitation is the ONLY mail a non-activated member
+        ever gets (NID-23 stops relances toward a locked door), so it
+        carries the reason to come in. Reads the SAME evaluation as the
+        space (is_provided) — the mail can never claim a piece the space
+        shows as provided. The rows exist thanks to materialize_for_person
+        (same transaction on the add path). Inline queries: cases_repository
+        is frozen."""
+        person = (
+            (
+                await self.db.execute(
+                    select(CasePerson).where(
+                        CasePerson.case_id == case.id, CasePerson.expat_user_id == expat.id
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if person is None:
+            return []
+        rows = (
+            await self.db.execute(
+                select(CaseStepRequirement, JourneyTemplateStep)
+                .join(
+                    CaseStepProgress,
+                    CaseStepProgress.id == CaseStepRequirement.case_step_progress_id,
+                )
+                .join(
+                    JourneyTemplateStep,
+                    JourneyTemplateStep.id == CaseStepProgress.template_step_id,
+                )
+                .where(
+                    CaseStepProgress.case_id == case.id,
+                    CaseStepRequirement.person_id == person.id,
+                )
+                .order_by(JourneyTemplateStep.position)
+            )
+        ).all()
+        ordered: list[tuple[uuid.UUID, str]] = []
+        counts: dict[uuid.UUID, int] = {}
+        for requirement, step in rows:
+            if is_provided(requirement, person):
+                continue
+            if step.id not in counts:
+                counts[step.id] = 0
+                ordered.append(
+                    (step.id, resolve_step_name_for_notif(step.name_i18n, step.name, lang))
+                )
+            counts[step.id] += 1
+        return [(name, counts[step_id]) for step_id, name in ordered]
 
     async def _prepare_member_invite(
         self,
@@ -1010,12 +1080,20 @@ class CasesManager:
         lang = resolve_notification_lang_client(expat.preferred_lang)
         agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
         journey_name = await self._journey_name(agent, case, lang, agency_default)
+        # « Déjà attendu de vous » : les pièces pendantes de CETTE personne,
+        # par étape — le seul mail qu'un membre non activé recevra (NID-23).
+        pending_items = await self._member_pending_items(case, expat, lang)
         if expat.activated_at is None:
             link = space_link(
                 settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
             )
             content = expat_activation_email(
-                agency_name, link, settings.case_invitation_expires_days, journey_name, lang
+                agency_name,
+                link,
+                settings.case_invitation_expires_days,
+                journey_name,
+                lang,
+                pending_items=pending_items,
             )
         else:
             content = new_case_email(
@@ -1023,6 +1101,7 @@ class CasesManager:
                 space_link(settings.frontend_url, "/space/login", agency_slug),
                 journey_name,
                 lang,
+                pending_items=pending_items,
             )
         return email, content.subject, content.text, content.html
 

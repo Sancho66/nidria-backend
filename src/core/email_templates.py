@@ -476,20 +476,57 @@ _NEW_CASE = {
 }
 
 
+# The MEMBER invitation's "pieces already expected from you" block (lot
+# 2026-07-27): the invitation is the ONLY mail a non-activated member will
+# ever get (NID-23 stops relances toward a locked door), so it carries the
+# reason to come in. Same register as the journey kickoff: per-step COUNTS,
+# never itemized labels (a document reference is agency free text, a field
+# reference is a technical key — the space shows the detail, live).
+_MEMBER_PENDING = {
+    "fr": {"intro": "Des éléments sont déjà attendus de votre part :"},
+    "en": {"intro": "Some items are already expected from you:"},
+    "es": {"intro": "Ya se esperan elementos de usted:"},
+    "ru": {"intro": "От вас уже ожидаются документы:"},
+    "pt": {"intro": "Já aguardamos elementos seus:"},
+    "it": {"intro": "Alcuni elementi sono già attesi da te:"},
+    "hu": {"intro": "Már várunk Öntől elemeket:"},
+}
+
+
+def _pending_block(pending_items: list[tuple[str, int]] | None, lang: str) -> str | None:
+    """body_text for the member invitation: one intro line + the kickoff's
+    per-step line format (shared wording, one plural style per language).
+    None when nothing is pending — the mail stays byte-identical."""
+    if not pending_items:
+        return None
+    line = _pick(_JOURNEY_KICKOFF, lang)["line"]
+    intro = _pick(_MEMBER_PENDING, lang)["intro"]
+    return (
+        intro
+        + "\n"
+        + "\n".join(line.format(step=step, count=count) for step, count in pending_items)
+    )
+
+
 def expat_activation_email(
     agency_name: str,
     link: str,
     expires_days: int,
     journey_name: str | None = None,
     lang: str = "fr",
+    pending_items: list[tuple[str, int]] | None = None,
 ) -> EmailContent:
     """Client activation invite, rendered in the recipient language. The
-    intro carries the journey name (resolved) or the neutral fallback."""
+    intro carries the journey name (resolved) or the neutral fallback.
+    `pending_items` ((step name, count) per step): the MEMBER variant lists
+    what is already expected from THIS person — absent for the principal
+    (the kickoff mail covers them) and when nothing is pending."""
     s = _pick(_CASE_ACTIVATION, lang)
     return _render(
         subject=s["subject"].format(agency=agency_name),
         title=s["title"].format(agency=agency_name),
         intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
+        body_text=_pending_block(pending_items, lang),
         button_label=s["button"],
         button_url=link,
         validity=s["expires"].format(days=expires_days),
@@ -502,14 +539,17 @@ def new_case_email(
     login_link: str,
     journey_name: str | None = None,
     lang: str = "fr",
+    pending_items: list[tuple[str, int]] | None = None,
 ) -> EmailContent:
     """ "A new case awaits you", for an already-active client, in their
-    language, carrying the journey name or the neutral fallback."""
+    language, carrying the journey name or the neutral fallback. Same
+    optional `pending_items` block as the activation variant."""
     s = _pick(_NEW_CASE, lang)
     return _render(
         subject=s["subject"].format(agency=agency_name),
         title=s["title"].format(agency=agency_name),
         intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
+        body_text=_pending_block(pending_items, lang),
         button_label=s["button"],
         button_url=login_link,
         lang=lang,

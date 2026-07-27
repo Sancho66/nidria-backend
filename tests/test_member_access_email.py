@@ -11,6 +11,8 @@ jamais d'email de membre : le formulaire ne collecte pas d'adresse — la
 personne naît sans compte, il n'y a littéralement rien à envoyer (témoin 3).
 """
 
+from datetime import UTC, datetime
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -216,3 +218,159 @@ async def test_new_member_account_speaks_the_agency_language(
     )
     assert r2.status_code == 201, r2.text
     assert 'html lang="ru"' in email.outbox[0].html
+
+
+# --- (5) l'invitation liste les pièces déjà attendues du membre (lot 27/07) ----------
+
+
+async def _case_with_each_person_step(
+    client: AsyncClient,
+    admin: Agent,
+    headers: dict[str, str],
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    email_addr: str,
+) -> ClientCase:
+    """Parcours dont l'étape 1 est ACTIVE avec 2 pièces each_person + 1 kbis
+    principal — le décor du bloc « déjà attendu de vous »."""
+    template = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    step = (
+        await client.post(
+            f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Collecte"}
+        )
+    ).json()
+    for ref, scope in [
+        ("Passeport", "each_person"),
+        ("Justificatif", "each_person"),
+        ("Kbis", "principal"),
+    ]:
+        r = await client.post(
+            f"/journeys/{template['id']}/steps/{step['id']}/requirements",
+            headers=headers,
+            json={"kind": "document", "reference": ref, "scope": scope},
+        )
+        assert r.status_code == 201, r.text
+    principal = await make_expat_user(activated=True, email=email_addr)
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
+    )
+    timeline = (
+        await client.post(
+            f"/cases/{case.id}/journey",
+            headers=headers,
+            json={"journey_template_id": template["id"]},
+        )
+    ).json()
+    r = await client.patch(
+        f"/cases/{case.id}/steps/{timeline[0]['id']}",
+        headers=headers,
+        json={"status": "in_progress"},
+    )
+    assert r.status_code == 200, r.text
+    return case
+
+
+async def test_member_invitation_lists_their_pending_pieces(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """L'invitation est le SEUL mail qu'un membre non activé recevra (NID-23
+    coupe les relances) : elle porte la raison d'entrer — SES pièces, par
+    étape, au registre du kickoff (comptes par étape, jamais de libellés).
+    Dépend du lot 1 : les lignes naissent dans la même transaction."""
+    headers = agent_headers(admin)
+    case = await _case_with_each_person_step(
+        client, admin, headers, make_client_case, make_expat_user, "kick-principal@example.com"
+    )
+    email.outbox.clear()
+
+    r = await client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={
+            "full_name": "Assoc Kick",
+            "relationship": "associate",
+            "email": "assoc-kick@example.com",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert [m.to for m in email.outbox] == ["assoc-kick@example.com"]
+    body = email.outbox[0].body
+    # SES 2 pièces each_person, comptées par étape — jamais le Kbis du
+    # principal (3 aurait trahi une fuite de périmètre).
+    assert "Des éléments sont déjà attendus de votre part" in body
+    assert "Collecte : 2 élément(s)" in body
+
+
+async def test_member_invitation_stays_bare_when_nothing_is_pending(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    case: ClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Dossier sans exigence each_person (fixture sans parcours actif) : le
+    mail reste identique à avant — pas de section vide (règle du kickoff)."""
+    r = await client.post(
+        f"/cases/{case.id}/persons",
+        headers=agent_headers(admin),
+        json={
+            "full_name": "Sans Piece",
+            "relationship": "associate",
+            "email": "sans-piece@example.com",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert [m.to for m in email.outbox] == ["sans-piece@example.com"]
+    assert "attendus de votre part" not in email.outbox[0].body
+
+
+async def test_resend_invitation_also_lists_the_pending_pieces(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Le renvoi (NID-23) passe par le même _prepare_member_invite : le lien
+    ranimé porte lui aussi la raison d'entrer."""
+    from src.cases.cases_manager import RESEND_COOLDOWN
+
+    headers = agent_headers(admin)
+    case = await _case_with_each_person_step(
+        client, admin, headers, make_client_case, make_expat_user, "kick2-principal@example.com"
+    )
+    created = await client.post(
+        f"/cases/{case.id}/persons",
+        headers=headers,
+        json={
+            "full_name": "Assoc Resend",
+            "relationship": "associate",
+            "email": "assoc-resend@example.com",
+        },
+    )
+    assert created.status_code == 201
+    # Passe le cooldown : vieillit la première invitation.
+    from sqlalchemy import update as sa_update
+
+    from shared.models.invitation import CaseInvitation as CI
+
+    await db_session.execute(
+        sa_update(CI)
+        .where(CI.case_id == case.id, CI.email == "assoc-resend@example.com")
+        .values(created_at=datetime.now(UTC) - RESEND_COOLDOWN * 2)
+    )
+    await db_session.commit()
+    email.outbox.clear()
+
+    r = await client.post(
+        f"/cases/{case.id}/persons/{created.json()['id']}/resend-invitation",
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert [m.to for m in email.outbox] == ["assoc-resend@example.com"]
+    assert "Collecte : 2 élément(s)" in email.outbox[0].body

@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.journey import JourneyStepParticipant, JourneyTemplateStep
@@ -442,6 +443,45 @@ class ProgressManager:
             await self.db.flush()  # the new row must be visible to the sync below
             await self._sync_case_status(case)
         return len(cases)
+
+    async def materialize_for_person(self, case: ClientCase, person: CasePerson) -> int:
+        """Fin du gel de composition (ticket Nicolas 26/07, repro b) : une
+        personne AJOUTÉE au dossier gagne ses lignes `each_person` sur chaque
+        étape dont l'instance est actuellement IN_PROGRESS. Même contrat que
+        le backfill point-8, un axe plus loin (définition nouvelle ↔ personne
+        nouvelle) : les étapes TODO n'ont besoin de rien (elles matérialisent
+        à l'activation, en lisant la composition d'alors), les étapes DONE ne
+        sont jamais rendues incomplètes (elles rattrapent au reopen). Les
+        définitions `principal` ne visent jamais un membre. Idempotent —
+        garde en code sur la clé (progress, person, kind, reference), doublée
+        par uq_case_step_requirement. PAS de commit : la transaction de
+        l'appelant (add_person)."""
+        rows = await self.repo.list_progress_for_case(case.id)
+        active = [r for r in rows if r.status == StepStatus.IN_PROGRESS.value]
+        if not active:
+            return 0
+        existing = await self.repo.list_case_requirements_for_progress_ids([r.id for r in active])
+        taken = {(r.case_step_progress_id, r.person_id, r.kind, r.reference) for r in existing}
+        created = 0
+        for row in active:
+            for definition in await self.repo.list_step_requirements(row.template_step_id):
+                if definition.scope != StepRequirementScope.EACH_PERSON.value:
+                    continue
+                key = (row.id, person.id, definition.kind, definition.reference)
+                if key in taken:
+                    continue
+                taken.add(key)
+                self.repo.add_case_requirement(
+                    case_step_progress_id=row.id,
+                    step_requirement_id=definition.id,
+                    person_id=person.id,
+                    kind=definition.kind,
+                    reference=definition.reference,
+                    scope=definition.scope,
+                    status=RequirementStatus.PENDING.value,
+                )
+                created += 1
+        return created
 
     async def backfill_requirements(
         self, agent: Agent, requirement: StepRequirement
@@ -1090,13 +1130,15 @@ class ProgressManager:
     async def _sync_missing_requirements(self, row: CaseStepProgress) -> int:
         """Diff-materialization (point 8): each definition WITHOUT a
         concrete row on this progress materializes against the case
-        composition NOW; a definition that already has one is FROZEN —
-        the composition freeze stands, a later-added person never gains
-        a row on an already-materialized definition. Row-level guard on
-        the instance unique key → idempotent, never a duplicate, never
-        a touched answer. Serves the activation (everything missing →
-        full materialization, unchanged behaviour), the reopen re-sync
-        and the add_requirement backfill. Returns the rows created."""
+        composition NOW; a definition that already has one is FROZEN at
+        THIS level — this function never revisits it. The person axis has
+        its own catch-up since 2026-07-27 (fin du gel de composition) :
+        a newcomer's each_person rows are added by materialize_for_person,
+        wired to add_person. Row-level guard on the instance unique key →
+        idempotent, never a duplicate, never a touched answer. Serves the
+        activation (everything missing → full materialization, unchanged
+        behaviour), the reopen re-sync and the add_requirement backfill.
+        Returns the rows created."""
         definitions = await self.repo.list_step_requirements(row.template_step_id)
         if not definitions:
             return 0
