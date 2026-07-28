@@ -35,6 +35,12 @@ class RequirementStateResponse(BaseModel):
     # principal | each_person for person requirements; None for
     # case-level (a case field has a single case-wide value, no scope).
     scope: str | None
+    # E-signature (TEMPS 2, 28/07) : une ligne signable se fournit en
+    # SIGNANT. `signature_status` = le statut du siège de signataire
+    # (pending|signed|declined) ; None sur une ligne non signable — et sur
+    # une ligne signable jamais assise (flag éteint à l'activation).
+    signature_required: bool = False
+    signature_status: str | None = None
     status: str  # pending / provided (computed)
     # Live value at the source (case_person / client_case) for fields;
     # None for documents and when pending.
@@ -124,6 +130,12 @@ class StepProgressResponse(BaseModel):
     participants: list[StepParticipantResponse]
     requirements: list[RequirementStateResponse]
     all_requirements_met: bool
+    # Agrégat signatures de l'étape (le « Signé 2/3 » du front) : signed =
+    # lignes signables fournies (la vérité de complétude — une signable ne
+    # se fournit qu'en signant), total = lignes signables. 0/0 sans
+    # document signable.
+    signature_signed_count: int = 0
+    signature_total: int = 0
     # VAGUE 5: non-deleted comment count for a "X messages" badge without
     # listing the thread (batched COUNT, no N+1).
     comment_count: int

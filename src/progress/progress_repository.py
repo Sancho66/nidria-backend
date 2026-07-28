@@ -498,3 +498,20 @@ class ProgressRepository:
         first = principal[0] if principal is not None else None
         last = principal[1] if principal is not None else None
         return first, last, journey_name, journey_name_i18n
+
+    async def signer_status_by_requirement(self, case_id: uuid.UUID) -> dict[uuid.UUID, str]:
+        """E-signature (TEMPS 2) : statut du siège de signataire par ligne
+        d'exigence signable du dossier — itéré par création de demande, la
+        plus récente gagne (annulée puis recréée → le siège vivant)."""
+        from shared.models.signature import SignatureRequest, SignatureSigner
+
+        rows = await self.db.execute(
+            select(SignatureSigner.case_step_requirement_id, SignatureSigner.status)
+            .join(SignatureRequest, SignatureRequest.id == SignatureSigner.signature_request_id)
+            .where(
+                SignatureRequest.case_id == case_id,
+                SignatureSigner.case_step_requirement_id.is_not(None),
+            )
+            .order_by(SignatureRequest.created_at)
+        )
+        return {row_id: status for row_id, status in rows if row_id is not None}

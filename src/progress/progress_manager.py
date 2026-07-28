@@ -629,6 +629,11 @@ class ProgressManager:
         }
         reqs_by_progress: dict[uuid.UUID, list[RequirementStateResponse]] = defaultdict(list)
         met_by_progress: dict[uuid.UUID, bool] = {}
+        # E-signature (TEMPS 2) : statut du siège par ligne signable — UNE
+        # requête pour le dossier ; itérée par created_at, la demande la
+        # plus récente gagne (une annulée puis recréée lit le siège vivant).
+        signer_status_by_row = await self.repo.signer_status_by_requirement(case.id)
+        signature_counts: dict[uuid.UUID, list[int]] = defaultdict(lambda: [0, 0])
         for req in concrete:
             # Defense in depth: an orphaned instance (step_requirement_id NULL —
             # its template definition was deleted) is NEVER projected, on any of
@@ -645,6 +650,10 @@ class ProgressManager:
                 req.kind == StepRequirementKind.CUSTOM_FIELD.value
                 and req.reference not in active_keys
             )
+            if req.signature_required:
+                signature_counts[req.case_step_progress_id][1] += 1
+                if provided:
+                    signature_counts[req.case_step_progress_id][0] += 1
             reqs_by_progress[req.case_step_progress_id].append(
                 RequirementStateResponse(
                     id=req.id,
@@ -653,6 +662,8 @@ class ProgressManager:
                     kind=req.kind,
                     reference=req.reference,
                     scope=req.scope,
+                    signature_required=req.signature_required,
+                    signature_status=signer_status_by_row.get(req.id),
                     status=(
                         RequirementStatus.PROVIDED.value
                         if provided
@@ -753,6 +764,8 @@ class ProgressManager:
                     ],
                     requirements=reqs_by_progress.get(row.id, []),
                     all_requirements_met=met_by_progress.get(row.id, True),
+                    signature_signed_count=signature_counts[row.id][0],
+                    signature_total=signature_counts[row.id][1],
                     comment_count=comment_counts.get(row.id, 0),
                     due_at=row.due_at,
                     counter=_deadline_counter(

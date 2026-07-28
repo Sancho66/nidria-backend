@@ -225,6 +225,11 @@ class AgencyResponse(BaseModel):
     # Filled on GET /agencies/me only (the settings read); other call
     # sites leave it None.
     subscription: AgencySubscriptionInfo | None = None
+    # E-signatures (TEMPS 2, 28/07) : le flag GLOBAL, servi à tout agent —
+    # le front ancre ici l'affichage de la feature (précédent
+    # trial_ends_at : ce payload n'est pas manager-gated). Rempli sur
+    # GET/PATCH /agencies/me.
+    signatures_enabled: bool = False
     # The agency's OWN client terms, when it published some — NULL means
     # "none, my clients see Nidria's". Filled on GET /agencies/me only, so
     # the Settings textarea can show what is currently in force (a written

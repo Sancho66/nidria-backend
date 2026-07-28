@@ -9047,6 +9047,95 @@
         }
       }
     },
+    "/agencies/me/signature-credits": {
+      "get": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "My Signature Credits",
+        "description": "Solde + seuil + grille des packs — lisible par tout agent (voir\nBINDINGS). Répond aussi flag éteint (0/0, grille vide ou non — le front\ngate l'affichage sur agencies/me.signatures_enabled).",
+        "operationId": "my_signature_credits_agencies_me_signature_credits_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureCreditsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/agencies/me/signature-credits/entries": {
+      "get": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "My Signature Credit Entries",
+        "description": "Le ledger paginé (écran facturation, agency.manage) — plus récent\nd'abord, id en départage (leçon Prism : pagination stable).",
+        "operationId": "my_signature_credit_entries_agencies_me_signature_credits_entries_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureCreditEntriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/members/{agent_id}/impersonate": {
       "post": {
         "tags": [
@@ -15542,6 +15631,11 @@
               }
             ]
           },
+          "signatures_enabled": {
+            "type": "boolean",
+            "title": "Signatures Enabled",
+            "default": false
+          },
           "client_terms_md": {
             "anyOf": [
               {
@@ -20715,6 +20809,18 @@
             "format": "uuid",
             "title": "Request Id"
           },
+          "requirement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Id"
+          },
           "reference": {
             "type": "string",
             "title": "Reference"
@@ -20767,6 +20873,7 @@
         "required": [
           "signer_id",
           "request_id",
+          "requirement_id",
           "reference",
           "status",
           "request_status",
@@ -26276,6 +26383,22 @@
             ],
             "title": "Scope"
           },
+          "signature_required": {
+            "type": "boolean",
+            "title": "Signature Required",
+            "default": false
+          },
+          "signature_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Status"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -27145,6 +27268,137 @@
         ],
         "title": "Sex"
       },
+      "SignatureCreditEntriesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SignatureCreditEntryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "SignatureCreditEntriesResponse"
+      },
+      "SignatureCreditEntryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "signature_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Request Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "amount",
+          "signature_request_id",
+          "created_at",
+          "details"
+        ],
+        "title": "SignatureCreditEntryResponse"
+      },
+      "SignatureCreditPackResponse": {
+        "properties": {
+          "price_id": {
+            "type": "string",
+            "title": "Price Id"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "price_id",
+          "credits"
+        ],
+        "title": "SignatureCreditPackResponse",
+        "description": "Un pack de la grille (config SIGNATURE_CREDIT_PACKS) — le prix vit\nchez Paddle, on expose price_id + crédits."
+      },
+      "SignatureCreditsResponse": {
+        "properties": {
+          "available": {
+            "type": "integer",
+            "title": "Available"
+          },
+          "reserved": {
+            "type": "integer",
+            "title": "Reserved"
+          },
+          "low_threshold": {
+            "type": "integer",
+            "title": "Low Threshold"
+          },
+          "packs": {
+            "items": {
+              "$ref": "#/components/schemas/SignatureCreditPackResponse"
+            },
+            "type": "array",
+            "title": "Packs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "reserved",
+          "low_threshold",
+          "packs"
+        ],
+        "title": "SignatureCreditsResponse",
+        "description": "GET /agencies/me/signature-credits — lisible par TOUT agent :\nl'activation d'une étape signable peut échouer sur le solde, chacun\ndoit pouvoir le lire (précédent trial_ends_at)."
+      },
       "SignatureLevel": {
         "type": "string",
         "enum": [
@@ -27746,6 +28000,16 @@
           "all_requirements_met": {
             "type": "boolean",
             "title": "All Requirements Met"
+          },
+          "signature_signed_count": {
+            "type": "integer",
+            "title": "Signature Signed Count",
+            "default": 0
+          },
+          "signature_total": {
+            "type": "integer",
+            "title": "Signature Total",
+            "default": 0
           },
           "comment_count": {
             "type": "integer",

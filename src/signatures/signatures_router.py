@@ -19,20 +19,30 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
+from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.expat_user import ExpatUser
 from shared.models.signature import SignatureRequest, SignatureSigner
 from src.core.config import get_settings
-from src.core.dependencies import get_current_expat, get_db
+from src.core.dependencies import get_current_agent, get_current_expat, get_db
 from src.core.enums import Audience, CasePersonKind
 from src.core.exceptions import UnauthorizedError
 from src.core.rbac.baseline import RouteBinding
+from src.core.rbac.permissions import Permission
 from src.signatures.signatures_manager import SignaturesWebhookManager
-from src.signatures.signatures_schema import ExpatSignatureResponse, WebhookAckResponse
+from src.signatures.signatures_schema import (
+    ExpatSignatureResponse,
+    SignatureCreditEntriesResponse,
+    SignatureCreditEntryResponse,
+    SignatureCreditPackResponse,
+    SignatureCreditsResponse,
+    WebhookAckResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +53,21 @@ BINDINGS = [
     # vérifié dans le handler sur la requête brute.
     RouteBinding("POST", "/webhooks/docuseal", Audience.PUBLIC),
     RouteBinding("GET", "/expat/cases/{case_id}/signatures", Audience.EXPAT),
+    # TEMPS 2 : solde lisible par TOUT agent (l'activation d'étape peut
+    # échouer sur le solde — précédent trial_ends_at) ; les écritures sont
+    # une surface facturation → agency.manage.
+    RouteBinding("GET", "/agencies/me/signature-credits", Audience.AGENT),
+    RouteBinding(
+        "GET",
+        "/agencies/me/signature-credits/entries",
+        Audience.AGENT,
+        Permission.AGENCY_MANAGE,
+    ),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 ExpatDep = Annotated[ExpatUser, Depends(get_current_expat)]
+AgentDep = Annotated[Agent, Depends(get_current_agent)]
 
 # Le header porteur du secret partagé — configuré à l'identique dans la
 # console webhook DocuSeal (leur mécanisme : en-têtes personnalisés).
@@ -119,6 +140,7 @@ async def my_signatures(
         ExpatSignatureResponse(
             signer_id=signer.id,
             request_id=request.id,
+            requirement_id=signer.case_step_requirement_id,
             reference=request.reference,
             status=signer.status,
             request_status=request.status,
@@ -128,3 +150,58 @@ async def my_signatures(
         )
         for signer, request in rows
     ]
+
+
+@router.get("/agencies/me/signature-credits", response_model=SignatureCreditsResponse)
+async def my_signature_credits(agent: AgentDep, db: DbDep) -> SignatureCreditsResponse:
+    """Solde + seuil + grille des packs — lisible par tout agent (voir
+    BINDINGS). Répond aussi flag éteint (0/0, grille vide ou non — le front
+    gate l'affichage sur agencies/me.signatures_enabled)."""
+    from src.signatures import ledger
+
+    available, reserved = await ledger.balance(db, agent.agency_id)
+    agency = await db.get(Agency, agent.agency_id)
+    packs = sorted(get_settings().signature_credit_packs.items(), key=lambda kv: kv[1])
+    return SignatureCreditsResponse(
+        available=available,
+        reserved=reserved,
+        low_threshold=ledger._low_threshold(agency),
+        packs=[
+            SignatureCreditPackResponse(price_id=price_id, credits=credits)
+            for price_id, credits in packs
+        ],
+    )
+
+
+@router.get("/agencies/me/signature-credits/entries", response_model=SignatureCreditEntriesResponse)
+async def my_signature_credit_entries(
+    agent: AgentDep,
+    db: DbDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> SignatureCreditEntriesResponse:
+    """Le ledger paginé (écran facturation, agency.manage) — plus récent
+    d'abord, id en départage (leçon Prism : pagination stable)."""
+    from shared.models.signature_credit import SignatureCreditEntry
+
+    base = select(SignatureCreditEntry).where(SignatureCreditEntry.agency_id == agent.agency_id)
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+    rows = (
+        (
+            await db.execute(
+                base.order_by(
+                    SignatureCreditEntry.created_at.desc(), SignatureCreditEntry.id.desc()
+                )
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return SignatureCreditEntriesResponse(
+        items=[SignatureCreditEntryResponse.model_validate(r) for r in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
