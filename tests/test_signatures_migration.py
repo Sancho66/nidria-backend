@@ -15,6 +15,7 @@ from alembic import command
 PARENT = "b2d8f4a6c0e2"
 LOT1 = "c4f0a2e8d6b0"
 LOT2 = "d6a2c8e4f0b2"
+LOT6 = "e8b4d0f6a2c4"
 
 
 @pytest.fixture(scope="module")
@@ -68,10 +69,13 @@ def test_signatures_roundtrip(alembic_db) -> None:
     assert not _has_column(engine, "step_requirement", "signature_required")
     assert not _has_table(engine, "signature_request")
 
-    command.upgrade(cfg, LOT2)
+    command.upgrade(cfg, LOT6)
     for table in ("step_requirement", "case_step_requirement"):
         assert _has_column(engine, table, "signature_required")
         assert _has_column(engine, table, "signature_level")
+        # LOT 6 : la source du document (chemin + nom), additive nullable.
+        assert _has_column(engine, table, "signature_document_path")
+        assert _has_column(engine, table, "signature_document_filename")
     for table in (
         "signature_request",
         "signature_signer",
@@ -133,6 +137,8 @@ def test_signatures_roundtrip(alembic_db) -> None:
 
     command.downgrade(cfg, PARENT)
     assert not _has_column(engine, "step_requirement", "signature_required")
+    assert not _has_column(engine, "step_requirement", "signature_document_path")
     assert not _has_table(engine, "signature_credit_entry")
-    command.upgrade(cfg, LOT2)
+    command.upgrade(cfg, LOT6)
     assert _has_table(engine, "signature_signer")
+    assert _has_column(engine, "case_step_requirement", "signature_document_path")

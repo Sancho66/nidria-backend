@@ -25,6 +25,10 @@ class ExpatSignatureResponse(BaseModel):
     embed_slug: str | None
     expires_at: datetime | None
     signed_at: datetime | None
+    # LOT 6 (point 3) : le « Signé n/m » de la demande — le principal voit
+    # « en attente des autres signataires » sans autre appel.
+    request_signed_count: int = 0
+    request_signer_total: int = 0
 
 
 class WebhookAckResponse(BaseModel):

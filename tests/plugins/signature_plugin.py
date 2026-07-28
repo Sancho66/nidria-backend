@@ -20,6 +20,7 @@ from src.signatures.provider import (
 )
 
 FAKE_PDF = b"%PDF-1.4 fake signed document"
+SOURCE_PDF = b"%PDF-1.4 contrat source agence"
 FAKE_AUDIT = b"%PDF-1.4 fake audit log"
 
 
@@ -36,6 +37,8 @@ class FakeProvider:
         self,
         *,
         document_name: str,
+        document_pdf: bytes,
+        document_filename: str,
         signers: list[ProviderSigner],
         expires_at: datetime | None,
     ) -> CreatedSubmission:
@@ -43,6 +46,8 @@ class FakeProvider:
         self.create_calls.append(
             {
                 "document_name": document_name,
+                "document_pdf": document_pdf,
+                "document_filename": document_filename,
                 "signers": signers,
                 "expires_at": expires_at,
                 "provider_ref": submission_ref,

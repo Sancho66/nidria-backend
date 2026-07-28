@@ -1340,6 +1340,56 @@ class JourneysManager:
             cases_total=len(cases_total),
         )
 
+    async def upload_signature_document(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        requirement_id: uuid.UUID,
+        filename: str,
+        content: bytes,
+        content_type: str | None,
+    ) -> StepRequirement:
+        """LOT 6 : le PDF que l'agence fait signer, attaché à l'exigence
+        SIGNABLE du template. Chaque upload écrit un NOUVEAU chemin de
+        stockage — les snapshots des dossiers en vol pointent l'ancien
+        fichier, jamais écrasé (le pattern re-upload = nouvelle clé).
+        PDF uniquement : on ne fait pas signer autre chose."""
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
+        if requirement is None:
+            raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
+        if not requirement.signature_required:
+            raise ValidationError(
+                "Only a signable requirement carries a document to sign.",
+                code="journey.signature_document_on_non_signable",
+            )
+        if not filename.lower().endswith(".pdf") or (
+            content_type is not None and content_type not in ("application/pdf",)
+        ):
+            raise ValidationError(
+                "The document to sign must be a PDF.",
+                code="journey.signature_document_not_pdf",
+            )
+        max_bytes = get_settings().max_document_size_mb * 1024 * 1024
+        if len(content) > max_bytes:
+            raise PayloadTooLargeError(
+                f"File exceeds the {get_settings().max_document_size_mb} MB limit."
+            )
+        from src.core import storage
+
+        path = (
+            f"journey-signatures/{template_id}/{requirement_id}/"
+            f"{uuid.uuid4()}/{storage.sanitize_filename(filename)}"
+        )
+        await asyncio.to_thread(storage.upload, path, content, "application/pdf")
+        requirement.signature_document_path = path
+        requirement.signature_document_filename = filename
+        await self.db.commit()
+        await self.db.refresh(requirement)
+        return requirement
+
     async def delete_requirement(
         self, agent: Agent, template_id: uuid.UUID, step_id: uuid.UUID, requirement_id: uuid.UUID
     ) -> None:

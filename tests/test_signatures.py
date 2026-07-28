@@ -39,7 +39,7 @@ from src.signatures import ledger
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase
 from tests.plugins.expat_plugin import MakeExpatUser
-from tests.plugins.signature_plugin import FAKE_PDF, FakeProvider
+from tests.plugins.signature_plugin import FAKE_PDF, SOURCE_PDF, FakeProvider
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline", "signatures_enabled")
 
@@ -83,6 +83,15 @@ async def _signable_case(
         },
     )
     assert r.status_code == 201, r.text
+    # LOT 6 : le PDF source est OBLIGATOIRE (on ne signe jamais un document
+    # vide) — le harnais l'uploade comme le ferait l'éditeur.
+    up = await client.post(
+        f"/journeys/{template['id']}/steps/{step['id']}/requirements/{r.json()['id']}"
+        "/signature-document",
+        headers=headers,
+        files={"file": ("statuts.pdf", SOURCE_PDF, "application/pdf")},
+    )
+    assert up.status_code == 200, up.text
     r = await client.post(
         f"/journeys/{template['id']}/steps/{step['id']}/requirements",
         headers=headers,

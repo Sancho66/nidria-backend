@@ -14,14 +14,14 @@ Constats de doc (docuseal.com/docs/api) :
   leurs URLs EXPIRENT : on télécharge les octets immédiatement, on ne
   stocke jamais une URL.
 
-Source du document (simplification assumée, au rapport) : les lots ne
-définissent pas d'où vient le PDF à signer — le provider compose donc un
-template minimal via POST /templates/html (titre = le libellé de
-l'exigence + un champ signature par signataire), puis crée la soumission
-dessus. Le jour où la vraie source existe (pièce du dossier, attachment
-d'étape), seul CE fichier change — le port et le domaine sont déjà prêts.
+Source du document (LOT 6) : le PDF de L'AGENCE, uploadé sur l'exigence
+signable du template et snapshoté à la matérialisation — le template
+DocuSeal naît de CE fichier (POST /templates/pdf, base64 + champs
+signature à zones explicites). Le fallback HTML minimal a DISPARU : on ne
+signe jamais un document vide.
 """
 
+import base64
 import logging
 from datetime import datetime
 from typing import Any
@@ -42,12 +42,24 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 30.0
 
 
-def _signature_field_html(role: str) -> str:
-    return (
-        f'<signature-field name="Signature — {role}" role="{role}" '
-        'style="width: 220px; height: 80px; display: inline-block; margin: 12px">'
-        "</signature-field>"
-    )
+def _signature_fields(roles: list[str]) -> list[dict[str, Any]]:
+    """Un champ signature par signataire, zones EXPLICITES empilées en bas
+    de la première page (constat doc : areas {x,y,w,h,page} ; les text
+    tags {{...}} ne valent que pour un PDF qui en contient — un contrat
+    d'agence arbitraire n'en a pas). Coordonnées à valider sur le sandbox
+    réel au branchement (nommé au rapport)."""
+    fields: list[dict[str, Any]] = []
+    for i, role in enumerate(roles):
+        fields.append(
+            {
+                "name": f"Signature — {role}",
+                "role": role,
+                "type": "signature",
+                "required": True,
+                "areas": [{"x": 60, "y": 620 + i * 90, "w": 220, "h": 70, "page": 1}],
+            }
+        )
+    return fields
 
 
 class DocuSealProvider:
@@ -102,17 +114,27 @@ class DocuSealProvider:
         self,
         *,
         document_name: str,
+        document_pdf: bytes,
+        document_filename: str,
         signers: list[ProviderSigner],
         expires_at: datetime | None,
     ) -> CreatedSubmission:
+        # LOT 6 : le template DocuSeal naît du PDF DE L'AGENCE (constat :
+        # POST /templates/pdf, file en base64) — on ne signe jamais un
+        # document vide, le fallback HTML minimal a disparu.
         roles = [f"Signer {i + 1}" for i in range(len(signers))]
-        fields_html = "".join(_signature_field_html(role) for role in roles)
         template = await self._request(
             "POST",
-            "/templates/html",
+            "/templates/pdf",
             json={
                 "name": document_name,
-                "html": f"<h1>{document_name}</h1>{fields_html}",
+                "documents": [
+                    {
+                        "name": document_filename,
+                        "file": base64.b64encode(document_pdf).decode("ascii"),
+                        "fields": _signature_fields(roles),
+                    }
+                ],
             },
         )
         payload: dict[str, Any] = {

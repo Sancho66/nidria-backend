@@ -64,6 +64,8 @@ class SignatureProvider(Protocol):
         self,
         *,
         document_name: str,
+        document_pdf: bytes,
+        document_filename: str,
         signers: list[ProviderSigner],
         expires_at: datetime | None,
     ) -> CreatedSubmission: ...

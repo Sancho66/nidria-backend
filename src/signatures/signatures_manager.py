@@ -28,12 +28,14 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.signature import SignatureRequest, SignatureSigner
+from src.core import storage
 from src.core.config import get_settings
 from src.core.enums import (
     ActorType,
@@ -41,6 +43,8 @@ from src.core.enums import (
     SignatureRequestStatus,
     SignatureSignerStatus,
 )
+from src.core.exceptions import ValidationError
+from src.signatures.flags import signatures_effectively_enabled
 from src.signatures.provider import ProviderSigner, get_provider
 from src.signatures.signatures_repository import SignaturesRepository
 
@@ -69,7 +73,8 @@ class SignaturesManager:
         une personne déjà assise sur une demande vivante de la même
         (étape, référence) n'est jamais réassise. Retourne le nombre de
         demandes envoyées."""
-        if not get_settings().signatures_enabled:
+        agency = await self.db.get(Agency, case.agency_id)
+        if not signatures_effectively_enabled(agency):
             return 0
         rows = (
             (
@@ -104,7 +109,8 @@ class SignaturesManager:
         """Fin du gel de composition, versant signatures : la personne
         ajoutée après l'activation reçoit SA demande par document signable
         (recréation, pas d'ajout au vol — voir docstring module)."""
-        if not get_settings().signatures_enabled:
+        agency = await self.db.get(Agency, case.agency_id)
+        if not signatures_effectively_enabled(agency):
             return 0
         sent = 0
         for req_row in created_rows:
@@ -164,9 +170,23 @@ class SignaturesManager:
 
         await reserve_credit(self.db, case.agency_id, request)
 
+        # LOT 6 — on ne signe JAMAIS un document vide : le PDF snapshoté est
+        # obligatoire à l'envoi (défense structurelle — l'assignation refuse
+        # déjà en amont ; ce chemin attrape l'exigence ajoutée après coup).
+        document_path = req_rows[0].signature_document_path
+        document_filename = req_rows[0].signature_document_filename or f"{reference}.pdf"
+        if not document_path:
+            raise ValidationError(
+                f"Signable requirement {reference!r} has no document to sign.",
+                code="journey.signature_document_missing",
+                params={"reference": reference},
+            )
+        document_pdf = await asyncio.to_thread(storage.download, document_path)
         provider_signers = await self._provider_signers(case, signers)
         created = await get_provider().create(
             document_name=reference,
+            document_pdf=document_pdf,
+            document_filename=document_filename,
             signers=provider_signers,
             expires_at=expires_at,
         )

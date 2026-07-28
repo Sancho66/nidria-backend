@@ -106,12 +106,15 @@ async def my_signatures(
     if not get_settings().signatures_enabled:
         return []
     from src.expat.expat_manager import ExpatPortalManager
+    from src.signatures.flags import signatures_effectively_enabled
 
     # Le harnais d'accès existant : principal OU membre du dossier, 404
     # non-révélateur sinon. viewing_person est None pour le PRINCIPAL —
     # on résout alors SA case_person : le slug est PERSONNEL, personne ne
     # voit ni n'obtient la ligne d'un autre (le principal inclus).
-    case, _agency, viewing_person = await ExpatPortalManager(db)._get_viewing_case(expat, case_id)
+    case, agency, viewing_person = await ExpatPortalManager(db)._get_viewing_case(expat, case_id)
+    if not signatures_effectively_enabled(agency):
+        return []  # sous-interrupteur agence coupé : la face client se tait
     person_id = viewing_person.id if viewing_person is not None else None
     if person_id is None:
         person_id = (
@@ -136,6 +139,23 @@ async def my_signatures(
             .order_by(SignatureRequest.created_at)
         )
     ).all()
+    # LOT 6 (point 3) : le « Signé n/m » de chaque demande — le principal
+    # voit « en attente des autres signataires ». Une requête groupée.
+    counts: dict[uuid.UUID, tuple[int, int]] = {}
+    if rows:
+        from sqlalchemy import case as sa_case
+
+        signed_expr = sa_case((SignatureSigner.status == "signed", 1), else_=0)
+        count_rows = await db.execute(
+            select(
+                SignatureSigner.signature_request_id,
+                func.sum(signed_expr),
+                func.count(),
+            )
+            .where(SignatureSigner.signature_request_id.in_([req.id for _s, req in rows]))
+            .group_by(SignatureSigner.signature_request_id)
+        )
+        counts = {rid: (int(signed), int(total)) for rid, signed, total in count_rows}
     return [
         ExpatSignatureResponse(
             signer_id=signer.id,
@@ -147,6 +167,8 @@ async def my_signatures(
             embed_slug=signer.provider_slug,
             expires_at=request.expires_at,
             signed_at=signer.signed_at,
+            request_signed_count=counts.get(request.id, (0, 0))[0],
+            request_signer_total=counts.get(request.id, (0, 0))[1],
         )
         for signer, request in rows
     ]

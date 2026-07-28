@@ -32,7 +32,6 @@ from src.agencies.agencies_schema import (
 )
 from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
-from src.core.config import get_settings
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
@@ -41,6 +40,7 @@ from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.referral.referral_manager import ReferralManager
 from src.referral.referral_schema import ReferrerViewResponse
+from src.signatures.flags import signatures_effectively_enabled
 
 router = APIRouter(prefix="/agencies", tags=["agencies"])
 
@@ -265,7 +265,9 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     response.subscription = await manager.subscription_info(agency)
     response.notification_prefs = effective_client_prefs(agency)
     response.client_terms_md = await manager.own_client_terms(agency)
-    response.signatures_enabled = get_settings().signatures_enabled
+    # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
+    # front n'a qu'une vérité à lire.
+    response.signatures_enabled = signatures_effectively_enabled(agency)
     return response
 
 
@@ -298,7 +300,9 @@ async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep
     # leaves it None. Same source as the GET (own_client_terms), so the two
     # can never disagree about what is in force.
     response.client_terms_md = await manager.own_client_terms(agency)
-    response.signatures_enabled = get_settings().signatures_enabled
+    # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
+    # front n'a qu'une vérité à lire.
+    response.signatures_enabled = signatures_effectively_enabled(agency)
     # Same rule for the EFFECTIVE client prefs (defaults merged): this PATCH
     # writes them, so it answers them. Same function as the GET, so a
     # patched pref reads back identically on both routes.

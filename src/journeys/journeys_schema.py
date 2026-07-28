@@ -329,6 +329,10 @@ class StepRequirementResponse(BaseModel):
     position: int
     signature_required: bool
     signature_level: str
+    # LOT 6 : le PDF à signer est posé ? (nom affichable ; le chemin de
+    # stockage reste interne). None = pas encore uploadé — l'assignation
+    # du parcours refusera tant que c'est vide.
+    signature_document_filename: str | None = None
 
 
 class StepOrderRequest(BaseModel):

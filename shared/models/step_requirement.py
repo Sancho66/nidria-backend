@@ -39,3 +39,10 @@ class StepRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     signature_level: Mapped[str] = mapped_column(
         String(3), default="ses", server_default=text("'ses'"), nullable=False
     )
+    # LOT 6 : le PDF que l'agence fait signer (uploadé sur l'exigence du
+    # template, stocké chez nous). Chaque upload écrit un NOUVEAU chemin —
+    # les snapshots des dossiers en vol gardent l'ancien fichier. On ne
+    # signe JAMAIS un document vide : l'assignation ET l'envoi refusent une
+    # exigence signable sans PDF (422 nommé).
+    signature_document_path: Mapped[str | None] = mapped_column(String(500))
+    signature_document_filename: Mapped[str | None] = mapped_column(String(255))

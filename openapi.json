@@ -11823,6 +11823,85 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}/signature-document": {
+      "post": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Upload Signature Document",
+        "description": "LOT 6 : le PDF que l'agence fait signer, attaché à l'exigence\nsignable — chaque upload = un nouveau chemin (les dossiers en vol\ngardent leur snapshot). PDF uniquement.",
+        "operationId": "upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requirement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepRequirementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/requirements/order": {
       "put": {
         "tags": [
@@ -16454,6 +16533,20 @@
         ],
         "title": "Body_upload_platform_task_comment_attachment_admin_tasks__task_id__comments__comment_id__attachments_post"
       },
+      "Body_upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post"
+      },
       "Body_upload_step_document_external_cases__case_id__documents_post": {
         "properties": {
           "file": {
@@ -20867,6 +20960,16 @@
               }
             ],
             "title": "Signed At"
+          },
+          "request_signed_count": {
+            "type": "integer",
+            "title": "Request Signed Count",
+            "default": 0
+          },
+          "request_signer_total": {
+            "type": "integer",
+            "title": "Request Signer Total",
+            "default": 0
           }
         },
         "type": "object",
@@ -28209,6 +28312,17 @@
           "signature_level": {
             "type": "string",
             "title": "Signature Level"
+          },
+          "signature_document_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Document Filename"
           }
         },
         "type": "object",

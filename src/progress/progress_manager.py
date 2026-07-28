@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
@@ -254,6 +255,23 @@ class ProgressManager:
 
         case.journey_template_id = template.id
         steps = await self.repo.list_template_steps(template.id)
+        # LOT 6 — on ne signe JAMAIS un document vide : l'assignation refuse
+        # un parcours dont une exigence signable n'a pas son PDF (le 422
+        # nomme la première). Gardé au flag EFFECTIF : feature éteinte, un
+        # parcours mal configuré n'empêche pas de travailler.
+        from src.signatures.flags import signatures_effectively_enabled
+
+        agency_row = await self.db.get(Agency, case.agency_id)
+        if signatures_effectively_enabled(agency_row):
+            for step_row in steps:
+                for definition in await self.repo.list_step_requirements(step_row.id):
+                    if definition.signature_required and not definition.signature_document_path:
+                        raise ValidationError(
+                            f"Signable requirement {definition.reference!r} has no "
+                            "document to sign; upload its PDF first.",
+                            code="journey.signature_document_missing",
+                            params={"reference": definition.reference},
+                        )
         # Template participants ("Action à réaliser par", N) per step —
         # batched, snapshot-copied to each instance step below.
         participants_by_step: dict[uuid.UUID, list[JourneyStepParticipant]] = defaultdict(list)
@@ -481,6 +499,8 @@ class ProgressManager:
                         scope=definition.scope,
                         signature_required=definition.signature_required,
                         signature_level=definition.signature_level,
+                        signature_document_path=definition.signature_document_path,
+                        signature_document_filename=definition.signature_document_filename,
                         status=RequirementStatus.PENDING.value,
                     )
                 )
@@ -512,6 +532,17 @@ class ProgressManager:
             created = await self._sync_missing_requirements(row)
             if created == 0:
                 continue
+            # E-signature (LOT 6) : une exigence SIGNABLE ajoutée à une étape
+            # active doit partir en demande MAINTENANT — sans cet envoi, la
+            # ligne resterait pendante sans que personne ne puisse signer.
+            # La garde « jamais un document vide » (422 nommé) et le débit de
+            # crédit s'appliquent ici comme à l'activation ; un refus annule
+            # l'ajout d'exigence entier (transaction de l'appelant).
+            if requirement.signature_required:
+                from src.signatures.signatures_manager import SignaturesManager
+
+                await self.db.flush()
+                await SignaturesManager(self.db).send_for_progress(case, row)
             self._log(
                 case.id,
                 agent,
@@ -1204,6 +1235,8 @@ class ProgressManager:
                     scope=definition.scope,
                     signature_required=definition.signature_required,
                     signature_level=definition.signature_level,
+                    signature_document_path=definition.signature_document_path,
+                    signature_document_filename=definition.signature_document_filename,
                     status=RequirementStatus.PENDING.value,
                 )
                 created += 1
