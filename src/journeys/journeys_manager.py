@@ -31,6 +31,7 @@ from src.core.enums import (
     ActorType,
     CompletionMode,
     ResponsibleType,
+    SignatureLevel,
     StepRequirementKind,
     StepValidatorType,
 )
@@ -585,6 +586,8 @@ class JourneysManager:
                         reference=r.reference,
                         scope=r.scope,
                         position=r.position,
+                        signature_required=r.signature_required,
+                        signature_level=r.signature_level,
                     )
                 )
             for cr in await self.repo.list_step_case_requirements(st.id):
@@ -1192,6 +1195,21 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
         await self._validate_reference(agent, payload.kind, payload.reference)
+        # E-signature (méga-lot 28/07) : la signature ne se demande que sur
+        # un DOCUMENT, et seul le niveau SES a une implémentation — les
+        # niveaux aes/qes restent dans l'enum (socle) mais sont refusés ici
+        # avec un 422 nommé, jamais stockés-silencieux.
+        if payload.signature_required and payload.kind is not StepRequirementKind.DOCUMENT:
+            raise ValidationError(
+                "A signature can only be required on a document requirement.",
+                code="journey.signature_on_non_document",
+            )
+        if payload.signature_required and payload.signature_level is not SignatureLevel.SES:
+            raise ValidationError(
+                f"Signature level {payload.signature_level.value!r} is not implemented yet.",
+                code="journey.signature_level_not_implemented",
+                params={"level": payload.signature_level.value},
+            )
         # Strict membership (NEW requirements only): a base_field / custom_field
         # may only reference a field DECLARED in this template's Informations
         # tab (a journey_template_field of the SAME template). document is a free
@@ -1214,6 +1232,8 @@ class JourneysManager:
             reference=payload.reference,
             scope=payload.scope.value,
             position=payload.position,
+            signature_required=payload.signature_required,
+            signature_level=payload.signature_level.value,
         )
         await self.db.flush()
         # Point-8 backfill (mirror of add_step's Option-A contract, one level

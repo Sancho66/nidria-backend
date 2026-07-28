@@ -462,7 +462,7 @@ class ProgressManager:
             return 0
         existing = await self.repo.list_case_requirements_for_progress_ids([r.id for r in active])
         taken = {(r.case_step_progress_id, r.person_id, r.kind, r.reference) for r in existing}
-        created = 0
+        created_rows = []
         for row in active:
             for definition in await self.repo.list_step_requirements(row.template_step_id):
                 if definition.scope != StepRequirementScope.EACH_PERSON.value:
@@ -471,17 +471,29 @@ class ProgressManager:
                 if key in taken:
                     continue
                 taken.add(key)
-                self.repo.add_case_requirement(
-                    case_step_progress_id=row.id,
-                    step_requirement_id=definition.id,
-                    person_id=person.id,
-                    kind=definition.kind,
-                    reference=definition.reference,
-                    scope=definition.scope,
-                    status=RequirementStatus.PENDING.value,
+                created_rows.append(
+                    self.repo.add_case_requirement(
+                        case_step_progress_id=row.id,
+                        step_requirement_id=definition.id,
+                        person_id=person.id,
+                        kind=definition.kind,
+                        reference=definition.reference,
+                        scope=definition.scope,
+                        signature_required=definition.signature_required,
+                        signature_level=definition.signature_level,
+                        status=RequirementStatus.PENDING.value,
+                    )
                 )
-                created += 1
-        return created
+        if created_rows:
+            await self.db.flush()
+            # Versant signatures de la fin du gel (méga-lot 28/07) : la
+            # personne tardive rejoint les documents signables via SA propre
+            # demande (voir SignaturesManager — le port ne sait pas ajouter
+            # un signataire à une soumission vivante). Flag-gated dedans.
+            from src.signatures.signatures_manager import SignaturesManager
+
+            await SignaturesManager(self.db).send_for_late_person(case, person, created_rows)
+        return len(created_rows)
 
     async def backfill_requirements(
         self, agent: Agent, requirement: StepRequirement
@@ -1119,6 +1131,15 @@ class ProgressManager:
             # MATERIALIZATION (NEW WAVE): the step becomes active → freeze
             # its concrete requirements against the case composition NOW.
             await self._sync_missing_requirements(row)
+            # E-signatures (méga-lot 28/07) : les documents signables de
+            # l'étape partent en demande MAINTENANT, dans CETTE transaction
+            # — un échec provider ou un solde insuffisant (lot 2) annule
+            # l'activation entière, jamais une étape à moitié active.
+            # Flag-gated dans le manager (off = no-op strict).
+            await self.db.flush()
+            from src.signatures.signatures_manager import SignaturesManager
+
+            await SignaturesManager(self.db).send_for_progress(case, row)
             # Notif (a): the step is live with ≥1 pending requirement →
             # invite the client to fill their space.
             mail = await self._client_step_mail_for_row(case, row, reopened=False)
@@ -1168,6 +1189,8 @@ class ProgressManager:
                     kind=definition.kind,
                     reference=definition.reference,
                     scope=definition.scope,
+                    signature_required=definition.signature_required,
+                    signature_level=definition.signature_level,
                     status=RequirementStatus.PENDING.value,
                 )
                 created += 1

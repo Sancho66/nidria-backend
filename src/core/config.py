@@ -164,6 +164,34 @@ class Settings(BaseSettings):
     # script never knows a URL; only the env does.
     paddle_webhook_url: str | None = None
 
+    # E-signatures (méga-lot 28/07). GLOBAL feature flag, default FALSE —
+    # flag off = no request materialized, no provider call, no credit
+    # touched, client/webhook endpoints answer as if the feature did not
+    # exist (same closed-by-default doctrine as billing_checkout_enabled).
+    signatures_enabled: bool = False
+    # DocuSeal (the only provider, behind the SignatureProvider port).
+    # No separate sandbox HOST: the sandbox is a test-account API key on
+    # the same base URL — configurable for on-prem instances.
+    docuseal_api_key: str | None = None
+    docuseal_base_url: str = "https://api.docuseal.com"
+    # Webhook authenticity (méthode DocuSeal constatée : en-têtes SECRETS
+    # personnalisés configurés dans leur console, pas de HMAC du corps) —
+    # la même valeur est posée ici et dans le header X-Docuseal-Secret de
+    # la config webhook DocuSeal ; comparaison constante côté endpoint.
+    docuseal_webhook_secret: str | None = None
+    signature_request_expires_days: int = 30
+    # Credit packs (lot 2): Paddle price id → credits granted, JSON env —
+    # same env-specific mapping doctrine as paddle_price_ids. The three
+    # expected products (created MANUALLY in the Paddle dashboard):
+    #   "Crédits signature ×50"  → 45,00 €  (0,90 €/crédit)
+    #   "Crédits signature ×200" → 180,00 €
+    #   "Crédits signature ×500" → 450,00 €
+    # e.g. {"pri_sig50": 50, "pri_sig200": 200, "pri_sig500": 500}
+    signature_credit_packs: dict[str, int] = {}
+    # Low-balance notification threshold DEFAULT; each agency may override
+    # via settings["signature_credits_low_threshold"].
+    signature_credits_low_threshold_default: int = 10
+
     @field_validator("paddle_webhook_url", mode="before")
     @classmethod
     def _empty_url_is_none(cls, v: str | None) -> str | None:

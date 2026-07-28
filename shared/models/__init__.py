@@ -49,6 +49,8 @@ from shared.models.rbac import Permission, ProtectedResource, Role, RolePermissi
 from shared.models.referral import ReferralCredit
 from shared.models.reminder import Reminder
 from shared.models.saved_view import SavedView
+from shared.models.signature import SignatureRequest, SignatureSigner
+from shared.models.signature_credit import SignatureCreditBalance, SignatureCreditEntry
 from shared.models.signup import SignupVerification
 from shared.models.step_case_requirement import StepCaseRequirement
 from shared.models.step_comment import StepComment
@@ -105,6 +107,10 @@ __all__ = [
     "ProtectedResource",
     "RefreshToken",
     "ReferralCredit",
+    "SignatureCreditBalance",
+    "SignatureCreditEntry",
+    "SignatureRequest",
+    "SignatureSigner",
     "SignupVerification",
     "Reminder",
     "Role",

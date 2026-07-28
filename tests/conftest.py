@@ -58,6 +58,7 @@ pytest_plugins = [
     "tests.plugins.journey_plugin",
     "tests.plugins.rbac_plugin",
     "tests.plugins.reminder_plugin",
+    "tests.plugins.signature_plugin",
 ]
 
 

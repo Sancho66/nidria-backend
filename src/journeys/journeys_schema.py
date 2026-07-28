@@ -10,6 +10,7 @@ from src.core.enums import (
     AgencySector,
     CompletionMode,
     ResponsibleType,
+    SignatureLevel,
     StepParticipantRole,
     StepRequirementKind,
     StepRequirementScope,
@@ -302,10 +303,19 @@ class StepParticipantCreateRequest(BaseModel):
 
 
 class StepRequirementCreateRequest(BaseModel):
+    """E-signature (méga-lot 28/07) : un DOCUMENT peut exiger une signature
+    (`signature_required`) au niveau `signature_level` — l'enum accepte les
+    trois niveaux eIDAS (socle agnostique), le manager ne laisse entrer que
+    `ses` tant que les autres n'ont pas d'implémentation."""
+
+    model_config = ConfigDict(extra="forbid")
+
     kind: StepRequirementKind
     reference: str = Field(min_length=1, max_length=100)
     scope: StepRequirementScope
     position: int = 0
+    signature_required: bool = False
+    signature_level: SignatureLevel = SignatureLevel.SES
 
 
 class StepRequirementResponse(BaseModel):
@@ -317,6 +327,8 @@ class StepRequirementResponse(BaseModel):
     reference: str
     scope: str
     position: int
+    signature_required: bool
+    signature_level: str
 
 
 class StepOrderRequest(BaseModel):

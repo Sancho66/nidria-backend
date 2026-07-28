@@ -286,6 +286,53 @@ class StepRequirementScope(StrEnum):
     EACH_PERSON = "each_person"
 
 
+class SignatureLevel(StrEnum):
+    """eIDAS levels for a signable document requirement. The MODEL accepts
+    the three (agnostic groundwork); only SES has an implementation — the
+    journeys API refuses aes/qes with an explicit 422 until they do."""
+
+    SES = "ses"
+    AES = "aes"
+    QES = "qes"
+
+
+class SignatureRequestStatus(StrEnum):
+    """One request = ONE document sent for signature (N signers ride it).
+    draft → sent at dispatch; partially_signed when ≥1 signer done;
+    completed when all signed (credit consumed); cancelled/expired release
+    the credit."""
+
+    DRAFT = "draft"
+    SENT = "sent"
+    PARTIALLY_SIGNED = "partially_signed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class SignatureSignerStatus(StrEnum):
+    PENDING = "pending"
+    SIGNED = "signed"
+    DECLINED = "declined"
+
+
+class SignatureCreditKind(StrEnum):
+    """Écritures du ledger de crédits signature — append-only, montants
+    toujours positifs, le sens est le kind."""
+
+    PURCHASE = "purchase"
+    RESERVE = "reserve"
+    CONSUME = "consume"
+    RELEASE = "release"
+
+
+class SignatureProviderKind(StrEnum):
+    """The e-signature backends the domain knows BY NAME only — every
+    provider detail stays behind the SignatureProvider port."""
+
+    DOCUSEAL = "docuseal"
+
+
 class RequirementStatus(StrEnum):
     PENDING = "pending"
     PROVIDED = "provided"

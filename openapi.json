@@ -8974,6 +8974,79 @@
         }
       }
     },
+    "/webhooks/docuseal": {
+      "post": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "Docuseal Webhook",
+        "operationId": "docuseal_webhook_webhooks_docuseal_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/signatures": {
+      "get": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "My Signatures",
+        "operationId": "my_signatures_expat_cases__case_id__signatures_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatSignatureResponse"
+                  },
+                  "title": "Response My Signatures Expat Cases  Case Id  Signatures Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/members/{agent_id}/impersonate": {
       "post": {
         "tags": [
@@ -20630,6 +20703,80 @@
         "title": "ExpatResponsibleResponse",
         "description": "Displayable responsible: type 'agency' (no internal agent name —\nstaffing doesn't face the client), 'you', or 'external' with the\ncontact's name. type None = not assigned yet."
       },
+      "ExpatSignatureResponse": {
+        "properties": {
+          "signer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Signer Id"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "request_status": {
+            "type": "string",
+            "title": "Request Status"
+          },
+          "embed_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Slug"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signer_id",
+          "request_id",
+          "reference",
+          "status",
+          "request_status",
+          "embed_slug",
+          "expires_at",
+          "signed_at"
+        ],
+        "title": "ExpatSignatureResponse",
+        "description": "UNE tâche de signature de LA personne qui regarde — jamais celle\nd'un autre (le slug est personnel : il ouvre SA session de signature).\n`embed_slug` est la ref opaque provider pour l'embed front."
+      },
       "ExpatTimelineStepResponse": {
         "properties": {
           "progress_id": {
@@ -26998,6 +27145,16 @@
         ],
         "title": "Sex"
       },
+      "SignatureLevel": {
+        "type": "string",
+        "enum": [
+          "ses",
+          "aes",
+          "qes"
+        ],
+        "title": "SignatureLevel",
+        "description": "eIDAS levels for a signable document requirement. The MODEL accepts\nthe three (agnostic groundwork); only SES has an implementation — the\njourneys API refuses aes/qes with an explicit 422 until they do."
+      },
       "SignupAccepted": {
         "properties": {
           "status": {
@@ -27705,15 +27862,26 @@
             "type": "integer",
             "title": "Position",
             "default": 0
+          },
+          "signature_required": {
+            "type": "boolean",
+            "title": "Signature Required",
+            "default": false
+          },
+          "signature_level": {
+            "$ref": "#/components/schemas/SignatureLevel",
+            "default": "ses"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "kind",
           "reference",
           "scope"
         ],
-        "title": "StepRequirementCreateRequest"
+        "title": "StepRequirementCreateRequest",
+        "description": "E-signature (méga-lot 28/07) : un DOCUMENT peut exiger une signature\n(`signature_required`) au niveau `signature_level` — l'enum accepte les\ntrois niveaux eIDAS (socle agnostique), le manager ne laisse entrer que\n`ses` tant que les autres n'ont pas d'implémentation."
       },
       "StepRequirementKind": {
         "type": "string",
@@ -27769,6 +27937,14 @@
           "position": {
             "type": "integer",
             "title": "Position"
+          },
+          "signature_required": {
+            "type": "boolean",
+            "title": "Signature Required"
+          },
+          "signature_level": {
+            "type": "string",
+            "title": "Signature Level"
           }
         },
         "type": "object",
@@ -27778,7 +27954,9 @@
           "kind",
           "reference",
           "scope",
-          "position"
+          "position",
+          "signature_required",
+          "signature_level"
         ],
         "title": "StepRequirementResponse"
       },
@@ -28966,6 +29144,19 @@
         ],
         "title": "WebhookAck",
         "description": "Always 200 for a VERIFIED event (Paddle stops re-delivering); `status`\nsays what happened: processed | duplicate | ignored."
+      },
+      "WebhookAckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "WebhookAckResponse"
       },
       "WorklistItem": {
         "properties": {

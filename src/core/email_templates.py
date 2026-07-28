@@ -10,6 +10,8 @@ built by the callers on settings.frontend_url, never hardcoded here.
 import html as html_lib
 from dataclasses import dataclass
 
+from src.core.config import get_settings
+
 # Per-language chrome strings (BLOC NOTIF-2). The body strings live in each
 # builder's own {fr,en,es} catalog; these are the shared layout bits.
 _FOOTER = {
@@ -1786,5 +1788,98 @@ def task_status_changed_email(
         body_text=body,
         button_label=s["button"],
         button_url=tasks_url,
+        lang=lang,
+    )
+
+
+# Seuil de crédits signature (méga-lot 28/07, lot 2) — alerte aux admins de
+# l'agence au FRANCHISSEMENT du seuil, dans la langue par défaut de l'agence.
+_SIGNATURE_CREDITS_LOW = {
+    "fr": {
+        "subject": "Nidria : votre solde de crédits signature est bas",
+        "title": "Crédits signature : solde bas",
+        "intro": (
+            "Le solde de crédits signature de {agency} est passé sous votre seuil "
+            "d'alerte ({threshold}) : il reste {available} crédit(s). Rechargez pour "
+            "que les prochaines étapes avec documents à signer puissent démarrer."
+        ),
+        "button": "Gérer mes crédits",
+    },
+    "en": {
+        "subject": "Nidria: your signature credit balance is low",
+        "title": "Signature credits: low balance",
+        "intro": (
+            "The signature credit balance of {agency} dropped below your alert "
+            "threshold ({threshold}): {available} credit(s) left. Top up so the next "
+            "steps carrying documents to sign can start."
+        ),
+        "button": "Manage my credits",
+    },
+    "es": {
+        "subject": "Nidria: su saldo de créditos de firma es bajo",
+        "title": "Créditos de firma: saldo bajo",
+        "intro": (
+            "El saldo de créditos de firma de {agency} bajó de su umbral de alerta "
+            "({threshold}): quedan {available} crédito(s). Recargue para que las "
+            "próximas etapas con documentos por firmar puedan comenzar."
+        ),
+        "button": "Gestionar mis créditos",
+    },
+    "ru": {
+        "subject": "Nidria: низкий баланс кредитов подписи",
+        "title": "Кредиты подписи: низкий баланс",
+        "intro": (
+            "Баланс кредитов подписи {agency} опустился ниже порога оповещения "
+            "({threshold}): осталось {available} кредит(ов). Пополните баланс, чтобы "
+            "следующие этапы с документами на подпись могли начаться."
+        ),
+        "button": "Управлять кредитами",
+    },
+    "pt": {
+        "subject": "Nidria: o seu saldo de créditos de assinatura está baixo",
+        "title": "Créditos de assinatura: saldo baixo",
+        "intro": (
+            "O saldo de créditos de assinatura de {agency} desceu abaixo do seu limiar "
+            "de alerta ({threshold}): restam {available} crédito(s). Recarregue para que "
+            "as próximas etapas com documentos a assinar possam começar."
+        ),
+        "button": "Gerir os meus créditos",
+    },
+    "it": {
+        "subject": "Nidria: il tuo saldo di crediti firma è basso",
+        "title": "Crediti firma: saldo basso",
+        "intro": (
+            "Il saldo dei crediti firma di {agency} è sceso sotto la tua soglia di "
+            "allerta ({threshold}): restano {available} credito/i. Ricarica perché le "
+            "prossime tappe con documenti da firmare possano partire."
+        ),
+        "button": "Gestire i miei crediti",
+    },
+    "hu": {
+        "subject": "Nidria: alacsony az aláírás-kredit egyenlege",
+        "title": "Aláírás-kreditek: alacsony egyenleg",
+        "intro": (
+            "A(z) {agency} aláírás-kredit egyenlege a riasztási küszöb ({threshold}) alá "
+            "csökkent: {available} kredit maradt. Töltse fel, hogy a következő, aláírandó "
+            "dokumentumokat tartalmazó lépések elindulhassanak."
+        ),
+        "button": "Kreditek kezelése",
+    },
+}
+
+
+def signature_credits_low_email(
+    agency_name: str, available: int, threshold: int, lang: str = "fr"
+) -> EmailContent:
+    """Alerte franchissement du seuil de crédits signature — UNE par
+    franchissement (la détection vit au ledger, jamais un mail par
+    réservation)."""
+    s = _pick(_SIGNATURE_CREDITS_LOW, lang)
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name, available=available, threshold=threshold),
+        button_label=s["button"],
+        button_url=f"{get_settings().frontend_url}/app/settings",
         lang=lang,
     )

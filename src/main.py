@@ -49,6 +49,7 @@ from src.profile.profile_router import router as profile_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
+from src.signatures.signatures_router import router as signatures_router
 from src.signup.signup_router import router as signup_router
 from src.usage.usage_backfill import backfill_usage_milestones
 from src.views.views_router import router as views_router
@@ -203,6 +204,7 @@ app.include_router(costs_router)
 app.include_router(external_router)
 app.include_router(external_agency_router)
 app.include_router(expat_portal_router)
+app.include_router(signatures_router)
 app.include_router(impersonation_router)
 app.include_router(imports_router)
 app.include_router(jobs_router)

@@ -349,6 +349,42 @@ class BillingManager:
                 await ReferralManager(self.db).recompute_discount_best_effort(refreshed)
         return WebhookAck(status=status)
 
+    async def _credit_signature_packs(self, agency: Agency, data: dict[str, Any]) -> bool:
+        """Crédite les packs de la transaction (mapping config
+        signature_credit_packs : price_id → crédits). Transaction sans pack
+        → False (l'événement reste 'ignored', comme avant le lot). La clé
+        d'idempotence du ledger est l'ID DE TRANSACTION Paddle (stable
+        entre re-livraisons du même paiement)."""
+        packs = get_settings().signature_credit_packs
+        if not packs:
+            return False
+        credits = 0
+        matched: list[str] = []
+        for item in data.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            price_id = (item.get("price") or {}).get("id")
+            if price_id in packs:
+                credits += packs[price_id] * int(item.get("quantity") or 1)
+                matched.append(price_id)
+        if credits <= 0:
+            return False
+        transaction_id = str(data.get("id") or "")
+        if not transaction_id:
+            logger.error("ALERT signature pack transaction without id for %s", agency.slug)
+            return False
+        from src.signatures.ledger import purchase_credits
+
+        await purchase_credits(
+            self.db,
+            agency.id,
+            credits,
+            paddle_event_id=transaction_id,
+            details={"price_ids": matched},
+        )
+        logger.info("signature credits +%s for %s (txn %s)", credits, agency.slug, transaction_id)
+        return True
+
     async def _resolve_agency(self, data: dict[str, Any]) -> Agency | None:
         custom = data.get("custom_data") or {}
         raw_id = custom.get("agency_id")
@@ -394,6 +430,16 @@ class BillingManager:
         # checkout). A manually-CONVERTED agency (internal lifetime,
         # sur-mesure) is protected even from those — converted_at is the
         # discriminant, aligned with the checkout wall and the billing lock.
+        # Crédits signature (méga-lot 28/07, lot 2) : un transaction.completed
+        # portant un pack de crédits crédite le ledger — AVANT le garde
+        # billing_mode, délibérément : les crédits sont orthogonaux à
+        # l'abonnement (une agence manual/trial peut en acheter). Idempotence
+        # double : la ligne événement unique en amont + la ceinture unique du
+        # ledger sur l'id de transaction.
+        if event_type == "transaction.completed":
+            credited = await self._credit_signature_packs(agency, data)
+            return "processed" if credited else "ignored"
+
         establishes_link = event_type in ("subscription.created", "subscription.activated")
         if agency.billing_mode != "paddle" and not (
             establishes_link and agency.converted_at is None

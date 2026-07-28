@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -50,6 +50,16 @@ class CaseStepRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     reference: Mapped[str] = mapped_column(String(100), nullable=False)
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    # E-signature snapshot (méga-lot 28/07), copied from the definition at
+    # materialization like kind/reference/scope. A signable DOCUMENT row is
+    # provided by SIGNING (the webhook flips it), never by a deposit — the
+    # completeness rails (step_all_met, reminders) stay identical.
+    signature_required: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )
+    signature_level: Mapped[str] = mapped_column(
+        String(3), default="ses", server_default=text("'ses'"), nullable=False
+    )
     # Authoritative for kind=document; derived at read time for fields.
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     provided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
