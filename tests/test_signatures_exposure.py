@@ -78,12 +78,19 @@ async def test_credits_readable_by_any_agent_with_packs(
     assert body["available"] == 7
     assert body["reserved"] == 0
     assert body["low_threshold"] == 10  # défaut config
-    # La grille, triée par taille croissante, price_id + crédits.
-    assert body["packs"] == [
+    # La grille : price_id + crédits, triée par taille croissante. Assertion
+    # HERMÉTIQUE : pydantic-settings FUSIONNE les dicts .env + variable
+    # d'environnement — un .env local portant les vrais packs sandbox (lot
+    # OPS) ajouterait ses entrées et cassait l'égalité stricte. On épingle
+    # les 3 posés par le test + l'ordre croissant du tout.
+    ours = [p for p in body["packs"] if p["price_id"].startswith("pri_sig")]
+    assert ours == [
         {"price_id": "pri_sig50", "credits": 50},
         {"price_id": "pri_sig200", "credits": 200},
         {"price_id": "pri_sig500", "credits": 500},
     ]
+    credits_order = [p["credits"] for p in body["packs"]]
+    assert credits_order == sorted(credits_order)
 
 
 async def test_low_threshold_reflects_agency_override(
