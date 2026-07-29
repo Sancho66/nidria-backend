@@ -44,5 +44,10 @@ class StepRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # les snapshots des dossiers en vol gardent l'ancien fichier. On ne
     # signe JAMAIS un document vide : l'assignation ET l'envoi refusent une
     # exigence signable sans PDF (422 nommé).
-    signature_document_path: Mapped[str | None] = mapped_column(String(500))
-    signature_document_filename: Mapped[str | None] = mapped_column(String(255))
+    # Méga-lot modèles (29/07) : le PDF-direct est MORT (0 ligne en prod au
+    # verdict) — une exigence signable référence un MODÈLE de la bibliothèque
+    # (zones posées par l'agence dans le builder). RESTRICT en défense : la
+    # suppression d'un modèle référencé est refusée applicativement (409).
+    document_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("document_template.id", ondelete="RESTRICT"), nullable=True
+    )

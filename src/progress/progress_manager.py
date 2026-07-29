@@ -265,10 +265,10 @@ class ProgressManager:
         if signatures_effectively_enabled(agency_row):
             for step_row in steps:
                 for definition in await self.repo.list_step_requirements(step_row.id):
-                    if definition.signature_required and not definition.signature_document_path:
+                    if definition.signature_required and definition.document_template_id is None:
                         raise ValidationError(
                             f"Signable requirement {definition.reference!r} has no "
-                            "document to sign; upload its PDF first.",
+                            "document template; pick one from the library first.",
                             code="journey.signature_document_missing",
                             params={"reference": definition.reference},
                         )
@@ -499,8 +499,7 @@ class ProgressManager:
                         scope=definition.scope,
                         signature_required=definition.signature_required,
                         signature_level=definition.signature_level,
-                        signature_document_path=definition.signature_document_path,
-                        signature_document_filename=definition.signature_document_filename,
+                        document_template_id=definition.document_template_id,
                         status=RequirementStatus.PENDING.value,
                     )
                 )
@@ -1243,8 +1242,7 @@ class ProgressManager:
                     scope=definition.scope,
                     signature_required=definition.signature_required,
                     signature_level=definition.signature_level,
-                    signature_document_path=definition.signature_document_path,
-                    signature_document_filename=definition.signature_document_filename,
+                    document_template_id=definition.document_template_id,
                     status=RequirementStatus.PENDING.value,
                 )
                 created += 1

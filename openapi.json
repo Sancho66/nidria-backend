@@ -9254,6 +9254,322 @@
         }
       }
     },
+    "/document-templates": {
+      "get": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "List Document Templates",
+        "operationId": "list_document_templates_document_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentTemplateResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Document Templates Document Templates Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "Create Document Template",
+        "description": "Le PDF source (stocké chez nous) + le template provider naissent\nensemble — sans zones : elles sont l'affaire du builder.",
+        "operationId": "create_document_template_document_templates_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_document_template_document_templates_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/document-templates/{template_id}": {
+      "get": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "Get Document Template",
+        "operationId": "get_document_template_document_templates__template_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "Update Document Template",
+        "operationId": "update_document_template_document_templates__template_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentTemplateUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "Delete Document Template",
+        "description": "409 nommé (références listées) si une exigence signable — définition\nde parcours ou ligne pendante d'un dossier — pointe encore le modèle.",
+        "operationId": "delete_document_template_document_templates__template_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/document-templates/{template_id}/builder-token": {
+      "post": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "Create Builder Token",
+        "operationId": "create_builder_token_document_templates__template_id__builder_token_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuilderTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/document-templates/{template_id}/builder-sync": {
+      "post": {
+        "tags": [
+          "document-templates"
+        ],
+        "summary": "Sync After Builder Save",
+        "description": "À appeler sur l'événement save du composant builder : constate les\nzones/rôles posés chez le provider (fields_configured, roles_count).",
+        "operationId": "sync_after_builder_save_document_templates__template_id__builder_sync_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/members/{agent_id}/impersonate": {
       "post": {
         "tags": [
@@ -11919,85 +12235,6 @@
         },
         "responses": {
           "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepRequirementResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}/signature-document": {
-      "post": {
-        "tags": [
-          "journeys"
-        ],
-        "summary": "Upload Signature Document",
-        "description": "LOT 6 : le PDF que l'agence fait signer, attaché à l'exigence\nsignable — chaque upload = un nouveau chemin (les dossiers en vol\ngardent leur snapshot). PDF uniquement.",
-        "operationId": "upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "template_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Template Id"
-            }
-          },
-          {
-            "name": "step_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Step Id"
-            }
-          },
-          {
-            "name": "requirement_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Requirement Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -16440,6 +16677,27 @@
         ],
         "title": "Body_add_step_attachment_journeys__template_id__steps__step_id__attachments_post"
       },
+      "Body_create_document_template_document_templates_post": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "file"
+        ],
+        "title": "Body_create_document_template_document_templates_post"
+      },
       "Body_fulfill_requirement_as_agent_cases__case_id__requirements__requirement_id__document_post": {
         "properties": {
           "file": {
@@ -16651,20 +16909,6 @@
         ],
         "title": "Body_upload_platform_task_comment_attachment_admin_tasks__task_id__comments__comment_id__attachments_post"
       },
-      "Body_upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post": {
-        "properties": {
-          "file": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "File"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_signature_document_journeys__template_id__steps__step_id__requirements__requirement_id__signature_document_post"
-      },
       "Body_upload_step_document_external_cases__case_id__documents_post": {
         "properties": {
           "file": {
@@ -16711,6 +16955,25 @@
           "file"
         ],
         "title": "Body_upload_step_document_external_cases__case_id__documents_post"
+      },
+      "BuilderTokenResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "provider"
+        ],
+        "title": "BuilderTokenResponse",
+        "description": "Jeton court pour le builder embeddé du provider — scoped au modèle\n(external_id = l'UUID du modèle, la clé find-or-create constatée)."
       },
       "BulkActionResponse": {
         "properties": {
@@ -20387,6 +20650,73 @@
         ],
         "title": "DocumentResponse",
         "description": "Agent-facing document. `storage_path` is deliberately NOT exposed —\nthe path is technical, the (original) filename is the display data.\nThe enrichment fields (default empty so a bare `model_validate(document)`\non the single-upload responses still works) carry the aggregated-view\ncontext: resolved step name, the requirement this doc answers (if any),\nand the linked-vs-free classifier `is_requirement`."
+      },
+      "DocumentTemplateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "fields_configured": {
+            "type": "boolean",
+            "title": "Fields Configured"
+          },
+          "roles_count": {
+            "type": "integer",
+            "title": "Roles Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "filename",
+          "provider",
+          "fields_configured",
+          "roles_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DocumentTemplateResponse"
+      },
+      "DocumentTemplateUpdateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "DocumentTemplateUpdateRequest"
       },
       "DocumentValidationRequest": {
         "properties": {
@@ -28384,6 +28714,18 @@
           "signature_level": {
             "$ref": "#/components/schemas/SignatureLevel",
             "default": "ses"
+          },
+          "document_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Template Id"
           }
         },
         "additionalProperties": false,
@@ -28459,16 +28801,17 @@
             "type": "string",
             "title": "Signature Level"
           },
-          "signature_document_filename": {
+          "document_template_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Signature Document Filename"
+            "title": "Document Template Id"
           }
         },
         "type": "object",

@@ -25,6 +25,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import case as sa_case
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +40,7 @@ from src.core import storage
 from src.core.config import get_settings
 from src.core.enums import (
     ActorType,
+    CasePersonKind,
     SignatureProviderKind,
     SignatureRequestStatus,
     SignatureSignerStatus,
@@ -79,9 +81,21 @@ class SignaturesManager:
         rows = (
             (
                 await self.db.execute(
-                    select(CaseStepRequirement).where(
+                    select(CaseStepRequirement)
+                    .join(CasePerson, CasePerson.id == CaseStepRequirement.person_id)
+                    .where(
                         CaseStepRequirement.case_step_progress_id == row.id,
                         CaseStepRequirement.signature_required.is_(True),
+                    )
+                    # Ordre de matérialisation — principal d'abord, puis
+                    # ancienneté de la PERSONNE (les lignes d'une même
+                    # activation partagent leur created_at : le now() de
+                    # Postgres est figé par transaction) : c'est LUI que
+                    # suit la convention de rôles « Signataire N ».
+                    .order_by(
+                        sa_case((CasePerson.kind == CasePersonKind.PRINCIPAL.value, 0), else_=1),
+                        CasePerson.created_at,
+                        CasePerson.id,
                     )
                 )
             )
@@ -170,23 +184,48 @@ class SignaturesManager:
 
         await reserve_credit(self.db, case.agency_id, request)
 
-        # LOT 6 — on ne signe JAMAIS un document vide : le PDF snapshoté est
-        # obligatoire à l'envoi (défense structurelle — l'assignation refuse
-        # déjà en amont ; ce chemin attrape l'exigence ajoutée après coup).
-        document_path = req_rows[0].signature_document_path
-        document_filename = req_rows[0].signature_document_filename or f"{reference}.pdf"
-        if not document_path:
+        # Méga-lot modèles (29/07) — on n'envoie JAMAIS un modèle absent ou
+        # sans zones (défense structurelle : l'assignation refuse déjà le
+        # modèle manquant ; le builder non sauvegardé se refuse ICI, à
+        # l'envoi). Constat sonde : le provider ne valide PAS les rôles —
+        # plus de signataires que de rôles configurés = signataire fantôme
+        # sans zones, donc la garde de cohérence vit chez nous.
+        from shared.models.document_template import DocumentTemplate
+
+        template_id = req_rows[0].document_template_id
+        template = await self.db.get(DocumentTemplate, template_id) if template_id else None
+        if template is None:
             raise ValidationError(
-                f"Signable requirement {reference!r} has no document to sign.",
+                f"Signable requirement {reference!r} has no document template.",
                 code="journey.signature_document_missing",
                 params={"reference": reference},
             )
-        document_pdf = await asyncio.to_thread(storage.download, document_path)
+        if not template.fields_configured:
+            raise ValidationError(
+                f"Document template {template.name!r} has no signature zones yet; "
+                "save them in the builder first.",
+                code="signatures.template_fields_missing",
+                params={"reference": reference, "template_name": template.name},
+            )
+        if template.roles_count < len(signers):
+            raise ValidationError(
+                f"Document template {template.name!r} has {template.roles_count} signer "
+                f"role(s) but this step needs {len(signers)}.",
+                code="signatures.template_roles_insufficient",
+                params={
+                    "reference": reference,
+                    "template_name": template.name,
+                    "roles_count": template.roles_count,
+                    "signers_count": len(signers),
+                },
+            )
         provider_signers = await self._provider_signers(case, signers)
-        created = await get_provider().create(
-            document_name=reference,
-            document_pdf=document_pdf,
-            document_filename=document_filename,
+        # Convention sonde : « Signataire N », 1-based, dans l'ordre de
+        # matérialisation (le principal d'abord — l'ordre des lignes).
+        for index, provider_signer in enumerate(provider_signers):
+            provider_signer.role = f"Signataire {index + 1}"
+        created = await get_provider().create_from_template(
+            template_ref=template.provider_template_ref,
             signers=provider_signers,
             expires_at=expires_at,
         )
@@ -383,7 +422,6 @@ class SignaturesWebhookManager:
         entier — person_id NULL, décision B), acteur SYSTEM porté par l'id
         de la demande (uploaded_by_id est NOT NULL ; l'id de la demande est
         la provenance exacte, commenté ici même)."""
-        from src.core import storage
         from src.documents.documents_repository import DocumentsRepository
 
         document_id = uuid.uuid4()

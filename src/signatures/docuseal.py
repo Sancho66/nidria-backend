@@ -14,11 +14,16 @@ Constats de doc (docuseal.com/docs/api) :
   leurs URLs EXPIRENT : on télécharge les octets immédiatement, on ne
   stocke jamais une URL.
 
-Source du document (LOT 6) : le PDF de L'AGENCE, uploadé sur l'exigence
-signable du template et snapshoté à la matérialisation — le template
-DocuSeal naît de CE fichier (POST /templates/pdf, base64 + champs
-signature à zones explicites). Le fallback HTML minimal a DISPARU : on ne
-signe jamais un document vide.
+Source du document (méga-lot modèles 29/07) : le MODÈLE de la
+bibliothèque — le template DocuSeal naît du PDF de l'agence à la création
+du modèle (POST /templates/pdf SANS champs, external_id = notre UUID : la
+clé de liaison find-or-create du builder embeddé, constat sonde — le claim
+template_id du JWT est ignoré). Les zones sont posées par l'AGENCE dans le
+builder ; les coordonnées fixes du LOT 6 ont DISPARU. Les soumissions
+partent du template (mapping par NOM de rôle « Signataire N ») — constat
+sonde : un rôle inconnu est accepté sans validation (signataire fantôme
+sans zones) et le template ne snapshotte PAS à la soumission (une édition
+affecte les demandes EN VOL) — les deux gardes vivent côté domaine.
 """
 
 import base64
@@ -35,48 +40,12 @@ from src.signatures.provider import (
     CreatedSigner,
     CreatedSubmission,
     ProviderSigner,
+    TemplateSummary,
 )
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 30.0
-
-
-def _signature_fields(roles: list[str]) -> list[dict[str, Any]]:
-    """Un champ signature par signataire, bloc DEUX COLONNES ancré en bas
-    de la DERNIÈRE page — là où vit la zone de signature d'un contrat
-    réel. Constats sandbox (smoke 2026-07-29) :
-    - `page` d'entrée est 1-indexé et **-1 = dernière page**, résolu par
-      l'API quand les coordonnées sont en points (la v0 posait page 1 et
-      les boîtes tombaient en plein corps de texte) ;
-    - les coordonnées en points PDF sont normalisées par les dimensions
-      RÉELLES de la page (60/595 → 0.1008 sur A4) — les y ci-dessous
-      sont calés pour tenir sur Letter (792 pt) comme sur A4 (842 pt) ;
-    - en fractions pures, `page: -1` reste stocké tel quel (non résolu,
-      rendu incertain) → on reste en points ;
-    - les text tags {{Signature;role=…;type=signature}} SONT auto-
-      détectés par POST /templates/pdf — ancrage fin possible plus tard,
-      la convention de rôle reste à décider (au rapport)."""
-    fields: list[dict[str, Any]] = []
-    for i, role in enumerate(roles):
-        fields.append(
-            {
-                "name": f"Signature — {role}",
-                "role": role,
-                "type": "signature",
-                "required": True,
-                "areas": [
-                    {
-                        "x": 60 if i % 2 == 0 else 340,
-                        "y": 700 - (i // 2) * 72,
-                        "w": 200,
-                        "h": 60,
-                        "page": -1,
-                    }
-                ],
-            }
-        )
-    return fields
 
 
 class DocuSealProvider:
@@ -127,45 +96,52 @@ class DocuSealProvider:
 
     # --- port -----------------------------------------------------------------------
 
-    async def create(
-        self,
-        *,
-        document_name: str,
-        document_pdf: bytes,
-        document_filename: str,
-        signers: list[ProviderSigner],
-        expires_at: datetime | None,
-    ) -> CreatedSubmission:
-        # LOT 6 : le template DocuSeal naît du PDF DE L'AGENCE (constat :
-        # POST /templates/pdf, file en base64) — on ne signe jamais un
-        # document vide, le fallback HTML minimal a disparu.
-        roles = [f"Signer {i + 1}" for i in range(len(signers))]
+    async def create_template(
+        self, *, name: str, pdf: bytes, filename: str, external_id: str
+    ) -> str:
+        # SANS champs : les zones sont l'affaire du builder embeddé.
         template = await self._request(
             "POST",
             "/templates/pdf",
             json={
-                "name": document_name,
-                "documents": [
-                    {
-                        "name": document_filename,
-                        "file": base64.b64encode(document_pdf).decode("ascii"),
-                        "fields": _signature_fields(roles),
-                    }
-                ],
+                "name": name,
+                "external_id": external_id,
+                "documents": [{"name": filename, "file": base64.b64encode(pdf).decode("ascii")}],
             },
         )
+        return str(template["id"])
+
+    async def template_summary(self, template_ref: str) -> TemplateSummary:
+        template = await self._request("GET", f"/templates/{template_ref}")
+        fields = template.get("fields") or []
+        submitters = template.get("submitters") or []
+        return TemplateSummary(
+            fields_count=len(fields),
+            roles=[str(s.get("name") or "") for s in submitters],
+        )
+
+    async def archive_template(self, template_ref: str) -> None:
+        await self._request("DELETE", f"/templates/{template_ref}")
+
+    async def create_from_template(
+        self,
+        *,
+        template_ref: str,
+        signers: list[ProviderSigner],
+        expires_at: datetime | None,
+    ) -> CreatedSubmission:
         payload: dict[str, Any] = {
-            "template_id": template["id"],
+            "template_id": int(template_ref),
             "send_email": False,  # JAMAIS un email DocuSeal — notifications v4
             "order": "random",  # signature parallèle (constaté : random = parallèle)
             "submitters": [
                 {
-                    "role": role,
+                    "role": signer.role,
                     "external_id": signer.signer_id,
                     "name": signer.name,
                     "email": signer.email,
                 }
-                for role, signer in zip(roles, signers, strict=True)
+                for signer in signers
             ],
         }
         if expires_at is not None:

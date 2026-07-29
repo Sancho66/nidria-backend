@@ -49,6 +49,30 @@ async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
     return await make_agent(role=system_roles["admin"])
 
 
+async def _document_template(
+    client: AsyncClient,
+    headers: dict[str, str],
+    *,
+    name: str = "Statuts",
+    synced: bool = True,
+) -> dict:
+    """Un modèle de la bibliothèque, zones posées (builder-sync simulé sur
+    le FakeProvider — default_roles) sauf synced=False."""
+    r = await client.post(
+        "/document-templates",
+        headers=headers,
+        data={"name": name},
+        files={"file": ("statuts.pdf", SOURCE_PDF, "application/pdf")},
+    )
+    assert r.status_code == 201, r.text
+    template = r.json()
+    if synced:
+        r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
+        assert r.status_code == 200, r.text
+        template = r.json()
+    return template
+
+
 async def _signable_case(
     client: AsyncClient,
     db: AsyncSession,
@@ -72,6 +96,10 @@ async def _signable_case(
     step = (
         await client.post(f"/journeys/{template['id']}/steps", headers=headers, json=body)
     ).json()
+    # Méga-lot modèles : l'exigence signable naît AVEC son modèle de la
+    # bibliothèque (PDF source + zones sauvegardées au builder — simulé par
+    # builder-sync sur le FakeProvider). Le PDF-direct est mort.
+    doc_template = await _document_template(client, headers, name=f"Statuts {email_prefix}")
     r = await client.post(
         f"/journeys/{template['id']}/steps/{step['id']}/requirements",
         headers=headers,
@@ -80,18 +108,10 @@ async def _signable_case(
             "reference": "Statuts",
             "scope": "each_person",
             "signature_required": True,
+            "document_template_id": doc_template["id"],
         },
     )
     assert r.status_code == 201, r.text
-    # LOT 6 : le PDF source est OBLIGATOIRE (on ne signe jamais un document
-    # vide) — le harnais l'uploade comme le ferait l'éditeur.
-    up = await client.post(
-        f"/journeys/{template['id']}/steps/{step['id']}/requirements/{r.json()['id']}"
-        "/signature-document",
-        headers=headers,
-        files={"file": ("statuts.pdf", SOURCE_PDF, "application/pdf")},
-    )
-    assert up.status_code == 200, up.text
     r = await client.post(
         f"/journeys/{template['id']}/steps/{step['id']}/requirements",
         headers=headers,
@@ -222,20 +242,29 @@ async def test_flag_off_nothing_materializes(
     fake_provider: FakeProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SIGNATURES_ENABLED", "false")
-    get_settings.cache_clear()
-    case, _ = await _signable_case(
+    # Configuré flag ON (le CRUD bibliothèque est gaté au flag effectif),
+    # puis KILL SWITCH : l'activation passe, mais rien ne part.
+    headers = agent_headers(admin)
+    case, progress_id = await _signable_case(
         client,
         db_session,
         admin,
-        agent_headers(admin),
+        headers,
         make_client_case,
         make_expat_user,
         email_prefix="off",
+        activate=False,
     )
+    case_id = case.id
+    monkeypatch.setenv("SIGNATURES_ENABLED", "false")
+    get_settings.cache_clear()
+    r = await client.patch(
+        f"/cases/{case_id}/steps/{progress_id}", headers=headers, json={"status": "in_progress"}
+    )
+    assert r.status_code == 200, r.text
     # L'activation a réussi, et RIEN n'existe : ni demande, ni appel
     # provider, ni écriture ledger.
-    assert await _requests(db_session, case.id) == []
+    assert await _requests(db_session, case_id) == []
     assert fake_provider.create_calls == []
     assert await ledger.derived_balance(db_session, admin.agency_id) == (0, 0)
 

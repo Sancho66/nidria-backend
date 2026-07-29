@@ -3,11 +3,18 @@ identifiants à lui (signataires = signature_signer.id via external_id) et
 en refs OPAQUES retournées par le provider ; aucun détail DocuSeal ne
 franchit cette frontière.
 
-Contrat du port (ce que les 3 lots exigent) :
-- `create`  : envoie UN document à signer à N signataires (ordre
-  PARALLÈLE, expiration posée, AUCUN email provider — les emails sont au
-  système de notifications v4). Retourne les refs opaques + le slug
-  d'embed par signataire.
+Contrat du port (3 lots + méga-lot modèles 29/07) :
+- `create_template` : matérialise chez le provider le template d'un modèle
+  de la bibliothèque (octets du PDF de l'agence, external_id = NOTRE UUID
+  — la clé de liaison du builder embeddé, constat sonde). Zéro champ : les
+  zones sont posées par l'agence dans le builder.
+- `template_summary` : constat post-save builder (nb de champs, rôles) —
+  alimente fields_configured/roles_count du modèle.
+- `archive_template` : ménage best-effort à la suppression du modèle.
+- `create_from_template` : envoie UN document à signer à N signataires
+  (ordre PARALLÈLE, mapping par NOM de rôle, expiration posée, AUCUN email
+  provider — les emails sont au système de notifications v4). Retourne les
+  refs opaques + le slug d'embed par signataire.
 - `cancel`  : annule une demande vivante (release du crédit côté domaine).
 - `download_completed` : récupère IMMÉDIATEMENT le PDF signé + le dossier
   de preuve d'une demande complétée — leurs URLs expirent, on ne stocke
@@ -34,6 +41,10 @@ class ProviderSigner:
     signer_id: str  # signature_signer.id, posé en external_id chez le provider
     name: str
     email: str | None
+    # Convention sonde : "Signataire N" (1-based, ordre de matérialisation)
+    # — DOIT exister sur le template (le provider ne valide PAS un rôle
+    # inconnu : il assoit un signataire fantôme sans zones — garde chez nous).
+    role: str = ""
 
 
 @dataclass
@@ -50,6 +61,14 @@ class CreatedSubmission:
 
 
 @dataclass
+class TemplateSummary:
+    """Constat du template provider après save builder."""
+
+    fields_count: int
+    roles: list[str] = field(default_factory=list)
+
+
+@dataclass
 class CompletedFiles:
     """Les OCTETS du résultat — jamais d'URL (elles expirent)."""
 
@@ -60,12 +79,18 @@ class CompletedFiles:
 
 
 class SignatureProvider(Protocol):
-    async def create(
+    async def create_template(
+        self, *, name: str, pdf: bytes, filename: str, external_id: str
+    ) -> str: ...
+
+    async def template_summary(self, template_ref: str) -> TemplateSummary: ...
+
+    async def archive_template(self, template_ref: str) -> None: ...
+
+    async def create_from_template(
         self,
         *,
-        document_name: str,
-        document_pdf: bytes,
-        document_filename: str,
+        template_ref: str,
         signers: list[ProviderSigner],
         expires_at: datetime | None,
     ) -> CreatedSubmission: ...

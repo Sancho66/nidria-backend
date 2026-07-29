@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     # la même valeur est posée ici et dans le header X-Docuseal-Secret de
     # la config webhook DocuSeal ; comparaison constante côté endpoint.
     docuseal_webhook_secret: str | None = None
+    # Builder embeddé (méga-lot modèles) : user_email du JWT = l'email du
+    # compte DocuSeal propriétaire de la clé API (constat sonde).
+    docuseal_account_email: str | None = None
+    docuseal_builder_token_expires_minutes: int = 10
     signature_request_expires_days: int = 30
     # Credit packs (lot 2): Paddle price id → credits granted, JSON env —
     # same env-specific mapping doctrine as paddle_price_ids. The three

@@ -1,13 +1,17 @@
-"""LOT 6 — source du document + deux gardes.
+"""Source du document signable — ère MODÈLES (méga-lot 29/07, remplace le
+PDF-direct du LOT 6, supprimé sur verdict prod zéro ligne).
 
-1. Le PDF de l'agence est LA source : uploadé sur l'exigence signable du
-   template, snapshoté à la matérialisation (une ré-upload ne touche jamais
-   un dossier en vol), transmis au provider en octets. Sans PDF → 422 nommé
-   à l'assignation ET à l'envoi — on ne signe JAMAIS un document vide.
-2. Sémantique du flag verrouillée : l'env est MAÎTRE (off = off pour toute
-   agence quoi que dise son réglage) ; le réglage agence n'est qu'un
-   sous-interrupteur de rollout (env on + agence off = pas d'envoi).
-3. Le « Signé n/m » sur les réponses espace client.
+1. Le MODÈLE de la bibliothèque est LA source : snapshoté sur la ligne à la
+   matérialisation, transmis au provider en REF (plus jamais d'octets à
+   l'envoi) avec le mapping de rôles « Signataire N » dans l'ordre de
+   matérialisation.
+2. Les gardes d'envoi : modèle absent (donnée dégradée) → 422 à
+   l'assignation ; zones jamais sauvegardées au builder → 422 nommé à
+   l'envoi ; plus de signataires que de rôles configurés → 422 nommé
+   (constat sonde : DocuSeal accepte un rôle inconnu sans broncher).
+3. Sémantique du flag verrouillée : l'env est MAÎTRE ; le réglage agence
+   n'est qu'un sous-interrupteur de rollout.
+4. Le « Signé n/m » sur les réponses espace client.
 """
 
 import uuid
@@ -15,7 +19,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -24,16 +28,15 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import Role
+from shared.models.step_requirement import StepRequirement
 from src.core.config import get_settings
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase
 from tests.plugins.expat_plugin import MakeExpatUser
-from tests.plugins.signature_plugin import SOURCE_PDF, FakeProvider
-from tests.test_signatures import _requests, _signable_case, _signers
+from tests.plugins.signature_plugin import FakeProvider
+from tests.test_signatures import _document_template, _requests, _signable_case, _signers
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline", "signatures_enabled")
-
-SOURCE_PDF_V2 = b"%PDF-1.4 contrat source agence V2"
 
 
 @pytest_asyncio.fixture
@@ -42,16 +45,18 @@ async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
 
 
 async def _own_journey(
-    client: AsyncClient, headers: dict[str, str], *, with_pdf: bool = True
-) -> tuple[str, str, str]:
-    """(template_id, step_id, requirement_id) — un parcours à UNE exigence
-    signable, PDF uploadé (ou pas)."""
+    client: AsyncClient, headers: dict[str, str], *, synced: bool = True
+) -> tuple[str, str, str, dict]:
+    """(template_id, step_id, requirement_id, document_template) — un
+    parcours à UNE exigence signable adossée à un modèle de la
+    bibliothèque (zones sauvegardées au builder sauf synced=False)."""
     template = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()
     step = (
         await client.post(
             f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Contrat"}
         )
     ).json()
+    doc_template = await _document_template(client, headers, synced=synced)
     req = (
         await client.post(
             f"/journeys/{template['id']}/steps/{step['id']}/requirements",
@@ -61,19 +66,11 @@ async def _own_journey(
                 "reference": "Statuts",
                 "scope": "principal",
                 "signature_required": True,
+                "document_template_id": doc_template["id"],
             },
         )
     ).json()
-    if with_pdf:
-        up = await client.post(
-            f"/journeys/{template['id']}/steps/{step['id']}/requirements/{req['id']}"
-            "/signature-document",
-            headers=headers,
-            files={"file": ("statuts.pdf", SOURCE_PDF, "application/pdf")},
-        )
-        assert up.status_code == 200, up.text
-        assert up.json()["signature_document_filename"] == "statuts.pdf"
-    return template["id"], step["id"], req["id"]
+    return template["id"], step["id"], req["id"], doc_template
 
 
 async def _case_on(
@@ -86,6 +83,7 @@ async def _case_on(
     email_addr: str,
     *,
     activate: bool = True,
+    expect_activate: int = 200,
 ) -> tuple[ClientCase, str]:
     principal = await make_expat_user(activated=True, email=email_addr)
     case = await make_client_case(
@@ -100,7 +98,7 @@ async def _case_on(
         r = await client.patch(
             f"/cases/{case.id}/steps/{progress_id}", headers=headers, json={"status": "in_progress"}
         )
-        assert r.status_code == 200, r.text
+        assert r.status_code == expect_activate, r.text
     return case, progress_id
 
 
@@ -115,10 +113,10 @@ async def _signable_row(db: AsyncSession, progress_id: str) -> CaseStepRequireme
     ).scalar_one()
 
 
-# --- (1) la source : snapshot + octets au provider -----------------------------------
+# --- (1) la source : snapshot du modèle + ref au provider ----------------------------
 
 
-async def test_pdf_is_snapshotted_and_sent_to_the_provider(
+async def test_template_is_snapshotted_and_sent_as_ref(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -130,19 +128,22 @@ async def test_pdf_is_snapshotted_and_sent_to_the_provider(
 ) -> None:
     await give_credits(admin.agency_id, 10)
     headers = agent_headers(admin)
-    template_id, _, _ = await _own_journey(client, headers)
+    template_id, _, _, doc_template = await _own_journey(client, headers)
     _case, progress_id = await _case_on(
         client, admin, headers, make_client_case, make_expat_user, template_id, "src@example.com"
     )
     row = await _signable_row(db_session, progress_id)
-    assert row.signature_document_path is not None
-    assert row.signature_document_filename == "statuts.pdf"
-    # Le provider a reçu LES OCTETS du PDF de l'agence.
-    assert fake_provider.create_calls[0]["document_pdf"] == SOURCE_PDF
-    assert fake_provider.create_calls[0]["document_filename"] == "statuts.pdf"
+    # Snapshot : la ligne matérialisée fige LE modèle de la définition.
+    assert str(row.document_template_id) == doc_template["id"]
+    # Le provider reçoit la REF du template (créé à la naissance du modèle,
+    # PDF envoyé à ce moment-là) + le mapping de rôles convention sonde.
+    assert fake_provider.create_template_calls[0]["external_id"] == doc_template["id"]
+    sent = fake_provider.create_calls[0]
+    assert sent["template_ref"] == fake_provider.create_template_calls[0]["ref"]
+    assert sent["roles"] == ["Signataire 1"]
 
 
-async def test_reupload_never_touches_a_case_in_flight(
+async def test_roles_follow_materialization_order_principal_first(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -152,40 +153,29 @@ async def test_reupload_never_touches_a_case_in_flight(
     fake_provider: FakeProvider,
     give_credits,
 ) -> None:
-    """Ré-upload = NOUVEAU chemin : le dossier déjà activé garde SON
-    snapshot ; le dossier suivant prend la V2 (et le provider ses octets)."""
+    """each_person à 2 signataires : « Signataire 1 » = le principal,
+    « Signataire 2 » = le membre — l'ordre de matérialisation."""
     await give_credits(admin.agency_id, 10)
-    headers = agent_headers(admin)
-    template_id, step_id, req_id = await _own_journey(client, headers)
-    _case_a, progress_a = await _case_on(
-        client, admin, headers, make_client_case, make_expat_user, template_id, "reup-a@example.com"
+    case, _pid = await _signable_case(
+        client,
+        db_session,
+        admin,
+        agent_headers(admin),
+        make_client_case,
+        make_expat_user,
+        email_prefix="order",
     )
-    row_a = await _signable_row(db_session, progress_a)
-    old_path = row_a.signature_document_path
-
-    up = await client.post(
-        f"/journeys/{template_id}/steps/{step_id}/requirements/{req_id}/signature-document",
-        headers=headers,
-        files={"file": ("statuts-v2.pdf", SOURCE_PDF_V2, "application/pdf")},
-    )
-    assert up.status_code == 200, up.text
-
-    _case_b, progress_b = await _case_on(
-        client, admin, headers, make_client_case, make_expat_user, template_id, "reup-b@example.com"
-    )
-    db_session.expire_all()
-    row_a = await _signable_row(db_session, progress_a)
-    row_b = await _signable_row(db_session, progress_b)
-    assert row_a.signature_document_path == old_path  # le vol garde sa version
-    assert row_b.signature_document_path != old_path
-    assert row_b.signature_document_filename == "statuts-v2.pdf"
-    assert fake_provider.create_calls[-1]["document_pdf"] == SOURCE_PDF_V2
+    sent = fake_provider.create_calls[0]
+    assert sent["roles"] == ["Signataire 1", "Signataire 2"]
+    principal_email = "order-p@example.com"
+    assert sent["signers"][0].email == principal_email
+    assert sent["signers"][0].role == "Signataire 1"
 
 
-# --- (1bis) jamais un document vide : les deux gardes 422 ----------------------------
+# --- (2) les gardes : modèle absent / zones absentes / rôles insuffisants ------------
 
 
-async def test_assignment_refuses_signable_without_pdf(
+async def test_assignment_refuses_signable_without_template(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -194,9 +184,18 @@ async def test_assignment_refuses_signable_without_pdf(
     make_expat_user: MakeExpatUser,
     fake_provider: FakeProvider,
 ) -> None:
+    """La création d'exigence refuse déjà un signable sans modèle — la garde
+    d'assignation reste la défense structurelle contre la donnée dégradée
+    (colonne NULLée en base, hors chemin API)."""
     headers = agent_headers(admin)
-    template_id, _, _ = await _own_journey(client, headers, with_pdf=False)
-    principal = await make_expat_user(activated=True, email="nopdf@example.com")
+    template_id, _, req_id, _doc = await _own_journey(client, headers)
+    await db_session.execute(
+        update(StepRequirement)
+        .where(StepRequirement.id == uuid.UUID(req_id))
+        .values(document_template_id=None)
+    )
+    await db_session.commit()
+    principal = await make_expat_user(activated=True, email="notpl@example.com")
     case = await make_client_case(agency_id=admin.agency_id, principal_expat_user_id=principal.id)
     r = await client.post(
         f"/cases/{case.id}/journey", headers=headers, json={"journey_template_id": template_id}
@@ -206,7 +205,43 @@ async def test_assignment_refuses_signable_without_pdf(
     assert r.json()["params"]["reference"] == "Statuts"
 
 
-async def test_send_guard_catches_a_requirement_added_after_assignment(
+async def test_requirement_creation_refuses_signable_without_template(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, fake_provider: FakeProvider
+) -> None:
+    headers = agent_headers(admin)
+    template = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    step = (
+        await client.post(f"/journeys/{template['id']}/steps", headers=headers, json={"name": "S"})
+    ).json()
+    r = await client.post(
+        f"/journeys/{template['id']}/steps/{step['id']}/requirements",
+        headers=headers,
+        json={
+            "kind": "document",
+            "reference": "Statuts",
+            "scope": "principal",
+            "signature_required": True,
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "journey.signature_template_required"
+    # Et un modèle sur une exigence NON signable → 422 nommé aussi.
+    doc_template = await _document_template(client, headers)
+    r = await client.post(
+        f"/journeys/{template['id']}/steps/{step['id']}/requirements",
+        headers=headers,
+        json={
+            "kind": "document",
+            "reference": "Kbis",
+            "scope": "principal",
+            "document_template_id": doc_template["id"],
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "journey.template_on_non_signable"
+
+
+async def test_send_refuses_a_template_never_saved_in_the_builder(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -216,88 +251,61 @@ async def test_send_guard_catches_a_requirement_added_after_assignment(
     fake_provider: FakeProvider,
     give_credits,
 ) -> None:
-    """L'exigence signable AJOUTÉE sans PDF sur un template déjà assigné
-    (étape active) : le backfill voudrait envoyer → la garde d'envoi refuse,
-    même 422 nommé — la défense est structurelle, pas seulement à
-    l'assignation."""
+    """fields_configured=false (le builder n'a jamais sauvegardé) : on
+    n'envoie PAS un modèle sans zones — l'activation entière refuse (422
+    nommé), aucune demande, aucun crédit brûlé."""
     await give_credits(admin.agency_id, 10)
     headers = agent_headers(admin)
-    template = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()
-    step = (
-        await client.post(
-            f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Contrat"}
-        )
-    ).json()
+    template_id, _, _, _doc = await _own_journey(client, headers, synced=False)
     _case, _pid = await _case_on(
         client,
         admin,
         headers,
         make_client_case,
         make_expat_user,
-        template["id"],
-        "late-def@example.com",
+        template_id,
+        "nofields@example.com",
+        expect_activate=422,
     )
-    r = await client.post(
-        f"/journeys/{template['id']}/steps/{step['id']}/requirements",
-        headers=headers,
-        json={
-            "kind": "document",
-            "reference": "Avenant",
-            "scope": "principal",
-            "signature_required": True,
-        },
-    )
-    assert r.status_code == 422, r.text
-    assert r.json()["code"] == "journey.signature_document_missing"
+    await db_session.rollback()
+    assert fake_provider.create_calls == []
+    balance = (await client.get("/agencies/me/signature-credits", headers=headers)).json()
+    assert balance["available"] == 10
+
+
+async def test_send_refuses_more_signers_than_roles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    fake_provider: FakeProvider,
+    give_credits,
+) -> None:
+    """Constat sonde : le provider assoit un rôle inconnu SANS valider
+    (signataire fantôme sans zones) — la garde de cohérence vit chez nous.
+    Modèle à 1 rôle + exigence each_person sur dossier à 2 personnes →
+    422 nommé à l'activation."""
+    await give_credits(admin.agency_id, 10)
+    fake_provider.default_roles = ["Signataire 1"]
+    with pytest.raises(AssertionError):
+        # _signable_case active l'étape : l'activation doit refuser (422 ≠
+        # 200 attendu par le helper) — le raises épingle le refus.
+        await _signable_case(
+            client,
+            db_session,
+            admin,
+            agent_headers(admin),
+            make_client_case,
+            make_expat_user,
+            email_prefix="roles",
+        )
+    await db_session.rollback()
     assert fake_provider.create_calls == []
 
 
-async def test_upload_gardes(client: AsyncClient, admin: Agent, agent_headers: AuthHeaders) -> None:
-    headers = agent_headers(admin)
-    template = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()
-    step = (
-        await client.post(f"/journeys/{template['id']}/steps", headers=headers, json={"name": "S"})
-    ).json()
-    plain = (
-        await client.post(
-            f"/journeys/{template['id']}/steps/{step['id']}/requirements",
-            headers=headers,
-            json={"kind": "document", "reference": "Kbis", "scope": "principal"},
-        )
-    ).json()
-    # Un PDF sur une exigence NON signable → 422 nommé.
-    r = await client.post(
-        f"/journeys/{template['id']}/steps/{step['id']}/requirements/{plain['id']}"
-        "/signature-document",
-        headers=headers,
-        files={"file": ("x.pdf", SOURCE_PDF, "application/pdf")},
-    )
-    assert r.status_code == 422
-    assert r.json()["code"] == "journey.signature_document_on_non_signable"
-    # Un non-PDF sur une signable → 422 nommé.
-    signable = (
-        await client.post(
-            f"/journeys/{template['id']}/steps/{step['id']}/requirements",
-            headers=headers,
-            json={
-                "kind": "document",
-                "reference": "Statuts",
-                "scope": "principal",
-                "signature_required": True,
-            },
-        )
-    ).json()
-    r = await client.post(
-        f"/journeys/{template['id']}/steps/{step['id']}/requirements/{signable['id']}"
-        "/signature-document",
-        headers=headers,
-        files={"file": ("x.docx", b"not a pdf", "application/msword")},
-    )
-    assert r.status_code == 422
-    assert r.json()["code"] == "journey.signature_document_not_pdf"
-
-
-# --- (2) la garde du flag : env MAÎTRE, réglage agence sous-interrupteur -------------
+# --- (3) la garde du flag : env MAÎTRE, réglage agence sous-interrupteur -------------
 
 
 async def test_env_master_beats_the_agency_setting(
@@ -314,7 +322,7 @@ async def test_env_master_beats_the_agency_setting(
     settings (le PATCH le permet), RIEN ne s'active — le AND est
     structurel, aucune auto-activation possible."""
     headers = agent_headers(admin)
-    template_id, _, _ = await _own_journey(client, headers)
+    template_id, _, _, _doc = await _own_journey(client, headers)
 
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
@@ -353,7 +361,7 @@ async def test_agency_subswitch_off_blocks_sends(
     effective false, face client muette — le rollout sélectif."""
     await give_credits(admin.agency_id, 10)
     headers = agent_headers(admin)
-    template_id, _, _ = await _own_journey(client, headers)
+    template_id, _, _, _doc = await _own_journey(client, headers)
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
     agency.settings = {**(agency.settings or {}), "signatures_enabled": False}
@@ -380,7 +388,7 @@ async def test_agency_subswitch_off_blocks_sends(
     assert tasks == []
 
 
-# --- (3) le « Signé n/m » côté client -------------------------------------------------
+# --- (4) le « Signé n/m » côté client -------------------------------------------------
 
 
 async def test_expat_listing_carries_signed_n_over_m(

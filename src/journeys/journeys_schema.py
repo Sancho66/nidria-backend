@@ -316,6 +316,10 @@ class StepRequirementCreateRequest(BaseModel):
     position: int = 0
     signature_required: bool = False
     signature_level: SignatureLevel = SignatureLevel.SES
+    # Méga-lot modèles (29/07) : une exigence signable référence un MODÈLE
+    # de la bibliothèque (zones posées au builder) — OBLIGATOIRE si
+    # signature_required (le PDF-direct est mort, verdict prod : 0 ligne).
+    document_template_id: uuid.UUID | None = None
 
 
 class StepRequirementResponse(BaseModel):
@@ -329,10 +333,9 @@ class StepRequirementResponse(BaseModel):
     position: int
     signature_required: bool
     signature_level: str
-    # LOT 6 : le PDF à signer est posé ? (nom affichable ; le chemin de
-    # stockage reste interne). None = pas encore uploadé — l'assignation
-    # du parcours refusera tant que c'est vide.
-    signature_document_filename: str | None = None
+    # Méga-lot modèles : le modèle référencé (None = pas encore choisi —
+    # l'assignation du parcours refusera tant que c'est vide).
+    document_template_id: uuid.UUID | None = None
 
 
 class StepOrderRequest(BaseModel):

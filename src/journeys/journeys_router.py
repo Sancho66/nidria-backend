@@ -172,12 +172,6 @@ BINDINGS = [
         Permission.JOURNEY_CONFIGURE,
     ),
     RouteBinding(
-        "POST",
-        "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}/signature-document",
-        Audience.AGENT,
-        Permission.JOURNEY_CONFIGURE,
-    ),
-    RouteBinding(
         "PUT",
         "/journeys/{template_id}/steps/{step_id}/requirements/order",
         Audience.AGENT,
@@ -776,33 +770,6 @@ async def add_requirement(
     db: DbDep,
 ) -> StepRequirementResponse:
     requirement = await JourneysManager(db).add_requirement(agent, template_id, step_id, body)
-    return StepRequirementResponse.model_validate(requirement)
-
-
-@router.post(
-    "/{template_id}/steps/{step_id}/requirements/{requirement_id}/signature-document",
-    response_model=StepRequirementResponse,
-)
-async def upload_signature_document(
-    template_id: uuid.UUID,
-    step_id: uuid.UUID,
-    requirement_id: uuid.UUID,
-    file: UploadFile,
-    agent: AgentDep,
-    db: DbDep,
-) -> StepRequirementResponse:
-    """LOT 6 : le PDF que l'agence fait signer, attaché à l'exigence
-    signable — chaque upload = un nouveau chemin (les dossiers en vol
-    gardent leur snapshot). PDF uniquement."""
-    requirement = await JourneysManager(db).upload_signature_document(
-        agent,
-        template_id,
-        step_id,
-        requirement_id,
-        filename=file.filename or "document.pdf",
-        content=await file.read(),
-        content_type=file.content_type,
-    )
     return StepRequirementResponse.model_validate(requirement)
 
 

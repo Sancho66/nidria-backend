@@ -60,11 +60,15 @@ class CaseStepRequirement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     signature_level: Mapped[str] = mapped_column(
         String(3), default="ses", server_default=text("'ses'"), nullable=False
     )
-    # LOT 6 : snapshot du PDF à signer (chemin + nom), copié de la
-    # définition à la matérialisation comme kind/reference/scope — une
-    # ré-upload sur le template ne change jamais un dossier en vol.
-    signature_document_path: Mapped[str | None] = mapped_column(String(500))
-    signature_document_filename: Mapped[str | None] = mapped_column(String(255))
+    # Snapshot du MODÈLE à la matérialisation (méga-lot modèles 29/07),
+    # copié de la définition comme kind/reference/scope — remplace le
+    # snapshot PDF-direct du LOT 6 (chemin legacy supprimé, 0 ligne prod).
+    # SET NULL : l'historique fulfilled ne bloque jamais une suppression
+    # passée la garde applicative (qui refuse tant que des lignes PENDANTES
+    # le référencent).
+    document_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("document_template.id", ondelete="SET NULL"), nullable=True
+    )
     # Authoritative for kind=document; derived at read time for fields.
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     provided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
