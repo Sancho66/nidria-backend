@@ -6,6 +6,11 @@
    portent signature_required + signature_status, l'étape porte l'agrégat
    « Signé n/m ». 5. La tâche de signature client porte requirement_id.
    6. Le ledger paginé (agency.manage).
+
+Complément durcissement (29/07) : les lignes portent aussi
+signature_request_id (la cible nommable du cancel) et
+signature_request_status (la VIVANCE — une annulée ne se déguise plus
+en pending).
 """
 
 import json
@@ -172,6 +177,79 @@ async def test_timeline_exposes_signature_state_and_step_aggregate(
     }
     assert statuses[signed_row_id] == "signed"
     assert sorted(statuses.values()) == ["pending", "signed"]
+
+
+async def test_timeline_names_the_request_and_its_liveness(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    fake_provider: FakeProvider,
+    give_credits,
+) -> None:
+    """Complément durcissement : id + vivance de la demande par ligne.
+
+    Envoi → les lignes signables nomment la demande (cible du cancel) et
+    la voient VIVANTE (sent). Annulation → l'id reste nommé mais la
+    vivance dit cancelled (le front réactive « Renvoyer la demande »).
+    Re-envoi → nouvel id, à nouveau sent. Le Kbis classique : None/None.
+    """
+    headers = agent_headers(admin)
+    await give_credits(admin.agency_id, 5)
+    case, progress_id = await _signable_case(
+        client,
+        db_session,
+        admin,
+        headers,
+        make_client_case,
+        make_expat_user,
+        email_prefix="live",
+    )
+    case_id = case.id
+    request_id = str((await _requests(db_session, case_id))[0].id)
+
+    def signable_rows(detail: dict) -> list[dict]:
+        step = next(s for s in detail["progress"] if s["id"] == progress_id)
+        return [r for r in step["requirements"] if r["signature_required"]]
+
+    def classic_row(detail: dict) -> dict:
+        step = next(s for s in detail["progress"] if s["id"] == progress_id)
+        return next(r for r in step["requirements"] if r["reference"] == "Kbis")
+
+    # Envoi : les 2 lignes signables nomment LA demande, vivante.
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    rows = signable_rows(detail)
+    assert len(rows) == 2
+    assert all(r["signature_request_id"] == request_id for r in rows)
+    assert all(r["signature_request_status"] == "sent" for r in rows)
+    # Le Kbis classique ne nomme rien.
+    assert classic_row(detail)["signature_request_id"] is None
+    assert classic_row(detail)["signature_request_status"] is None
+
+    # Annulation : l'id reste nommé, la vivance dit cancelled.
+    r = await client.post(
+        f"/cases/{case_id}/signature-requests/{request_id}/cancel", headers=headers
+    )
+    assert r.status_code == 200, r.text
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    rows = signable_rows(detail)
+    assert all(r["signature_request_id"] == request_id for r in rows)
+    assert all(r["signature_request_status"] == "cancelled" for r in rows)
+
+    # Re-envoi : nouvelle demande nommée, à nouveau vivante.
+    r = await client.post(
+        f"/cases/{case_id}/steps/{progress_id}/signature-requests", headers=headers
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "sent=1"
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    rows = signable_rows(detail)
+    new_ids = {r["signature_request_id"] for r in rows}
+    assert new_ids != {request_id}
+    assert len(new_ids) == 1
+    assert all(r["signature_request_status"] == "sent" for r in rows)
 
 
 # --- (5) la tâche client porte requirement_id -----------------------------------------

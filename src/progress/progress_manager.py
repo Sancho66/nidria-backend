@@ -694,7 +694,15 @@ class ProgressManager:
                     reference=req.reference,
                     scope=req.scope,
                     signature_required=req.signature_required,
-                    signature_status=signer_status_by_row.get(req.id),
+                    signature_status=(
+                        signer_status_by_row[req.id][2] if req.id in signer_status_by_row else None
+                    ),
+                    signature_request_id=(
+                        signer_status_by_row[req.id][0] if req.id in signer_status_by_row else None
+                    ),
+                    signature_request_status=(
+                        signer_status_by_row[req.id][1] if req.id in signer_status_by_row else None
+                    ),
                     status=(
                         RequirementStatus.PROVIDED.value
                         if provided
@@ -1278,6 +1286,17 @@ class ProgressManager:
         mail). The SINGLE core shared by both faces (agent + expat) — only
         the perimeter and the upload call differ upstream. The caller
         commits, then sends the returned mails (best-effort)."""
+        # DURCISSEMENT (pré-flip, 29/07) : une exigence SIGNABLE ne se
+        # « fournit » QUE par la signature — tout dépôt direct est refusé,
+        # pour TOUTE audience (ce cœur est le point unique des deux faces :
+        # l'agent ne contourne pas plus que le client). Le webhook, lui, ne
+        # passe pas ici : il flippe la ligne à la signature, comme avant.
+        if getattr(requirement, "signature_required", False):
+            raise ValidationError(
+                "A signable requirement is only fulfilled by signing it.",
+                code="requirement.signable_needs_signature",
+                params={"reference": requirement.reference},
+            )
         before = await self.snapshot_active_completion(case)  # requirement still pending here
         requirement.status = RequirementStatus.PROVIDED.value
         requirement.provided_at = datetime.now(UTC)

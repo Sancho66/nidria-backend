@@ -91,6 +91,12 @@ class ExpatRequirementResponse(BaseModel):
     scope: str | None  # None for case-level requirements (vague C)
     status: str  # pending | provided (derived live for fields)
     person_label: str
+    # DURCISSEMENT signatures (29/07, rupture ASSUMÉE du fichier gelé —
+    # demande explicite du lot) : le client doit savoir qu'une ligne est
+    # SIGNABLE, y compris celle d'autrui (affichage lecture seule « à
+    # signer par X ») — le dépôt y est refusé (422
+    # requirement.signable_needs_signature). Additif, défaut False.
+    signature_required: bool = False
     # NEW WAVE: read parity with the agency face.
     # Live value at the source so the client can see/re-edit what was
     # already provided (None for documents and when pending). For a

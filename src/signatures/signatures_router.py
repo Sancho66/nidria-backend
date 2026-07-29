@@ -30,7 +30,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.signature import SignatureRequest, SignatureSigner
 from src.core.config import get_settings
 from src.core.dependencies import get_current_agent, get_current_expat, get_db
-from src.core.enums import Audience, CasePersonKind
+from src.core.enums import Audience, CasePersonKind, SignatureRequestStatus, StepStatus
 from src.core.exceptions import UnauthorizedError
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
@@ -62,6 +62,20 @@ BINDINGS = [
         "/agencies/me/signature-credits/entries",
         Audience.AGENT,
         Permission.AGENCY_MANAGE,
+    ),
+    # DURCISSEMENT (29/07) : annuler / re-demander une signature sont des
+    # gestes d'étape — même gate que PATCH steps (constaté : STEP_COMPLETE).
+    RouteBinding(
+        "POST",
+        "/cases/{case_id}/signature-requests/{request_id}/cancel",
+        Audience.AGENT,
+        Permission.STEP_COMPLETE,
+    ),
+    RouteBinding(
+        "POST",
+        "/cases/{case_id}/steps/{progress_id}/signature-requests",
+        Audience.AGENT,
+        Permission.STEP_COMPLETE,
     ),
 ]
 
@@ -135,6 +149,16 @@ async def my_signatures(
             .where(
                 SignatureRequest.case_id == case.id,
                 SignatureSigner.case_person_id == person_id,
+                # DURCISSEMENT : les demandes MORTES (cancelled/expired) ne
+                # sortent jamais à l'état brut côté client. Les complétées
+                # restent : le front affiche « Signé » et le n/m final.
+                SignatureRequest.status.in_(
+                    (
+                        SignatureRequestStatus.SENT.value,
+                        SignatureRequestStatus.PARTIALLY_SIGNED.value,
+                        SignatureRequestStatus.COMPLETED.value,
+                    )
+                ),
             )
             .order_by(SignatureRequest.created_at)
         )
@@ -227,3 +251,87 @@ async def my_signature_credit_entries(
         page=page,
         page_size=page_size,
     )
+
+
+@router.post(
+    "/cases/{case_id}/signature-requests/{request_id}/cancel",
+    response_model=WebhookAckResponse,
+)
+async def cancel_signature_request(
+    case_id: uuid.UUID, request_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> WebhookAckResponse:
+    """Annule une demande vivante : archive provider + release du crédit +
+    statut CANCELLED (effets du manager, déjà codés). Idempotent : une
+    demande déjà morte/complétée répond 200 sans rien toucher. Le re-envoi
+    est un geste séparé (POST .../steps/{id}/signature-requests) —
+    l'annulation vaut « annuler », re-demander se choisit."""
+    from shared.models.client_case import ClientCase
+    from src.core.exceptions import NotFoundError
+    from src.signatures.signatures_manager import SignaturesManager
+    from src.signatures.signatures_repository import SignaturesRepository
+
+    case = (
+        await db.execute(
+            select(ClientCase).where(
+                ClientCase.id == case_id,
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if case is None:
+        raise NotFoundError("Case not found.", code="case.not_found")
+    request = await SignaturesRepository(db).get_request(request_id)
+    if request is None or request.case_id != case.id:
+        raise NotFoundError("Signature request not found.", code="signatures.request_not_found")
+    await SignaturesManager(db).cancel_request(case, request)
+    await db.commit()
+    return WebhookAckResponse(status=request.status)
+
+
+@router.post(
+    "/cases/{case_id}/steps/{progress_id}/signature-requests",
+    response_model=WebhookAckResponse,
+)
+async def resend_signature_requests(
+    case_id: uuid.UUID, progress_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> WebhookAckResponse:
+    """« Re-demander » : renvoie les demandes de signature manquantes d'une
+    étape ACTIVE (sièges libérés par une annulation/expiration). Réutilise
+    send_for_progress — idempotent : une personne déjà assise sur une
+    demande vivante n'est jamais réassise, un appel sans manque répond
+    sent=0. Gardes habituelles : PDF obligatoire, crédit réservé par
+    demande, flag effectif."""
+    from shared.models.case_step_progress import CaseStepProgress
+    from shared.models.client_case import ClientCase
+    from src.core.exceptions import ConflictError, NotFoundError
+    from src.signatures.signatures_manager import SignaturesManager
+
+    case = (
+        await db.execute(
+            select(ClientCase).where(
+                ClientCase.id == case_id,
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if case is None:
+        raise NotFoundError("Case not found.", code="case.not_found")
+    progress = (
+        await db.execute(
+            select(CaseStepProgress).where(
+                CaseStepProgress.id == progress_id, CaseStepProgress.case_id == case.id
+            )
+        )
+    ).scalar_one_or_none()
+    if progress is None:
+        raise NotFoundError("Case step not found.", code="progress.step_not_found")
+    if progress.status != StepStatus.IN_PROGRESS.value:
+        raise ConflictError(
+            "Signature requests are only sent on an active step.",
+            code="signatures.step_not_active",
+        )
+    sent = await SignaturesManager(db).send_for_progress(case, progress)
+    await db.commit()
+    return WebhookAckResponse(status=f"sent={sent}")

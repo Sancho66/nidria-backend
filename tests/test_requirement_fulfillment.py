@@ -848,6 +848,10 @@ REQUIREMENT_KEYS = {
     "reference",
     "scope",
     "status",
+    # Durcissement signatures 29/07 — rupture ADDITIVE assumée du contrat
+    # expat (le client doit savoir qu'une ligne est signable) : actée ici,
+    # le garde d'ensemble-exact a fait son travail.
+    "signature_required",
     "person_label",
     "value",
     "document_id",

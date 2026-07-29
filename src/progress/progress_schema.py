@@ -41,6 +41,12 @@ class RequirementStateResponse(BaseModel):
     # une ligne signable jamais assise (flag éteint à l'activation).
     signature_required: bool = False
     signature_status: str | None = None
+    # Complément durcissement (29/07) : la cible nommable du cancel + la
+    # VIVANCE de la demande la plus récente (sent|partially_signed|
+    # completed|cancelled|expired ; None = jamais envoyée). Le front
+    # désactive « Renvoyer la demande » quand une vivante existe.
+    signature_request_id: uuid.UUID | None = None
+    signature_request_status: str | None = None
     status: str  # pending / provided (computed)
     # Live value at the source (case_person / client_case) for fields;
     # None for documents and when pending.

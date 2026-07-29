@@ -9136,6 +9136,124 @@
         }
       }
     },
+    "/cases/{case_id}/signature-requests/{request_id}/cancel": {
+      "post": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "Cancel Signature Request",
+        "description": "Annule une demande vivante : archive provider + release du crédit +\nstatut CANCELLED (effets du manager, déjà codés). Idempotent : une\ndemande déjà morte/complétée répond 200 sans rien toucher. Le re-envoi\nest un geste séparé (POST .../steps/{id}/signature-requests) —\nl'annulation vaut « annuler », re-demander se choisit.",
+        "operationId": "cancel_signature_request_cases__case_id__signature_requests__request_id__cancel_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/steps/{progress_id}/signature-requests": {
+      "post": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "Resend Signature Requests",
+        "description": "« Re-demander » : renvoie les demandes de signature manquantes d'une\nétape ACTIVE (sièges libérés par une annulation/expiration). Réutilise\nsend_for_progress — idempotent : une personne déjà assise sur une\ndemande vivante n'est jamais réassise, un appel sans manque répond\nsent=0. Gardes habituelles : PDF obligatoire, crédit réservé par\ndemande, flag effectif.",
+        "operationId": "resend_signature_requests_cases__case_id__steps__progress_id__signature_requests_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/members/{agent_id}/impersonate": {
       "post": {
         "tags": [
@@ -20824,6 +20942,11 @@
             "type": "string",
             "title": "Person Label"
           },
+          "signature_required": {
+            "type": "boolean",
+            "title": "Signature Required",
+            "default": false
+          },
           "value": {
             "title": "Value"
           },
@@ -26501,6 +26624,29 @@
               }
             ],
             "title": "Signature Status"
+          },
+          "signature_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Request Id"
+          },
+          "signature_request_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Request Status"
           },
           "status": {
             "type": "string",

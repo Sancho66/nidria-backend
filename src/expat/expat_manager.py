@@ -203,6 +203,7 @@ class ExpatPortalManager:
                         reference=req.reference,
                         scope=req.scope,
                         status=req.status,
+                        signature_required=req.signature_required,
                         person_label=req.person_label,  # resolved upstream (single source)
                         value=req.value,  # resolved upstream (single source)
                         document_id=req.document_id,
@@ -385,6 +386,15 @@ class ExpatPortalManager:
         case, requirement = await self._resolve_writable_requirement(expat, case_id, requirement_id)
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
             raise ValidationError("This requirement does not expect a document.")
+        # DURCISSEMENT (29/07) : AVANT l'upload (qui committe) — même garde
+        # que la face agence, même code 422 ; le cœur partagé double en
+        # défense.
+        if requirement.signature_required:
+            raise ValidationError(
+                "A signable requirement is only fulfilled by signing it.",
+                code="requirement.signable_needs_signature",
+                params={"reference": requirement.reference},
+            )
 
         # Reuse the documents path (storage + Document row + audit); it
         # commits the upload. The document is attached to the step.

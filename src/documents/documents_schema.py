@@ -47,7 +47,11 @@ class ExpatDocumentResponse(BaseModel):
     # deposit | deliverable — le front nomme le livrable sans heuristique.
     kind: str
     person_id: uuid.UUID | None
-    uploaded_by_type: str  # agent | expat
+    # agent | expat | system — `system` = produit par la plateforme (le PDF
+    # signé et le dossier de preuve rangés par le webhook signatures) : LA
+    # clé sur laquelle le front affiche « Signé via Nidria » (jamais « une
+    # autre personne du dossier »).
+    uploaded_by_type: str
     is_mine: bool
     validation_status: str | None
     expires_at: datetime | None

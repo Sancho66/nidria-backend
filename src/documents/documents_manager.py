@@ -261,6 +261,16 @@ class DocumentsManager:
             raise ConflictError("This step is not active; its requirements are read-only.")
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
             raise ValidationError("This requirement does not expect a document.")
+        # DURCISSEMENT (29/07) : AVANT l'upload (qui committe) — une ligne
+        # signable ne se fournit qu'en signant, et aucun fichier orphelin ne
+        # doit rester d'une tentative refusée. Le cœur partagé porte la même
+        # garde en défense.
+        if requirement.signature_required:
+            raise ValidationError(
+                "A signable requirement is only fulfilled by signing it.",
+                code="requirement.signable_needs_signature",
+                params={"reference": requirement.reference},
+            )
 
         document = await self._upload(
             case, file, requirement.case_step_progress_id, None, ActorType.AGENT, agent.id

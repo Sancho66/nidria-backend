@@ -499,14 +499,24 @@ class ProgressRepository:
         last = principal[1] if principal is not None else None
         return first, last, journey_name, journey_name_i18n
 
-    async def signer_status_by_requirement(self, case_id: uuid.UUID) -> dict[uuid.UUID, str]:
-        """E-signature (TEMPS 2) : statut du siège de signataire par ligne
-        d'exigence signable du dossier — itéré par création de demande, la
-        plus récente gagne (annulée puis recréée → le siège vivant)."""
+    async def signer_status_by_requirement(
+        self, case_id: uuid.UUID
+    ) -> dict[uuid.UUID, tuple[uuid.UUID, str, str]]:
+        """E-signature (TEMPS 2 + complément durcissement 29/07) :
+        (request_id, statut de la DEMANDE, statut du siège) par ligne
+        d'exigence signable — itéré par création de demande, la plus
+        récente gagne. Le statut de la demande rend la VIVANCE dérivable
+        (une annulée ne se déguise plus en « pending ») et l'id donne au
+        front la cible nommable du cancel."""
         from shared.models.signature import SignatureRequest, SignatureSigner
 
         rows = await self.db.execute(
-            select(SignatureSigner.case_step_requirement_id, SignatureSigner.status)
+            select(
+                SignatureSigner.case_step_requirement_id,
+                SignatureRequest.id,
+                SignatureRequest.status,
+                SignatureSigner.status,
+            )
             .join(SignatureRequest, SignatureRequest.id == SignatureSigner.signature_request_id)
             .where(
                 SignatureRequest.case_id == case_id,
@@ -514,4 +524,8 @@ class ProgressRepository:
             )
             .order_by(SignatureRequest.created_at)
         )
-        return {row_id: status for row_id, status in rows if row_id is not None}
+        return {
+            row_id: (request_id, request_status, seat_status)
+            for row_id, request_id, request_status, seat_status in rows
+            if row_id is not None
+        }
