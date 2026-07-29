@@ -43,11 +43,20 @@ _TIMEOUT = 30.0
 
 
 def _signature_fields(roles: list[str]) -> list[dict[str, Any]]:
-    """Un champ signature par signataire, zones EXPLICITES empilées en bas
-    de la première page (constat doc : areas {x,y,w,h,page} ; les text
-    tags {{...}} ne valent que pour un PDF qui en contient — un contrat
-    d'agence arbitraire n'en a pas). Coordonnées à valider sur le sandbox
-    réel au branchement (nommé au rapport)."""
+    """Un champ signature par signataire, bloc DEUX COLONNES ancré en bas
+    de la DERNIÈRE page — là où vit la zone de signature d'un contrat
+    réel. Constats sandbox (smoke 2026-07-29) :
+    - `page` d'entrée est 1-indexé et **-1 = dernière page**, résolu par
+      l'API quand les coordonnées sont en points (la v0 posait page 1 et
+      les boîtes tombaient en plein corps de texte) ;
+    - les coordonnées en points PDF sont normalisées par les dimensions
+      RÉELLES de la page (60/595 → 0.1008 sur A4) — les y ci-dessous
+      sont calés pour tenir sur Letter (792 pt) comme sur A4 (842 pt) ;
+    - en fractions pures, `page: -1` reste stocké tel quel (non résolu,
+      rendu incertain) → on reste en points ;
+    - les text tags {{Signature;role=…;type=signature}} SONT auto-
+      détectés par POST /templates/pdf — ancrage fin possible plus tard,
+      la convention de rôle reste à décider (au rapport)."""
     fields: list[dict[str, Any]] = []
     for i, role in enumerate(roles):
         fields.append(
@@ -56,7 +65,15 @@ def _signature_fields(roles: list[str]) -> list[dict[str, Any]]:
                 "role": role,
                 "type": "signature",
                 "required": True,
-                "areas": [{"x": 60, "y": 620 + i * 90, "w": 220, "h": 70, "page": 1}],
+                "areas": [
+                    {
+                        "x": 60 if i % 2 == 0 else 340,
+                        "y": 700 - (i // 2) * 72,
+                        "w": 200,
+                        "h": 60,
+                        "page": -1,
+                    }
+                ],
             }
         )
     return fields
@@ -182,7 +199,11 @@ class DocuSealProvider:
             )
         first = documents[0]
         pdf = await self._download(str(first.get("url")))
-        filename = str(first.get("name") or "document") + ".pdf"
+        # Constat smoke 2026-07-29 : DocuSeal renvoie déjà le nom AVEC son
+        # extension quand le PDF source en avait une — suffixer sans regarder
+        # produisait « mandat.pdf.pdf » en livrable client.
+        name = str(first.get("name") or "document")
+        filename = name if name.lower().endswith(".pdf") else f"{name}.pdf"
         audit_url = submission.get("audit_log_url")
         audit_pdf = await self._download(str(audit_url)) if audit_url else None
         return CompletedFiles(
