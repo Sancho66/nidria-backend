@@ -20926,6 +20926,18 @@
             "format": "uuid",
             "title": "Uploaded By Id"
           },
+          "source_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Request Id"
+          },
           "validation_status": {
             "anyOf": [
               {
@@ -21390,6 +21402,18 @@
           "uploaded_by_type": {
             "type": "string",
             "title": "Uploaded By Type"
+          },
+          "source_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Request Id"
           },
           "is_mine": {
             "type": "boolean",

@@ -310,6 +310,9 @@ class DocumentsManager:
                 person_id=d.person_id,
                 uploaded_by_type=d.uploaded_by_type,
                 uploaded_by_id=d.uploaded_by_id,
+                source_request_id=(
+                    d.uploaded_by_id if d.uploaded_by_type == ActorType.SYSTEM.value else None
+                ),
                 validation_status=d.validation_status,
                 expires_at=d.expires_at,
                 created_at=d.created_at,
@@ -344,6 +347,9 @@ class DocumentsManager:
                 kind=d.kind,
                 person_id=d.person_id,
                 uploaded_by_type=d.uploaded_by_type,
+                source_request_id=(
+                    d.uploaded_by_id if d.uploaded_by_type == ActorType.SYSTEM.value else None
+                ),
                 # is_mine drives the delete affordance; no internal UUID exposed.
                 is_mine=(
                     d.uploaded_by_type == ActorType.EXPAT.value and d.uploaded_by_id == expat.id

@@ -68,7 +68,15 @@ class DocumentsRepository:
         (signature_request.case_step_progress_id → signature_signer.
         case_person_id), aucun champ ajouté. Complétée seulement (verdict) :
         un livrable signé n'existe qu'à la complétion — la restriction ne
-        perd rien et une demande morte ne donne jamais rien."""
+        perd rien et une demande morte ne donne jamais rien.
+
+        PORTÉE : l'ÉTAPE, pas la demande — DÉCISION ACTÉE (31/07, demande
+        front n°3), pas un accident : les signataires d'une même étape sont
+        CO-SIGNATAIRES d'un même dossier — il n'y a pas de sphère privée
+        intra-étape (le membre qui signe le contrat A voit aussi le
+        livrable du contrat B de la même étape : même dossier, même foyer,
+        même moment du parcours). NE PAS « corriger » vers un grain
+        par-demande sans décision produit explicite."""
         from shared.models.signature import SignatureRequest, SignatureSigner
 
         return (

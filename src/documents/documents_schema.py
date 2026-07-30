@@ -26,6 +26,11 @@ class DocumentResponse(BaseModel):
     person_id: uuid.UUID | None
     uploaded_by_type: str
     uploaded_by_id: uuid.UUID
+    # Rattachement (lot livrables 31/07) : pour un livrable SYSTEM, l'id de
+    # la signature_request source (c'est uploaded_by_id, typé proprement au
+    # contrat) — None pour tout autre uploader. Le front rattache chaque
+    # preuve à SA demande ; deux preuves d'une étape deviennent distinguables.
+    source_request_id: uuid.UUID | None = None
     validation_status: str | None
     expires_at: datetime | None
     created_at: datetime
@@ -52,6 +57,9 @@ class ExpatDocumentResponse(BaseModel):
     # clé sur laquelle le front affiche « Signé via Nidria » (jamais « une
     # autre personne du dossier »).
     uploaded_by_type: str
+    # Même rattachement côté client (un id de demande n'est pas une
+    # personne — uploaded_by_id reste masqué, LUI).
+    source_request_id: uuid.UUID | None = None
     is_mine: bool
     validation_status: str | None
     expires_at: datetime | None

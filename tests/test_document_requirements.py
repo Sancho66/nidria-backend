@@ -297,6 +297,10 @@ async def test_expat_list_no_internal_uuid_and_enriched(
             "step_name",
             "requirement_reference",
             "is_requirement",
+            # Rattachement (lot livrables 31/07) : l'id de la demande source
+            # d'un livrable SYSTEM — addition de contrat actée (None pour
+            # tout autre uploader ; uploaded_by_id reste masqué, LUI).
+            "source_request_id",
         }
     by_name = {d["filename"]: d for d in docs}
     # The agent's requirement doc: linked, not mine (client view).

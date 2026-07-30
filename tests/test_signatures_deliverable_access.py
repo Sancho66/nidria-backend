@@ -265,3 +265,68 @@ async def test_non_signer_member_gains_nothing(
         headers=m_headers,
     )
     assert r.status_code == 404
+
+
+async def test_fresh_deliverables_carry_exact_names_and_their_request(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    expat_headers: AuthHeaders,
+    fake_provider: FakeProvider,
+    give_credits,
+    _webhook_secret,
+) -> None:
+    """Lot demandes front (31/07) : (1) vérité du nommage — un livrable
+    NEUF porte le nom EXACT « {libellé} — signé.pdf » (jamais un double
+    suffixe .pdf.pdf : le reliquat vu par le front date d'avant v0.99.23,
+    constat daté au rapport) ; (2) rattachement — étape à DEUX demandes
+    complétées → chaque preuve pointe SA signature_request via
+    source_request_id, sur les deux faces."""
+    await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    _webhook_secret("attach")
+    case_id, progress1, progress2 = await _two_step_signed_case(
+        client,
+        db_session,
+        admin,
+        headers,
+        make_client_case,
+        make_expat_user,
+        fake_provider,
+        "attach",
+    )
+    requests = await _requests(db_session, case_id)
+    by_ref = {r.reference: str(r.id) for r in requests}
+    assert set(by_ref) == {"Statuts", "Bail"}
+
+    docs = (await client.get(f"/cases/{case_id}/documents", headers=headers)).json()
+    system_docs = [d for d in docs if d["uploaded_by_type"] == "system"]
+    # (1) noms EXACTS, jamais de double suffixe, le source vierge absent.
+    names = sorted(d["filename"] for d in system_docs)
+    assert names == [
+        "Bail — preuve de signature.pdf",
+        "Bail — signé.pdf",
+        "Statuts — preuve de signature.pdf",
+        "Statuts — signé.pdf",
+    ]
+    assert all(not n.endswith(".pdf.pdf") for n in names)
+    # (2) chaque preuve pointe SA demande — les deux preuves d'un dossier
+    # sont distinguables par source_request_id.
+    for d in system_docs:
+        reference = d["filename"].split(" — ")[0]
+        assert d["source_request_id"] == by_ref[reference], d["filename"]
+    # Un document NON-system ne porte jamais de source_request_id.
+    assert all(d["source_request_id"] is None for d in docs if d["uploaded_by_type"] != "system")
+    # Face client : même rattachement (le principal voit tout).
+    principal = await _expat(db_session, "attach-p@example.com")
+    p_docs = (
+        await client.get(f"/expat/cases/{case_id}/documents", headers=expat_headers(principal))
+    ).json()
+    p_system = [d for d in p_docs if d["uploaded_by_type"] == "system"]
+    assert len(p_system) == 4
+    for d in p_system:
+        reference = d["filename"].split(" — ")[0]
+        assert d["source_request_id"] == by_ref[reference], d["filename"]
