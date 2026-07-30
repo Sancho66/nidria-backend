@@ -16766,6 +16766,11 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "agency_countersigns": {
+            "type": "boolean",
+            "title": "Agency Countersigns",
+            "default": false
           }
         },
         "type": "object",
@@ -19698,6 +19703,58 @@
         "title": "CostLineUpdateRequest",
         "description": "Partial correction — a cost line is a notebook entry, editable. `currency`\nlets the agency record that it paid in another money than planned."
       },
+      "CountersignStateResponse": {
+        "properties": {
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "signature_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Signature Request Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "agent_name": {
+            "type": "string",
+            "title": "Agent Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "my_turn": {
+            "type": "boolean",
+            "title": "My Turn",
+            "default": false
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reference",
+          "signature_request_id",
+          "agent_id",
+          "agent_name",
+          "status"
+        ],
+        "title": "CountersignStateResponse",
+        "description": "Contreseing agence (lot 30/07) : la ligne du siège agence d'une\ndemande de l'étape — qui, statut, et le SLUG de signature du seul\nagent CONNECTÉ (un agent ne signe jamais pour un autre : slug None\npour tout autre viewer), servi uniquement quand son tour est arrivé\n(tous les sièges clients signés — le tour est app-enforced, constat\nsonde : le provider donne les slugs dès l'envoi)."
+      },
       "CreatedAdminResponse": {
         "properties": {
           "id": {
@@ -20751,6 +20808,10 @@
             "type": "boolean",
             "title": "Fields Configured"
           },
+          "agency_countersigns": {
+            "type": "boolean",
+            "title": "Agency Countersigns"
+          },
           "roles_count": {
             "type": "integer",
             "title": "Roles Count"
@@ -20773,6 +20834,7 @@
           "filename",
           "provider",
           "fields_configured",
+          "agency_countersigns",
           "roles_count",
           "created_at",
           "updated_at"
@@ -20782,17 +20844,32 @@
       "DocumentTemplateUpdateRequest": {
         "properties": {
           "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Name"
+          },
+          "agency_countersigns": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agency Countersigns"
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "name"
-        ],
         "title": "DocumentTemplateUpdateRequest"
       },
       "DocumentValidationRequest": {
@@ -28667,6 +28744,14 @@
             "title": "Signature Total",
             "default": 0
           },
+          "countersigns": {
+            "items": {
+              "$ref": "#/components/schemas/CountersignStateResponse"
+            },
+            "type": "array",
+            "title": "Countersigns",
+            "default": []
+          },
           "comment_count": {
             "type": "integer",
             "title": "Comment Count"
@@ -28946,12 +29031,22 @@
               }
             ],
             "title": "Document Template Id"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepRequirementScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "StepRequirementUpdateRequest",
-        "description": "Mini-lot 30/07 : la BASCULE dépôt ↔ signature sans delete/recreate.\nChamps signature seulement (kind/reference/scope restent immuables —\nchanger la nature d'une exigence, c'est en créer une autre). Les\ninvariants de la création tiennent : signable ⇒ modèle (même agence),\nnon-signable ⇒ pas de modèle (auto-nettoyé à la bascule OFF)."
+        "description": "La BASCULE dépôt ↔ signature + l'audience, sans delete/recreate\n(mini-lot 30/07, élargi au scope par le lot propagation).\nkind/reference restent immuables — changer la nature d'une exigence,\nc'est en créer une autre. Les invariants de la création tiennent :\nsignable ⇒ modèle (même agence), non-signable ⇒ pas de modèle\n(auto-nettoyé à la bascule OFF). Le PATCH se PROPAGE aux lignes\npending des dossiers en vol (les répondues gardent leur snapshot)."
       },
       "StepStatus": {
         "type": "string",

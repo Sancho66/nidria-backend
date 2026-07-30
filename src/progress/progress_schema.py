@@ -98,6 +98,23 @@ class StepContentAttachment(BaseModel):
     position: int
 
 
+class CountersignStateResponse(BaseModel):
+    """Contreseing agence (lot 30/07) : la ligne du siège agence d'une
+    demande de l'étape — qui, statut, et le SLUG de signature du seul
+    agent CONNECTÉ (un agent ne signe jamais pour un autre : slug None
+    pour tout autre viewer), servi uniquement quand son tour est arrivé
+    (tous les sièges clients signés — le tour est app-enforced, constat
+    sonde : le provider donne les slugs dès l'envoi)."""
+
+    reference: str
+    signature_request_id: uuid.UUID
+    agent_id: uuid.UUID
+    agent_name: str
+    status: str  # pending | signed
+    my_turn: bool = False
+    slug: str | None = None
+
+
 class StepProgressResponse(BaseModel):
     id: uuid.UUID
     template_step_id: uuid.UUID
@@ -142,6 +159,7 @@ class StepProgressResponse(BaseModel):
     # document signable.
     signature_signed_count: int = 0
     signature_total: int = 0
+    countersigns: list[CountersignStateResponse] = []
     # VAGUE 5: non-deleted comment count for a "X messages" badge without
     # listing the thread (batched COUNT, no N+1).
     comment_count: int

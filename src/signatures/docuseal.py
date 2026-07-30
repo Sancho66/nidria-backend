@@ -141,13 +141,20 @@ class DocuSealProvider:
         payload: dict[str, Any] = {
             "template_id": int(template_ref),
             "send_email": False,  # JAMAIS un email DocuSeal — notifications v4
-            "order": "random",  # signature parallèle (constaté : random = parallèle)
+            # Tous au groupe 0 (pas de contreseing) : random = parallèle
+            # (constaté au méga-lot). Avec groupes : les orders par
+            # submitter font foi (preserved auto, constaté à la sonde).
+            "order": "random" if all(s.order == 0 for s in signers) else "preserved",
             "submitters": [
                 {
                     "role": signer.role,
                     "external_id": signer.signer_id,
                     "name": signer.name,
                     "email": signer.email,
+                    # Groupes d'ordre (contreseing) : mêmes numéros =
+                    # parallèle — la présence d'orders passe la soumission
+                    # en submitters_order=preserved côté provider (constaté).
+                    "order": signer.order,
                 }
                 for signer in signers
             ],

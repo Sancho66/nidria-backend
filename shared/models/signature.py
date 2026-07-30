@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,13 +55,24 @@ class SignatureSigner(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         # One seat per person on a request (idempotent materialization).
         UniqueConstraint("signature_request_id", "case_person_id", name="uq_signature_signer"),
+        # Contreseing agence (lot 30/07) : un siège est EXACTEMENT l'un des
+        # deux — une personne du dossier OU un agent (le contreseing).
+        CheckConstraint(
+            "num_nonnulls(case_person_id, agent_id) = 1",
+            name="signer_person_xor_agent",
+        ),
     )
 
     signature_request_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("signature_request.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    case_person_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("case_person.id", ondelete="CASCADE"), index=True, nullable=False
+    case_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("case_person.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    # Le siège de CONTRESEING : l'agent résolu à l'envoi (assigné au
+    # dossier, sinon premier porteur d'agency.manage).
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent.id", ondelete="CASCADE"), index=True, nullable=True
     )
     # The person's concrete requirement row — flipped to provided when THEY
     # sign, so completeness rides the existing rails (never a copy).

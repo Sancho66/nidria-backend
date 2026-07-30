@@ -528,7 +528,9 @@ class CasesManager:
                 CaseNoteResponse.model_validate(note)
                 for note in await self.repo.list_notes(case_id, include_confidential)
             ],
-            progress=await ProgressManager(self.db).timeline_for_case(case, lang),
+            progress=await ProgressManager(self.db).timeline_for_case(
+                case, lang, viewer_agent_id=agent.id
+            ),
         )
 
     # --- billing (the price the agency bills the dossier) ---------------------------

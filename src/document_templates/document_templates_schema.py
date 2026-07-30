@@ -16,6 +16,9 @@ class DocumentTemplateResponse(BaseModel):
     # Le builder a-t-il été sauvegardé au moins une fois ? (constat du
     # dernier sync) — false : le modèle n'est PAS envoyable (422 au send).
     fields_configured: bool
+    # roles_count = rôles CLIENTS seulement ; le contreseing agence est
+    # porté à part (rôle provider « Agence », jamais compté ici).
+    agency_countersigns: bool
     roles_count: int
     created_at: datetime
     updated_at: datetime
@@ -24,7 +27,8 @@ class DocumentTemplateResponse(BaseModel):
 class DocumentTemplateUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    agency_countersigns: bool | None = None
 
 
 class BuilderTokenResponse(BaseModel):

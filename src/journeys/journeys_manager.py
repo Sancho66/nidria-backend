@@ -1284,21 +1284,28 @@ class JourneysManager:
         requirement_id: uuid.UUID,
         payload: StepRequirementUpdateRequest,
     ) -> StepRequirement:
-        """La bascule dépôt ↔ signature sur une DÉFINITION. Les lignes déjà
-        matérialisées gardent leur snapshot (doctrine LOT 6 : un dossier en
-        vol ne bouge jamais sous une édition de template) — la définition
-        vaut pour les matérialisations FUTURES."""
+        """La bascule dépôt ↔ signature (+ audience) sur une DÉFINITION —
+        et sa PROPAGATION aux lignes pending des dossiers en vol (lot
+        30/07) : doctrine LOT 6 intacte pour l'acquis (ligne répondue =
+        intouchée), levée pour le non-commencé. DEUX TEMPS : la définition
+        committe d'abord, la propagation roule ensuite dans sa propre
+        transaction — un échec de propagation (solde insuffisant, gardes)
+        remonte l'erreur typée MAIS le PATCH de définition reste acquis
+        (verdict du lot) ; rejouer le PATCH rejoue la propagation,
+        idempotente."""
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
         requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
         if requirement is None:
             raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
 
+        was_signable = requirement.signature_required
         new_required = (
             payload.signature_required
             if payload.signature_required is not None
             else requirement.signature_required
         )
+        new_scope = payload.scope.value if payload.scope is not None else requirement.scope
         new_level = (
             payload.signature_level.value
             if payload.signature_level is not None
@@ -1348,7 +1355,20 @@ class JourneysManager:
         requirement.signature_required = new_required
         requirement.signature_level = new_level
         requirement.document_template_id = new_template_id
+        requirement.scope = new_scope
         await self.db.commit()
+        # TEMPS 2 — la propagation, transaction séparée : son échec (422
+        # typé : solde, gardes de mapping) n'emporte JAMAIS la définition.
+        from src.progress.progress_manager import ProgressManager
+
+        try:
+            await ProgressManager(self.db).propagate_requirement_update(
+                requirement, was_signable=was_signable
+            )
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
         await self.db.refresh(requirement)
         return requirement
 

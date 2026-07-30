@@ -67,6 +67,7 @@ async def create_document_template(
     file: UploadFile,
     agent: AgentDep,
     db: DbDep,
+    agency_countersigns: Annotated[bool, Form()] = False,
 ) -> DocumentTemplateResponse:
     """Le PDF source (stocké chez nous) + le template provider naissent
     ensemble — sans zones : elles sont l'affaire du builder."""
@@ -76,6 +77,7 @@ async def create_document_template(
         filename=file.filename or "document.pdf",
         content=await file.read(),
         content_type=file.content_type,
+        agency_countersigns=agency_countersigns,
     )
     return DocumentTemplateResponse.model_validate(template)
 
@@ -95,7 +97,9 @@ async def update_document_template(
     agent: AgentDep,
     db: DbDep,
 ) -> DocumentTemplateResponse:
-    template = await DocumentTemplatesManager(db).rename(agent, template_id, payload.name)
+    template = await DocumentTemplatesManager(db).rename(
+        agent, template_id, payload.name, agency_countersigns=payload.agency_countersigns
+    )
     return DocumentTemplateResponse.model_validate(template)
 
 

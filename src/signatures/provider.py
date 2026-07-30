@@ -33,6 +33,11 @@ from src.core.exceptions import UpstreamError
 
 logger = logging.getLogger(__name__)
 
+# Le rôle provider du CONTRESEING agence — nom technique STABLE, jamais
+# traduit (même doctrine que « Signataire N ») : c'est la clé de mapping
+# entre le builder et l'envoi, pas un libellé.
+AGENCY_ROLE = "Agence"
+
 
 @dataclass
 class ProviderSigner:
@@ -45,6 +50,10 @@ class ProviderSigner:
     # — DOIT exister sur le template (le provider ne valide PAS un rôle
     # inconnu : il assoit un signataire fantôme sans zones — garde chez nous).
     role: str = ""
+    # Groupe d'ordre (sonde contreseing 30/07 : DocuSeal supporte l'ordre
+    # par GROUPES via un entier par submitter — même numéro = parallèle).
+    # 0 = les clients (parallèle), 1 = l'agence (après le dernier client).
+    order: int = 0
 
 
 @dataclass

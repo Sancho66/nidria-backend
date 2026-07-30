@@ -418,7 +418,7 @@ async def test_patch_requirement_toggles_deposit_to_signature_and_back(
     assert r.json()["document_template_id"] is None
 
 
-async def test_patch_definition_never_touches_a_materialized_row(
+async def test_patch_template_swap_follows_on_pending_rows(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -428,8 +428,12 @@ async def test_patch_definition_never_touches_a_materialized_row(
     fake_provider: FakeProvider,
     give_credits,
 ) -> None:
-    """Doctrine LOT 6 tenue au PATCH : le dossier en vol garde son snapshot
-    (modèle A) quand la définition bascule vers un modèle B."""
+    """Lot propagation (30/07, remplace la doctrine du mini-lot) : la ligne
+    PENDING du dossier en vol SUIT le swap de modèle A→B ; la demande
+    vivante, elle, ne bouge pas (le document envoyé est envoyé — le rappel
+    se fait par annulation explicite + re-envoi). L'acquis répondu reste
+    couvert par test_answered_row_keeps_its_snapshot (batterie
+    propagation)."""
     await give_credits(admin.agency_id, 10)
     headers = agent_headers(admin)
     fake_provider.default_roles = ["Signataire 1"]
@@ -446,7 +450,9 @@ async def test_patch_definition_never_touches_a_materialized_row(
     assert r.status_code == 200, r.text
     db_session.expire_all()
     row = await _signable_row(db_session, progress_id)
-    assert str(row.document_template_id) == doc_a["id"]  # le vol garde SON modèle
+    assert str(row.document_template_id) == doc_b["id"]  # la pending SUIT
+    assert len(fake_provider.create_calls) == 1  # pas de re-envoi sauvage
+    assert fake_provider.cancel_calls == []  # la vivante ne bouge pas
 
 
 # --- (3) la garde du flag : env MAÎTRE, réglage agence sous-interrupteur -------------

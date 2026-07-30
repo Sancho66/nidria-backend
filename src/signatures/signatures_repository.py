@@ -58,9 +58,12 @@ class SignaturesRepository:
                 SignatureRequest.case_step_progress_id == case_step_progress_id,
                 SignatureRequest.reference == reference,
                 SignatureRequest.status.in_(LIVE_STATUSES),
+                # Les sièges AGENCE (contreseing) n'entrent pas dans la
+                # garde anti-doublon des personnes.
+                SignatureSigner.case_person_id.is_not(None),
             )
         )
-        return set((await self.db.execute(stmt)).scalars())
+        return {pid for pid in (await self.db.execute(stmt)).scalars() if pid is not None}
 
     async def get_request(self, request_id: uuid.UUID) -> SignatureRequest | None:
         return await self.db.get(SignatureRequest, request_id)

@@ -24,12 +24,14 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import case as sa_case
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
+from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
@@ -47,8 +49,11 @@ from src.core.enums import (
 )
 from src.core.exceptions import ValidationError
 from src.signatures.flags import signatures_effectively_enabled
-from src.signatures.provider import ProviderSigner, get_provider
+from src.signatures.provider import AGENCY_ROLE, ProviderSigner, get_provider
 from src.signatures.signatures_repository import SignaturesRepository
+
+if TYPE_CHECKING:
+    from src.progress.progress_manager import PendingMail
 
 logger = logging.getLogger(__name__)
 
@@ -241,11 +246,37 @@ class SignaturesManager:
                     "signers_count": len(signers),
                 },
             )
+        # Contreseing (lot 30/07) : le siège agence se résout AVANT tout
+        # appel provider (422 nommé sans candidat, rollback total) — même
+        # sur la demande PARTIELLE d'une personne tardive : SON document
+        # porte aussi la signature de l'agence (verdict : le livrable final
+        # est complet pour chaque document envoyé).
+        countersigner: Agent | None = None
+        if template.agency_countersigns:
+            countersigner = await self._resolve_countersigner(case)
+            agency_signer = self.repo.add_signer(
+                signature_request_id=request.id,
+                case_person_id=None,
+                agent_id=countersigner.id,
+                case_step_requirement_id=None,
+                status=SignatureSignerStatus.PENDING.value,
+            )
+            await self.db.flush()
+            signers.append(agency_signer)
         provider_signers = await self._provider_signers(case, signers)
         # Convention sonde : « Signataire N », 1-based, dans l'ordre de
-        # matérialisation (le principal d'abord — l'ordre des lignes).
-        for index, provider_signer in enumerate(provider_signers):
-            provider_signer.role = f"Signataire {index + 1}"
+        # matérialisation (le principal d'abord — l'ordre des lignes) ;
+        # le contreseing porte le rôle STABLE « Agence », groupe d'ordre 1
+        # (les clients en 0, parallèles — sonde 30/07 : groupes supportés).
+        client_index = 0
+        for provider_signer, signer_row in zip(provider_signers, signers, strict=True):
+            if signer_row.agent_id is not None:
+                provider_signer.role = AGENCY_ROLE
+                provider_signer.order = 1
+            else:
+                client_index += 1
+                provider_signer.role = f"Signataire {client_index}"
+                provider_signer.order = 0
         created = await get_provider().create_from_template(
             template_ref=template.provider_template_ref,
             signers=provider_signers,
@@ -265,11 +296,57 @@ class SignaturesManager:
         self._log_activity(case, "signature.request_sent", request)
         return request
 
+    async def _resolve_countersigner(self, case: ClientCase) -> Agent:
+        """Contreseing (lot 30/07) : l'agent assigné au dossier, sinon le
+        PREMIER porteur d'agency.manage de l'agence — ordre STABLE
+        (created_at puis id : l'ancienneté, jamais l'aléa). Aucun candidat
+        → 422 nommé (un contreseing sans signataire n'est pas envoyable)."""
+        from shared.models.rbac import Permission as PermissionRow
+        from shared.models.rbac import RolePermission
+        from src.core.rbac.permissions import Permission
+
+        if case.owner_agent_id is not None:
+            owner = await self.db.get(Agent, case.owner_agent_id)
+            if owner is not None and owner.deactivated_at is None:
+                return owner
+        holder = (
+            await self.db.execute(
+                select(Agent)
+                .join(RolePermission, RolePermission.role_id == Agent.role_id)
+                .join(PermissionRow, PermissionRow.id == RolePermission.permission_id)
+                .where(
+                    Agent.agency_id == case.agency_id,
+                    Agent.deactivated_at.is_(None),
+                    PermissionRow.key == Permission.AGENCY_MANAGE.value,
+                )
+                .order_by(Agent.created_at, Agent.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if holder is None:
+            raise ValidationError(
+                "No agent available to countersign (no case owner, no agency.manage holder).",
+                code="signatures.no_countersigner",
+            )
+        return holder
+
     async def _provider_signers(
         self, case: ClientCase, signers: list[SignatureSigner]
     ) -> list[ProviderSigner]:
         out: list[ProviderSigner] = []
         for signer in signers:
+            if signer.agent_id is not None:
+                agent = await self.db.get(Agent, signer.agent_id)
+                out.append(
+                    ProviderSigner(
+                        signer_id=str(signer.id),
+                        name=(
+                            f"{agent.first_name} {agent.last_name}".strip() if agent else "Agence"
+                        ),
+                        email=(agent.email if agent else None) or _placeholder_email(signer.id),
+                    )
+                )
+                continue
             person = await self.db.get(CasePerson, signer.case_person_id)
             name = (person.full_name if person else None) or ""
             email: str | None = None
@@ -396,15 +473,51 @@ class SignaturesWebhookManager:
                     req_row.provided_at = datetime.now(UTC)
         signers = await self.repo.list_signers(request.id)
         still_pending = [s for s in signers if s.status == SignatureSignerStatus.PENDING.value]
+        # Contreseing (lot 30/07) : le DERNIER client vient de signer et le
+        # siège agence attend → le tour de l'agence arrive, notification à
+        # l'agent résolu (sa langue = défaut agence). Le slug ne transite
+        # jamais par mail — l'API le sert au seul agent concerné.
+        countersign_turn_mail = None
+        if (
+            still_pending
+            and all(s.agent_id is not None for s in still_pending)
+            and signer.agent_id is None
+        ):
+            countersign_turn_mail = await self._countersign_turn_mail(
+                case, request, still_pending[0]
+            )
         if still_pending:
             if request.status == SignatureRequestStatus.SENT.value:
                 request.status = SignatureRequestStatus.PARTIALLY_SIGNED.value
         elif request.status != SignatureRequestStatus.COMPLETED.value:
             await self._complete(request)
         pending_mails = await progress_mgr.recompute_active(case, before)
+        if countersign_turn_mail is not None:
+            pending_mails.append(countersign_turn_mail)
         await self.db.commit()
         await progress_mgr.send_pending(pending_mails)
         return "processed"
+
+    async def _countersign_turn_mail(
+        self, case: ClientCase, request: SignatureRequest, agency_seat: SignatureSigner
+    ) -> "PendingMail | None":
+        from src.core.email_templates import countersign_turn_email
+        from src.core.i18n import case_label_for_notif, resolve_notification_lang_agent
+        from src.progress.progress_manager import PendingMail
+        from src.progress.progress_repository import ProgressRepository
+
+        agent = await self.db.get(Agent, agency_seat.agent_id)
+        if agent is None or not agent.email:
+            return None
+        repo = ProgressRepository(self.db)
+        lang = resolve_notification_lang_agent(await repo.agency_default_language(case.agency_id))
+        first, last, j_name, j_i18n = await repo.get_case_label_parts(case)
+        case_label = case_label_for_notif(first, last, j_name, j_i18n, lang)
+        link = f"{get_settings().frontend_url}/app/cases/{case.id}"
+        return PendingMail(
+            to=agent.email,
+            content=countersign_turn_email(case_label, request.reference, link, lang),
+        )
 
     async def _complete(self, request: SignatureRequest) -> None:
         """Tous signés : consume du crédit + téléchargement IMMÉDIAT du PDF

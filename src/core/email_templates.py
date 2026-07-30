@@ -1057,6 +1057,91 @@ def step_reopened_email(
     )
 
 
+_COUNTERSIGN_TURN = {
+    "fr": {
+        "subject": "Nidria : à vous de signer ({case})",
+        "title": "À vous de signer",
+        "intro": (
+            "Tous les signataires du document « {reference} » du dossier {case} "
+            "ont signé. Votre contreseing est attendu pour finaliser le document."
+        ),
+        "button": "Signer le document",
+    },
+    "en": {
+        "subject": "Nidria: your signature is needed ({case})",
+        "title": "Your turn to sign",
+        "intro": (
+            "All signers of the document “{reference}” on case {case} have signed. "
+            "Your countersignature is needed to finalize the document."
+        ),
+        "button": "Sign the document",
+    },
+    "es": {
+        "subject": "Nidria: le toca firmar ({case})",
+        "title": "Le toca firmar",
+        "intro": (
+            "Todos los firmantes del documento «{reference}» del expediente {case} "
+            "han firmado. Se espera su contrafirma para finalizar el documento."
+        ),
+        "button": "Firmar el documento",
+    },
+    "ru": {
+        "subject": "Nidria: ваша подпись ({case})",
+        "title": "Ваша очередь подписать",
+        "intro": (
+            "Все подписанты документа «{reference}» по делу {case} подписали. "
+            "Для завершения документа требуется ваша контрподпись."
+        ),
+        "button": "Подписать документ",
+    },
+    "pt": {
+        "subject": "Nidria: é a sua vez de assinar ({case})",
+        "title": "É a sua vez de assinar",
+        "intro": (
+            "Todos os signatários do documento «{reference}» do processo {case} "
+            "assinaram. A sua contra-assinatura é necessária para finalizar o documento."
+        ),
+        "button": "Assinar o documento",
+    },
+    "it": {
+        "subject": "Nidria: tocca a Lei firmare ({case})",
+        "title": "Tocca a Lei firmare",
+        "intro": (
+            "Tutti i firmatari del documento «{reference}» della pratica {case} "
+            "hanno firmato. La Sua controfirma è attesa per finalizzare il documento."
+        ),
+        "button": "Firmare il documento",
+    },
+    "hu": {
+        "subject": "Nidria: Ön következik az aláírással ({case})",
+        "title": "Ön következik az aláírással",
+        "intro": (
+            "A(z) „{reference}” dokumentum minden aláírója aláírt a(z) {case} "
+            "ügyben. A dokumentum véglegesítéséhez az Ön ellenjegyzése szükséges."
+        ),
+        "button": "Dokumentum aláírása",
+    },
+}
+
+
+def countersign_turn_email(
+    case_label: str, reference: str, app_link: str, lang: str = "fr"
+) -> EmailContent:
+    """Contreseing (lot 30/07) : le dernier signataire CLIENT a signé — le
+    tour de l'agence arrive. Rendu dans la langue de l'AGENT destinataire
+    (défaut agence). Le lien mène au dossier ; le slug de signature ne
+    transite JAMAIS par email (servi par l'API au seul agent résolu)."""
+    s = _pick(_COUNTERSIGN_TURN, lang)
+    return _render(
+        subject=s["subject"].format(case=case_label),
+        title=s["title"],
+        intro=s["intro"].format(reference=reference, case=case_label),
+        button_label=s["button"],
+        button_url=app_link,
+        lang=lang,
+    )
+
+
 def ready_to_validate_email(
     case_label: str, step_name: str, app_link: str, lang: str = "fr"
 ) -> EmailContent:

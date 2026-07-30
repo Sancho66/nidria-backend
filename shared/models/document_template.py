@@ -37,6 +37,13 @@ class DocumentTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     fields_configured: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
+    # Contreseing agence (lot 30/07) : le document porte AUSSI la signature
+    # de l'agence — rôle provider « Agence » (nom technique stable, jamais
+    # traduit, même doctrine que « Signataire N »), compté À PART :
+    # roles_count reste le compte des rôles CLIENTS.
+    agency_countersigns: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     roles_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"), nullable=False
     )

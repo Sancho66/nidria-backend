@@ -83,6 +83,7 @@ class FakeProvider:
                 "template_ref": template_ref,
                 "signers": signers,
                 "roles": [s.role for s in signers],
+                "orders": [s.order for s in signers],
                 "expires_at": expires_at,
                 "provider_ref": submission_ref,
             }

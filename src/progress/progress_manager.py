@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -52,6 +53,7 @@ from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
     BlockingStep,
+    CountersignStateResponse,
     DeadlineCounter,
     RequirementStateResponse,
     ResponsibleUpdateRequest,
@@ -462,6 +464,144 @@ class ProgressManager:
             await self._sync_case_status(case)
         return len(cases)
 
+    async def propagate_requirement_update(
+        self, requirement: StepRequirement, *, was_signable: bool
+    ) -> dict[str, int]:
+        """Lot propagation (30/07) : un PATCH de définition descend dans les
+        lignes PENDING (jamais répondues) des instances ACTIVES — doctrine
+        LOT 6 intacte pour l'acquis (une ligne répondue ne bouge jamais),
+        levée pour le non-commencé. Frontière « répondu » : pour un
+        document, la colonne `status` fait autorité (pending = jamais
+        répondu — dépôt comme signature la basculent) ; pour un champ, la
+        valeur vit sur case_person, la ligne n'est qu'une entrée de
+        checklist qui suit la définition librement.
+
+        Chaîne d'effets, mécanique existante réutilisée, DANS CET ORDRE
+        (le sync gèle par (kind, reference, scope) : mettre à jour les
+        lignes avant lui tuerait l'élargissement) :
+        1. cesse d'être signable → demandes vivantes annulées + release ;
+        2. resserrement principal → lignes pending des autres personnes
+           supprimées (leurs demandes vivantes d'abord) ;
+        3. élargissement each_person → lignes manquantes matérialisées
+           (mécanique du gel de composition, idempotente) ;
+        4. snapshot des lignes pending aligné sur la définition ;
+        5. signable → envoi. Personne n'est assise → send groupé (gardes
+           exact-match du durcissement, crédit réservé) ; une demande
+           vivante assoit déjà des gens → les nouveaux passent par la
+           MÉCANIQUE TARDIVE (leur demande partielle, leur crédit) — le
+           send groupé les refuserait à l'exact-match.
+
+        Tout roule dans la transaction de l'appelant : un échec (solde,
+        gardes) annule TOUTE la propagation — jamais un envoi à moitié."""
+        from shared.models.signature import SignatureRequest
+        from src.signatures.signatures_manager import SignaturesManager
+        from src.signatures.signatures_repository import LIVE_STATUSES, SignaturesRepository
+
+        stats = {
+            "instances": 0,
+            "rows_updated": 0,
+            "rows_removed": 0,
+            "rows_created": 0,
+            "requests_sent": 0,
+            "requests_cancelled": 0,
+        }
+        signatures = SignaturesManager(self.db)
+
+        async def cancel_live(case: ClientCase, progress_id: uuid.UUID) -> int:
+            requests = (
+                (
+                    await self.db.execute(
+                        select(SignatureRequest).where(
+                            SignatureRequest.case_step_progress_id == progress_id,
+                            SignatureRequest.reference == requirement.reference,
+                            SignatureRequest.status.in_(LIVE_STATUSES),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for request in requests:
+                await signatures.cancel_request(case, request)
+            return len(requests)
+
+        instances = await self.repo.list_active_instances_for_step(requirement.step_id)
+        for progress in instances:
+            case = await self.db.get(ClientCase, progress.case_id)
+            if case is None:
+                continue
+            stats["instances"] += 1
+            rows = [
+                r
+                for r in await self.repo.list_case_requirements_for_progress_ids([progress.id])
+                if r.step_requirement_id == requirement.id
+            ]
+            pending = [
+                r
+                for r in rows
+                if r.kind != StepRequirementKind.DOCUMENT.value or r.status == "pending"
+            ]
+            # (1) cesse d'être signable → annulation (mécanique durcissement).
+            if was_signable and not requirement.signature_required:
+                stats["requests_cancelled"] += await cancel_live(case, progress.id)
+            # (2) resserrement principal → les pending des autres partent.
+            if requirement.scope == StepRequirementScope.PRINCIPAL.value:
+                persons = await self.repo.list_persons_for_case(progress.case_id)
+                principal_id = next(
+                    (p.id for p in persons if p.kind == CasePersonKind.PRINCIPAL.value), None
+                )
+                extras = [r for r in pending if r.person_id != principal_id]
+                if extras and requirement.signature_required:
+                    stats["requests_cancelled"] += await cancel_live(case, progress.id)
+                for extra in extras:
+                    pending.remove(extra)
+                    await self.db.delete(extra)
+                    stats["rows_removed"] += 1
+                await self.db.flush()
+            # (3) élargissement → les manquantes (AVANT le snapshot : le
+            # gel par (kind, reference, scope) lit encore l'ancien scope).
+            stats["rows_created"] += await self._sync_missing_requirements(progress)
+            # (4) le snapshot des pending suit la définition.
+            for row_pending in pending:
+                if (
+                    row_pending.signature_required != requirement.signature_required
+                    or row_pending.signature_level != requirement.signature_level
+                    or row_pending.document_template_id != requirement.document_template_id
+                    or row_pending.scope != requirement.scope
+                ):
+                    row_pending.signature_required = requirement.signature_required
+                    row_pending.signature_level = requirement.signature_level
+                    row_pending.document_template_id = requirement.document_template_id
+                    row_pending.scope = requirement.scope
+                    stats["rows_updated"] += 1
+            await self.db.flush()
+            # (5) signable → l'envoi, groupé ou tardif selon les sièges.
+            if requirement.signature_required:
+                seated = await SignaturesRepository(self.db).live_signer_person_ids(
+                    progress.id, requirement.reference
+                )
+                if not seated:
+                    stats["requests_sent"] += await signatures.send_for_progress(case, progress)
+                else:
+                    fresh_rows = [
+                        r
+                        for r in await self.repo.list_case_requirements_for_progress_ids(
+                            [progress.id]
+                        )
+                        if r.step_requirement_id == requirement.id
+                        and r.signature_required
+                        and r.status == "pending"
+                        and r.person_id not in seated
+                    ]
+                    for fresh in fresh_rows:
+                        person = await self.db.get(CasePerson, fresh.person_id)
+                        if person is None:
+                            continue
+                        stats["requests_sent"] += await signatures.send_for_late_person(
+                            case, person, [fresh]
+                        )
+        return stats
+
     async def materialize_for_person(self, case: ClientCase, person: CasePerson) -> int:
         """Fin du gel de composition (ticket Nicolas 26/07, repro b) : une
         personne AJOUTÉE au dossier gagne ses lignes `each_person` sur chaque
@@ -602,7 +742,10 @@ class ProgressManager:
     # --- projection -------------------------------------------------------------------
 
     async def timeline_for_case(
-        self, case: ClientCase, lang: str = DEFAULT_LANG
+        self,
+        case: ClientCase,
+        lang: str = DEFAULT_LANG,
+        viewer_agent_id: uuid.UUID | None = None,
     ) -> list[StepProgressResponse]:
         rows = await self.repo.list_progress_for_case(case.id)
         if not rows:
@@ -663,6 +806,17 @@ class ProgressManager:
         # requête pour le dossier ; itérée par created_at, la demande la
         # plus récente gagne (une annulée puis recréée lit le siège vivant).
         signer_status_by_row = await self.repo.signer_status_by_requirement(case.id)
+        # Contreseing (lot 30/07) : les sièges agence par étape — le slug
+        # n'est servi qu'au viewer qui EST l'agent résolu, à son tour.
+        agency_seats = await self.repo.agency_seats_by_progress(case.id)
+        countersign_agent_ids = {
+            seat.agent_id for seats in agency_seats.values() for seat, _req, _done in seats
+        }
+        countersign_agents = (
+            {a.id: a for a in await self.repo.get_agents_by_ids(list(countersign_agent_ids))}
+            if countersign_agent_ids
+            else {}
+        )
         signature_counts: dict[uuid.UUID, list[int]] = defaultdict(lambda: [0, 0])
         for req in concrete:
             # Defense in depth: an orphaned instance (step_requirement_id NULL —
@@ -804,6 +958,30 @@ class ProgressManager:
                     all_requirements_met=met_by_progress.get(row.id, True),
                     signature_signed_count=signature_counts[row.id][0],
                     signature_total=signature_counts[row.id][1],
+                    countersigns=[
+                        CountersignStateResponse(
+                            reference=req_row.reference,
+                            signature_request_id=req_row.id,
+                            agent_id=seat.agent_id,
+                            agent_name=(
+                                f"{countersign_agents[seat.agent_id].first_name} "
+                                f"{countersign_agents[seat.agent_id].last_name}"
+                            ).strip()
+                            if seat.agent_id in countersign_agents
+                            else "",
+                            status=seat.status,
+                            my_turn=clients_done and seat.status == "pending",
+                            slug=(
+                                seat.provider_slug
+                                if clients_done
+                                and seat.status == "pending"
+                                and viewer_agent_id is not None
+                                and viewer_agent_id == seat.agent_id
+                                else None
+                            ),
+                        )
+                        for seat, req_row, clients_done in agency_seats.get(row.id, [])
+                    ],
                     comment_count=comment_counts.get(row.id, 0),
                     due_at=row.due_at,
                     counter=_deadline_counter(
@@ -825,7 +1003,7 @@ class ProgressManager:
         self, agent: Agent, case_id: uuid.UUID, lang: str = DEFAULT_LANG
     ) -> list[StepProgressResponse]:
         case = await self._get_case(agent, case_id)
-        return await self.timeline_for_case(case, lang)
+        return await self.timeline_for_case(case, lang, viewer_agent_id=agent.id)
 
     # --- transitions + responsible -------------------------------------------------------
 
@@ -1383,12 +1561,25 @@ class ProgressManager:
         steps = await self.repo.get_template_steps_by_ids([r.template_step_id for r in rows])
 
         notifications_on = await self._owner_wants_ready_to_validate(case)
+        # Contreseing — choix (b), argumenté : la ligne du signer agence
+        # n'est PAS une case_step_requirement (une ligne fantôme polluerait
+        # la checklist des DEUX faces) ; c'est la DEMANDE non complétée qui
+        # bloque. step_all_met lui-même ne change pas : le cron des
+        # relances le partage, et son sens (« le client n'a plus rien à
+        # fournir ») doit rester vrai — le client n'est JAMAIS relancé
+        # pour la part agence. Seuls l'auto-clôture et le prêt-à-valider
+        # attendent le contreseing ; la fermeture MANUELLE reste la
+        # prérogative de l'agence (aucune précondition, comportement
+        # existant).
+        open_request_ids = await self._progress_ids_with_open_requests([r.id for r in rows])
         pending: list[PendingMail] = []
         auto_closed = False
         for row in rows:
             row_reqs = by_progress.get(row.id, [])
             row_case_reqs = case_by_step.get(row.template_step_id, [])
             if not self._step_met(row_reqs, row_case_reqs, persons, case):
+                continue
+            if row.id in open_request_ids:
                 continue
             step = steps.get(row.template_step_id)
             if step is None:
@@ -1432,6 +1623,29 @@ class ProgressManager:
             # rule only shields the status between step transitions.
             await self._sync_case_status(case)
         return pending
+
+    async def _progress_ids_with_open_requests(
+        self, progress_ids: list[uuid.UUID]
+    ) -> set[uuid.UUID]:
+        """Les étapes portant une demande de signature OUVERTE (draft/sent/
+        partially_signed — completed n'est pas ouverte) : elles attendent
+        encore une signature, contreseing compris."""
+        if not progress_ids:
+            return set()
+        from shared.models.signature import SignatureRequest
+        from src.core.enums import SignatureRequestStatus
+
+        stmt = select(SignatureRequest.case_step_progress_id).where(
+            SignatureRequest.case_step_progress_id.in_(progress_ids),
+            SignatureRequest.status.in_(
+                (
+                    SignatureRequestStatus.DRAFT.value,
+                    SignatureRequestStatus.SENT.value,
+                    SignatureRequestStatus.PARTIALLY_SIGNED.value,
+                )
+            ),
+        )
+        return set((await self.db.execute(stmt)).scalars())
 
     async def _ready_to_validate_mail(
         self, case: ClientCase, step: JourneyTemplateStep

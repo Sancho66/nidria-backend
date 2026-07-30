@@ -322,6 +322,92 @@ class ProgressRepository:
         )
         return list((await self.db.execute(stmt)).scalars())
 
+    async def get_agents_by_ids(self, agent_ids: list[uuid.UUID]) -> list[Agent]:
+        if not agent_ids:
+            return []
+        stmt = select(Agent).where(Agent.id.in_(agent_ids))
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def agency_seats_by_progress(
+        self, case_id: uuid.UUID
+    ) -> dict[uuid.UUID, list[tuple[Any, Any, bool]]]:
+        """Contreseing : par étape, les sièges AGENCE des demandes du
+        dossier — (signer, request, clients_all_signed). Itéré par
+        création de demande : la plus récente gagne par (étape, référence)
+        — même règle que la projection des lignes. Les demandes annulées/
+        expirées ne portent pas de ligne de contreseing (mortes)."""
+        from shared.models.signature import SignatureRequest, SignatureSigner
+        from src.core.enums import SignatureRequestStatus, SignatureSignerStatus
+
+        requests = (
+            (
+                await self.db.execute(
+                    select(SignatureRequest)
+                    .where(
+                        SignatureRequest.case_id == case_id,
+                        SignatureRequest.status.in_(
+                            (
+                                SignatureRequestStatus.SENT.value,
+                                SignatureRequestStatus.PARTIALLY_SIGNED.value,
+                                SignatureRequestStatus.COMPLETED.value,
+                            )
+                        ),
+                    )
+                    .order_by(SignatureRequest.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not requests:
+            return {}
+        signers = (
+            (
+                await self.db.execute(
+                    select(SignatureSigner).where(
+                        SignatureSigner.signature_request_id.in_([r.id for r in requests])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_request: dict[uuid.UUID, list[Any]] = {}
+        for signer in signers:
+            by_request.setdefault(signer.signature_request_id, []).append(signer)
+        latest: dict[tuple[uuid.UUID, str], tuple[Any, Any, bool]] = {}
+        for request in requests:
+            seats = by_request.get(request.id, [])
+            agency_seats = [s for s in seats if s.agent_id is not None]
+            if not agency_seats:
+                continue
+            clients_done = all(
+                s.status == SignatureSignerStatus.SIGNED.value for s in seats if s.agent_id is None
+            )
+            latest[(request.case_step_progress_id, request.reference)] = (
+                agency_seats[0],
+                request,
+                clients_done,
+            )
+        out: dict[uuid.UUID, list[tuple[Any, Any, bool]]] = {}
+        for (progress_id, _ref), value in latest.items():
+            out.setdefault(progress_id, []).append(value)
+        return out
+
+    async def list_active_instances_for_step(self, step_id: uuid.UUID) -> list[CaseStepProgress]:
+        """Les instances EN COURS d'une étape de template, dossiers vivants
+        seulement — le périmètre de la propagation d'un PATCH d'exigence."""
+        stmt = (
+            select(CaseStepProgress)
+            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
+            .where(
+                CaseStepProgress.template_step_id == step_id,
+                CaseStepProgress.status == StepStatus.IN_PROGRESS.value,
+                ClientCase.deleted_at.is_(None),
+            )
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def list_persons_for_case(self, case_id: uuid.UUID) -> list[CasePerson]:
         # Eager-load expat_user: the PRINCIPAL's display name lives there
         # (case_person.full_name is NULL for the principal), and resolving

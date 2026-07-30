@@ -37,7 +37,7 @@ from src.core.exceptions import (
 )
 from src.document_templates.document_templates_repository import DocumentTemplatesRepository
 from src.signatures.flags import signatures_effectively_enabled
-from src.signatures.provider import get_provider
+from src.signatures.provider import AGENCY_ROLE, get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,7 @@ class DocumentTemplatesManager:
         filename: str,
         content: bytes,
         content_type: str | None,
+        agency_countersigns: bool = False,
     ) -> DocumentTemplate:
         """PDF stocké chez nous + template provider (sans champs) dans la
         même transaction — un échec provider annule tout (et nettoie le
@@ -118,16 +119,39 @@ class DocumentTemplatesManager:
             storage_path=path,
             filename=filename,
             provider_template_ref=provider_ref,
+            agency_countersigns=agency_countersigns,
         )
         self.db.add(template)
         await self.db.commit()
         await self.db.refresh(template)
         return template
 
-    async def rename(self, agent: Agent, template_id: uuid.UUID, name: str) -> DocumentTemplate:
+    async def rename(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        name: str | None,
+        agency_countersigns: bool | None = None,
+    ) -> DocumentTemplate:
         await self._guard_enabled(agent)
         template = await self._get(agent, template_id)
-        template.name = name
+        if name is not None:
+            template.name = name
+        if agency_countersigns is not None and agency_countersigns != template.agency_countersigns:
+            # Basculer le contreseing change ce que « configuré » veut
+            # dire : on re-constate l'état provider dans la foulée (le
+            # verrou exige — ou n'exige plus — la zone du rôle Agence).
+            template.agency_countersigns = agency_countersigns
+            summary = await get_provider().template_summary(template.provider_template_ref)
+            client_roles = [r for r in summary.roles if r != AGENCY_ROLE]
+            clients_ok = bool(client_roles) and all(
+                role in summary.roles_with_signature for role in client_roles
+            )
+            agency_ok = (not agency_countersigns) or (
+                AGENCY_ROLE in summary.roles and AGENCY_ROLE in summary.roles_with_signature
+            )
+            template.fields_configured = clients_ok and agency_ok
+            template.roles_count = len(client_roles)
         await self.db.commit()
         await self.db.refresh(template)
         return template
@@ -165,10 +189,19 @@ class DocumentTemplatesManager:
         # Verrou par rôle (mini-lot 30/07) : configuré = CHAQUE rôle porte
         # sa zone signature — un rôle sans zone est un signataire qui
         # n'aurait rien à signer (le provider ne le refuse pas, constat).
-        template.fields_configured = bool(summary.roles) and all(
-            role in summary.roles_with_signature for role in summary.roles
+        # Contreseing (lot 30/07) : le rôle « Agence » est compté À PART —
+        # roles_count reste le compte des rôles CLIENTS (toutes les gardes
+        # rôles == signataires restent vraies telles quelles), et le verrou
+        # exige EN PLUS la zone du rôle Agence quand agency_countersigns.
+        client_roles = [r for r in summary.roles if r != AGENCY_ROLE]
+        clients_ok = bool(client_roles) and all(
+            role in summary.roles_with_signature for role in client_roles
         )
-        template.roles_count = len(summary.roles)
+        agency_ok = (not template.agency_countersigns) or (
+            AGENCY_ROLE in summary.roles and AGENCY_ROLE in summary.roles_with_signature
+        )
+        template.fields_configured = clients_ok and agency_ok
+        template.roles_count = len(client_roles)
         await self.db.commit()
         await self.db.refresh(template)
         return template
