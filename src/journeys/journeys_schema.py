@@ -322,6 +322,20 @@ class StepRequirementCreateRequest(BaseModel):
     document_template_id: uuid.UUID | None = None
 
 
+class StepRequirementUpdateRequest(BaseModel):
+    """Mini-lot 30/07 : la BASCULE dépôt ↔ signature sans delete/recreate.
+    Champs signature seulement (kind/reference/scope restent immuables —
+    changer la nature d'une exigence, c'est en créer une autre). Les
+    invariants de la création tiennent : signable ⇒ modèle (même agence),
+    non-signable ⇒ pas de modèle (auto-nettoyé à la bascule OFF)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    signature_required: bool | None = None
+    signature_level: SignatureLevel | None = None
+    document_template_id: uuid.UUID | None = None
+
+
 class StepRequirementResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

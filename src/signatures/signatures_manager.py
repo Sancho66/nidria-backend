@@ -136,7 +136,9 @@ class SignaturesManager:
             seated = await self.repo.live_signer_person_ids(progress.id, req_row.reference)
             if person.id in seated:
                 continue
-            await self._send_one(case, progress, req_row.reference, [req_row])
+            await self._send_one(
+                case, progress, req_row.reference, [req_row], partial_recreation=True
+            )
             sent += 1
         return sent
 
@@ -146,6 +148,8 @@ class SignaturesManager:
         row: CaseStepProgress,
         reference: str,
         req_rows: list[CaseStepRequirement],
+        *,
+        partial_recreation: bool = False,
     ) -> SignatureRequest:
         """Crée la demande (draft) + ses signataires, débite (lot 2) puis
         appelle le port — refs opaques posées, statut SENT. Dans la
@@ -212,6 +216,24 @@ class SignaturesManager:
                 f"Document template {template.name!r} has {template.roles_count} signer "
                 f"role(s) but this step needs {len(signers)}.",
                 code="signatures.template_roles_insufficient",
+                params={
+                    "reference": reference,
+                    "template_name": template.name,
+                    "roles_count": template.roles_count,
+                    "signers_count": len(signers),
+                },
+            )
+        # Mini-complément (30/07) — le sens INVERSE : plus de rôles que de
+        # personnes à l'ACTIVATION = un rôle fantôme dont les zones ne
+        # seront jamais signées (document final à zone vide). Refus nommé.
+        # Désarmée pour la recréation tardive : SA demande partielle (1
+        # signataire sur « Signataire 1 ») est le design assumé.
+        if not partial_recreation and template.roles_count > len(signers):
+            raise ValidationError(
+                f"Document template {template.name!r} has {template.roles_count} signer "
+                f"role(s) but this step only seats {len(signers)} — the extra zones "
+                "would never be signed.",
+                code="signatures.template_roles_exceed_persons",
                 params={
                     "reference": reference,
                     "template_name": template.name,

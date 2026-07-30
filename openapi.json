@@ -12257,6 +12257,151 @@
         }
       }
     },
+    "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}": {
+      "patch": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Update Step Requirement",
+        "description": "Mini-lot 30/07 : bascule dépôt ↔ signature sans delete/recreate.\nVaut pour les matérialisations FUTURES — les dossiers en vol gardent\nleur snapshot.",
+        "operationId": "update_step_requirement_journeys__template_id__steps__step_id__requirements__requirement_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requirement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepRequirementUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepRequirementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "journeys"
+        ],
+        "summary": "Delete Requirement",
+        "operationId": "delete_requirement_journeys__template_id__steps__step_id__requirements__requirement_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "step_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Step Id"
+            }
+          },
+          {
+            "name": "requirement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requirement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/journeys/{template_id}/steps/{step_id}/requirements/order": {
       "put": {
         "tags": [
@@ -12312,74 +12457,6 @@
                     "$ref": "#/components/schemas/StepRequirementResponse"
                   },
                   "title": "Response Reorder Requirements Journeys  Template Id  Steps  Step Id  Requirements Order Put"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}": {
-      "delete": {
-        "tags": [
-          "journeys"
-        ],
-        "summary": "Delete Requirement",
-        "operationId": "delete_requirement_journeys__template_id__steps__step_id__requirements__requirement_id__delete",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "template_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Template Id"
-            }
-          },
-          {
-            "name": "step_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Step Id"
-            }
-          },
-          {
-            "name": "requirement_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Requirement Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -28834,6 +28911,47 @@
           "each_person"
         ],
         "title": "StepRequirementScope"
+      },
+      "StepRequirementUpdateRequest": {
+        "properties": {
+          "signature_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Required"
+          },
+          "signature_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignatureLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Template Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StepRequirementUpdateRequest",
+        "description": "Mini-lot 30/07 : la BASCULE dépôt ↔ signature sans delete/recreate.\nChamps signature seulement (kind/reference/scope restent immuables —\nchanger la nature d'une exigence, c'est en créer une autre). Les\ninvariants de la création tiennent : signable ⇒ modèle (même agence),\nnon-signable ⇒ pas de modèle (auto-nettoyé à la bascule OFF)."
       },
       "StepStatus": {
         "type": "string",

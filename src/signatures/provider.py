@@ -66,6 +66,10 @@ class TemplateSummary:
 
     fields_count: int
     roles: list[str] = field(default_factory=list)
+    # Les rôles portant AU MOINS une zone de type signature — le verrou
+    # fields_configured exige que CHAQUE rôle ait la sienne (un rôle sans
+    # zone = un signataire qui n'aurait rien à signer).
+    roles_with_signature: list[str] = field(default_factory=list)
 
 
 @dataclass

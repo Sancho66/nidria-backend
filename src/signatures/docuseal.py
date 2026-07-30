@@ -115,9 +115,17 @@ class DocuSealProvider:
         template = await self._request("GET", f"/templates/{template_ref}")
         fields = template.get("fields") or []
         submitters = template.get("submitters") or []
+        name_by_uuid = {str(s.get("uuid")): str(s.get("name") or "") for s in submitters}
+        covered = {
+            name_by_uuid.get(str(f.get("submitter_uuid")), "")
+            for f in fields
+            if f.get("type") == "signature"
+        }
+        roles = [str(s.get("name") or "") for s in submitters]
         return TemplateSummary(
             fields_count=len(fields),
-            roles=[str(s.get("name") or "") for s in submitters],
+            roles=roles,
+            roles_with_signature=[r for r in roles if r in covered],
         )
 
     async def archive_template(self, template_ref: str) -> None:

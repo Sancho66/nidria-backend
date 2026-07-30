@@ -55,9 +55,12 @@ async def _document_template(
     *,
     name: str = "Statuts",
     synced: bool = True,
+    roles: int | None = None,
 ) -> dict:
     """Un modèle de la bibliothèque, zones posées (builder-sync simulé sur
-    le FakeProvider — default_roles) sauf synced=False."""
+    le FakeProvider — default_roles, ou `roles` explicite pour coller à la
+    composition : la garde exige rôles == signataires à l'activation) sauf
+    synced=False."""
     r = await client.post(
         "/document-templates",
         headers=headers,
@@ -66,6 +69,12 @@ async def _document_template(
     )
     assert r.status_code == 201, r.text
     template = r.json()
+    if roles is not None:
+        from src.signatures import provider as provider_module
+
+        fake = provider_module.override
+        assert fake is not None
+        fake.default_roles = [f"Signataire {i + 1}" for i in range(roles)]
     if synced:
         r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
         assert r.status_code == 200, r.text
@@ -99,7 +108,9 @@ async def _signable_case(
     # Méga-lot modèles : l'exigence signable naît AVEC son modèle de la
     # bibliothèque (PDF source + zones sauvegardées au builder — simulé par
     # builder-sync sur le FakeProvider). Le PDF-direct est mort.
-    doc_template = await _document_template(client, headers, name=f"Statuts {email_prefix}")
+    doc_template = await _document_template(
+        client, headers, name=f"Statuts {email_prefix}", roles=2 if with_member else 1
+    )
     r = await client.post(
         f"/journeys/{template['id']}/steps/{step['id']}/requirements",
         headers=headers,

@@ -162,7 +162,12 @@ class DocumentTemplatesManager:
         await self._guard_enabled(agent)
         template = await self._get(agent, template_id)
         summary = await get_provider().template_summary(template.provider_template_ref)
-        template.fields_configured = summary.fields_count > 0
+        # Verrou par rôle (mini-lot 30/07) : configuré = CHAQUE rôle porte
+        # sa zone signature — un rôle sans zone est un signataire qui
+        # n'aurait rien à signer (le provider ne le refuse pas, constat).
+        template.fields_configured = bool(summary.roles) and all(
+            role in summary.roles_with_signature for role in summary.roles
+        )
         template.roles_count = len(summary.roles)
         await self.db.commit()
         await self.db.refresh(template)

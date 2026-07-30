@@ -188,6 +188,25 @@ async def test_builder_sync_materializes_the_provider_state(
     assert r.json()["roles_count"] == 3
 
 
+async def test_builder_sync_locks_until_every_role_has_its_signature_zone(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, fake_provider: FakeProvider
+) -> None:
+    """Verrou (mini-lot 30/07) : configuré = CHAQUE rôle porte sa zone
+    signature. 2 rôles, une seule zone → PAS configuré (le 2e signataire
+    n'aurait rien à signer) ; la 2e zone posée → configuré."""
+    headers = agent_headers(admin)
+    template = await _document_template(client, headers, synced=False)
+    fake_provider.default_roles = ["Signataire 1", "Signataire 2"]
+    fake_provider.signature_roles = ["Signataire 1"]  # builder sauvegardé incomplet
+    r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["fields_configured"] is False
+    assert r.json()["roles_count"] == 2
+    fake_provider.signature_roles = None  # chaque rôle couvert
+    r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
+    assert r.json()["fields_configured"] is True
+
+
 # --- suppression : refusée tant que référencé -----------------------------------------
 
 

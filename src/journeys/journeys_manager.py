@@ -73,6 +73,7 @@ from src.journeys.journeys_schema import (
     StepCaseRequirementCreateRequest,
     StepParticipantCreateRequest,
     StepRequirementCreateRequest,
+    StepRequirementUpdateRequest,
     TemplateCaseFieldResponse,
     TemplateFieldCreateRequest,
     TemplateFieldResponse,
@@ -1273,6 +1274,82 @@ class JourneysManager:
         await self.db.commit()
         await self.db.refresh(requirement)
         await progress_manager.send_pending(pending)
+        return requirement
+
+    async def update_requirement(
+        self,
+        agent: Agent,
+        template_id: uuid.UUID,
+        step_id: uuid.UUID,
+        requirement_id: uuid.UUID,
+        payload: StepRequirementUpdateRequest,
+    ) -> StepRequirement:
+        """La bascule dépôt ↔ signature sur une DÉFINITION. Les lignes déjà
+        matérialisées gardent leur snapshot (doctrine LOT 6 : un dossier en
+        vol ne bouge jamais sous une édition de template) — la définition
+        vaut pour les matérialisations FUTURES."""
+        await self._get_template(agent, template_id)
+        await self._get_step(template_id, step_id)
+        requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
+        if requirement is None:
+            raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
+
+        new_required = (
+            payload.signature_required
+            if payload.signature_required is not None
+            else requirement.signature_required
+        )
+        new_level = (
+            payload.signature_level.value
+            if payload.signature_level is not None
+            else requirement.signature_level
+        )
+        if "document_template_id" in payload.model_fields_set:
+            new_template_id = payload.document_template_id
+        else:
+            new_template_id = requirement.document_template_id
+
+        if new_required and requirement.kind != StepRequirementKind.DOCUMENT.value:
+            raise ValidationError(
+                "A signature can only be required on a document requirement.",
+                code="journey.signature_on_non_document",
+            )
+        if new_required and new_level != SignatureLevel.SES.value:
+            raise ValidationError(
+                f"Signature level {new_level!r} is not implemented yet.",
+                code="journey.signature_level_not_implemented",
+                params={"level": new_level},
+            )
+        if new_required:
+            if new_template_id is None:
+                raise ValidationError(
+                    "A signable requirement must reference a document template.",
+                    code="journey.signature_template_required",
+                )
+            from src.document_templates.document_templates_repository import (
+                DocumentTemplatesRepository,
+            )
+
+            template_ref = await DocumentTemplatesRepository(self.db).get_for_agency(
+                agent.agency_id, new_template_id
+            )
+            if template_ref is None:
+                raise NotFoundError(
+                    "Document template not found.", code="document_template.not_found"
+                )
+        else:
+            if "document_template_id" in payload.model_fields_set and new_template_id is not None:
+                raise ValidationError(
+                    "A document template only applies to a signable requirement.",
+                    code="journey.template_on_non_signable",
+                )
+            new_template_id = None  # bascule OFF : le modèle se détache
+
+        requirement.signature_required = new_required
+        requirement.signature_level = new_level
+        requirement.document_template_id = new_template_id
+        await self.db.commit()
+        await self.db.refresh(requirement)
         return requirement
 
     async def _validate_reference(

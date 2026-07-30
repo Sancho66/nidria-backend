@@ -128,6 +128,9 @@ async def test_template_is_snapshotted_and_sent_as_ref(
 ) -> None:
     await give_credits(admin.agency_id, 10)
     headers = agent_headers(admin)
+    # Scope principal = 1 signataire : le modèle doit porter EXACTEMENT un
+    # rôle (garde inverse du mini-complément).
+    fake_provider.default_roles = ["Signataire 1"]
     template_id, _, _, doc_template = await _own_journey(client, headers)
     _case, progress_id = await _case_on(
         client, admin, headers, make_client_case, make_expat_user, template_id, "src@example.com"
@@ -285,24 +288,165 @@ async def test_send_refuses_more_signers_than_roles(
 ) -> None:
     """Constat sonde : le provider assoit un rôle inconnu SANS valider
     (signataire fantôme sans zones) — la garde de cohérence vit chez nous.
-    Modèle à 1 rôle + exigence each_person sur dossier à 2 personnes →
-    422 nommé à l'activation."""
+    Modèle re-sauvegardé à 1 rôle + exigence each_person sur dossier à 2
+    personnes → 422 nommé à l'activation."""
     await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    _case, progress_id = await _signable_case(
+        client,
+        db_session,
+        admin,
+        headers,
+        make_client_case,
+        make_expat_user,
+        email_prefix="roles",
+        activate=False,
+    )
+    case_id = _case.id
+    # L'agence rouvre le builder et ne laisse qu'UN rôle : le re-sync
+    # constate 1 — l'activation d'un dossier à 2 signataires refuse.
     fake_provider.default_roles = ["Signataire 1"]
-    with pytest.raises(AssertionError):
-        # _signable_case active l'étape : l'activation doit refuser (422 ≠
-        # 200 attendu par le helper) — le raises épingle le refus.
-        await _signable_case(
-            client,
-            db_session,
-            admin,
-            agent_headers(admin),
-            make_client_case,
-            make_expat_user,
-            email_prefix="roles",
-        )
+    template_id = (await client.get("/document-templates", headers=headers)).json()[0]["id"]
+    r = await client.post(f"/document-templates/{template_id}/builder-sync", headers=headers)
+    assert r.status_code == 200, r.text
+    r = await client.patch(
+        f"/cases/{case_id}/steps/{progress_id}", headers=headers, json={"status": "in_progress"}
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "signatures.template_roles_insufficient"
     await db_session.rollback()
     assert fake_provider.create_calls == []
+
+
+async def test_send_refuses_more_roles_than_persons(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    fake_provider: FakeProvider,
+    give_credits,
+) -> None:
+    """Mini-complément : le sens INVERSE de la garde de mapping. Modèle à
+    2 rôles + exigence principal (1 signataire) → un rôle fantôme dont les
+    zones ne seraient jamais signées : l'activation refuse (422 nommé),
+    aucune demande, aucun crédit brûlé."""
+    await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    template_id, _, _, _doc = await _own_journey(client, headers)  # default_roles = 2 rôles
+    _case, progress_id = await _case_on(
+        client,
+        admin,
+        headers,
+        make_client_case,
+        make_expat_user,
+        template_id,
+        "ghost@example.com",
+        activate=False,
+    )
+    r = await client.patch(
+        f"/cases/{_case.id}/steps/{progress_id}", headers=headers, json={"status": "in_progress"}
+    )
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert body["code"] == "signatures.template_roles_exceed_persons"
+    assert (body["params"]["roles_count"], body["params"]["signers_count"]) == (2, 1)
+    await db_session.rollback()
+    assert fake_provider.create_calls == []
+    balance = (await client.get("/agencies/me/signature-credits", headers=headers)).json()
+    assert balance["available"] == 10
+
+
+async def test_patch_requirement_toggles_deposit_to_signature_and_back(
+    client: AsyncClient,
+    admin: Agent,
+    make_agent,
+    system_roles,
+    agent_headers: AuthHeaders,
+    fake_provider: FakeProvider,
+) -> None:
+    """Mini-lot 30/07 : la bascule dépôt ↔ signature SANS delete/recreate,
+    avec les invariants de la création (signable ⇒ modèle même agence,
+    bascule OFF ⇒ modèle auto-détaché)."""
+    headers = agent_headers(admin)
+    journey = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    step = (
+        await client.post(f"/journeys/{journey['id']}/steps", headers=headers, json={"name": "S"})
+    ).json()
+    plain = (
+        await client.post(
+            f"/journeys/{journey['id']}/steps/{step['id']}/requirements",
+            headers=headers,
+            json={"kind": "document", "reference": "Kbis", "scope": "principal"},
+        )
+    ).json()
+    url = f"/journeys/{journey['id']}/steps/{step['id']}/requirements/{plain['id']}"
+
+    # ON sans modèle → 422 nommé.
+    r = await client.patch(url, headers=headers, json={"signature_required": True})
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "journey.signature_template_required"
+    # Modèle seul sur non-signable → 422 nommé.
+    doc_template = await _document_template(client, headers, roles=1)
+    r = await client.patch(url, headers=headers, json={"document_template_id": doc_template["id"]})
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "journey.template_on_non_signable"
+    # Modèle d'une AUTRE agence → 404 non-révélateur.
+    other_admin = await make_agent(role=system_roles["admin"])
+    foreign = await _document_template(client, agent_headers(other_admin), name="Ailleurs")
+    r = await client.patch(
+        url,
+        headers=headers,
+        json={"signature_required": True, "document_template_id": foreign["id"]},
+    )
+    assert r.status_code == 404, r.text
+    # LA bascule ON.
+    r = await client.patch(
+        url,
+        headers=headers,
+        json={"signature_required": True, "document_template_id": doc_template["id"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["signature_required"] is True
+    assert body["document_template_id"] == doc_template["id"]
+    # La bascule OFF : le modèle se détache tout seul.
+    r = await client.patch(url, headers=headers, json={"signature_required": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["signature_required"] is False
+    assert r.json()["document_template_id"] is None
+
+
+async def test_patch_definition_never_touches_a_materialized_row(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    fake_provider: FakeProvider,
+    give_credits,
+) -> None:
+    """Doctrine LOT 6 tenue au PATCH : le dossier en vol garde son snapshot
+    (modèle A) quand la définition bascule vers un modèle B."""
+    await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    fake_provider.default_roles = ["Signataire 1"]
+    template_id, step_id, req_id, doc_a = await _own_journey(client, headers)
+    _case, progress_id = await _case_on(
+        client, admin, headers, make_client_case, make_expat_user, template_id, "snap@example.com"
+    )
+    doc_b = await _document_template(client, headers, name="Statuts B", roles=1)
+    r = await client.patch(
+        f"/journeys/{template_id}/steps/{step_id}/requirements/{req_id}",
+        headers=headers,
+        json={"document_template_id": doc_b["id"], "signature_required": True},
+    )
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+    row = await _signable_row(db_session, progress_id)
+    assert str(row.document_template_id) == doc_a["id"]  # le vol garde SON modèle
 
 
 # --- (3) la garde du flag : env MAÎTRE, réglage agence sous-interrupteur -------------

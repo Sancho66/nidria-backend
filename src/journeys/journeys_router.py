@@ -46,6 +46,7 @@ from src.journeys.journeys_schema import (
     StepRequirementCreateRequest,
     StepRequirementOrderRequest,
     StepRequirementResponse,
+    StepRequirementUpdateRequest,
     TemplateCaseFieldResponse,
     TemplateFieldCreateRequest,
     TemplateFieldOrderRequest,
@@ -168,6 +169,12 @@ BINDINGS = [
     RouteBinding(
         "POST",
         "/journeys/{template_id}/steps/{step_id}/requirements",
+        Audience.AGENT,
+        Permission.JOURNEY_CONFIGURE,
+    ),
+    RouteBinding(
+        "PATCH",
+        "/journeys/{template_id}/steps/{step_id}/requirements/{requirement_id}",
         Audience.AGENT,
         Permission.JOURNEY_CONFIGURE,
     ),
@@ -770,6 +777,27 @@ async def add_requirement(
     db: DbDep,
 ) -> StepRequirementResponse:
     requirement = await JourneysManager(db).add_requirement(agent, template_id, step_id, body)
+    return StepRequirementResponse.model_validate(requirement)
+
+
+@router.patch(
+    "/{template_id}/steps/{step_id}/requirements/{requirement_id}",
+    response_model=StepRequirementResponse,
+)
+async def update_step_requirement(
+    template_id: uuid.UUID,
+    step_id: uuid.UUID,
+    requirement_id: uuid.UUID,
+    payload: StepRequirementUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> StepRequirementResponse:
+    """Mini-lot 30/07 : bascule dépôt ↔ signature sans delete/recreate.
+    Vaut pour les matérialisations FUTURES — les dossiers en vol gardent
+    leur snapshot."""
+    requirement = await JourneysManager(db).update_requirement(
+        agent, template_id, step_id, requirement_id, payload
+    )
     return StepRequirementResponse.model_validate(requirement)
 
 

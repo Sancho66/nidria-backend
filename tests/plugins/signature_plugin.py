@@ -42,6 +42,9 @@ class FakeProvider:
         # Le « save builder » simulé : les rôles que template_summary
         # constatera (2 = principal + membre, le cas nominal des batteries).
         self.default_roles = ["Signataire 1", "Signataire 2"]
+        # None = chaque rôle porte sa zone signature (verrou satisfait) ;
+        # une liste explicite simule un builder sauvegardé incomplet.
+        self.signature_roles: list[str] | None = None
 
     async def create_template(
         self, *, name: str, pdf: bytes, filename: str, external_id: str
@@ -59,7 +62,10 @@ class FakeProvider:
     async def template_summary(self, template_ref: str) -> TemplateSummary:
         self.summary_calls.append(template_ref)
         roles = self.templates.get(template_ref, {}).get("roles", self.default_roles)
-        return TemplateSummary(fields_count=len(roles), roles=list(roles))
+        covered = list(roles) if self.signature_roles is None else list(self.signature_roles)
+        return TemplateSummary(
+            fields_count=len(covered), roles=list(roles), roles_with_signature=covered
+        )
 
     async def archive_template(self, template_ref: str) -> None:
         self.archive_calls.append(template_ref)
