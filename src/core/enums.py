@@ -324,6 +324,9 @@ class SignatureCreditKind(StrEnum):
     RESERVE = "reserve"
     CONSUME = "consume"
     RELEASE = "release"
+    # Crédits OFFERTS par le superadmin (lot 30/07) — un crédit comme un
+    # autre au solde (aucune priorité payé/offert), distinct à l'historique.
+    GRANT = "grant"
 
 
 class SignatureProviderKind(StrEnum):

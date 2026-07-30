@@ -125,10 +125,11 @@ async def derived_balance(db: AsyncSession, agency_id: uuid.UUID) -> tuple[int, 
         ).all()
     }
     purchases = int(rows.get(SignatureCreditKind.PURCHASE.value, 0))
+    grants = int(rows.get(SignatureCreditKind.GRANT.value, 0))
     reserves = int(rows.get(SignatureCreditKind.RESERVE.value, 0))
     consumes = int(rows.get(SignatureCreditKind.CONSUME.value, 0))
     releases = int(rows.get(SignatureCreditKind.RELEASE.value, 0))
-    available = purchases - reserves + releases
+    available = purchases + grants - reserves + releases
     reserved = reserves - consumes - releases
     return available, reserved
 
@@ -163,6 +164,29 @@ async def purchase_credits(
         paddle_event_id=paddle_event_id,
         details=details,
     )
+
+
+async def grant_credits(
+    db: AsyncSession,
+    agency_id: uuid.UUID,
+    credits: int,
+    *,
+    granted_by_agent_id: uuid.UUID,
+    note: str | None = None,
+) -> None:
+    """Crédits OFFERTS (superadmin, lot 30/07) : mêmes invariants que
+    l'achat — verrou de ligne, écriture append-only, JAMAIS un update nu
+    du solde. Pas de ceinture d'idempotence : aucun jeton de requête
+    n'existe au codebase (constat — l'idempotence est par domaine :
+    paddle_event_id, transaction Paddle), et un rejeu silencieux
+    masquerait un double-clic superadmin — chaque POST crédite, l'écriture
+    porte qui/pourquoi."""
+    row = await _locked_balance(db, agency_id)
+    row.available += credits
+    details: dict[str, object] = {"granted_by_agent_id": str(granted_by_agent_id)}
+    if note:
+        details["note"] = note
+    _entry(db, agency_id, SignatureCreditKind.GRANT, credits, details=details)
 
 
 async def reserve_credit(db: AsyncSession, agency_id: uuid.UUID, request: SignatureRequest) -> None:

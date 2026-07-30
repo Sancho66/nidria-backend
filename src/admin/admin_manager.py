@@ -94,6 +94,8 @@ class AdminManager:
             billing_status=r.billing_status,
             status=status,
             trial_days_remaining=days,
+            trial_ends_at=r.trial_ends_at,
+            signature_credits_available=r.signature_credits_available or 0,
             cases_count=r.cases_count,
             members_count=r.members_count,
             created_at=r.created_at,

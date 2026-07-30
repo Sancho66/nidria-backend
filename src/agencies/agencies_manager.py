@@ -560,6 +560,49 @@ class AgenciesManager:
             blocked_reason=reason,
         )
 
+    async def extend_trial(
+        self, superadmin: Agent, agency_id: uuid.UUID, extend_days: int
+    ) -> datetime:
+        """Lot superadmin (30/07) : la fin d'essai se pose ENFIN par
+        endpoint (le modèle disait « script manuel » — design levé ici).
+        Jours ajoutés sur max(maintenant, fin actuelle) — jamais le passé,
+        structurellement. Une agence CONVERTIE n'a plus d'essai à étendre
+        (le plan/converted_at font foi) → 422 nommé."""
+        agency = await self.repo.get_agency(agency_id)
+        if agency is None:
+            raise NotFoundError("Agency not found.")
+        if agency.plan is not None or agency.converted_at is not None:
+            raise ValidationError(
+                "A converted agency has no trial to extend.",
+                code="trial.already_converted",
+            )
+        now = datetime.now(UTC)
+        anchor_dt = (
+            agency.trial_ends_at if agency.trial_ends_at and agency.trial_ends_at > now else now
+        )
+        agency.trial_ends_at = anchor_dt + timedelta(days=extend_days)
+        await self.db.commit()
+        await self.db.refresh(agency)
+        assert agency.trial_ends_at is not None
+        return agency.trial_ends_at
+
+    async def grant_signature_credits(
+        self, superadmin: Agent, agency_id: uuid.UUID, credits: int, note: str | None
+    ) -> tuple[int, int]:
+        """Crédits offerts — l'écriture kind=grant porte qui (superadmin)
+        et pourquoi (note libre courte), le solde l'intègre comme un achat.
+        Retourne (available, reserved) après coup."""
+        agency = await self.repo.get_agency(agency_id)
+        if agency is None:
+            raise NotFoundError("Agency not found.")
+        from src.signatures import ledger
+
+        await ledger.grant_credits(
+            self.db, agency_id, credits, granted_by_agent_id=superadmin.id, note=note
+        )
+        await self.db.commit()
+        return await ledger.balance(self.db, agency_id)
+
     async def update_subscription(
         self, superadmin: Agent, agency_id: uuid.UUID, payload: SubscriptionUpdateRequest
     ) -> AgencySubscriptionInfo:

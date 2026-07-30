@@ -28,7 +28,11 @@ from src.agencies.agencies_schema import (
     MemberDeactivationResponse,
     OnboardingResponse,
     RoleResponse,
+    SignatureCreditGrantRequest,
+    SignatureCreditGrantResponse,
     SubscriptionUpdateRequest,
+    TrialExtendRequest,
+    TrialResponse,
 )
 from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
@@ -59,6 +63,15 @@ BINDINGS = [
     # superadmin gate as the wizard.
     RouteBinding(
         "PATCH", "/agencies/{agency_id}/subscription", Audience.AGENT, Permission.AGENCY_CREATE
+    ),
+    # Lot superadmin (30/07) : essai ajustable + crédits offerts — même
+    # famille, même gate plateforme.
+    RouteBinding("PATCH", "/agencies/{agency_id}/trial", Audience.AGENT, Permission.AGENCY_CREATE),
+    RouteBinding(
+        "POST",
+        "/agencies/{agency_id}/signature-credits/grant",
+        Audience.AGENT,
+        Permission.AGENCY_CREATE,
     ),
     # /me without permission: every authenticated agent sees their own
     # agency (tenant identity endpoint).
@@ -288,6 +301,30 @@ async def update_subscription(
     founding terms and conversion date - manual billing stays with
     Eric, the app stores the deal and derives the seat capacity."""
     return await AgenciesManager(db).update_subscription(agent, agency_id, body)
+
+
+@router.patch("/{agency_id}/trial", response_model=TrialResponse)
+async def extend_agency_trial(
+    agency_id: uuid.UUID, payload: TrialExtendRequest, agent: AgentDep, db: DbDep
+) -> TrialResponse:
+    """Superadmin : l'essai en JOURS AJOUTÉS (ancre max(now, fin actuelle)
+    — jamais le passé). Agence convertie → 422 trial.already_converted."""
+    trial_ends_at = await AgenciesManager(db).extend_trial(agent, agency_id, payload.extend_days)
+    return TrialResponse(trial_ends_at=trial_ends_at)
+
+
+@router.post("/{agency_id}/signature-credits/grant", response_model=SignatureCreditGrantResponse)
+async def grant_agency_signature_credits(
+    agency_id: uuid.UUID, payload: SignatureCreditGrantRequest, agent: AgentDep, db: DbDep
+) -> SignatureCreditGrantResponse:
+    """Superadmin : crédits OFFERTS (kind=grant au ledger, note stockée sur
+    l'écriture) — un crédit comme un autre au solde."""
+    available, reserved = await AgenciesManager(db).grant_signature_credits(
+        agent, agency_id, payload.credits, payload.note
+    )
+    return SignatureCreditGrantResponse(
+        granted=payload.credits, available=available, reserved=reserved
+    )
 
 
 @router.patch("/me", response_model=AgencyResponse)

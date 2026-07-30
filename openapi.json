@@ -3091,6 +3091,124 @@
         }
       }
     },
+    "/agencies/{agency_id}/trial": {
+      "patch": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Extend Agency Trial",
+        "description": "Superadmin : l'essai en JOURS AJOUTÉS (ancre max(now, fin actuelle)\n— jamais le passé). Agence convertie → 422 trial.already_converted.",
+        "operationId": "extend_agency_trial_agencies__agency_id__trial_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrialExtendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agency_id}/signature-credits/grant": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Grant Agency Signature Credits",
+        "description": "Superadmin : crédits OFFERTS (kind=grant au ledger, note stockée sur\nl'écriture) — un crédit comme un autre au solde.",
+        "operationId": "grant_agency_signature_credits_agencies__agency_id__signature_credits_grant_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureCreditGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureCreditGrantResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/members": {
       "get": {
         "tags": [
@@ -15761,6 +15879,22 @@
             ],
             "title": "Trial Days Remaining"
           },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          },
+          "signature_credits_available": {
+            "type": "integer",
+            "title": "Signature Credits Available"
+          },
           "cases_count": {
             "type": "integer",
             "title": "Cases Count"
@@ -15824,6 +15958,8 @@
           "billing_status",
           "status",
           "trial_days_remaining",
+          "trial_ends_at",
+          "signature_credits_available",
           "cases_count",
           "members_count",
           "created_at",
@@ -28086,6 +28222,58 @@
         ],
         "title": "SignatureCreditEntryResponse"
       },
+      "SignatureCreditGrantRequest": {
+        "properties": {
+          "credits": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Credits"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "credits"
+        ],
+        "title": "SignatureCreditGrantRequest",
+        "description": "POST /agencies/{id}/signature-credits/grant (superadmin) — crédits\nOFFERTS. Borne constatée : 1..1000 (le plus grand pack vendu est 100 ;\nau-delà du raisonnable, c'est un contrat, pas un geste)."
+      },
+      "SignatureCreditGrantResponse": {
+        "properties": {
+          "granted": {
+            "type": "integer",
+            "title": "Granted"
+          },
+          "available": {
+            "type": "integer",
+            "title": "Available"
+          },
+          "reserved": {
+            "type": "integer",
+            "title": "Reserved"
+          }
+        },
+        "type": "object",
+        "required": [
+          "granted",
+          "available",
+          "reserved"
+        ],
+        "title": "SignatureCreditGrantResponse"
+      },
       "SignatureCreditPackResponse": {
         "properties": {
           "price_id": {
@@ -30147,6 +30335,37 @@
         ],
         "title": "TranslationJobResponse",
         "description": "An async translation job — progress.done/progress.total IS the\nprogress bar; poll GET /journeys/translate-jobs/{id} until\ndone|done_with_gaps|failed. One lot = one language."
+      },
+      "TrialExtendRequest": {
+        "properties": {
+          "extend_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Extend Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "extend_days"
+        ],
+        "title": "TrialExtendRequest",
+        "description": "PATCH /agencies/{id}/trial (superadmin) — l'essai en JOURS AJOUTÉS,\nla forme la plus sûre constatée : la colonne est un timestamptz, une\ndate explicite saisie en UI porte le piège du fuseau, tandis que des\njours s'ancrent sur max(maintenant, fin actuelle) — le passé est\nSTRUCTURELLEMENT impossible."
+      },
+      "TrialResponse": {
+        "properties": {
+          "trial_ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trial Ends At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trial_ends_at"
+        ],
+        "title": "TrialResponse"
       },
       "UnsectionedFields": {
         "properties": {

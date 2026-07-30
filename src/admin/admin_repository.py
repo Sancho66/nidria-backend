@@ -125,6 +125,20 @@ class AdminRepository:
             .label("referred_by")
         )
 
+        # Mini-complément (30/07) : le solde de crédits signature — une
+        # sous-requête scalaire corrélée dans le MÊME batch (le solde vit
+        # sur signature_credit_balance, une ligne par agence), jamais un
+        # N+1. 0 quand la ligne n'existe pas encore.
+        from shared.models.signature_credit import SignatureCreditBalance
+
+        signature_credits_available = (
+            select(func.coalesce(SignatureCreditBalance.available, 0))
+            .where(SignatureCreditBalance.agency_id == Agency.id)
+            .correlate(Agency)
+            .scalar_subquery()
+            .label("signature_credits_available")
+        )
+
         stmt = select(
             Agency.id,
             Agency.name,
@@ -143,6 +157,7 @@ class AdminRepository:
             seats_used,
             last_login_at,
             referred_by,
+            signature_credits_available,
         )
         count_stmt = select(func.count()).select_from(Agency)
 

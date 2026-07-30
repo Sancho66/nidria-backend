@@ -178,6 +178,39 @@ class SubscriptionUpdateRequest(BaseModel):
     converted_at: datetime | None = None
 
 
+class TrialExtendRequest(BaseModel):
+    """PATCH /agencies/{id}/trial (superadmin) — l'essai en JOURS AJOUTÉS,
+    la forme la plus sûre constatée : la colonne est un timestamptz, une
+    date explicite saisie en UI porte le piège du fuseau, tandis que des
+    jours s'ancrent sur max(maintenant, fin actuelle) — le passé est
+    STRUCTURELLEMENT impossible."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    extend_days: int = Field(ge=1, le=365)
+
+
+class TrialResponse(BaseModel):
+    trial_ends_at: datetime
+
+
+class SignatureCreditGrantRequest(BaseModel):
+    """POST /agencies/{id}/signature-credits/grant (superadmin) — crédits
+    OFFERTS. Borne constatée : 1..1000 (le plus grand pack vendu est 100 ;
+    au-delà du raisonnable, c'est un contrat, pas un geste)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    credits: int = Field(ge=1, le=1000)
+    note: str | None = Field(default=None, max_length=200)
+
+
+class SignatureCreditGrantResponse(BaseModel):
+    granted: int
+    available: int
+    reserved: int
+
+
 class AgencyDeleteRequest(BaseModel):
     """DELETE /agencies/{id} (superadmin, HARD delete, Groupe C). The
     front makes the user type the agency name: `confirm_name` must equal

@@ -35,6 +35,11 @@ class AdminAgencyRow(BaseModel):
     billing_status: str | None
     status: str  # active | trial | expired | unknown
     trial_days_remaining: int | None
+    # Mini-complément (30/07) : la date brute (le front affiche la
+    # deadline exacte, plus seulement le décompte) + le solde de crédits
+    # signature — lecture seule, même requête, zéro N+1.
+    trial_ends_at: datetime | None
+    signature_credits_available: int
     cases_count: int
     members_count: int
     created_at: datetime

@@ -230,6 +230,47 @@ async def _count_queries(db_session: AsyncSession, page_size: int) -> int:
     return counter["n"]
 
 
+async def test_row_serves_trial_ends_at_and_signature_credits(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    superadmin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Mini-complément (30/07) : la ligne admin sert la date de fin d'essai
+    BRUTE et le solde de crédits signature — lecture seule, même requête
+    (le témoin N+1 constant couvre déjà le batch). 0 sans ligne de solde."""
+    from datetime import UTC, datetime, timedelta
+
+    from shared.models.agency import Agency
+    from src.signatures.ledger import purchase_credits
+
+    admin_a = await make_agent(role=system_roles["admin"])
+    agency_a_id = admin_a.agency_id
+    ends = datetime.now(UTC) + timedelta(days=12)
+    agency_a = await db_session.get(Agency, agency_a_id)
+    assert agency_a is not None
+    agency_a.trial_ends_at = ends
+    await db_session.commit()
+    await purchase_credits(db_session, agency_a_id, 37, paddle_event_id="txn_adminrow_1")
+    await db_session.commit()
+    # Une seconde agence SANS solde ni essai : 0 et None.
+    admin_b = await make_agent(role=system_roles["admin"])
+    agency_b_id = admin_b.agency_id
+
+    body = (
+        await client.get("/admin/agencies?page_size=200", headers=agent_headers(superadmin))
+    ).json()
+    rows = {r["id"]: r for r in body["items"]}
+    row_a, row_b = rows[str(agency_a_id)], rows[str(agency_b_id)]
+    assert row_a["signature_credits_available"] == 37
+    got_ends = datetime.fromisoformat(row_a["trial_ends_at"])
+    assert abs((got_ends - ends).total_seconds()) < 2
+    assert row_b["signature_credits_available"] == 0
+    assert row_b["trial_ends_at"] is None
+
+
 async def test_query_count_is_constant_for_3_and_25_agencies(
     db_session: AsyncSession,
     make_agency: MakeAgency,
