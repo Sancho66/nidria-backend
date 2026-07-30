@@ -199,6 +199,10 @@ class Settings(BaseSettings):
     # Low-balance notification threshold DEFAULT; each agency may override
     # via settings["signature_credits_low_threshold"].
     signature_credits_low_threshold_default: int = 10
+    # KPI de travail accompli (volet 2, 31/07) — env MAÎTRE, défaut false :
+    # rien ne se sert flag off (même doctrine que les signatures). Eric
+    # doit bénir le cadrage avant toute visibilité.
+    kpi_enabled: bool = False
 
     @field_validator("paddle_webhook_url", mode="before")
     @classmethod
