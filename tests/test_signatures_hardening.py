@@ -344,7 +344,7 @@ async def test_system_deliverable_exposes_the_key_on_both_faces(
     assert r.status_code == 200
 
     agent_docs = (await client.get(f"/cases/{case_id}/documents", headers=headers)).json()
-    signed = [d for d in agent_docs if d["filename"] == "signed-document.pdf"]
+    signed = [d for d in agent_docs if d["filename"] == "Statuts — signé.pdf"]
     assert len(signed) == 1
     assert signed[0]["kind"] == "deliverable"
     assert signed[0]["uploaded_by_type"] == "system"
@@ -355,7 +355,7 @@ async def test_system_deliverable_exposes_the_key_on_both_faces(
     expat_docs = (
         await client.get(f"/expat/cases/{case_id}/documents", headers=expat_headers(principal))
     ).json()
-    signed = [d for d in expat_docs if d["filename"] == "signed-document.pdf"]
+    signed = [d for d in expat_docs if d["filename"] == "Statuts — signé.pdf"]
     assert len(signed) == 1
     assert signed[0]["kind"] == "deliverable"
     assert signed[0]["uploaded_by_type"] == "system"
@@ -401,3 +401,30 @@ async def test_expat_timeline_exposes_signature_required(
         by_ref.setdefault(r["reference"], []).append(r)
     assert all(r["signature_required"] for r in by_ref["Statuts"])
     assert all(r["signature_required"] is False for r in by_ref["Kbis"])
+
+
+async def test_webhook_rate_limit_generous_then_429(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Volet 1 post-flip : l'endpoint public n'est plus nu — 120/min par IP,
+    généreux (des re-livraisons légitimes n'approchent jamais le seuil),
+    429 au-delà. Le limiteur est le seam in-process existant (signup)."""
+    from src.core import ratelimit
+
+    ratelimit.reset()
+    try:
+        for _ in range(120):
+            r = await client.post(
+                "/webhooks/docuseal",
+                headers={"X-Docuseal-Secret": "wrong"},
+                json={"event_type": "ping"},
+            )
+            assert r.status_code == 401  # compté mais refusé par le secret
+        r = await client.post(
+            "/webhooks/docuseal",
+            headers={"X-Docuseal-Secret": "wrong"},
+            json={"event_type": "ping"},
+        )
+        assert r.status_code == 429
+    finally:
+        ratelimit.reset()

@@ -180,17 +180,21 @@ async def test_member_signer_lists_and_downloads_both_deliverables_of_their_step
     step1_docs = [d for d in system_docs if d["step_name"] == "Contrat"]
     assert len(step1_docs) == 2
     names = sorted(d["filename"] for d in step1_docs)
-    assert names == ["audit-log.pdf", "signed-document.pdf"]
+    # Volet 1 : noms depuis la référence (langue défaut agence, fr) — et le
+    # SOURCE VIERGE (statuts.pdf du modèle) n'apparaît jamais en livrable.
+    assert names == ["Statuts — preuve de signature.pdf", "Statuts — signé.pdf"]
+    assert all(n != "statuts.pdf" for n in (d["filename"] for d in docs))
     # Téléchargement : les OCTETS réels du storage fake, pour les DEUX.
     by_name = {d["filename"]: d for d in step1_docs}
     r = await client.get(
-        f"/expat/cases/{case_id}/documents/{by_name['signed-document.pdf']['id']}/download",
+        f"/expat/cases/{case_id}/documents/{by_name['Statuts — signé.pdf']['id']}/download",
         headers=m_headers,
     )
     assert r.status_code == 200, r.text
     assert r.content == FAKE_PDF
+    proof_id = by_name["Statuts — preuve de signature.pdf"]["id"]
     r = await client.get(
-        f"/expat/cases/{case_id}/documents/{by_name['audit-log.pdf']['id']}/download",
+        f"/expat/cases/{case_id}/documents/{proof_id}/download",
         headers=m_headers,
     )
     assert r.status_code == 200, r.text

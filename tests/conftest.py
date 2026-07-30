@@ -76,13 +76,18 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture(autouse=True)
 def clear_mock_sinks() -> Generator[None, None, None]:
-    from src.core import email, storage
+    from src.core import email, ratelimit, storage
 
     email.outbox.clear()
     storage.mock_store.clear()
+    # Le limiteur in-process (signup + webhook DocuSeal) : fenêtre vierge
+    # entre tests — un worker xdist enchaîne des dizaines d'appels webhook
+    # dans la même minute, le seuil prod (120/min) deviendrait flaky ici.
+    ratelimit.reset()
     yield
     email.outbox.clear()
     storage.mock_store.clear()
+    ratelimit.reset()
 
 
 @pytest.fixture(scope="session")

@@ -95,6 +95,15 @@ async def docuseal_webhook(request: Request, db: DbDep) -> WebhookAckResponse:
         # Flag éteint : rien n'existe côté domaine — 200 pour ne pas faire
         # boucler leurs re-livraisons, aucun traitement.
         return WebhookAckResponse(status="ignored")
+    # Volet 1 post-flip : l'endpoint public était NU — limiteur sobre,
+    # in-process (le seam existant du signup), seuil généreux : 120/min par
+    # IP, des re-livraisons légitimes n'en approchent jamais. 429 au-delà.
+    from src.core import ratelimit
+    from src.core.exceptions import TooManyRequestsError
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not ratelimit.allow(f"docuseal-webhook:{client_ip}", limit=120, window_seconds=60):
+        raise TooManyRequestsError("Too many webhook calls; retry later.")
     secret = settings.docuseal_webhook_secret
     provided = request.headers.get(SECRET_HEADER)
     # Fermé par défaut : secret absent de NOTRE config = 401 (jamais un
@@ -110,6 +119,16 @@ async def docuseal_webhook(request: Request, db: DbDep) -> WebhookAckResponse:
     if not isinstance(data, dict):
         return WebhookAckResponse(status="ignored")
     status = await SignaturesWebhookManager(db).handle_event(event_type, data)
+    # Volet 1 : LA ligne structurée du monitoring — « dernier webhook
+    # reçu/traité » se lit en prod d'un grep fly logs, pas d'usine.
+    logger.info(
+        "signatures.webhook event=%s outcome=%s external_id=%s",
+        event_type or "?",
+        status,
+        (data.get("external_id") or (data.get("data") or {}).get("external_id") or "-")
+        if isinstance(data, dict)
+        else "-",
+    )
     return WebhookAckResponse(status=status)
 
 

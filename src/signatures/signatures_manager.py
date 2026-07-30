@@ -66,6 +66,30 @@ def _placeholder_email(signer_id: uuid.UUID) -> str:
     return f"signer+{signer_id.hex}@nidria.app"
 
 
+# Nommage des livrables signés (volet 1 post-flip) — langue par DÉFAUT de
+# l'agence (le livrable est un artefact du dossier, pas d'un destinataire),
+# libellé = la référence de l'exigence. Le PDF SOURCE (modèle vierge) n'est
+# JAMAIS classé en livrable : seuls les octets téléchargés du provider
+# (document signé + dossier de preuve) entrent ici.
+_DELIVERABLE_LABELS: dict[str, tuple[str, str]] = {
+    "fr": ("signé", "preuve de signature"),
+    "en": ("signed", "proof of signature"),
+    "es": ("firmado", "prueba de firma"),
+    "it": ("firmato", "prova di firma"),
+    "pt": ("assinado", "prova de assinatura"),
+    "hu": ("aláírva", "aláírási igazolás"),
+    "ru": ("подписано", "подтверждение подписи"),
+}
+
+
+def deliverable_filenames(reference: str, lang: str) -> tuple[str, str]:
+    signed_label, proof_label = _DELIVERABLE_LABELS.get(lang, _DELIVERABLE_LABELS["fr"])
+    return (
+        f"{reference} — {signed_label}.pdf",
+        f"{reference} — {proof_label}.pdf",
+    )
+
+
 class SignaturesManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -536,11 +560,22 @@ class SignaturesWebhookManager:
         document_id: uuid.UUID | None = None
         if request.provider_ref:
             files = await get_provider().download_completed(request.provider_ref)
-            document_id = await self._store_deliverable(
-                case, request, files.document_filename, files.document_pdf
+            # Volet 1 post-flip : le nom du livrable vient de la RÉFÉRENCE
+            # (langue défaut agence), jamais du nom provider — qui reflétait
+            # le PDF source et produisait « mandat-test-vierge.pdf » en face
+            # client. Le source vierge, lui, n'est jamais classé.
+            from src.core.i18n import resolve_notification_lang_agent
+            from src.progress.progress_repository import ProgressRepository
+
+            lang = resolve_notification_lang_agent(
+                await ProgressRepository(self.db).agency_default_language(case.agency_id)
             )
-            if files.audit_pdf is not None and files.audit_filename:
-                await self._store_deliverable(case, request, files.audit_filename, files.audit_pdf)
+            signed_name, proof_name = deliverable_filenames(request.reference, lang)
+            document_id = await self._store_deliverable(
+                case, request, signed_name, files.document_pdf
+            )
+            if files.audit_pdf is not None:
+                await self._store_deliverable(case, request, proof_name, files.audit_pdf)
         if document_id is not None:
             signers = await self.repo.list_signers(request.id)
             for signer in signers:

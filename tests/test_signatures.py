@@ -740,9 +740,14 @@ async def test_full_cycle_partial_completed_credit_and_filing(
     docs = list(
         (await db_session.execute(select(Document).where(Document.case_id == case_id))).scalars()
     )
-    assert {d.filename for d in docs} == {"signed-document.pdf", "audit-log.pdf"}
+    # Volet 1 post-flip : nommés depuis la RÉFÉRENCE, langue défaut agence
+    # (fr) — jamais le nom provider (qui reflétait le PDF source).
+    assert {d.filename for d in docs} == {
+        "Statuts — signé.pdf",
+        "Statuts — preuve de signature.pdf",
+    }
     assert all(d.kind == "deliverable" for d in docs)
-    signed = next(d for d in docs if d.filename == "signed-document.pdf")
+    signed = next(d for d in docs if d.filename == "Statuts — signé.pdf")
     assert storage.mock_store[signed.storage_path] == FAKE_PDF
     await db_session.refresh(row_a)
     assert row_a.document_id == signed.id
