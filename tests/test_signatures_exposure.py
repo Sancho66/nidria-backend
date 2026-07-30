@@ -90,9 +90,9 @@ async def test_credits_readable_by_any_agent_with_packs(
     # les 3 posés par le test + l'ordre croissant du tout.
     ours = [p for p in body["packs"] if p["price_id"].startswith("pri_sig")]
     assert ours == [
-        {"price_id": "pri_sig50", "credits": 50},
-        {"price_id": "pri_sig200", "credits": 200},
-        {"price_id": "pri_sig500", "credits": 500},
+        {"price_id": "pri_sig50", "credits": 50, "unit_amount": None, "currency": None},
+        {"price_id": "pri_sig200", "credits": 200, "unit_amount": None, "currency": None},
+        {"price_id": "pri_sig500", "credits": 500, "unit_amount": None, "currency": None},
     ]
     credits_order = [p["credits"] for p in body["packs"]]
     assert credits_order == sorted(credits_order)
@@ -112,6 +112,36 @@ async def test_low_threshold_reflects_agency_override(
     await db_session.commit()
     body = (await client.get("/agencies/me/signature-credits", headers=agent_headers(admin))).json()
     assert body["low_threshold"] == 25
+
+
+async def test_packs_carry_paddle_amounts_from_cache(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Extension 30/07 : la grille SERT unit_amount + currency (relus de
+    Paddle, cache TTL — seam de test) pour les ACTIFS ; un pack sans prix
+    connu reste None (le fallback front sans prix tient)."""
+    from src.signatures import pack_prices as pack_prices_module
+
+    monkeypatch.setenv(
+        "SIGNATURE_CREDIT_PACKS",
+        json.dumps({"pri_sigp10": 10, "pri_sigp20": 20}),
+    )
+    get_settings.cache_clear()
+    pack_prices_module.override = {"pri_sigp10": (1500, "EUR"), "pri_sigp20": (2400, "EUR")}
+    try:
+        body = (
+            await client.get("/agencies/me/signature-credits", headers=agent_headers(admin))
+        ).json()
+    finally:
+        pack_prices_module.override = None
+    ours = [p for p in body["packs"] if p["price_id"].startswith("pri_sigp")]
+    assert ours == [
+        {"price_id": "pri_sigp10", "credits": 10, "unit_amount": 1500, "currency": "EUR"},
+        {"price_id": "pri_sigp20", "credits": 20, "unit_amount": 2400, "currency": "EUR"},
+    ]
 
 
 # --- (4) exigences + agrégat d'étape --------------------------------------------------

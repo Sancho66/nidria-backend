@@ -230,16 +230,25 @@ async def my_signature_credits(agent: AgentDep, db: DbDep) -> SignatureCreditsRe
     BINDINGS). Répond aussi flag éteint (0/0, grille vide ou non — le front
     gate l'affichage sur agencies/me.signatures_enabled)."""
     from src.signatures import ledger
+    from src.signatures.pack_prices import pack_prices
 
     available, reserved = await ledger.balance(db, agent.agency_id)
     agency = await db.get(Agency, agent.agency_id)
     packs = sorted(get_settings().signature_credit_packs.items(), key=lambda kv: kv[1])
+    # Extension 30/07 : les montants relus de Paddle (cache TTL 1 h,
+    # best-effort) — les ACTIFS seulement, les hérités ne sont pas vendus.
+    amounts = await pack_prices([price_id for price_id, _ in packs])
     return SignatureCreditsResponse(
         available=available,
         reserved=reserved,
         low_threshold=ledger._low_threshold(agency),
         packs=[
-            SignatureCreditPackResponse(price_id=price_id, credits=credits)
+            SignatureCreditPackResponse(
+                price_id=price_id,
+                credits=credits,
+                unit_amount=amounts[price_id][0] if price_id in amounts else None,
+                currency=amounts[price_id][1] if price_id in amounts else None,
+            )
             for price_id, credits in packs
         ],
     )

@@ -43,10 +43,16 @@ class WebhookAckResponse(BaseModel):
 
 class SignatureCreditPackResponse(BaseModel):
     """Un pack de la grille (config SIGNATURE_CREDIT_PACKS) — le prix vit
-    chez Paddle, on expose price_id + crédits."""
+    chez Paddle et le contrat le SERT (extension 30/07 : relu avec cache
+    TTL, jamais un montant en dur) ; None = Paddle injoignable, le front
+    garde son fallback sans prix."""
 
     price_id: str
     credits: int
+    # Centimes (le format Paddle) + code devise — pour le prix par crédit
+    # et les économies calculés côté front sans montant en dur.
+    unit_amount: int | None = None
+    currency: str | None = None
 
 
 class SignatureCreditsResponse(BaseModel):

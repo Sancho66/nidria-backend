@@ -355,7 +355,10 @@ class BillingManager:
         → False (l'événement reste 'ignored', comme avant le lot). La clé
         d'idempotence du ledger est l'ID DE TRANSACTION Paddle (stable
         entre re-livraisons du même paiement)."""
-        packs = get_settings().signature_credit_packs
+        # Actifs + HÉRITÉS (lot grille 30/07) : un achat passé re-livré
+        # crédite toujours, même pack retiré de la vente.
+        settings = get_settings()
+        packs = {**settings.signature_credit_packs_legacy, **settings.signature_credit_packs}
         if not packs:
             return False
         credits = 0

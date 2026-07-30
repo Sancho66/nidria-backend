@@ -519,6 +519,50 @@ async def test_paddle_pack_purchase_is_idempotent(
     assert await ledger.derived_balance(db_session, admin.agency_id) == (50, 0)
 
 
+async def test_legacy_pack_credits_but_never_displays(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lot grille (30/07) : un price_id HÉRITÉ (pack archivé Paddle, retiré
+    de la vente) crédite TOUJOURS au webhook re-livré — mais la grille ne
+    l'affiche jamais (actifs seulement, ordre croissant)."""
+    import json as json_lib
+
+    from tests.test_billing_paddle import PRICE_IDS, SECRET, _envelope, _post
+
+    monkeypatch.setenv("PADDLE_ENV", "sandbox")
+    monkeypatch.setenv("PADDLE_API_KEY", "test-api-key")
+    monkeypatch.setenv("PADDLE_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("PADDLE_PRICE_IDS", json_lib.dumps(PRICE_IDS))
+    monkeypatch.setenv(
+        "SIGNATURE_CREDIT_PACKS", json_lib.dumps({"pri_sigA20": 20, "pri_sigA10": 10})
+    )
+    monkeypatch.setenv("SIGNATURE_CREDIT_PACKS_LEGACY", json_lib.dumps({"pri_sigLeg500": 500}))
+    get_settings.cache_clear()
+
+    envelope = _envelope(
+        "transaction.completed",
+        agency_id=admin.agency_id,
+        subscription_id="txn_legacy_1",
+        items=[{"price": {"id": "pri_sigLeg500"}, "quantity": 1}],
+    )
+    resp = await _post(client, envelope)
+    assert resp.status_code == 200, resp.text
+    assert await ledger.balance(db_session, admin.agency_id) == (500, 0)
+
+    body = (await client.get("/agencies/me/signature-credits", headers=agent_headers(admin))).json()
+    shown = [p["price_id"] for p in body["packs"]]
+    assert "pri_sigLeg500" not in shown  # l'hérité ne s'affiche JAMAIS
+    ours = [p for p in body["packs"] if p["price_id"].startswith("pri_sigA")]
+    assert ours == [
+        {"price_id": "pri_sigA10", "credits": 10, "unit_amount": None, "currency": None},
+        {"price_id": "pri_sigA20", "credits": 20, "unit_amount": None, "currency": None},
+    ]
+
+
 async def test_low_balance_alert_fires_once_per_crossing(
     client: AsyncClient,
     db_session: AsyncSession,

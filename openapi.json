@@ -28095,6 +28095,28 @@
           "credits": {
             "type": "integer",
             "title": "Credits"
+          },
+          "unit_amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Amount"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           }
         },
         "type": "object",
@@ -28103,7 +28125,7 @@
           "credits"
         ],
         "title": "SignatureCreditPackResponse",
-        "description": "Un pack de la grille (config SIGNATURE_CREDIT_PACKS) — le prix vit\nchez Paddle, on expose price_id + crédits."
+        "description": "Un pack de la grille (config SIGNATURE_CREDIT_PACKS) — le prix vit\nchez Paddle et le contrat le SERT (extension 30/07 : relu avec cache\nTTL, jamais un montant en dur) ; None = Paddle injoignable, le front\ngarde son fallback sans prix."
       },
       "SignatureCreditsResponse": {
         "properties": {

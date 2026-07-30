@@ -192,6 +192,10 @@ class Settings(BaseSettings):
     #   "Crédits signature ×500" → 450,00 €
     # e.g. {"pri_sig50": 50, "pri_sig200": 200, "pri_sig500": 500}
     signature_credit_packs: dict[str, int] = {}
+    # Lot grille 30/07 : les packs RETIRÉS de la vente (archivés Paddle)
+    # mais dont un webhook re-livré doit TOUJOURS créditer — jamais
+    # affichés par l'endpoint grille, honorés par le webhook seulement.
+    signature_credit_packs_legacy: dict[str, int] = {}
     # Low-balance notification threshold DEFAULT; each agency may override
     # via settings["signature_credits_low_threshold"].
     signature_credits_low_threshold_default: int = 10
