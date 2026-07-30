@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.case_person import CasePerson
@@ -60,6 +60,36 @@ class DocumentsRepository:
     # not attached to one of their requirements is not theirs — including
     # agency step attachments, which carry no person and never surface.
 
+    @staticmethod
+    def _signed_step_system_docs(case_id: uuid.UUID, person_id: uuid.UUID) -> Select[Any]:
+        """Lot livrables signataire (30/07) : les livrables SYSTÈME (PDF
+        signé + dossier de preuve) d'une étape où LA personne est
+        signataire d'une demande COMPLÉTÉE — le lien existe déjà
+        (signature_request.case_step_progress_id → signature_signer.
+        case_person_id), aucun champ ajouté. Complétée seulement (verdict) :
+        un livrable signé n'existe qu'à la complétion — la restriction ne
+        perd rien et une demande morte ne donne jamais rien."""
+        from shared.models.signature import SignatureRequest, SignatureSigner
+
+        return (
+            select(Document.id)
+            .join(
+                SignatureRequest,
+                SignatureRequest.case_step_progress_id == Document.step_progress_id,
+            )
+            .join(
+                SignatureSigner,
+                SignatureSigner.signature_request_id == SignatureRequest.id,
+            )
+            .where(
+                Document.case_id == case_id,
+                Document.kind == "deliverable",
+                Document.uploaded_by_type == "system",
+                SignatureRequest.status == "completed",
+                SignatureSigner.case_person_id == person_id,
+            )
+        )
+
     async def list_documents_for_person(
         self, case_id: uuid.UUID, person_id: uuid.UUID, step_progress_id: uuid.UUID | None = None
     ) -> list[Document]:
@@ -81,7 +111,14 @@ class DocumentsRepository:
             select(Document)
             .where(
                 Document.case_id == case_id,
-                or_(Document.id.in_(own_requirement_docs), Document.person_id == person_id),
+                or_(
+                    Document.id.in_(own_requirement_docs),
+                    Document.person_id == person_id,
+                    # Signataire de l'étape → ses livrables système
+                    # (liste ET téléchargement partagent la branche —
+                    # jamais l'un sans l'autre).
+                    Document.id.in_(self._signed_step_system_docs(case_id, person_id)),
+                ),
             )
             .order_by(Document.created_at.desc())
             .distinct()
@@ -110,7 +147,11 @@ class DocumentsRepository:
             .where(
                 Document.id == document_id,
                 Document.case_id == case_id,
-                or_(Document.id.in_(own_requirement_docs), Document.person_id == person_id),
+                or_(
+                    Document.id.in_(own_requirement_docs),
+                    Document.person_id == person_id,
+                    Document.id.in_(self._signed_step_system_docs(case_id, person_id)),
+                ),
             )
             .limit(1)
         )

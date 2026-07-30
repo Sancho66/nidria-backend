@@ -84,11 +84,17 @@ async def test_completion_notifies_each_client_in_their_language(
         email_prefix="notif",
     )
     case_id = case.id
-    # Le principal préfère l'espagnol — le mail doit suivre SA langue.
+    # DEUX langues différentes DANS LE MÊME dossier (BUG 2) : le principal
+    # en espagnol, le membre en italien — chacun reçoit SA langue, jamais
+    # celle de l'agence ni du dossier.
     principal = (
         await db_session.execute(select(ExpatUser).where(ExpatUser.email == "notif-p@example.com"))
     ).scalar_one()
     principal.preferred_lang = "es"
+    member = (
+        await db_session.execute(select(ExpatUser).where(ExpatUser.email == "notif-m@example.com"))
+    ).scalar_one()
+    member.preferred_lang = "it"
     await db_session.commit()
 
     request = (await _requests(db_session, case_id))[0]
@@ -104,8 +110,13 @@ async def test_completion_notifies_each_client_in_their_language(
     mails = _signed_mails()
     by_to = {m.to: m for m in mails}
     assert set(by_to) == {"notif-p@example.com", "notif-m@example.com"}
-    assert "está firmado" in by_to["notif-p@example.com"].subject  # es
-    assert "est signé" in by_to["notif-m@example.com"].subject  # défaut agence fr
+    # Assertion sur le CONTENU RÉSOLU du template (l'intro), pas un
+    # paramètre : l'espagnol du principal, l'italien du membre.
+    assert "está firmado" in by_to["notif-p@example.com"].subject
+    assert "ya está firmado por todas las partes" in by_to["notif-p@example.com"].body
+    assert "alá" not in by_to["notif-p@example.com"].body  # jamais une autre langue
+    assert "è firmato" in by_to["notif-m@example.com"].subject
+    assert "è ora firmato da tutte le parti" in by_to["notif-m@example.com"].body
     agency_mails = _agency_signed_mails()
     assert [m.to for m in agency_mails] == [admin.email]
 
@@ -114,6 +125,52 @@ async def test_completion_notifies_each_client_in_their_language(
         await _sign(client, signer_ids[1], "whsec-notif")
     assert len(_signed_mails()) == 2
     assert len(_agency_signed_mails()) == 1
+
+
+async def test_agency_mails_follow_agency_default_language(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    fake_provider: FakeProvider,
+    give_credits,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BUG 2 (constat modèle) : l'agent n'a PAS de langue d'interface au
+    modèle — la règle est « défaut agence, repli fr », et elle doit être
+    RÉELLEMENT appliquée : agence en italien → « à vous de signer » ET
+    « document signé » agence partent en italien (contenu résolu)."""
+    from shared.models.agency import Agency
+
+    await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    agency.default_language = "it"
+    await db_session.commit()
+    case_id, _pid = await _signable_countersign_case(
+        client, admin, headers, make_client_case, make_expat_user, fake_provider, "lang"
+    )
+    request = (await _requests(db_session, case_id))[0]
+    signers = await _signers(db_session, request.id)
+    client_ids = [s.id for s in signers if s.agent_id is None]
+    agency_seat_id = next(s.id for s in signers if s.agent_id is not None)
+    monkeypatch.setenv("DOCUSEAL_WEBHOOK_SECRET", "whsec-lang")
+    get_settings.cache_clear()
+    for sid in client_ids:
+        await _sign(client, sid, "whsec-lang")
+    # Le tour de l'agence : mail en ITALIEN (contenu résolu du template).
+    turn = [m for m in email.outbox if "tocca a lei firmare" in m.subject.lower()]
+    assert turn and turn[-1].to == admin.email
+    assert "La Sua controfirma è attesa" in turn[-1].body
+    await _sign(client, agency_seat_id, "whsec-lang")
+    # « Document signé » agence : italien aussi.
+    agency_mails = [m for m in _agency_signed_mails() if m.to == admin.email]
+    assert agency_mails
+    assert "è firmato da tutte le parti" in agency_mails[-1].body
+    assert "archiviati sulla pratica" in agency_mails[-1].body
 
 
 async def test_countersign_completion_notifies_and_skips_emailless_member(
