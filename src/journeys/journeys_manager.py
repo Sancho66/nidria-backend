@@ -1473,6 +1473,42 @@ class JourneysManager:
         requirement = await self.repo.get_requirement_in_step(step_id, requirement_id)
         if requirement is None:
             raise NotFoundError("Step requirement not found.", code="journey.requirement_not_found")
+        # Orphelins (mini-lot 30/07) : une exigence signable supprimée
+        # ANNULE ses demandes vivantes (archive provider + release du
+        # crédit) — une demande sans exigence ne peut plus compléter
+        # personne (les instances partent juste dessous) mais consommerait
+        # son crédit et classerait un livrable que l'étape ne demande
+        # plus. Même transaction : un échec provider annule la
+        # suppression entière (rien d'à moitié détruit).
+        if requirement.signature_required:
+            from shared.models.client_case import ClientCase as ClientCaseRow
+            from shared.models.signature import SignatureRequest
+            from src.core.enums import SignatureRequestStatus
+            from src.signatures.signatures_manager import SignaturesManager
+
+            live_requests = (
+                (
+                    await self.db.execute(
+                        select(SignatureRequest).where(
+                            SignatureRequest.step_requirement_id == requirement.id,
+                            SignatureRequest.status.in_(
+                                (
+                                    SignatureRequestStatus.DRAFT.value,
+                                    SignatureRequestStatus.SENT.value,
+                                    SignatureRequestStatus.PARTIALLY_SIGNED.value,
+                                )
+                            ),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            signatures = SignaturesManager(self.db)
+            for live_request in live_requests:
+                request_case = await self.db.get(ClientCaseRow, live_request.case_id)
+                if request_case is not None:
+                    await signatures.cancel_request(request_case, live_request)
         # Propagate EXPLICITLY (not a DB cascade — the manager knows what it
         # destroys), in the same transaction: drop the concrete instances so
         # the case > journey view stops showing the info. Submitted values

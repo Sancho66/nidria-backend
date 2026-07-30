@@ -21577,6 +21577,11 @@
             "type": "integer",
             "title": "Request Signer Total",
             "default": 0
+          },
+          "awaiting_agency": {
+            "type": "boolean",
+            "title": "Awaiting Agency",
+            "default": false
           }
         },
         "type": "object",

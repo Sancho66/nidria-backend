@@ -159,6 +159,10 @@ async def my_signatures(
                         SignatureRequestStatus.COMPLETED.value,
                     )
                 ),
+                # Orphelines exclues (défense) : une demande dont
+                # l'exigence source a disparu ne montre pas de tâche —
+                # même doctrine que les demandes mortes.
+                SignatureRequest.step_requirement_id.is_not(None),
             )
             .order_by(SignatureRequest.created_at)
         )
@@ -166,20 +170,38 @@ async def my_signatures(
     # LOT 6 (point 3) : le « Signé n/m » de chaque demande — le principal
     # voit « en attente des autres signataires ». Une requête groupée.
     counts: dict[uuid.UUID, tuple[int, int]] = {}
+    pending_agency: set[uuid.UUID] = set()
     if rows:
         from sqlalchemy import case as sa_case
 
         signed_expr = sa_case((SignatureSigner.status == "signed", 1), else_=0)
+        # Comptes CLIENTS seulement (mini-lot 30/07) : le siège agence
+        # (contreseing) sort du n/m — sa part est portée par
+        # awaiting_agency, une autre nature d'attente.
         count_rows = await db.execute(
             select(
                 SignatureSigner.signature_request_id,
                 func.sum(signed_expr),
                 func.count(),
             )
-            .where(SignatureSigner.signature_request_id.in_([req.id for _s, req in rows]))
+            .where(
+                SignatureSigner.signature_request_id.in_([req.id for _s, req in rows]),
+                SignatureSigner.agent_id.is_(None),
+            )
             .group_by(SignatureSigner.signature_request_id)
         )
         counts = {rid: (int(signed), int(total)) for rid, signed, total in count_rows}
+        pending_agency = set(
+            (
+                await db.execute(
+                    select(SignatureSigner.signature_request_id).where(
+                        SignatureSigner.signature_request_id.in_([req.id for _s, req in rows]),
+                        SignatureSigner.agent_id.is_not(None),
+                        SignatureSigner.status == "pending",
+                    )
+                )
+            ).scalars()
+        )
     return [
         ExpatSignatureResponse(
             signer_id=signer.id,
@@ -193,6 +215,10 @@ async def my_signatures(
             signed_at=signer.signed_at,
             request_signed_count=counts.get(request.id, (0, 0))[0],
             request_signer_total=counts.get(request.id, (0, 0))[1],
+            awaiting_agency=(
+                request.id in pending_agency
+                and counts.get(request.id, (0, 0))[0] == counts.get(request.id, (0, 1))[1]
+            ),
         )
         for signer, request in rows
     ]

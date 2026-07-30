@@ -13,6 +13,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -213,6 +214,60 @@ async def test_full_cycle_two_clients_then_agency(
     assert cs["slug"] is None
 
 
+async def test_expat_face_awaiting_agency_and_client_only_counts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    expat_headers: AuthHeaders,
+    fake_provider: FakeProvider,
+    give_credits,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mini-lot exposition expat : le n/m est CLIENT-only (le siège agence
+    n'y entre jamais), et awaiting_agency dit « tout le monde a signé,
+    reste l'agence »."""
+    from shared.models.expat_user import ExpatUser
+
+    await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    case_id, _pid = await _signable_countersign_case(
+        client, admin, headers, make_client_case, make_expat_user, fake_provider, "exaw"
+    )
+    principal = (
+        await db_session.execute(select(ExpatUser).where(ExpatUser.email == "exaw-p@example.com"))
+    ).scalar_one()
+    p_headers = expat_headers(principal)
+    tasks = (await client.get(f"/expat/cases/{case_id}/signatures", headers=p_headers)).json()
+    # 3 sièges sur la demande, mais le n/m ne compte QUE les 2 clients.
+    assert (tasks[0]["request_signed_count"], tasks[0]["request_signer_total"]) == (0, 2)
+    assert tasks[0]["awaiting_agency"] is False
+
+    request = (await _requests(db_session, case_id))[0]
+    signers = await _signers(db_session, request.id)
+    client_ids = [s.id for s in signers if s.agent_id is None]
+    monkeypatch.setenv("DOCUSEAL_WEBHOOK_SECRET", "whsec-exaw")
+    get_settings.cache_clear()
+    await _sign(client, client_ids[0], "whsec-exaw")
+    tasks = (await client.get(f"/expat/cases/{case_id}/signatures", headers=p_headers)).json()
+    assert (tasks[0]["request_signed_count"], tasks[0]["request_signer_total"]) == (1, 2)
+    assert tasks[0]["awaiting_agency"] is False  # il manque encore un CLIENT
+
+    await _sign(client, client_ids[1], "whsec-exaw")
+    tasks = (await client.get(f"/expat/cases/{case_id}/signatures", headers=p_headers)).json()
+    assert (tasks[0]["request_signed_count"], tasks[0]["request_signer_total"]) == (2, 2)
+    assert tasks[0]["awaiting_agency"] is True  # ne manque QUE l'agence
+
+    # L'agence signe : la tâche complétée n'attend plus personne.
+    agency_seat_id = next(s.id for s in signers if s.agent_id is not None)
+    await _sign(client, agency_seat_id, "whsec-exaw")
+    tasks = (await client.get(f"/expat/cases/{case_id}/signatures", headers=p_headers)).json()
+    assert tasks[0]["request_status"] == "completed"
+    assert tasks[0]["awaiting_agency"] is False
+
+
 # --- (2) sans contreseing : rien ne change (siège agence absent) ----------------------
 
 
@@ -223,6 +278,7 @@ async def test_without_countersign_no_agency_seat(
     agent_headers: AuthHeaders,
     make_client_case: MakeClientCase,
     make_expat_user: MakeExpatUser,
+    expat_headers: AuthHeaders,
     fake_provider: FakeProvider,
     give_credits,
 ) -> None:
@@ -245,6 +301,18 @@ async def test_without_countersign_no_agency_seat(
     detail = (await client.get(f"/cases/{case_id}", headers=agent_headers(admin))).json()
     step = next(s for s in detail["progress"] if s["id"] == progress_id)
     assert step["countersigns"] == []
+    # Face client : sans contreseing, awaiting_agency est false et le n/m
+    # compte comme avant (2 clients).
+    from shared.models.expat_user import ExpatUser
+
+    principal = (
+        await db_session.execute(select(ExpatUser).where(ExpatUser.email == "nocs-p@example.com"))
+    ).scalar_one()
+    tasks = (
+        await client.get(f"/expat/cases/{case_id}/signatures", headers=expat_headers(principal))
+    ).json()
+    assert tasks[0]["awaiting_agency"] is False
+    assert (tasks[0]["request_signed_count"], tasks[0]["request_signer_total"]) == (0, 2)
 
 
 # --- (3) aucun contresignataire → 422 nommé -------------------------------------------
@@ -352,6 +420,63 @@ async def test_late_person_request_carries_the_countersign_too(
     assert late["orders"] == [0, 1]
     balance = (await client.get("/agencies/me/signature-credits", headers=headers)).json()
     assert (balance["available"], balance["reserved"]) == (8, 2)  # son crédit à elle
+
+
+async def test_deleting_signable_requirement_cancels_its_live_request(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    expat_headers: AuthHeaders,
+    fake_provider: FakeProvider,
+    give_credits,
+) -> None:
+    """Mini-lot orphelins : supprimer l'exigence signable ANNULE sa demande
+    vivante (archive provider + release du crédit) — et plus aucune face ne
+    la montre (bloc contreseing agence, tâches client)."""
+    from shared.models.expat_user import ExpatUser
+
+    await give_credits(admin.agency_id, 10)
+    headers = agent_headers(admin)
+    case_id, progress_id = await _signable_countersign_case(
+        client, admin, headers, make_client_case, make_expat_user, fake_provider, "orph"
+    )
+    balance = (await client.get("/agencies/me/signature-credits", headers=headers)).json()
+    assert (balance["available"], balance["reserved"]) == (9, 1)
+    # Retrouver la définition via la demande (elle la référence) — puis la
+    # supprimer par l'API.
+    from shared.models.journey import JourneyTemplateStep
+    from shared.models.step_requirement import StepRequirement
+
+    request = (await _requests(db_session, case_id))[0]
+    definition = await db_session.get(StepRequirement, request.step_requirement_id)
+    assert definition is not None
+    step_row = await db_session.get(JourneyTemplateStep, definition.step_id)
+    assert step_row is not None
+    journey_id, def_step_id, def_id = step_row.template_id, definition.step_id, definition.id
+    r = await client.delete(
+        f"/journeys/{journey_id}/steps/{def_step_id}/requirements/{def_id}",
+        headers=headers,
+    )
+    assert r.status_code in (200, 204), r.text
+    db_session.expire_all()
+    # La vivante est annulée : archive provider + release du crédit.
+    assert len(fake_provider.cancel_calls) == 1
+    balance = (await client.get("/agencies/me/signature-credits", headers=headers)).json()
+    assert (balance["available"], balance["reserved"]) == (10, 0)
+    # Plus aucune face ne la montre.
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    step = next(s for s in detail["progress"] if s["id"] == progress_id)
+    assert step["countersigns"] == []
+    principal = (
+        await db_session.execute(select(ExpatUser).where(ExpatUser.email == "orph-p@example.com"))
+    ).scalar_one()
+    tasks = (
+        await client.get(f"/expat/cases/{case_id}/signatures", headers=expat_headers(principal))
+    ).json()
+    assert tasks == []
 
 
 # --- (5) annulation : release, contreseing compris ------------------------------------

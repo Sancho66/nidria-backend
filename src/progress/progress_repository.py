@@ -352,6 +352,11 @@ class ProgressRepository:
                                 SignatureRequestStatus.COMPLETED.value,
                             )
                         ),
+                        # Orphelines exclues (défense — l'annulation à la
+                        # suppression d'exigence est le geste de fond) :
+                        # une demande sans exigence source ne porte pas de
+                        # ligne d'état, même doctrine que les mortes.
+                        SignatureRequest.step_requirement_id.is_not(None),
                     )
                     .order_by(SignatureRequest.created_at)
                 )

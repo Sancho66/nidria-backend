@@ -27,8 +27,14 @@ class ExpatSignatureResponse(BaseModel):
     signed_at: datetime | None
     # LOT 6 (point 3) : le « Signé n/m » de la demande — le principal voit
     # « en attente des autres signataires » sans autre appel.
+    # Comptes CLIENTS seulement (mini-lot 30/07) : le siège agence n'entre
+    # pas dans le n/m — « où en sont les signataires » parle des co-
+    # signataires du dossier ; la part agence est une AUTRE nature
+    # d'attente, portée par awaiting_agency.
     request_signed_count: int = 0
     request_signer_total: int = 0
+    # Toutes les signatures clients posées, seule celle de l'agence manque.
+    awaiting_agency: bool = False
 
 
 class WebhookAckResponse(BaseModel):
