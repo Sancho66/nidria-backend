@@ -164,9 +164,127 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
         )
     ).one()
 
+    # --- « Temps gagné » (lot 31/07) — 4 sources dérivées, ZÉRO
+    # instrumentation neuve (verdicts au rapport), chaque table interrogée
+    # UNE fois avec un FILTER période vs cumul :
+    # 1. relances AUTO envoyées : log reminder.sent/escalated (SYSTEM) +
+    #    jointure reminder (auto_threshold_days NOT NULL) ;
+    # 2. documents client collectés : document uploaded_by_type='expat' ;
+    # 3. signatures complétées : signature_request.completed_at ;
+    # 4. dossiers créés depuis modèle : client_case.journey_template_id
+    #    NOT NULL à la création (approximation nommée : la date
+    #    d'ASSIGNATION n'est pas stockée — on compte le dossier à sa
+    #    création s'il porte un modèle aujourd'hui).
+    from shared.models.document import Document
+    from shared.models.signature import SignatureRequest
+    from src.activity.activity_schema import (
+        TimeSavedBlockResponse,
+        TimeSavedItemResponse,
+        TimeSavedResponse,
+    )
+
+    in_period = ActivityLog.created_at >= since
+    auto_sent = (
+        await db.execute(
+            select(
+                func.count().label("all_time"),
+                func.count().filter(in_period).label("period"),
+            )
+            .select_from(ActivityLog)
+            .join(ClientCase, ClientCase.id == ActivityLog.case_id)
+            .join(
+                Reminder,
+                Reminder.id
+                == cast(cast(ActivityLog.details["reminder_id"].astext, String), PgUUID),
+            )
+            .where(
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+                ActivityLog.action_type.in_(("reminder.sent", "reminder.escalated")),
+                Reminder.auto_threshold_days.is_not(None),
+            )
+        )
+    ).one()
+    collected = (
+        await db.execute(
+            select(
+                func.count().label("all_time"),
+                func.count().filter(Document.created_at >= since).label("period"),
+            )
+            .select_from(Document)
+            .join(ClientCase, ClientCase.id == Document.case_id)
+            .where(
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+                Document.uploaded_by_type == "expat",
+            )
+        )
+    ).one()
+    signed = (
+        await db.execute(
+            select(
+                func.count().label("all_time"),
+                func.count().filter(SignatureRequest.completed_at >= since).label("period"),
+            )
+            .select_from(SignatureRequest)
+            .join(ClientCase, ClientCase.id == SignatureRequest.case_id)
+            .where(
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+                SignatureRequest.completed_at.is_not(None),
+            )
+        )
+    ).one()
+    templated = (
+        await db.execute(
+            select(
+                func.count().label("all_time"),
+                func.count().filter(ClientCase.created_at >= since).label("period"),
+            )
+            .select_from(ClientCase)
+            .where(
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+                ClientCase.journey_template_id.is_not(None),
+            )
+        )
+    ).one()
+
+    scale = get_settings().kpi_time_saved_minutes
+    counts = {
+        "auto_reminder_sent": (int(auto_sent.period), int(auto_sent.all_time)),
+        "client_document_collected": (int(collected.period), int(collected.all_time)),
+        "signature_completed": (int(signed.period), int(signed.all_time)),
+        "case_created_from_template": (int(templated.period), int(templated.all_time)),
+    }
+    client_kinds = ("signature_completed", "client_document_collected")
+
+    def block(kinds: tuple[str, ...], index: int) -> TimeSavedBlockResponse:
+        items = [
+            TimeSavedItemResponse(
+                kind=kind,
+                count=counts[kind][index],
+                minutes_each=int(scale.get(kind, 0)),
+                minutes_total=counts[kind][index] * int(scale.get(kind, 0)),
+            )
+            for kind in kinds
+        ]
+        return TimeSavedBlockResponse(
+            items=items, total_minutes=sum(item.minutes_total for item in items)
+        )
+
+    all_kinds = tuple(counts)
+    time_saved = TimeSavedResponse(
+        period=block(all_kinds, 0),
+        all_time=block(all_kinds, 1),
+        clients_period=block(client_kinds, 0),
+        clients_all_time=block(client_kinds, 1),
+    )
+
     return ActivityStatsResponse(
         period=period,
         since=since,
+        time_saved=time_saved,
         agency=KpiBlockResponse(
             steps_completed=int(steps_row.agency_n),
             documents_validated=int(log_row.val_a),

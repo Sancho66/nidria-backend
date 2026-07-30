@@ -203,6 +203,15 @@ class Settings(BaseSettings):
     # rien ne se sert flag off (même doctrine que les signatures). Eric
     # doit bénir le cadrage avant toute visibilité.
     kpi_enabled: bool = False
+    # Barème « temps gagné » (lot 31/07) — EN CONFIG, jamais en dur :
+    # minutes créditées par geste automatisé, ajustables sans release
+    # (KPI_TIME_SAVED_MINUTES={"signature_completed": 45, ...} fusionne).
+    kpi_time_saved_minutes: dict[str, int] = {
+        "auto_reminder_sent": 5,
+        "client_document_collected": 10,
+        "signature_completed": 30,
+        "case_created_from_template": 20,
+    }
 
     @field_validator("paddle_webhook_url", mode="before")
     @classmethod

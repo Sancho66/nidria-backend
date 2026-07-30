@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
@@ -46,7 +46,7 @@ def kpi_enabled(monkeypatch: pytest.MonkeyPatch):
 def _log(case_id, actor_id, action_type, details, created_at) -> ActivityLog:
     row = ActivityLog(
         case_id=case_id,
-        actor_type="agent",
+        actor_type="agent" if actor_id is not None else "system",
         actor_id=actor_id,
         action_type=action_type,
         details=details,
@@ -137,6 +137,47 @@ async def _seed(
     )
     db.add_all([manual, auto, manual_other])
     await db.flush()
+    # Temps gagné : une relance AUTO envoyée aujourd'hui + une vieille (le
+    # cumul les compte toutes), un document client déposé aujourd'hui + un
+    # vieux, une signature complétée aujourd'hui + une vieille — et le
+    # dossier du seed porte un modèle (journey_template_id) → compté
+    # « créé depuis modèle » (créé aujourd'hui).
+    from shared.models.client_case import ClientCase as ClientCaseRow
+    from shared.models.document import Document as DocumentRow
+    from shared.models.signature import SignatureRequest
+
+    case_obj = await db.get(ClientCaseRow, case_id)
+    case_obj.journey_template_id = journey.id
+    for at in (now, old):
+        db.add_all(
+            [
+                _log(case_id, None, "reminder.sent", {"reminder_id": str(auto.id)}, at),
+                DocumentRow(
+                    case_id=case_id,
+                    filename="piece.pdf",
+                    storage_path=f"x/{uuid.uuid4()}",
+                    uploaded_by_type="expat",
+                    uploaded_by_id=uuid.uuid4(),
+                    created_at=at,
+                ),
+            ]
+        )
+        request = SignatureRequest(
+            case_id=case_id,
+            case_step_progress_id=(
+                await db.execute(
+                    select(CaseStepProgress.id).where(CaseStepProgress.case_id == case_id).limit(1)
+                )
+            ).scalar_one(),
+            reference="TS",
+            provider="docuseal",
+            level="ses",
+            status="completed",
+            completed_at=at,
+        )
+        db.add(request)
+    # Une relance MANUELLE envoyée (exclue du temps gagné : pas auto).
+    db.add(_log(case_id, None, "reminder.sent", {"reminder_id": str(manual.id)}, now))
     db.add_all(
         [
             _log(case_id, admin.id, "document.validated", {"new": "ok"}, now),
@@ -226,11 +267,48 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     assert week["me"]["steps_completed"] == (2 if yesterday_in_week else 1)
     assert week["since"].startswith(monday.date().isoformat())
 
+    # --- Temps gagné (barème config par défaut) -----------------------------
+    ts = today["time_saved"]
+    by_kind = {i["kind"]: i for i in ts["period"]["items"]}
+    # Aujourd'hui : 1 auto envoyée (la manuelle envoyée EXCLUE), 1 doc
+    # client, 1 signature, 1 dossier à modèle.
+    assert by_kind["auto_reminder_sent"]["count"] == 1
+    assert by_kind["auto_reminder_sent"]["minutes_total"] == 5
+    assert by_kind["client_document_collected"] == {
+        "kind": "client_document_collected",
+        "count": 1,
+        "minutes_each": 10,
+        "minutes_total": 10,
+    }
+    assert by_kind["signature_completed"]["minutes_total"] == 30
+    assert by_kind["case_created_from_template"]["minutes_total"] == 20
+    assert ts["period"]["total_minutes"] == 5 + 10 + 30 + 20
+    # Le CUMUL compte AUSSI les vieux (2 autos, 2 docs, 2 signatures).
+    all_by_kind = {i["kind"]: i for i in ts["all_time"]["items"]}
+    assert all_by_kind["auto_reminder_sent"]["count"] == 2
+    assert all_by_kind["client_document_collected"]["count"] == 2
+    assert all_by_kind["signature_completed"]["count"] == 2
+    assert ts["all_time"]["total_minutes"] == 10 + 20 + 60 + 20
+    # « Pour vos clients » : signatures + collecte SEULEMENT.
+    assert {i["kind"] for i in ts["clients_period"]["items"]} == {
+        "signature_completed",
+        "client_document_collected",
+    }
+    assert ts["clients_all_time"]["total_minutes"] == 60 + 20
+
 
 async def test_flag_off_serves_nothing(
-    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    r = await client.get("/agencies/me/activity-stats", headers=agent_headers(admin))
+    # setenv false explicite (pas « absent ») : hermétique au .env local,
+    # que pydantic-settings fusionne — leçon du lot packs, réapprise ici
+    # (KPI_ENABLED=true est apparu au .env local pour le front).
+    monkeypatch.setenv("KPI_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        r = await client.get("/agencies/me/activity-stats", headers=agent_headers(admin))
+    finally:
+        get_settings.cache_clear()
     assert r.status_code == 409, r.text
     assert r.json()["code"] == "kpi.disabled"
 
@@ -264,4 +342,6 @@ async def test_two_queries_flat(
     finally:
         event.remove(engine, "before_cursor_execute", _count)
         get_settings.cache_clear()
-    assert counter["n"] == 2
+    # 2 (KPI gestes) + 4 (temps gagné : une par table source, période et
+    # cumul dans le MÊME select via FILTER) — constant quel que soit le volume.
+    assert counter["n"] == 6

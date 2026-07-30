@@ -15831,6 +15831,9 @@
           },
           "me": {
             "$ref": "#/components/schemas/KpiBlockResponse"
+          },
+          "time_saved": {
+            "$ref": "#/components/schemas/TimeSavedResponse"
           }
         },
         "type": "object",
@@ -15838,7 +15841,8 @@
           "period",
           "since",
           "agency",
-          "me"
+          "me",
+          "time_saved"
         ],
         "title": "ActivityStatsResponse",
         "description": "GET /agencies/me/activity-stats — l'agrégat AGENCE et le « moi » de\nl'agent connecté dans la même réponse. Bornes CALENDAIRES UTC (verdict :\nl'agence n'a pas de fuseau au modèle — le poser serait un lot ; le jour\noù il existe, seule la fonction de bornes change)."
@@ -30307,6 +30311,81 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TemplateStepUpdateRequest"
+      },
+      "TimeSavedBlockResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSavedItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_minutes": {
+            "type": "integer",
+            "title": "Total Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total_minutes"
+        ],
+        "title": "TimeSavedBlockResponse"
+      },
+      "TimeSavedItemResponse": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "minutes_each": {
+            "type": "integer",
+            "title": "Minutes Each"
+          },
+          "minutes_total": {
+            "type": "integer",
+            "title": "Minutes Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "count",
+          "minutes_each",
+          "minutes_total"
+        ],
+        "title": "TimeSavedItemResponse",
+        "description": "Une ligne du détail — le tooltip front affiche geste par geste :\ncombien de fois, combien de minutes chacune, le sous-total."
+      },
+      "TimeSavedResponse": {
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/TimeSavedBlockResponse"
+          },
+          "all_time": {
+            "$ref": "#/components/schemas/TimeSavedBlockResponse"
+          },
+          "clients_period": {
+            "$ref": "#/components/schemas/TimeSavedBlockResponse"
+          },
+          "clients_all_time": {
+            "$ref": "#/components/schemas/TimeSavedBlockResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period",
+          "all_time",
+          "clients_period",
+          "clients_all_time"
+        ],
+        "title": "TimeSavedResponse",
+        "description": "« Temps gagné » (barème transparent, config KPI_TIME_SAVED_MINUTES) :\nla période demandée + le CUMUL depuis toujours (c'est lui qui\nimpressionne), pour l'AGENCE et « pour vos clients » (signatures en\nligne + collecte en ligne — les gestes que le client n'a pas faits au\npapier)."
       },
       "TokenPairResponse": {
         "properties": {

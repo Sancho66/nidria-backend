@@ -43,3 +43,32 @@ class ActivityStatsResponse(BaseModel):
     since: datetime
     agency: KpiBlockResponse
     me: KpiBlockResponse
+    time_saved: "TimeSavedResponse"
+
+
+class TimeSavedItemResponse(BaseModel):
+    """Une ligne du détail — le tooltip front affiche geste par geste :
+    combien de fois, combien de minutes chacune, le sous-total."""
+
+    kind: str
+    count: int
+    minutes_each: int
+    minutes_total: int
+
+
+class TimeSavedBlockResponse(BaseModel):
+    items: list[TimeSavedItemResponse]
+    total_minutes: int
+
+
+class TimeSavedResponse(BaseModel):
+    """« Temps gagné » (barème transparent, config KPI_TIME_SAVED_MINUTES) :
+    la période demandée + le CUMUL depuis toujours (c'est lui qui
+    impressionne), pour l'AGENCE et « pour vos clients » (signatures en
+    ligne + collecte en ligne — les gestes que le client n'a pas faits au
+    papier)."""
+
+    period: TimeSavedBlockResponse
+    all_time: TimeSavedBlockResponse
+    clients_period: TimeSavedBlockResponse
+    clients_all_time: TimeSavedBlockResponse
