@@ -486,12 +486,13 @@ class SignaturesWebhookManager:
             countersign_turn_mail = await self._countersign_turn_mail(
                 case, request, still_pending[0]
             )
-        if still_pending:
-            if request.status == SignatureRequestStatus.SENT.value:
-                request.status = SignatureRequestStatus.PARTIALLY_SIGNED.value
-        elif request.status != SignatureRequestStatus.COMPLETED.value:
-            await self._complete(request)
+        if still_pending and request.status == SignatureRequestStatus.SENT.value:
+            request.status = SignatureRequestStatus.PARTIALLY_SIGNED.value
+        completion_mails: list[PendingMail] = []
+        if not still_pending and request.status != SignatureRequestStatus.COMPLETED.value:
+            completion_mails = await self._complete(request)
         pending_mails = await progress_mgr.recompute_active(case, before)
+        pending_mails.extend(completion_mails)
         if countersign_turn_mail is not None:
             pending_mails.append(countersign_turn_mail)
         await self.db.commit()
@@ -519,13 +520,14 @@ class SignaturesWebhookManager:
             content=countersign_turn_email(case_label, request.reference, link, lang),
         )
 
-    async def _complete(self, request: SignatureRequest) -> None:
+    async def _complete(self, request: SignatureRequest) -> "list[PendingMail]":
         """Tous signés : consume du crédit + téléchargement IMMÉDIAT du PDF
         signé et du dossier de preuve (leurs URLs expirent — on stocke les
-        OCTETS, jamais une URL), rangement GAP-B en livrable du dossier."""
+        OCTETS, jamais une URL), rangement GAP-B en livrable du dossier.
+        Retourne les notifications « document signé » (envoi post-commit)."""
         case = await self.db.get(ClientCase, request.case_id)
         if case is None:
-            return
+            return []
         from src.signatures.ledger import consume_credit
 
         await consume_credit(self.db, case.agency_id, request)
@@ -548,6 +550,76 @@ class SignaturesWebhookManager:
                 if req_row is not None:
                     req_row.document_id = document_id
         SignaturesManager(self.db)._log_activity(case, "signature.request_completed", request)
+        return await self._document_signed_mails(case, request)
+
+    async def _document_signed_mails(
+        self, case: ClientCase, request: SignatureRequest
+    ) -> "list[PendingMail]":
+        """Lot notification (30/07) : à la COMPLÉTION (jamais partielle),
+        chaque signataire CLIENT à l'email connu est prévenu dans SA langue
+        — jamais de pièce jointe, le lien mène à l'espace (/space : le
+        deep link étape/documents n'existe pas encore côté front, constat).
+        La face AGENCE aussi (constat : rien de direct n'existait), au
+        propriétaire du dossier, langue par défaut agence. Un signataire
+        sans email/compte est sauté en silence."""
+        from src.core.email import space_link
+        from src.core.email_templates import (
+            document_signed_agency_email,
+            document_signed_client_email,
+        )
+        from src.core.i18n import (
+            case_label_for_notif,
+            resolve_notification_lang_agent,
+            resolve_notification_lang_client,
+        )
+        from src.progress.progress_manager import PendingMail
+        from src.progress.progress_repository import ProgressRepository
+
+        mails: list[PendingMail] = []
+        agency = await self.db.get(Agency, case.agency_id)
+        agency_name = agency.name if agency else "Votre agence"
+        agency_slug = agency.slug if agency else None
+        client_url = space_link(get_settings().frontend_url, "/space", agency_slug)
+        signers = await self.repo.list_signers(request.id)
+        seen_emails: set[str] = set()
+        for signer in signers:
+            if signer.case_person_id is None:
+                continue  # le siège agence est servi par le mail agence
+            person = await self.db.get(CasePerson, signer.case_person_id)
+            if person is None or person.expat_user_id is None:
+                continue  # personne sans compte/email : silencieux (garde-fou)
+            expat = await self.db.get(ExpatUser, person.expat_user_id)
+            if expat is None or not expat.email or expat.email in seen_emails:
+                continue
+            seen_emails.add(expat.email)
+            lang = resolve_notification_lang_client(expat.preferred_lang)
+            mails.append(
+                PendingMail(
+                    to=expat.email,
+                    content=document_signed_client_email(
+                        agency_name, request.reference, client_url, lang
+                    ),
+                )
+            )
+        if case.owner_agent_id is not None:
+            owner = await self.db.get(Agent, case.owner_agent_id)
+            if owner is not None and owner.email and owner.deactivated_at is None:
+                repo = ProgressRepository(self.db)
+                lang = resolve_notification_lang_agent(
+                    await repo.agency_default_language(case.agency_id)
+                )
+                first, last, j_name, j_i18n = await repo.get_case_label_parts(case)
+                case_label = case_label_for_notif(first, last, j_name, j_i18n, lang)
+                app_link = f"{get_settings().frontend_url}/app/cases/{case.id}"
+                mails.append(
+                    PendingMail(
+                        to=owner.email,
+                        content=document_signed_agency_email(
+                            case_label, request.reference, app_link, lang
+                        ),
+                    )
+                )
+        return mails
 
     async def _store_deliverable(
         self, case: ClientCase, request: SignatureRequest, filename: str, content: bytes

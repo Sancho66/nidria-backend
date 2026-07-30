@@ -1124,6 +1124,179 @@ _COUNTERSIGN_TURN = {
 }
 
 
+_DOCUMENT_SIGNED_CLIENT = {
+    "fr": {
+        "subject": "Nidria : votre document « {reference} » est signé",
+        "title": "Document signé par toutes les parties",
+        "intro": (
+            "Le document « {reference} » demandé par {agency} est maintenant signé par "
+            "toutes les parties. Le document signé et son dossier de preuve sont "
+            "archivés dans votre espace."
+        ),
+        "button": "Voir mes documents",
+    },
+    "en": {
+        "subject": "Nidria: your document “{reference}” is signed",
+        "title": "Document signed by all parties",
+        "intro": (
+            "The document “{reference}” requested by {agency} is now signed by all "
+            "parties. The signed document and its audit trail are archived in your space."
+        ),
+        "button": "View my documents",
+    },
+    "es": {
+        "subject": "Nidria: su documento «{reference}» está firmado",
+        "title": "Documento firmado por todas las partes",
+        "intro": (
+            "El documento «{reference}» solicitado por {agency} ya está firmado por "
+            "todas las partes. El documento firmado y su expediente de prueba están "
+            "archivados en su espacio."
+        ),
+        "button": "Ver mis documentos",
+    },
+    "ru": {
+        "subject": "Nidria: ваш документ «{reference}» подписан",
+        "title": "Документ подписан всеми сторонами",
+        "intro": (
+            "Документ «{reference}», запрошенный {agency}, подписан всеми сторонами. "
+            "Подписанный документ и протокол подписания сохранены в вашем личном кабинете."
+        ),
+        "button": "Мои документы",
+    },
+    "pt": {
+        "subject": "Nidria: o seu documento «{reference}» está assinado",
+        "title": "Documento assinado por todas as partes",
+        "intro": (
+            "O documento «{reference}» pedido por {agency} está agora assinado por "
+            "todas as partes. O documento assinado e o seu registo de prova estão "
+            "arquivados no seu espaço."
+        ),
+        "button": "Ver os meus documentos",
+    },
+    "it": {
+        "subject": "Nidria: il Suo documento «{reference}» è firmato",
+        "title": "Documento firmato da tutte le parti",
+        "intro": (
+            "Il documento «{reference}» richiesto da {agency} è ora firmato da tutte "
+            "le parti. Il documento firmato e il suo fascicolo di prova sono archiviati "
+            "nel Suo spazio."
+        ),
+        "button": "Vedere i miei documenti",
+    },
+    "hu": {
+        "subject": "Nidria: a(z) „{reference}” dokumentuma alá van írva",
+        "title": "A dokumentumot minden fél aláírta",
+        "intro": (
+            "A(z) {agency} által kért „{reference}” dokumentumot minden fél aláírta. "
+            "Az aláírt dokumentum és a hitelesítési napló archiválva van az Ön felületén."
+        ),
+        "button": "Dokumentumaim megtekintése",
+    },
+}
+
+
+def document_signed_client_email(
+    agency_name: str, reference: str, space_url: str, lang: str = "fr"
+) -> EmailContent:
+    """Complétion d'une demande (lot notification 30/07) : chaque signataire
+    CLIENT est prévenu — jamais de pièce jointe, le PDF signé et le dossier
+    de preuve sont déjà archivés dans l'espace (le lien y mène)."""
+    s = _pick(_DOCUMENT_SIGNED_CLIENT, lang)
+    return _render(
+        subject=s["subject"].format(reference=reference),
+        title=s["title"],
+        intro=s["intro"].format(reference=reference, agency=agency_name),
+        button_label=s["button"],
+        button_url=space_url,
+        lang=lang,
+    )
+
+
+_DOCUMENT_SIGNED_AGENCY = {
+    "fr": {
+        "subject": "Nidria : « {reference} » signé par toutes les parties ({case})",
+        "title": "Document signé",
+        "intro": (
+            "Le document « {reference} » du dossier {case} est signé par toutes les "
+            "parties. Le PDF signé et le dossier de preuve sont archivés sur le dossier."
+        ),
+        "button": "Ouvrir le dossier",
+    },
+    "en": {
+        "subject": "Nidria: “{reference}” signed by all parties ({case})",
+        "title": "Document signed",
+        "intro": (
+            "The document “{reference}” on case {case} is signed by all parties. "
+            "The signed PDF and the audit trail are archived on the case."
+        ),
+        "button": "Open the case",
+    },
+    "es": {
+        "subject": "Nidria: «{reference}» firmado por todas las partes ({case})",
+        "title": "Documento firmado",
+        "intro": (
+            "El documento «{reference}» del expediente {case} está firmado por todas "
+            "las partes. El PDF firmado y el expediente de prueba están archivados en "
+            "el expediente."
+        ),
+        "button": "Abrir el expediente",
+    },
+    "ru": {
+        "subject": "Nidria: «{reference}» подписан всеми сторонами ({case})",
+        "title": "Документ подписан",
+        "intro": (
+            "Документ «{reference}» по делу {case} подписан всеми сторонами. "
+            "Подписанный PDF и протокол подписания сохранены в деле."
+        ),
+        "button": "Открыть дело",
+    },
+    "pt": {
+        "subject": "Nidria: «{reference}» assinado por todas as partes ({case})",
+        "title": "Documento assinado",
+        "intro": (
+            "O documento «{reference}» do processo {case} está assinado por todas as "
+            "partes. O PDF assinado e o registo de prova estão arquivados no processo."
+        ),
+        "button": "Abrir o processo",
+    },
+    "it": {
+        "subject": "Nidria: «{reference}» firmato da tutte le parti ({case})",
+        "title": "Documento firmato",
+        "intro": (
+            "Il documento «{reference}» della pratica {case} è firmato da tutte le "
+            "parti. Il PDF firmato e il fascicolo di prova sono archiviati sulla pratica."
+        ),
+        "button": "Aprire la pratica",
+    },
+    "hu": {
+        "subject": "Nidria: „{reference}” minden fél által aláírva ({case})",
+        "title": "Dokumentum aláírva",
+        "intro": (
+            "A(z) {case} ügy „{reference}” dokumentumát minden fél aláírta. Az aláírt "
+            "PDF és a hitelesítési napló az ügynél archiválva van."
+        ),
+        "button": "Ügy megnyitása",
+    },
+}
+
+
+def document_signed_agency_email(
+    case_label: str, reference: str, app_link: str, lang: str = "fr"
+) -> EmailContent:
+    """Complétion : la face agence est prévenue aussi (constat du lot :
+    rien de direct n'existait — le prêt-à-valider ne part que pour
+    validated_by=agent, sous préférences, et ne dit pas « signé »)."""
+    s = _pick(_DOCUMENT_SIGNED_AGENCY, lang)
+    return _render(
+        subject=s["subject"].format(reference=reference, case=case_label),
+        title=s["title"],
+        intro=s["intro"].format(reference=reference, case=case_label),
+        button_label=s["button"],
+        button_url=app_link,
+        lang=lang,
+    )
+
+
 def countersign_turn_email(
     case_label: str, reference: str, app_link: str, lang: str = "fr"
 ) -> EmailContent:
