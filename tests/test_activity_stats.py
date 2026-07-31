@@ -67,7 +67,10 @@ async def _seed(
     agent, et de l'exclu (auto/système)."""
     now = datetime.now(UTC)
     yesterday = now - timedelta(days=1)
-    old = now - timedelta(days=10)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    monday = midnight - timedelta(days=midnight.weekday())
+    prev = monday - timedelta(days=3)  # TOUJOURS la semaine précédente
+    old = monday - timedelta(days=10)  # TOUJOURS avant la semaine précédente
     principal = await make_expat_user(activated=True, email="kpi-p@example.com")
     case = await make_client_case(
         agency_id=admin.agency_id, principal_expat_user_id=principal.id, owner_agent_id=admin.id
@@ -93,6 +96,9 @@ async def _seed(
         (steps[3], None, now),
         (steps[4], admin.id, old),
     ]
+    steps.append(step(5))
+    await db.flush()
+    completions.append((steps[5], admin.id, prev))  # semaine PRÉCÉDENTE
     for template_step, agent_id, at in completions:
         db.add(
             CaseStepProgress(
@@ -176,6 +182,16 @@ async def _seed(
             completed_at=at,
         )
         db.add(request)
+    db.add(
+        DocumentRow(
+            case_id=case_id,
+            filename="prev.pdf",
+            storage_path=f"x/{uuid.uuid4()}",
+            uploaded_by_type="expat",
+            uploaded_by_id=uuid.uuid4(),
+            created_at=prev,
+        )
+    )
     # Une relance MANUELLE envoyée (exclue du temps gagné : pas auto).
     db.add(_log(case_id, None, "reminder.sent", {"reminder_id": str(manual.id)}, now))
     db.add_all(
@@ -184,6 +200,7 @@ async def _seed(
             _log(case_id, admin.id, "document.validated", {"new": "to_fix"}, now),
             _log(case_id, other.id, "document.validated", {"new": "ok"}, yesterday),
             _log(case_id, admin.id, "document.validated", {"new": "ok"}, old),
+            _log(case_id, admin.id, "document.validated", {"new": "ok"}, prev),
             _log(
                 case_id,
                 admin.id,
@@ -286,15 +303,43 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     # Le CUMUL compte AUSSI les vieux (2 autos, 2 docs, 2 signatures).
     all_by_kind = {i["kind"]: i for i in ts["all_time"]["items"]}
     assert all_by_kind["auto_reminder_sent"]["count"] == 2
-    assert all_by_kind["client_document_collected"]["count"] == 2
+    assert all_by_kind["client_document_collected"]["count"] == 3  # + celui de la semaine passée
     assert all_by_kind["signature_completed"]["count"] == 2
-    assert ts["all_time"]["total_minutes"] == 10 + 20 + 60 + 20
+    assert ts["all_time"]["total_minutes"] == 10 + 30 + 60 + 20
     # « Pour vos clients » : signatures + collecte SEULEMENT.
     assert {i["kind"] for i in ts["clients_period"]["items"]} == {
         "signature_completed",
         "client_document_collected",
     }
-    assert ts["clients_all_time"]["total_minutes"] == 60 + 20
+    assert ts["clients_all_time"]["total_minutes"] == 60 + 30
+
+    # --- Tendance (lot 31/07) ----------------------------------------------
+    # today : pas de tendance (la tendance d'un jour n'existe pas).
+    assert today["daily"] is None
+    assert today["previous_period"] is None
+    # week : 7 points, la SOMME des jours == le total de la semaine.
+    daily = week["daily"]
+    assert len(daily) == 7
+    for field, total_key in (
+        ("steps_completed", "steps_completed"),
+        ("documents_validated", "documents_validated"),
+        ("cases_closed", "cases_closed"),
+        ("manual_reminders", "manual_reminders"),
+    ):
+        assert sum(d[field] for d in daily) == week["agency"][total_key], field
+    assert (
+        sum(d["time_saved_minutes"] for d in daily) == week["time_saved"]["period"]["total_minutes"]
+    )
+    # La semaine PRÉCÉDENTE, bornée JUSTE : l'événement lundi-3j compté,
+    # le lundi-10j (ancien) JAMAIS.
+    prev_block = week["previous_period"]
+    assert prev_block["agency"]["steps_completed"] == 1
+    assert prev_block["me"]["steps_completed"] == 1
+    assert prev_block["agency"]["documents_validated"] == 1
+    assert prev_block["agency"]["manual_reminders"] == 0
+    assert prev_block["time_saved_minutes"] == 10  # le doc client de lundi-3j
+    assert prev_block["clients_time_saved_minutes"] == 10
+    assert prev_block["until"].startswith(monday.date().isoformat())
 
 
 async def test_flag_off_serves_nothing(

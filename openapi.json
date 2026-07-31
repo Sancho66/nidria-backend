@@ -15834,6 +15834,30 @@
           },
           "time_saved": {
             "$ref": "#/components/schemas/TimeSavedResponse"
+          },
+          "daily": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DailyPointResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily"
+          },
+          "previous_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreviousPeriodResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -20436,6 +20460,46 @@
         ],
         "title": "CustomFieldType",
         "description": "Agency-defined field types — a CLOSED, minimal set. Each has a\ndistinct validation rule and frontend renderer. `options` applies\nto SELECT / MULTI_SELECT only."
+      },
+      "DailyPointResponse": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "steps_completed": {
+            "type": "integer",
+            "title": "Steps Completed"
+          },
+          "documents_validated": {
+            "type": "integer",
+            "title": "Documents Validated"
+          },
+          "cases_closed": {
+            "type": "integer",
+            "title": "Cases Closed"
+          },
+          "manual_reminders": {
+            "type": "integer",
+            "title": "Manual Reminders"
+          },
+          "time_saved_minutes": {
+            "type": "integer",
+            "title": "Time Saved Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "steps_completed",
+          "documents_validated",
+          "cases_closed",
+          "manual_reminders",
+          "time_saved_minutes"
+        ],
+        "title": "DailyPointResponse",
+        "description": "Un jour de la semaine courante — niveau AGENCE (la tendance du\nbandeau), zéro-rempli pour les jours sans activité."
       },
       "DashboardMeCounts": {
         "properties": {
@@ -26633,6 +26697,45 @@
         ],
         "title": "PreviewRow",
         "description": "The PREDICTED outcome of one CSV row — nothing is created."
+      },
+      "PreviousPeriodResponse": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Until"
+          },
+          "agency": {
+            "$ref": "#/components/schemas/KpiBlockResponse"
+          },
+          "me": {
+            "$ref": "#/components/schemas/KpiBlockResponse"
+          },
+          "time_saved_minutes": {
+            "type": "integer",
+            "title": "Time Saved Minutes"
+          },
+          "clients_time_saved_minutes": {
+            "type": "integer",
+            "title": "Clients Time Saved Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "since",
+          "until",
+          "agency",
+          "me",
+          "time_saved_minutes",
+          "clients_time_saved_minutes"
+        ],
+        "title": "PreviousPeriodResponse",
+        "description": "La semaine PRÉCÉDENTE (mêmes totaux, mêmes règles) — le delta front."
       },
       "PrincipalSummaryResponse": {
         "properties": {

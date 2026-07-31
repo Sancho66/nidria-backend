@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -44,6 +44,10 @@ class ActivityStatsResponse(BaseModel):
     agency: KpiBlockResponse
     me: KpiBlockResponse
     time_saved: "TimeSavedResponse"
+    # Tendance (lot 31/07) : servis pour period=week SEULEMENT (None en
+    # today — la tendance d'un jour n'existe pas). Additions pures.
+    daily: "list[DailyPointResponse] | None" = None
+    previous_period: "PreviousPeriodResponse | None" = None
 
 
 class TimeSavedItemResponse(BaseModel):
@@ -72,3 +76,26 @@ class TimeSavedResponse(BaseModel):
     all_time: TimeSavedBlockResponse
     clients_period: TimeSavedBlockResponse
     clients_all_time: TimeSavedBlockResponse
+
+
+class DailyPointResponse(BaseModel):
+    """Un jour de la semaine courante — niveau AGENCE (la tendance du
+    bandeau), zéro-rempli pour les jours sans activité."""
+
+    day: date
+    steps_completed: int
+    documents_validated: int
+    cases_closed: int
+    manual_reminders: int
+    time_saved_minutes: int
+
+
+class PreviousPeriodResponse(BaseModel):
+    """La semaine PRÉCÉDENTE (mêmes totaux, mêmes règles) — le delta front."""
+
+    since: datetime
+    until: datetime
+    agency: KpiBlockResponse
+    me: KpiBlockResponse
+    time_saved_minutes: int
+    clients_time_saved_minutes: int

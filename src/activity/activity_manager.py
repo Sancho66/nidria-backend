@@ -71,17 +71,18 @@ class ActivityManager:
 
 
 async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> ActivityStatsResponse:
-    """Volet 2 (31/07) : les 4 KPI v1, agence + « moi », en DEUX requêtes
-    agrégées (témoin de comptage au test) — lecture directe des colonnes
-    (étapes) et du log (validations, clôtures, relances), comme l'extraction
-    l'a établi. Flag KPI_ENABLED maître : rien ne se sert éteint.
+    """Volet 2 (31/07) + tendance : les 4 KPI v1, agence + « moi », le
+    « temps gagné » (barème config), et pour period=week le DÉTAIL
+    JOURNALIER + la SEMAINE PRÉCÉDENTE (le delta front) — le tout en SIX
+    requêtes agrégées, témoin de comptage au test. Verdict de coût (lot
+    tendance) : l'agrégat par jour tient dans les MÊMES requêtes — chaque
+    select gagne un GROUP BY day (fenêtre élargie à 2 semaines pour les
+    gestes ; les sources temps-gagné groupent TOUT l'historique par jour,
+    le cumul devient une somme de lignes-jours — volume borné par les
+    jours d'activité réels d'une agence). Flag KPI_ENABLED maître.
 
-    Bornes CALENDAIRES UTC : today = minuit UTC, week = lundi 00:00 UTC —
-    verdict argumenté : l'agence n'a pas de fuseau au modèle (le poser =
-    modèle + migration + réglage, un lot à part), et des bornes calendaires
-    collent au modèle mental « accompli aujourd'hui/cette semaine » là où
-    un glissant 24h/7j double-compte d'un affichage à l'autre. Le jour où
-    l'agence gagne un fuseau, seule cette fonction de bornes change."""
+    Bornes CALENDAIRES UTC (verdict inchangé : l'agence n'a pas de fuseau
+    au modèle — le jour où il existe, seules les bornes changent)."""
     from datetime import UTC, datetime, timedelta
 
     from sqlalchemy import String, cast, func, select
@@ -90,8 +91,18 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
     from shared.models.activity import ActivityLog
     from shared.models.case_step_progress import CaseStepProgress
     from shared.models.client_case import ClientCase
+    from shared.models.document import Document
     from shared.models.reminder import Reminder
-    from src.activity.activity_schema import KpiBlockResponse
+    from shared.models.signature import SignatureRequest
+    from src.activity.activity_schema import (
+        ActivityStatsResponse,
+        DailyPointResponse,
+        KpiBlockResponse,
+        PreviousPeriodResponse,
+        TimeSavedBlockResponse,
+        TimeSavedItemResponse,
+        TimeSavedResponse,
+    )
     from src.core.config import get_settings
     from src.core.exceptions import ConflictError
 
@@ -99,13 +110,25 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
         raise ConflictError("Work KPIs are not enabled.", code="kpi.disabled")
     now = datetime.now(UTC)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    since = midnight if period == "today" else midnight - timedelta(days=midnight.weekday())
+    monday = midnight - timedelta(days=midnight.weekday())
+    since = midnight if period == "today" else monday
+    is_week = period == "week"
+    prev_since = monday - timedelta(days=7)
+    window_start = prev_since if is_week else since
 
-    # Requête 1 — étapes franchies : la colonne dédiée, l'auto (NULL) exclu.
+    def in_cur(day: datetime) -> bool:
+        return day >= since
+
+    def in_prev(day: datetime) -> bool:
+        return prev_since <= day < monday
+
+    # Requête 1 — étapes franchies par JOUR (l'auto exclue), fenêtre 2 sem.
     me_filter = CaseStepProgress.completed_by_agent_id == agent.id
-    steps_row = (
+    step_day = func.date_trunc("day", CaseStepProgress.completed_at).label("day")
+    step_rows = (
         await db.execute(
             select(
+                step_day,
                 func.count().label("agency_n"),
                 func.count().filter(me_filter).label("me_n"),
             )
@@ -114,14 +137,14 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
             .where(
                 ClientCase.agency_id == agent.agency_id,
                 ClientCase.deleted_at.is_(None),
-                CaseStepProgress.completed_at >= since,
+                CaseStepProgress.completed_at >= window_start,
                 CaseStepProgress.completed_by_agent_id.is_not(None),
             )
+            .group_by(step_day)
         )
-    ).one()
+    ).all()
 
-    # Requête 2 — le log : validations, clôtures, relances approuvées
-    # (jointure reminder pour exclure les AUTOS — auto_threshold_days posé).
+    # Requête 2 — le log par JOUR (validations, clôtures, relances manuelles).
     is_validated = ActivityLog.action_type == "document.validated"
     is_closed = (ActivityLog.action_type == "case.status_changed") & (
         ActivityLog.details["new"].astext == "closed"
@@ -132,9 +155,11 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
         & Reminder.auto_threshold_days.is_(None)
     )
     mine = ActivityLog.actor_id == agent.id
-    log_row = (
+    log_day = func.date_trunc("day", ActivityLog.created_at).label("day")
+    log_rows = (
         await db.execute(
             select(
+                log_day,
                 func.count().filter(is_validated).label("val_a"),
                 func.count().filter(is_validated & mine).label("val_m"),
                 func.count().filter(is_closed).label("clo_a"),
@@ -155,41 +180,22 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
             .where(
                 ClientCase.agency_id == agent.agency_id,
                 ClientCase.deleted_at.is_(None),
-                ActivityLog.created_at >= since,
+                ActivityLog.created_at >= window_start,
                 ActivityLog.actor_type == "agent",
                 ActivityLog.action_type.in_(
                     ("document.validated", "case.status_changed", "reminder.approved")
                 ),
             )
+            .group_by(log_day)
         )
-    ).one()
+    ).all()
 
-    # --- « Temps gagné » (lot 31/07) — 4 sources dérivées, ZÉRO
-    # instrumentation neuve (verdicts au rapport), chaque table interrogée
-    # UNE fois avec un FILTER période vs cumul :
-    # 1. relances AUTO envoyées : log reminder.sent/escalated (SYSTEM) +
-    #    jointure reminder (auto_threshold_days NOT NULL) ;
-    # 2. documents client collectés : document uploaded_by_type='expat' ;
-    # 3. signatures complétées : signature_request.completed_at ;
-    # 4. dossiers créés depuis modèle : client_case.journey_template_id
-    #    NOT NULL à la création (approximation nommée : la date
-    #    d'ASSIGNATION n'est pas stockée — on compte le dossier à sa
-    #    création s'il porte un modèle aujourd'hui).
-    from shared.models.document import Document
-    from shared.models.signature import SignatureRequest
-    from src.activity.activity_schema import (
-        TimeSavedBlockResponse,
-        TimeSavedItemResponse,
-        TimeSavedResponse,
-    )
-
-    in_period = ActivityLog.created_at >= since
-    auto_sent = (
+    # Requêtes 3-6 — temps gagné : TOUT l'historique groupé par jour (le
+    # cumul = la somme des lignes-jours), une requête par table source.
+    auto_day = func.date_trunc("day", ActivityLog.created_at).label("day")
+    auto_rows = (
         await db.execute(
-            select(
-                func.count().label("all_time"),
-                func.count().filter(in_period).label("period"),
-            )
+            select(auto_day, func.count().label("n"))
             .select_from(ActivityLog)
             .join(ClientCase, ClientCase.id == ActivityLog.case_id)
             .join(
@@ -203,14 +209,13 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
                 ActivityLog.action_type.in_(("reminder.sent", "reminder.escalated")),
                 Reminder.auto_threshold_days.is_not(None),
             )
+            .group_by(auto_day)
         )
-    ).one()
-    collected = (
+    ).all()
+    doc_day = func.date_trunc("day", Document.created_at).label("day")
+    collected_rows = (
         await db.execute(
-            select(
-                func.count().label("all_time"),
-                func.count().filter(Document.created_at >= since).label("period"),
-            )
+            select(doc_day, func.count().label("n"))
             .select_from(Document)
             .join(ClientCase, ClientCase.id == Document.case_id)
             .where(
@@ -218,14 +223,13 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
                 ClientCase.deleted_at.is_(None),
                 Document.uploaded_by_type == "expat",
             )
+            .group_by(doc_day)
         )
-    ).one()
-    signed = (
+    ).all()
+    sig_day = func.date_trunc("day", SignatureRequest.completed_at).label("day")
+    signed_rows = (
         await db.execute(
-            select(
-                func.count().label("all_time"),
-                func.count().filter(SignatureRequest.completed_at >= since).label("period"),
-            )
+            select(sig_day, func.count().label("n"))
             .select_from(SignatureRequest)
             .join(ClientCase, ClientCase.id == SignatureRequest.case_id)
             .where(
@@ -233,39 +237,83 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
                 ClientCase.deleted_at.is_(None),
                 SignatureRequest.completed_at.is_not(None),
             )
+            .group_by(sig_day)
         )
-    ).one()
-    templated = (
+    ).all()
+    case_day = func.date_trunc("day", ClientCase.created_at).label("day")
+    templated_rows = (
         await db.execute(
-            select(
-                func.count().label("all_time"),
-                func.count().filter(ClientCase.created_at >= since).label("period"),
-            )
+            select(case_day, func.count().label("n"))
             .select_from(ClientCase)
             .where(
                 ClientCase.agency_id == agent.agency_id,
                 ClientCase.deleted_at.is_(None),
                 ClientCase.journey_template_id.is_not(None),
             )
+            .group_by(case_day)
         )
-    ).one()
+    ).all()
 
-    scale = get_settings().kpi_time_saved_minutes
-    counts = {
-        "auto_reminder_sent": (int(auto_sent.period), int(auto_sent.all_time)),
-        "client_document_collected": (int(collected.period), int(collected.all_time)),
-        "signature_completed": (int(signed.period), int(signed.all_time)),
-        "case_created_from_template": (int(templated.period), int(templated.all_time)),
+    # --- plis Python -------------------------------------------------------
+    def fold_pairs(
+        rows: Any, cols: tuple[str, ...]
+    ) -> tuple[list[int], list[int], dict[Any, list[int]]]:
+        cur = [0] * len(cols)
+        prev = [0] * len(cols)
+        daily: dict[Any, list[int]] = {}
+        for row in rows:
+            values = [int(getattr(row, c)) for c in cols]
+            if in_cur(row.day):
+                cur = [a + b for a, b in zip(cur, values, strict=True)]
+                daily[row.day.date()] = [
+                    a + b
+                    for a, b in zip(daily.get(row.day.date(), [0] * len(cols)), values, strict=True)
+                ]
+            elif in_prev(row.day):
+                prev = [a + b for a, b in zip(prev, values, strict=True)]
+        return cur, prev, daily
+
+    steps_cur, steps_prev, steps_daily = fold_pairs(step_rows, ("agency_n", "me_n"))
+    log_cur, log_prev, log_daily = fold_pairs(
+        log_rows, ("val_a", "val_m", "clo_a", "clo_m", "rem_a", "rem_m")
+    )
+
+    def fold_source(rows: Any) -> tuple[int, int, int, dict[Any, int]]:
+        all_time = period_n = prev_n = 0
+        daily: dict[Any, int] = {}
+        for row in rows:
+            n = int(row.n)
+            all_time += n
+            if in_cur(row.day):
+                period_n += n
+                daily[row.day.date()] = daily.get(row.day.date(), 0) + n
+            elif in_prev(row.day):
+                prev_n += n
+        return all_time, period_n, prev_n, daily
+
+    folded = {
+        "auto_reminder_sent": fold_source(auto_rows),
+        "client_document_collected": fold_source(collected_rows),
+        "signature_completed": fold_source(signed_rows),
+        "case_created_from_template": fold_source(templated_rows),
     }
+    # (all_time, period, prev) en ints purs + le par-jour à part — mypy et
+    # lecteur y gagnent le même contrat.
+    source_counts: dict[str, tuple[int, int, int]] = {
+        k: (v[0], v[1], v[2]) for k, v in folded.items()
+    }
+    source_daily: dict[str, dict[Any, int]] = {k: v[3] for k, v in folded.items()}
+    scale = get_settings().kpi_time_saved_minutes
     client_kinds = ("signature_completed", "client_document_collected")
+    all_kinds = tuple(source_counts)
 
-    def block(kinds: tuple[str, ...], index: int) -> TimeSavedBlockResponse:
+    def ts_block(kinds: tuple[str, ...], index: int) -> TimeSavedBlockResponse:
         items = [
             TimeSavedItemResponse(
                 kind=kind,
-                count=counts[kind][index],
+                count=source_counts[kind][index],
                 minutes_each=int(scale.get(kind, 0)),
-                minutes_total=counts[kind][index] * int(scale.get(kind, 0)),
+                minutes_total=source_counts[kind][index] * int(scale.get(kind, 0)),
             )
             for kind in kinds
         ]
@@ -273,28 +321,72 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
             items=items, total_minutes=sum(item.minutes_total for item in items)
         )
 
-    all_kinds = tuple(counts)
     time_saved = TimeSavedResponse(
-        period=block(all_kinds, 0),
-        all_time=block(all_kinds, 1),
-        clients_period=block(client_kinds, 0),
-        clients_all_time=block(client_kinds, 1),
+        period=ts_block(all_kinds, 1),
+        all_time=ts_block(all_kinds, 0),
+        clients_period=ts_block(client_kinds, 1),
+        clients_all_time=ts_block(client_kinds, 0),
     )
+
+    daily_points = None
+    previous_period = None
+    if is_week:
+        daily_points = []
+        for offset in range(7):
+            day = (monday + timedelta(days=offset)).date()
+            log_day_vals = log_daily.get(day, [0] * 6)
+            minutes = sum(
+                source_daily[kind].get(day, 0) * int(scale.get(kind, 0)) for kind in all_kinds
+            )
+            daily_points.append(
+                DailyPointResponse(
+                    day=day,
+                    steps_completed=steps_daily.get(day, [0, 0])[0],
+                    documents_validated=log_day_vals[0],
+                    cases_closed=log_day_vals[2],
+                    manual_reminders=log_day_vals[4],
+                    time_saved_minutes=minutes,
+                )
+            )
+        previous_period = PreviousPeriodResponse(
+            since=prev_since,
+            until=monday,
+            agency=KpiBlockResponse(
+                steps_completed=steps_prev[0],
+                documents_validated=log_prev[0],
+                cases_closed=log_prev[2],
+                manual_reminders=log_prev[4],
+            ),
+            me=KpiBlockResponse(
+                steps_completed=steps_prev[1],
+                documents_validated=log_prev[1],
+                cases_closed=log_prev[3],
+                manual_reminders=log_prev[5],
+            ),
+            time_saved_minutes=sum(
+                source_counts[kind][2] * int(scale.get(kind, 0)) for kind in all_kinds
+            ),
+            clients_time_saved_minutes=sum(
+                source_counts[kind][2] * int(scale.get(kind, 0)) for kind in client_kinds
+            ),
+        )
 
     return ActivityStatsResponse(
         period=period,
         since=since,
         time_saved=time_saved,
+        daily=daily_points,
+        previous_period=previous_period,
         agency=KpiBlockResponse(
-            steps_completed=int(steps_row.agency_n),
-            documents_validated=int(log_row.val_a),
-            cases_closed=int(log_row.clo_a),
-            manual_reminders=int(log_row.rem_a),
+            steps_completed=steps_cur[0],
+            documents_validated=log_cur[0],
+            cases_closed=log_cur[2],
+            manual_reminders=log_cur[4],
         ),
         me=KpiBlockResponse(
-            steps_completed=int(steps_row.me_n),
-            documents_validated=int(log_row.val_m),
-            cases_closed=int(log_row.clo_m),
-            manual_reminders=int(log_row.rem_m),
+            steps_completed=steps_cur[1],
+            documents_validated=log_cur[1],
+            cases_closed=log_cur[3],
+            manual_reminders=log_cur[5],
         ),
     )
