@@ -151,6 +151,10 @@ class ClientProfileUpdateRequest(_CivilStatusFields):
     # SEULEMENT sans compte lié (422 nommé sinon), dédup 409 à jour.
     preferred_lang: Language | None = None
     email: NormalizedEmailStr | None = None
+    # Actions groupées (2b) : tags éditables au PATCH — l'écart « à ouvrir
+    # si le front le demande » est levé (liste REMPLACÉE, pas fusionnée :
+    # le front envoie l'état voulu ; l'ajout groupé lit puis re-poste).
+    tags: list[str] | None = None
 
 
 class ProfileActivityEntryResponse(BaseModel):

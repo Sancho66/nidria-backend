@@ -1283,3 +1283,32 @@ async def test_direct_creation_without_email(
     assert r.status_code == 200, r.text
     r = await client.post(f"/client-profiles/{profile_id}/cases", headers=headers, json={})
     assert r.status_code in (200, 201), r.text
+
+
+async def test_patch_tags_for_bulk_actions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Actions groupées (2b) — tags au PATCH fiche : état REMPLACÉ,
+    dédupliqué, servi en liste (le filtre tags= le voit aussitôt)."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Tag", "last_name": "Groupé", "email": "tags@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    profile_id = r.json()["id"]
+    r = await client.patch(
+        f"/client-profiles/{profile_id}",
+        headers=headers,
+        json={"tags": ["vip", "salon-2026", "vip"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["tags"] == ["vip", "salon-2026"]  # dédupliqué, ordre gardé
+    listing = (await client.get("/client-profiles?tags=salon-2026", headers=headers)).json()
+    assert [i["id"] for i in listing["items"]] == [profile_id]

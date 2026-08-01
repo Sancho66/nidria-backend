@@ -419,6 +419,9 @@ class ClientProfilesManager:
                 profile.preferred_channels = seen
                 continue
             setattr(profile, field, value.value if hasattr(value, "value") else value)
+        if "tags" in provided and payload.tags is not None:
+            profile.tags = list(dict.fromkeys(payload.tags))
+            touched.append("tags")
         if "preferred_lang" in provided:
             profile.preferred_lang = provided["preferred_lang"]
             touched.append("preferred_lang")

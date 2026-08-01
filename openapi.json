@@ -11311,6 +11311,53 @@
         ]
       }
     },
+    "/imports/company-profiles": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Import Company Profiles",
+        "description": "Complément B — import de fiches SOCIÉTÉ : colonnes → dénomination +\npresets de la taxonomie, dédup par dénomination en LIER-pas-dupliquer\n(la logique du 409 souple, en mode import).",
+        "operationId": "import_company_profiles_imports_company_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyImportReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/imports/cases/preview": {
       "post": {
         "tags": [
@@ -20959,8 +21006,15 @@
             "title": "Last Name"
           },
           "email": {
-            "type": "string",
-            "format": "email",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "custom_fields": {
@@ -20980,8 +21034,7 @@
         "type": "object",
         "required": [
           "first_name",
-          "last_name",
-          "email"
+          "last_name"
         ],
         "title": "ClientProfileCreateRequest",
         "description": "Création DIRECTE de fiche (complément 2, F4) — le prospect à froid,\nAVANT tout dossier. `email` requis : il porte la dédup (409 par agence)\net la liaison différée au premier dossier (adoption par email). Même\nmixin civil que le PATCH ; `custom_fields` scope='person' seules."
@@ -21522,6 +21575,52 @@
               }
             ],
             "title": "Status Override"
+          },
+          "preferred_lang": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fr",
+                  "en",
+                  "es",
+                  "ru",
+                  "pt",
+                  "it",
+                  "hu"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Lang"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
           }
         },
         "additionalProperties": false,
@@ -21694,6 +21793,142 @@
           "created_at"
         ],
         "title": "CompanyCaseSummaryResponse"
+      },
+      "CompanyImportReport": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyImportRowOutcome"
+            },
+            "type": "array",
+            "title": "Created"
+          },
+          "linked": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyImportRowOutcome"
+            },
+            "type": "array",
+            "title": "Linked"
+          },
+          "ignored": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyImportRowOutcome"
+            },
+            "type": "array",
+            "title": "Ignored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rows",
+          "created",
+          "linked",
+          "ignored"
+        ],
+        "title": "CompanyImportReport"
+      },
+      "CompanyImportRequest": {
+        "properties": {
+          "csv_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv Text"
+          },
+          "file_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File B64"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Mapping"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mapping"
+        ],
+        "title": "CompanyImportRequest",
+        "description": "Import de fiches SOCIÉTÉ — endpoint séparé (même verdict que\nl'annuaire : cibles disjointes de l'import personnes). Cibles :\n`name` (dénomination, la clé de dédup, OBLIGATOIRE au mapping) + les\n8 presets company de la taxonomie posée. Les clés libres restent au\nPATCH (pas de référentiel société au MVP — écart nommé)."
+      },
+      "CompanyImportRowOutcome": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "company_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Profile Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row"
+        ],
+        "title": "CompanyImportRowOutcome"
       },
       "CompanyProfileCreateRequest": {
         "properties": {
