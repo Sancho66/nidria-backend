@@ -14,6 +14,7 @@ from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
+from shared.models.client_profile import ClientProfile as ClientProfileModel
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
@@ -45,6 +46,7 @@ from src.cases.cases_schema import (
     PrefillSourceResponse,
 )
 from src.cases.client_space import client_space_state
+from src.client_profiles.client_profiles_manager import profile_divergences
 from src.core.config import get_settings
 from src.core.email import PendingEmail, normalize_email, send_email, space_link
 from src.core.email_templates import expat_activation_email, new_case_email
@@ -273,6 +275,13 @@ class CasesManager:
         if source_principal is not None:
             self._copy_civil_fields(source_principal, principal)
         self._apply_civil_fields(principal, payload)  # wizard fields WIN over the copy
+        # Chantier fiches F2.1 : liaison à la FICHE d'agence + pré-remplissage
+        # fill-gap des champs scope='person' (la fiche ne comble que les
+        # trous — wizard et prefill dossier gagnent toujours). Snapshot posé
+        # sur le dossier, doctrine inchangée.
+        from src.client_profiles.client_profiles_manager import link_and_prefill_person
+
+        await link_and_prefill_person(self.db, agent.agency_id, principal)
         # FAMILY members ride along with their data (they belong to the
         # client, not to the dossier's lifecycle).
         for member in source_persons:
@@ -500,6 +509,15 @@ class CasesManager:
         )
         persons = await self.repo.list_persons(case_id)
         pending_until = await self._pending_invitations(case_id)
+        # Chantier fiches F2.2 : une requête pour toutes les fiches liées —
+        # la divergence se calcule à la lecture, fiche en main.
+        profile_ids = [p.client_profile_id for p in persons if p.client_profile_id]
+        profiles_by_id: dict[uuid.UUID, ClientProfileModel] = {}
+        if profile_ids:
+            rows = await self.db.execute(
+                select(ClientProfileModel).where(ClientProfileModel.id.in_(profile_ids))
+            )
+            profiles_by_id = {row.id: row for row in rows.scalars()}
         principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         journey_names = await self._resolve_journey_names(agent, [case], lang)
@@ -515,7 +533,15 @@ class CasesManager:
             journey_name=journey_names.get(case.id),
             current_step_name=current.get("current_step_name"),
             current_step_position=current.get("current_step_position"),
-            persons=[self._person_response(p, definitions, pending_until) for p in persons],
+            persons=[
+                self._person_response(
+                    p,
+                    definitions,
+                    pending_until,
+                    profiles_by_id.get(p.client_profile_id) if p.client_profile_id else None,
+                )
+                for p in persons
+            ],
             principal_person_id=principal_person.id,
             custom_field_definitions=[
                 CustomFieldDefinitionInline.model_validate(d) for d in definitions
@@ -803,6 +829,7 @@ class CasesManager:
         person: CasePerson,
         active_definitions: list[CustomFieldDefinition],
         pending_until: dict[str, datetime],
+        profile: "ClientProfileModel | None" = None,
     ) -> PersonResponse:
         """Homogeneous shape: PRINCIPAL resolves identity from the shared
         expat_user (full_name NULL), FAMILY carries full_name. custom_fields
@@ -838,6 +865,19 @@ class CasesManager:
             profession=person.profession,
             employer=person.employer,
             custom_fields=visible_values(active_definitions, person.custom_fields or {}),
+            client_profile_id=person.client_profile_id,
+            # Chantier fiches F2.2 : la divergence fiche↔dossier est une
+            # COMPARAISON à la lecture (verdict Phase 0 — zéro marqueur,
+            # zéro sync). Fiche non chargée par l'appelant → liste vide.
+            differs_from_profile=(
+                profile_divergences(
+                    person,
+                    profile,
+                    [d.key for d in active_definitions if getattr(d, "scope", "case") == "person"],
+                )
+                if profile is not None
+                else []
+            ),
         )
 
     def _copy_civil_fields(self, source: CasePerson, target: CasePerson) -> None:
@@ -974,6 +1014,12 @@ class CasesManager:
             custom_fields=custom,
         )
         self._apply_civil_fields(person, payload)
+        # Chantier fiches F2.1 : un membre AVEC compte se lie à sa fiche
+        # (get-or-create) et hérite fill-gap des champs person.
+        if person.expat_user_id is not None:
+            from src.client_profiles.client_profiles_manager import link_and_prefill_person
+
+            await link_and_prefill_person(self.db, agent.agency_id, person)
         await self.db.flush()
         # Fin du gel de composition (Nicolas, repro b) : la personne ajoutée
         # gagne ses lignes each_person sur les étapes déjà actives, dans

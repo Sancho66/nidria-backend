@@ -40,6 +40,13 @@ class CustomFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     field_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # SELECT / MULTI_SELECT only: list of allowed string values.
     options: Mapped[list[str] | None] = mapped_column(JSONB)
+    # Portée (chantier fiches F1, classification Phase 0) : 'person' =
+    # stable chez la personne à travers ses dossiers (apparaît sur la
+    # fiche, promouvable) ; 'case' = propre à la mission (défaut — les
+    # personnalisés d'agence naissent 'case', reclassables).
+    scope: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="case", server_default="case"
+    )
     required: Mapped[bool] = mapped_column(default=False, nullable=False)
     position: Mapped[int] = mapped_column(default=0, nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

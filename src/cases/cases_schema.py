@@ -216,6 +216,12 @@ class PersonResponse(_CivilStatusFields):
     # for what it always meant; these three say WHY the client never came in
     # and whether a resend is the answer. NULL on a person without account.
     client_space_state: ClientSpaceState | None = None
+    # Chantier fiches (F1/F2) : la liaison à la fiche d'agence et la
+    # divergence fiche↔dossier DÉRIVÉE à la lecture (comparaison directe,
+    # verdict Phase 0 — zéro marqueur, zéro sync) : les références de
+    # portée personne dont les DEUX côtés portent une valeur différente.
+    client_profile_id: uuid.UUID | None = None
+    differs_from_profile: list[str] = []
     # ACTIVE → when the client activated; PENDING/EXPIRED → when the current
     # link dies/died (NULL when no invitation row exists at all).
     activated_at: datetime | None = None

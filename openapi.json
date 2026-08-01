@@ -5653,6 +5653,437 @@
         }
       }
     },
+    "/client-profiles": {
+      "get": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "List Client Profiles",
+        "operationId": "list_client_profiles_client_profiles_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientProfileListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client-profiles/{profile_id}": {
+      "get": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Get Client Profile",
+        "operationId": "get_client_profile_client_profiles__profile_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client-profiles/{profile_id}/completeness": {
+      "get": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Get Profile Completeness",
+        "description": "F2.4 — la complétude transversale : quels champs de portée personne\nsont déjà valorisés sur la fiche (le futur allègement de collecte).",
+        "operationId": "get_profile_completeness_client_profiles__profile_id__completeness_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileCompletenessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client-profiles/{profile_id}/merge": {
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Merge Client Profiles",
+        "operationId": "merge_client_profiles_client_profiles__profile_id__merge_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileMergeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client-profiles/{profile_id}/cases": {
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Create Case For Profile",
+        "description": "F2.5 — « Nouvelle démarche pour ce client ».",
+        "operationId": "create_case_for_profile_client_profiles__profile_id__cases_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewCaseForProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Case For Profile Client Profiles  Profile Id  Cases Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/persons/{person_id}/promote-field": {
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Promote Person Field",
+        "operationId": "promote_person_field_cases__case_id__persons__person_id__promote_field_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldGestureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Promote Person Field Cases  Case Id  Persons  Person Id  Promote Field Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/persons/{person_id}/pull-field": {
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Pull Person Field",
+        "operationId": "pull_person_field_cases__case_id__persons__person_id__pull_field_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldGestureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Pull Person Field Cases  Case Id  Persons  Person Id  Pull Field Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/custom-fields": {
       "get": {
         "tags": [
@@ -19448,6 +19879,315 @@
         "title": "ClientNotificationPrefsPatch",
         "description": "Ce que l'agence regle pour SES clients (audit §5). Strict : une\nvaleur hors enum = 422, une cle inconnue = 422 (extra=forbid). Le\nCRITIQUE (invitations, codes, acces) n'apparait pas — non reglable\npar construction. progress_digest est INERTE tant que le job digest\nn'existe pas (lot suivant)."
       },
+      "ClientProfileListItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "cases_count": {
+            "type": "integer",
+            "title": "Cases Count"
+          },
+          "active_cases_count": {
+            "type": "integer",
+            "title": "Active Cases Count"
+          },
+          "derived_status": {
+            "type": "string",
+            "title": "Derived Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "email",
+          "cases_count",
+          "active_cases_count",
+          "derived_status",
+          "created_at"
+        ],
+        "title": "ClientProfileListItemResponse"
+      },
+      "ClientProfileListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClientProfileListItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ClientProfileListResponse"
+      },
+      "ClientProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "expat_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Expat User Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "preferred_lang": {
+            "type": "string",
+            "title": "Preferred Lang"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "date_of_birth": {
+            "title": "Date Of Birth"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sex"
+          },
+          "marital_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marital Status"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "birth_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Name"
+          },
+          "profession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profession"
+          },
+          "employer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employer"
+          },
+          "preferred_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preferred Channels"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileCaseSummaryResponse"
+            },
+            "type": "array",
+            "title": "Cases"
+          },
+          "derived_status": {
+            "type": "string",
+            "title": "Derived Status"
+          },
+          "completeness": {
+            "$ref": "#/components/schemas/ProfileCompletenessResponse"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "expat_user_id",
+          "first_name",
+          "last_name",
+          "email",
+          "preferred_lang",
+          "activated_at",
+          "passport_number",
+          "date_of_birth",
+          "nationality",
+          "place_of_birth",
+          "sex",
+          "marital_status",
+          "phone",
+          "birth_name",
+          "profession",
+          "employer",
+          "preferred_channels",
+          "custom_fields",
+          "source",
+          "tags",
+          "cases",
+          "derived_status",
+          "completeness",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ClientProfileResponse"
+      },
       "ClientSpaceState": {
         "type": "string",
         "enum": [
@@ -22831,6 +23571,23 @@
         ],
         "title": "ExternalTimelineStepResponse"
       },
+      "FieldGestureRequest": {
+        "properties": {
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference"
+        ],
+        "title": "FieldGestureRequest",
+        "description": "Les gestes-péages du croisement (F2.3) : une référence de champ de\nportée personne (colonne civile ou clé custom scope='person')."
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -24723,6 +25480,83 @@
         ],
         "title": "MfaVerifyRequest"
       },
+      "NewCaseForProfileRequest": {
+        "properties": {
+          "journey_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Template Id"
+          },
+          "origin_country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Country"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NewCaseForProfileRequest",
+        "description": "« Nouvelle démarche pour ce client » (F2.5) — la création DEPUIS la\nfiche : l'identité vient de la fiche, le pré-remplissage person suit la\nmême mécanique que toute création (F2.1)."
+      },
       "OnboardingResponse": {
         "properties": {
           "steps": {
@@ -25313,6 +26147,26 @@
                 "type": "null"
               }
             ]
+          },
+          "client_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Profile Id"
+          },
+          "differs_from_profile": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Differs From Profile",
+            "default": []
           },
           "activated_at": {
             "anyOf": [
@@ -26765,6 +27619,97 @@
         ],
         "title": "PrincipalSummaryResponse",
         "description": "Identity subset for list items — the full PrincipalResponse\n(activated) stays a detail-endpoint concern."
+      },
+      "ProfileCaseSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "journey_name",
+          "reference",
+          "created_at"
+        ],
+        "title": "ProfileCaseSummaryResponse",
+        "description": "Un dossier de la fiche, en résumé."
+      },
+      "ProfileCompletenessResponse": {
+        "properties": {
+          "filled": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Filled"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filled",
+          "missing"
+        ],
+        "title": "ProfileCompletenessResponse",
+        "description": "La complétude transversale (F2.4) : quels champs de portée personne\nsont déjà valorisés sur la fiche — le futur allègement de collecte."
+      },
+      "ProfileMergeRequest": {
+        "properties": {
+          "source_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Profile Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_profile_id"
+        ],
+        "title": "ProfileMergeRequest",
+        "description": "FUSIONNER (F1.6) : la fiche SOURCE se vide dans la fiche cible —\nre-liaison des case_person, valeurs de la CIBLE prioritaires (la source\ncomble les trous), source supprimée. Les comptes de login restent\ndistincts (nommé au rapport)."
       },
       "ProfileResponse": {
         "properties": {

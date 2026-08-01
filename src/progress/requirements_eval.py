@@ -51,10 +51,23 @@ class FieldPlane(StrEnum):
 
     PERSON = "person"
     CASE = "case"
+    # Chantier fiches (F1) : la FICHE d'agence — même leaf que PERSON
+    # (client_profile miroite le stockage de case_person, verdict Phase 0).
+    PROFILE = "profile"
 
 
 def _is_empty(value: Any) -> bool:
     return value is None or value == "" or value == []
+
+
+def profile_field_value(profile: Any, reference: str) -> Any:
+    """Chantier fiches (F1) : le leaf FICHE — miroir exact du leaf personne
+    (client_profile porte les mêmes colonnes civiles + le même sac JSONB).
+    Sert la complétude transversale et la divergence fiche↔dossier (F2),
+    JAMAIS la complétude d'exigences (qui reste person-keyed, invariant)."""
+    if reference in COLLECTABLE_BASE_FIELDS:
+        return getattr(profile, reference, None)
+    return (profile.custom_fields or {}).get(reference)
 
 
 def _person_field_value(person: CasePerson, reference: str) -> Any:

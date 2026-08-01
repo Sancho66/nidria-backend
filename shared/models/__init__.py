@@ -14,6 +14,7 @@ from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
+from shared.models.client_profile import ClientProfile
 from shared.models.consent import ConsentAcceptance, ConsentDocument
 from shared.models.crm_import_mapping import CrmImportMapping
 from shared.models.custom_field import CustomFieldDefinition
@@ -72,6 +73,7 @@ __all__ = [
     "CaseStepProgress",
     "CaseStepRequirement",
     "ClientCase",
+    "ClientProfile",
     "ConsentAcceptance",
     "ConsentDocument",
     "CrmImportMapping",

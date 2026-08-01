@@ -68,6 +68,12 @@ class CasePerson(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Agency-defined custom fields (DÉGEL 2): {definition.key: value}.
     # Independent of the definitions' lifecycle — archiving a definition
     # never touches this sack; orphan keys are kept but not exposed.
+    # Chantier fiches (F1) : le lien vers la FICHE d'agence — nullable,
+    # SET NULL, purement ADDITIF (Phase 0, invariants 1-4 : rien d'autre ne
+    # bouge sur cette table ; la fiche s'ajoute AU-DESSUS).
+    client_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("client_profile.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     custom_fields: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
