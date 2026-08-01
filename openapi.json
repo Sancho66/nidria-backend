@@ -21364,6 +21364,14 @@
             ],
             "title": "Status Override"
           },
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileCompanyLinkResponse"
+            },
+            "type": "array",
+            "title": "Companies",
+            "default": []
+          },
           "completeness": {
             "$ref": "#/components/schemas/ProfileCompletenessResponse"
           },
@@ -29871,6 +29879,49 @@
         ],
         "title": "ProfileCaseSummaryResponse",
         "description": "Un dossier de la fiche, en résumé. `current_step_name` est résolu\ndans la langue par défaut de l'AGENCE (annuaire F3.3) — même règle de\nbande de progression que la liste dossiers, batché sans N+1."
+      },
+      "ProfileCompanyLinkResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "role_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Label"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "name",
+          "role",
+          "role_label",
+          "role_id"
+        ],
+        "title": "ProfileCompanyLinkResponse",
+        "description": "« Ses sociétés » (lecture INVERSE du lien personne↔société) : tout\nce qu'il faut pour afficher ET dissocier — le DELETE existant côté\nsociété est appelable avec (company_id, role_id) tels quels."
       },
       "ProfileCompletenessResponse": {
         "properties": {

@@ -29,6 +29,7 @@ from src.client_profiles.client_profiles_schema import (
     ProfileActivityEntryResponse,
     ProfileActivityListResponse,
     ProfileCaseSummaryResponse,
+    ProfileCompanyLinkResponse,
     ProfileCompletenessResponse,
     ProfileFieldSectionResponse,
 )
@@ -324,6 +325,18 @@ class ClientProfilesManager:
                 [c for _e, c, _n in cases], profile.status_override
             ),
             status_override=profile.status_override,
+            companies=[
+                ProfileCompanyLinkResponse(
+                    company_id=company_id,
+                    name=name,
+                    role=role,
+                    role_label=role_label,
+                    role_id=role_id,
+                )
+                for company_id, name, role, role_label, role_id in (
+                    await self.repo.companies_for_profile(profile.id)
+                )
+            ],
             completeness=completeness(profile, person_defs),
             sections=resolve_field_sections(person_defs, agency_lang),
             created_at=profile.created_at,

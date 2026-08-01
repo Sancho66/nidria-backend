@@ -241,6 +241,27 @@ class ClientProfilesRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def companies_for_profile(
+        self, profile_id: uuid.UUID
+    ) -> list[tuple[uuid.UUID, str, str, str | None, uuid.UUID]]:
+        """« Ses sociétés » — UNE jointure rôles×sociétés côté personne :
+        (company_id, name, role, role_label, role_id)."""
+        from shared.models.company_profile import CompanyProfile, CompanyProfileRole
+
+        rows = await self.db.execute(
+            select(
+                CompanyProfile.id,
+                CompanyProfile.name,
+                CompanyProfileRole.role,
+                CompanyProfileRole.role_label,
+                CompanyProfileRole.id,
+            )
+            .join(CompanyProfile, CompanyProfile.id == CompanyProfileRole.company_profile_id)
+            .where(CompanyProfileRole.client_profile_id == profile_id)
+            .order_by(CompanyProfile.name, CompanyProfileRole.created_at)
+        )
+        return [tuple(r) for r in rows]
+
     async def persons_linked_to_profile(self, profile_id: uuid.UUID) -> list[CasePerson]:
         stmt = select(CasePerson).where(CasePerson.client_profile_id == profile_id)
         return list((await self.db.execute(stmt)).scalars().all())

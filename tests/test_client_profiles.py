@@ -1359,3 +1359,51 @@ async def test_living_case_never_shows_prospect_without_explicit_override(
     imported = (await client.get("/client-profiles?search=import-p@", headers=headers)).json()
     assert imported["items"][0]["derived_status"] == "prospect"  # sans dossier
     assert imported["items"][0]["status_override"] is None
+
+
+async def test_profile_serves_its_companies_reverse_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Complément garde — « Ses sociétés » : la lecture inverse du lien.
+    Deux sociétés → les deux servies avec rôles ; zéro → [] ; le DELETE
+    existant côté société est appelable avec les ids servis."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Multi", "last_name": "Sociétés", "email": "multi-soc@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    person_id = r.json()["id"]
+    assert r.json()["companies"] == []  # zéro → []
+    company_ids = []
+    for name, role in (("Alpha SL", "manager"), ("Beta GmbH", "partner")):
+        r = await client.post("/company-profiles", headers=headers, json={"name": name})
+        assert r.status_code == 201, r.text
+        company_ids.append(r.json()["id"])
+        r = await client.post(
+            f"/company-profiles/{company_ids[-1]}/roles",
+            headers=headers,
+            json={"client_profile_id": person_id, "role": role},
+        )
+        assert r.status_code == 201, r.text
+    detail = (await client.get(f"/client-profiles/{person_id}", headers=headers)).json()
+    companies = detail["companies"]
+    assert [(c["name"], c["role"]) for c in companies] == [
+        ("Alpha SL", "manager"),
+        ("Beta GmbH", "partner"),
+    ]
+    # La DISSOCIATION côté personne : le DELETE société existant, avec les
+    # ids TELS QUE SERVIS (constat point 2 — appelable, une ligne).
+    first = companies[0]
+    r = await client.delete(
+        f"/company-profiles/{first['company_id']}/roles/{first['role_id']}", headers=headers
+    )
+    assert r.status_code == 204
+    detail = (await client.get(f"/client-profiles/{person_id}", headers=headers)).json()
+    assert [c["name"] for c in detail["companies"]] == ["Beta GmbH"]

@@ -44,6 +44,18 @@ class ProfileFieldSectionResponse(BaseModel):
     references: list[str]
 
 
+class ProfileCompanyLinkResponse(BaseModel):
+    """« Ses sociétés » (lecture INVERSE du lien personne↔société) : tout
+    ce qu'il faut pour afficher ET dissocier — le DELETE existant côté
+    société est appelable avec (company_id, role_id) tels quels."""
+
+    company_id: uuid.UUID
+    name: str
+    role: str
+    role_label: str | None
+    role_id: uuid.UUID
+
+
 class ClientProfileListItemResponse(BaseModel):
     # `id` EST le client_profile_id (une seule clé, pas de champ dupliqué).
     id: uuid.UUID
@@ -101,6 +113,8 @@ class ClientProfileResponse(BaseModel):
     cases: list[ProfileCaseSummaryResponse]
     derived_status: str
     status_override: str | None = None
+    # Ses sociétés — la lecture inverse du lien (une jointure, pas de N+1).
+    companies: list[ProfileCompanyLinkResponse] = []
     completeness: ProfileCompletenessResponse
     # Lot sections : les références person groupées par leurs sections
     # réelles — même univers que la complétude, fini le fourre-tout.
