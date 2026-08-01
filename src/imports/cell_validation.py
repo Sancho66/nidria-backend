@@ -24,7 +24,7 @@ from typing import Any
 
 from shared.models.custom_field import CustomFieldDefinition
 from src.cases.case_fields import COLLECTABLE_CASE_FIELDS
-from src.core.enums import MaritalStatus, Sex
+from src.core.enums import CustomFieldType, MaritalStatus, Sex
 from src.custom_fields.custom_fields_validation import (
     _coerce_country,
     _coerce_date,
@@ -143,6 +143,12 @@ def validate_cell(column: str, target: CellTarget, raw: str) -> CellResult:
             value = _validate_base(target.reference, raw)
         elif isinstance(target, CaseFieldTarget):
             value = _validate_case(target.reference, raw)
+        elif target.definition.field_type == CustomFieldType.ADDRESS.value:
+            # ADRESSES IMPORTABLES (complément B) : une cellule CSV est une
+            # CHAÎNE, le type address attend un objet — la règle honnête,
+            # sans parsing magique : le texte INTÉGRAL dans `street`
+            # (cap 255 appliqué par la coercition, erreur rapportée sinon).
+            value = _coerce_one(target.definition, {"street": raw.strip()})
         else:
             value = _coerce_one(target.definition, raw)  # full custom-field reuse
     except Exception as exc:  # a single bad cell is reported, never fatal

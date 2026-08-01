@@ -128,3 +128,98 @@ async def test_agency_level_import_config(
     r = await client.post("/imports/mappings", headers=headers, json=body)
     assert r.status_code == 409
     assert r.json()["code"] == "import.mapping_name_taken"
+
+
+async def test_company_import_creates_links_ignores(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Complément B — l'import sociétés : dédup par dénomination en
+    lier-pas-dupliquer (fill-gap presets), sans dénomination → ignorée,
+    cible inconnue → 422, rapport identique à l'import personnes."""
+    headers = agent_headers(admin)
+    # Une société existante SANS forme juridique (sera liée + comblée).
+    r = await client.post("/company-profiles", headers=headers, json={"name": "HoldCo"})
+    assert r.status_code == 201, r.text
+    existing_id = r.json()["id"]
+
+    csv_text = "Société,Forme,SIREN\nholdco,SL,B12345678\nNewCo Iberia,SA,B87654321\n,SARL,X1\n"
+    mapping = {"Société": "name", "Forme": "legal_form", "SIREN": "company_registration_number"}
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    report = r.json()
+    assert report["total_rows"] == 3
+    assert [c["name"] for c in report["created"]] == ["NewCo Iberia"]
+    assert [x["company_profile_id"] for x in report["linked"]] == [existing_id]
+    assert [i["reason"] for i in report["ignored"]] == ["no_name"]
+    # FILL-GAP sur la liée, servie dans SES sections.
+    detail = (await client.get(f"/company-profiles/{existing_id}", headers=headers)).json()
+    assert detail["custom_fields"]["legal_form"] == "SL"
+    assert detail["custom_fields"]["company_registration_number"] == "B12345678"
+    # Pas de doublon : l'annuaire société compte 2 (HoldCo + NewCo).
+    listing = (await client.get("/company-profiles", headers=headers)).json()
+    assert listing["total"] == 2
+    # Cible inconnue → 422 nommé.
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": {"Société": "name", "Forme": "couleur"}},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "import.unknown_targets"
+
+
+async def test_address_column_imports_as_full_text_street(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Complément B — ADRESSES IMPORTABLES : une colonne « adresse
+    complète » mappée vers une déf address est stockée en texte intégral
+    dans `street` (objet valide, AUCUN parsing magique)."""
+    headers = agent_headers(admin)
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="residence_address",
+            label="Adresse de résidence",
+            field_type="address",
+            scope="person",
+        )
+    )
+    await db_session.commit()
+    csv_text = (
+        "Prénom,Nom,Email,Adresse\n"
+        'Addr,Essée,addr@example.com,"12 rue de la Paix, 75002 Paris, France"\n'
+    )
+    r = await client.post(
+        "/imports/client-profiles",
+        headers=headers,
+        json={
+            "csv_text": csv_text,
+            "mapping": {
+                "Prénom": "first_name",
+                "Nom": "last_name",
+                "Email": "email",
+                "Adresse": "residence_address",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["created"]) == 1
+    detail = (
+        await client.get(
+            f"/client-profiles/{r.json()['created'][0]['profile_id']}", headers=headers
+        )
+    ).json()
+    # Le texte INTÉGRAL dans street — objet address structurellement valide.
+    assert detail["custom_fields"]["residence_address"] == {
+        "street": "12 rue de la Paix, 75002 Paris, France"
+    }

@@ -27,6 +27,9 @@ from src.imports.imports_schema import CrmDetailResponse, CrmListResponse
 from src.imports.mapping_manager import MappingManager
 from src.imports.mapping_schema import MappingListResponse, MappingResponse, MappingUpsertRequest
 from src.imports.profile_import_manager import (
+    CompanyImportManager,
+    CompanyImportReport,
+    CompanyImportRequest,
     ProfileImportManager,
     ProfileImportReport,
     ProfileImportRequest,
@@ -39,6 +42,7 @@ BINDINGS = [
     RouteBinding("GET", "/imports/crms/{slug}", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/cases", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/client-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
+    RouteBinding("POST", "/imports/company-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/cases/preview", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/mappings", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/mappings/resolve", Audience.AGENT, Permission.IMPORT_MANAGE),
@@ -87,6 +91,16 @@ async def import_client_profiles(
     — le wizard dossiers existant la garde). Aucun mail : une fiche
     n'invite personne."""
     return await ProfileImportManager(db).run_import(agent, body)
+
+
+@router.post("/company-profiles", response_model=CompanyImportReport)
+async def import_company_profiles(
+    body: CompanyImportRequest, agent: AgentDep, db: DbDep
+) -> CompanyImportReport:
+    """Complément B — import de fiches SOCIÉTÉ : colonnes → dénomination +
+    presets de la taxonomie, dédup par dénomination en LIER-pas-dupliquer
+    (la logique du 409 souple, en mode import)."""
+    return await CompanyImportManager(db).run_import(agent, body)
 
 
 @router.post("/cases/preview", response_model=ImportPreview)
