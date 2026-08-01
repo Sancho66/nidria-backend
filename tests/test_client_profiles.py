@@ -1175,3 +1175,70 @@ async def test_directory_filters_and_sorts(
     finally:
         event.remove(engine, "before_cursor_execute", _count)
     assert counter["n"] <= 6, f"directory ran {counter['n']} queries"
+
+
+async def test_patch_language_and_email_rules(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Complément PATCH — la langue (registre d'agence, prime compte) ;
+    l'email : libre → OK + dédup 409 avec référence ; lié → 422 nommé."""
+    headers = agent_headers(admin)
+    # Fiche LIBRE : langue + email éditables.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Libre", "last_name": "Fiche", "email": "libre@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    free_id = r.json()["id"]
+    r = await client.patch(
+        f"/client-profiles/{free_id}",
+        headers=headers,
+        json={"preferred_lang": "es", "email": "libre2@example.com"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["preferred_lang"] == "es"
+    assert r.json()["email"] == "libre2@example.com"
+    # Langue hors catalogue → 422 (Literal).
+    r = await client.patch(
+        f"/client-profiles/{free_id}", headers=headers, json={"preferred_lang": "de"}
+    )
+    assert r.status_code == 422
+
+    # Fiche LIÉE (créée par un dossier) : email verrouillé, langue OK.
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Lié", "last_name": "Compte", "email": "lie@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    listing = (await client.get("/client-profiles?search=lie@", headers=headers)).json()
+    linked_id = listing["items"][0]["id"]
+    r = await client.patch(
+        f"/client-profiles/{linked_id}", headers=headers, json={"email": "autre@example.com"}
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "profile.email_locked_by_account"
+    r = await client.patch(
+        f"/client-profiles/{linked_id}", headers=headers, json={"preferred_lang": "ru"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["preferred_lang"] == "ru"  # la fiche prime sur le compte (fr)
+
+    # DÉDUP à jour : l'email d'une autre fiche de l'agence → 409 + référence.
+    r = await client.patch(
+        f"/client-profiles/{free_id}", headers=headers, json={"email": "lie@example.com"}
+    )
+    assert r.status_code == 409
+    assert r.json()["code"] == "profile.email_taken"
+    assert r.json()["params"]["profile_id"] == linked_id
+    # Re-poser SON propre email : no-op propre.
+    r = await client.patch(
+        f"/client-profiles/{free_id}", headers=headers, json={"email": "LIBRE2@example.com"}
+    )
+    assert r.status_code == 200, r.text

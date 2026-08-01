@@ -49,6 +49,11 @@ class ClientProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_name: Mapped[str | None] = mapped_column(String(100))
     email: Mapped[str | None] = mapped_column(String(255), index=True)
 
+    # Complément PATCH : la langue de la fiche — le registre de l'AGENCE
+    # (elle sait que ce client parle espagnol) ; sert en priorité sur la
+    # préférence du compte à la lecture, ne touche JAMAIS le compte.
+    preferred_lang: Mapped[str | None] = mapped_column(String(5))
+
     # V1b (solde CRM) : statut FORCÉ par l'agence — NULL = la dérivation
     # (une seule vérité par défaut) ; 'prospect'|'client' = l'agence prime.
     status_override: Mapped[str | None] = mapped_column(String(10))

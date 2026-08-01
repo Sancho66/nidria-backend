@@ -290,7 +290,9 @@ class ClientProfilesManager:
             first_name=account.first_name if account else (profile.first_name or ""),
             last_name=account.last_name if account else (profile.last_name or ""),
             email=account.email if account else (profile.email or ""),
-            preferred_lang=account.preferred_lang if account else None,
+            # La langue : le registre de la FICHE prime, la préférence du
+            # compte en repli (nommé au rapport).
+            preferred_lang=profile.preferred_lang or (account.preferred_lang if account else None),
             activated_at=account.activated_at if account else None,
             passport_number=profile.passport_number,
             date_of_birth=profile.date_of_birth,
@@ -416,6 +418,33 @@ class ClientProfilesManager:
                 profile.preferred_channels = seen
                 continue
             setattr(profile, field, value.value if hasattr(value, "value") else value)
+        if "preferred_lang" in provided:
+            profile.preferred_lang = provided["preferred_lang"]
+            touched.append("preferred_lang")
+        if "email" in provided:
+            new_email = provided["email"]
+            if new_email is None:
+                raise ValidationError(
+                    "The profile email cannot be cleared.", code="profile.email_required"
+                )
+            if profile.expat_user_id is not None:
+                # L'email d'une fiche LIÉE est celui du COMPTE espace client
+                # — il ne s'édite pas depuis l'agence (le compte est global).
+                raise ValidationError(
+                    "This profile is linked to a client-space account; its email "
+                    "is the account's and cannot be edited here.",
+                    code="profile.email_locked_by_account",
+                )
+            if new_email.lower() != (profile.email or "").lower():
+                taken_by = await self.repo.profile_id_for_email(agent.agency_id, new_email)
+                if taken_by is not None and taken_by != profile.id:
+                    raise ConflictError(
+                        "A client profile with this email already exists in this agency.",
+                        code="profile.email_taken",
+                        params={"email": new_email, "profile_id": str(taken_by)},
+                    )
+                profile.email = new_email.lower()
+                touched.append("email")
         if "status_override" in provided:
             profile.status_override = provided["status_override"]
             touched.append("status_override")

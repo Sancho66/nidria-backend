@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.cases.cases_schema import _CivilStatusFields
 from src.core.email import NormalizedEmailStr
+from src.core.i18n import Language
 
 
 class ProfileCaseSummaryResponse(BaseModel):
@@ -141,6 +142,11 @@ class ClientProfileUpdateRequest(_CivilStatusFields):
     custom_fields: dict[str, Any] | None = None
     # V1b : forcer le statut (null explicite = retour à la dérivation).
     status_override: Literal["prospect", "client"] | None = None
+    # Complément PATCH : la langue (registre d'agence, prime à la lecture,
+    # null = retour à la préférence du compte) et l'email — éditable
+    # SEULEMENT sans compte lié (422 nommé sinon), dédup 409 à jour.
+    preferred_lang: Language | None = None
+    email: NormalizedEmailStr | None = None
 
 
 class ProfileActivityEntryResponse(BaseModel):
