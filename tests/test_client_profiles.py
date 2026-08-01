@@ -1242,3 +1242,44 @@ async def test_patch_language_and_email_rules(
         f"/client-profiles/{free_id}", headers=headers, json={"email": "LIBRE2@example.com"}
     )
     assert r.status_code == 200, r.text
+
+
+async def test_direct_creation_without_email(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Dernier complément — l'email est OPTIONNEL au POST : le prospect à
+    froid sans email existe (deux sans-email coexistent — rien à
+    dédupliquer), « Nouvelle démarche » 422 nommé tant que l'email n'est
+    pas posé au PATCH, puis tout se débloque."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Sans", "last_name": "Email"},
+    )
+    assert r.status_code == 201, r.text
+    profile_id = r.json()["id"]
+    assert r.json()["email"] == ""  # servi vide, pas d'invention
+    # Un DEUXIÈME sans-email coexiste (pas de fausse dédup sur le vide).
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Autre", "last_name": "SansEmail"},
+    )
+    assert r.status_code == 201, r.text
+    # « Nouvelle démarche » impossible sans email — 422 nommé.
+    r = await client.post(f"/client-profiles/{profile_id}/cases", headers=headers, json={})
+    assert r.status_code == 422
+    assert r.json()["code"] == "profile.no_email"
+    # L'email arrive au PATCH → la démarche se débloque.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}", headers=headers, json={"email": "tardif@example.com"}
+    )
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/client-profiles/{profile_id}/cases", headers=headers, json={})
+    assert r.status_code in (200, 201), r.text

@@ -340,20 +340,21 @@ class ClientProfilesManager:
         non) → 409 nommé."""
         from src.client_profiles.backfill import CIVIL_COLUMNS
 
-        existing_id = await self.repo.profile_id_for_email(agent.agency_id, payload.email)
-        if existing_id is not None:
-            # 409 AVEC RÉFÉRENCE (V1a) : le front pointe la fiche existante.
-            raise ConflictError(
-                "A client profile with this email already exists in this agency.",
-                code="profile.email_taken",
-                params={"email": payload.email, "profile_id": str(existing_id)},
-            )
+        if payload.email is not None:
+            existing_id = await self.repo.profile_id_for_email(agent.agency_id, payload.email)
+            if existing_id is not None:
+                # 409 AVEC RÉFÉRENCE (V1a) : le front pointe la fiche existante.
+                raise ConflictError(
+                    "A client profile with this email already exists in this agency.",
+                    code="profile.email_taken",
+                    params={"email": payload.email, "profile_id": str(existing_id)},
+                )
         profile = ClientProfile(
             agency_id=agent.agency_id,
             expat_user_id=None,
             first_name=payload.first_name,
             last_name=payload.last_name,
-            email=payload.email,
+            email=payload.email.lower() if payload.email else None,
         )
         provided = payload.model_dump(exclude_unset=True)
         for field in (*CIVIL_COLUMNS, "preferred_channels"):

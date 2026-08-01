@@ -119,7 +119,11 @@ class ClientProfileCreateRequest(_CivilStatusFields):
 
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
-    email: NormalizedEmailStr
+    # OPTIONNEL (dernier complément) : un prospect à froid n'a pas
+    # toujours d'email. Sans lui : pas de dédup (rien à comparer), pas de
+    # liaison différée par email, et « Nouvelle démarche » répond 422
+    # profile.no_email tant qu'un email n'est pas posé au PATCH.
+    email: NormalizedEmailStr | None = None
     custom_fields: dict[str, Any] | None = None
 
 
