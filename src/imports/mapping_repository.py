@@ -44,7 +44,7 @@ class MappingRepository:
     async def get_by_name(
         self,
         agency_id: uuid.UUID,
-        journey_template_id: uuid.UUID,
+        journey_template_id: uuid.UUID | None,
         crm_slug: str,
         name: str,
     ) -> CrmImportMapping | None:
@@ -52,9 +52,14 @@ class MappingRepository:
         natural key. Used to report a same-name conflict precisely (instead of
         relying on the DB IntegrityError, which could also fire on an older,
         stricter constraint)."""
+        journey_predicate = (
+            CrmImportMapping.journey_template_id.is_(None)
+            if journey_template_id is None
+            else CrmImportMapping.journey_template_id == journey_template_id
+        )
         stmt = select(CrmImportMapping).where(
             CrmImportMapping.agency_id == agency_id,
-            CrmImportMapping.journey_template_id == journey_template_id,
+            journey_predicate,
             CrmImportMapping.crm_slug == crm_slug,
             CrmImportMapping.name == name,
         )

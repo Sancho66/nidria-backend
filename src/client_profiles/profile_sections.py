@@ -65,6 +65,20 @@ PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
 # F5 (fiches société) : la MÊME taxonomie, nommée dès maintenant.
 COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = PROFILE_SECTIONS
 
+# V2b — le plan de valeurs SOCIÉTÉ sur la taxonomie : les 8 presets
+# company du catalogue → leur section de fiche société. Les clés libres
+# d'agence tombent en 'misc'.
+COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
+    "company_name": "identity",
+    "legal_form": "identity",
+    "registration_date": "identity",
+    "company_registration_number": "id_documents",
+    "headquarters_address": "contact",
+    "legal_representative_name": "contact",
+    "share_capital": "situation",
+    "partners_count": "situation",
+}
+
 # Les 10 colonnes civiles natives → leur section fiche (mapping code :
 # ce ne sont pas des lignes custom_field_definition).
 CIVIL_PROFILE_SECTION: Final[dict[str, str]] = {

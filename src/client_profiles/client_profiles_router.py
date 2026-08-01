@@ -98,13 +98,27 @@ async def list_client_profiles(
     search: str | None = None,
     status: Annotated[
         Literal["prospect", "client"] | None,
-        Query(description="Filter on the DERIVED client status (annuaire F3.2)."),
+        Query(description="Filter on the client status (override first, else derived)."),
     ] = None,
+    tags: Annotated[list[str] | None, Query(description="ANY-of tag filter (V3).")] = None,
+    client_space_activated: bool | None = None,
+    has_active_case: bool | None = None,
+    sort_by: Annotated[Literal["name", "last_activity", "created_at"], Query()] = "name",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "asc",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> ClientProfileListResponse:
     return await ClientProfilesManager(db).list_profiles(
-        agent, search=search, status=status, page=page, page_size=page_size
+        agent,
+        search=search,
+        status=status,
+        tags=tags,
+        client_space_activated=client_space_activated,
+        has_active_case=has_active_case,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
     )
 
 

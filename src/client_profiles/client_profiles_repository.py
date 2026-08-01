@@ -3,8 +3,10 @@ cases_repository est GELÉ, invariant n°5 de la Phase 0)."""
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import Text, and_, cast, exists, func, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -43,6 +45,45 @@ class ClientProfilesRepository:
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     @staticmethod
+    def _linked_case_exists(agency_id: uuid.UUID, *, exclude_closed: bool = False):  # type: ignore[no-untyped-def]
+        """V3 — il EXISTE un dossier vivant de l'agence lié à la fiche
+        (principal ou membre) ; `exclude_closed` pour has_active_case."""
+        member_case_ids = (
+            select(CasePerson.case_id)
+            .where(CasePerson.expat_user_id == ClientProfile.expat_user_id)
+            .correlate(ClientProfile)
+        )
+        conditions = [
+            ClientCase.agency_id == agency_id,
+            ClientCase.deleted_at.is_(None),
+            or_(
+                ClientCase.principal_expat_user_id == ClientProfile.expat_user_id,
+                ClientCase.id.in_(member_case_ids),
+            ),
+        ]
+        if exclude_closed:
+            conditions.append(ClientCase.status != CaseStatus.CLOSED.value)
+        return exists(select(ClientCase.id).where(*conditions))
+
+    @staticmethod
+    def _last_activity_expr() -> Any:
+        """V3 — le tri « dernière activité » en SQL (pagination juste) :
+        max(activity_log) des dossiers liés, plancher updated_at fiche —
+        exactement la valeur servie par l'item."""
+        linked_case_ids = (
+            select(CasePerson.case_id)
+            .where(CasePerson.client_profile_id == ClientProfile.id)
+            .correlate(ClientProfile)
+        )
+        latest = (
+            select(func.max(ActivityLog.created_at))
+            .where(ActivityLog.case_id.in_(linked_case_ids))
+            .correlate(ClientProfile)
+            .scalar_subquery()
+        )
+        return func.coalesce(latest, ClientProfile.updated_at)
+
+    @staticmethod
     def _beyond_prospect_exists(agency_id: uuid.UUID):  # type: ignore[no-untyped-def]
         """Projection SQL de `derived_client_status` (une seule vérité, deux
         projections — l'accord est verrouillé par test) : il EXISTE un
@@ -73,6 +114,11 @@ class ClientProfilesRepository:
         *,
         search: str | None,
         status: str | None = None,
+        tags: list[str] | None = None,
+        client_space_activated: bool | None = None,
+        has_active_case: bool | None = None,
+        sort_by: str = "name",
+        sort_order: str = "asc",
         page: int,
         page_size: int,
     ) -> tuple[list[ClientProfile], int]:
@@ -102,15 +148,46 @@ class ClientProfilesRepository:
             count_stmt = count_stmt.where(predicate)
         if status is not None:
             beyond = self._beyond_prospect_exists(agency_id)
-            status_predicate = beyond if status == "client" else ~beyond
+            derived = beyond if status == "client" else ~beyond
+            # V1b : l'override PRIME — la dérivation ne joue que sans lui.
+            status_predicate = or_(
+                ClientProfile.status_override == status,
+                and_(ClientProfile.status_override.is_(None), derived),
+            )
             stmt = stmt.where(status_predicate)
             count_stmt = count_stmt.where(status_predicate)
-        stmt = (
-            stmt.order_by(
-                func.coalesce(ExpatUser.last_name, ClientProfile.last_name),
-                func.coalesce(ExpatUser.first_name, ClientProfile.first_name),
-                ClientProfile.created_at,
+        if tags:
+            # ANY des tags demandés (jsonb_exists_any == ?| avec un cast
+            # text[] explicite — asyncpg ne devine pas le type).
+            predicate = func.jsonb_exists_any(ClientProfile.tags, cast(tags, ARRAY(Text)))
+            stmt = stmt.where(predicate)
+            count_stmt = count_stmt.where(predicate)
+        if client_space_activated is not None:
+            predicate = (
+                ExpatUser.activated_at.is_not(None)
+                if client_space_activated
+                else ExpatUser.activated_at.is_(None)
             )
+            stmt = stmt.where(predicate)
+            count_stmt = count_stmt.where(predicate)
+        if has_active_case is not None:
+            active = self._linked_case_exists(agency_id, exclude_closed=True)
+            predicate = active if has_active_case else ~active
+            stmt = stmt.where(predicate)
+            count_stmt = count_stmt.where(predicate)
+        name_order = (
+            func.coalesce(ExpatUser.last_name, ClientProfile.last_name),
+            func.coalesce(ExpatUser.first_name, ClientProfile.first_name),
+        )
+        sort_exprs = {
+            "name": name_order,
+            "created_at": (ClientProfile.created_at,),
+            "last_activity": (self._last_activity_expr(),),
+        }
+        exprs = sort_exprs.get(sort_by, name_order)
+        ordered = [e.desc() if sort_order == "desc" else e.asc() for e in exprs]
+        stmt = (
+            stmt.order_by(*ordered, ClientProfile.created_at)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -161,20 +238,21 @@ class ClientProfilesRepository:
                 out.append((expat_id, case, journey_name))
         return out
 
-    async def email_taken(self, agency_id: uuid.UUID, email: str) -> bool:
-        """Dédup 409 (F4) : l'email existe-t-il déjà dans l'annuaire de
-        CETTE agence — sur une fiche non liée (colonne propre) ou via le
-        compte d'une fiche liée ? Une requête, insensible à la casse."""
+    async def profile_id_for_email(self, agency_id: uuid.UUID, email: str) -> uuid.UUID | None:
+        """Dédup 409 AVEC RÉFÉRENCE (V1a) : l'id de la fiche de CETTE
+        agence qui porte déjà cet email — colonne propre (non liée) ou
+        compte (liée). Une requête, insensible à la casse."""
         stmt = (
-            select(func.count())
+            select(ClientProfile.id)
             .select_from(ClientProfile)
             .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
             .where(
                 ClientProfile.agency_id == agency_id,
                 func.lower(func.coalesce(ExpatUser.email, ClientProfile.email)) == email.lower(),
             )
+            .limit(1)
         )
-        return int((await self.db.execute(stmt)).scalar_one()) > 0
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_unlinked_by_email(self, agency_id: uuid.UUID, email: str) -> ClientProfile | None:
         """L'adoption de la liaison différée (F4) : la fiche non liée de

@@ -47,6 +47,10 @@ class CasePerson(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # FAMILY: required local name. PRINCIPAL: NULL (read from expat_user).
     full_name: Mapped[str | None] = mapped_column(String(200))
     relationship: Mapped[str | None] = mapped_column(String(50))
+    # V2a (solde CRM) : le rôle CANONIQUE énuméré (spouse/child/parent/
+    # sibling/manager/partner/contact/beneficiary/other) — `relationship`
+    # reste le libellé libre. NULL sur le principal.
+    relationship_kind: Mapped[str | None] = mapped_column(String(20))
 
     # --- civil status (all nullable, case-scoped) ---------------------------------
     passport_number: Mapped[str | None] = mapped_column(String(50))

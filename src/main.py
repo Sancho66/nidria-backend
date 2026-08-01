@@ -20,6 +20,7 @@ from src.cases.cases_router import router as cases_router
 from src.client_profiles.client_profiles_router import router as client_profiles_router
 from src.comments.comments_router import agent_router as comments_agent_router
 from src.comments.comments_router import expat_router as comments_expat_router
+from src.company_profiles.company_profiles_router import router as company_profiles_router
 from src.consents.consents_router import router as consents_router
 from src.consents.consents_seed import seed_consent_documents
 from src.core.config import get_settings
@@ -200,6 +201,7 @@ app.include_router(agencies_public_router)
 app.include_router(views_router)
 app.include_router(cases_router)
 app.include_router(client_profiles_router)
+app.include_router(company_profiles_router)
 app.include_router(custom_fields_router)
 app.include_router(dashboard_router)
 app.include_router(documents_agent_router)

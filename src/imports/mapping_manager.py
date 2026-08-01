@@ -55,11 +55,16 @@ class MappingManager:
 
     async def upsert(self, agent: Agent, payload: MappingUpsertRequest) -> MappingResponse:
         # Parcours must be agency-owned (same scoping as assignment/import).
-        template = await self.import_repo.get_agency_template(
-            agent.agency_id, payload.journey_template_id
-        )
-        if template is None:
-            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
+        # V4b : journey NULL = config d'AGENCE (import-fiches) — pas de
+        # garde parcours dans ce cas.
+        if payload.journey_template_id is not None:
+            template = await self.import_repo.get_agency_template(
+                agent.agency_id, payload.journey_template_id
+            )
+            if template is None:
+                raise NotFoundError(
+                    "Journey template not found.", code="journey.template_not_found"
+                )
         # CRM identity: either the "custom" sentinel (Autre / CRM générique,
         # which needs a free label) OR a known referential slug. Custom skips
         # the referential check — its CSV headers come from the uploaded file.
@@ -78,11 +83,28 @@ class MappingManager:
             )
         else:
             custom_crm_name = None  # referenced CRM carries no free label
-        # Targets must belong to this parcours (reused import check, 422 if not).
-        declared = await self.import_repo.declared_fields(template.id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         defs_by_key = {d.key: d for d in definitions}
-        validate_mapping_targets(payload.mapping, declared, defs_by_key)
+        if payload.journey_template_id is not None:
+            # Targets must belong to this parcours (reused import check, 422).
+            declared = await self.import_repo.declared_fields(payload.journey_template_id)
+            validate_mapping_targets(payload.mapping, declared, defs_by_key)
+        else:
+            # V4b — config d'AGENCE : les cibles sont le RÉFÉRENTIEL person
+            # (identité + civils + custom scope='person'), le vocabulaire de
+            # l'import-fiches.
+            from src.client_profiles.backfill import CIVIL_COLUMNS
+            from src.imports.profile_import_manager import IDENTITY_TARGETS
+
+            person_keys = {d.key for d in definitions if d.scope == "person"}
+            valid = set(IDENTITY_TARGETS) | set(CIVIL_COLUMNS) | person_keys
+            bad = sorted(set(payload.mapping.values()) - valid)
+            if bad:
+                raise ValidationError(
+                    f"Unknown person-referential targets: {', '.join(bad)}.",
+                    code="import.unknown_targets",
+                    params={"targets": bad},
+                )
 
         if payload.id is not None:
             # EDIT: update THIS config by id (agency-scoped).

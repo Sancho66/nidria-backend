@@ -5699,10 +5699,92 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter on the DERIVED client status (annuaire F3.2).",
+              "description": "Filter on the client status (override first, else derived).",
               "title": "Status"
             },
-            "description": "Filter on the DERIVED client status (annuaire F3.2)."
+            "description": "Filter on the client status (override first, else derived)."
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ANY-of tag filter (V3).",
+              "title": "Tags"
+            },
+            "description": "ANY-of tag filter (V3)."
+          },
+          {
+            "name": "client_space_activated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Space Activated"
+            }
+          },
+          {
+            "name": "has_active_case",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Active Case"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "last_activity",
+                "created_at"
+              ],
+              "type": "string",
+              "default": "name",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Order"
+            }
           },
           {
             "name": "page",
@@ -6492,6 +6574,342 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/company-profiles": {
+      "get": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "List Company Profiles",
+        "operationId": "list_company_profiles_company_profiles_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Create Company Profile",
+        "description": "Création d'une fiche société — dédup (agence, dénomination) en\nSUGGESTION : 409 souple avec référence, `allow_duplicate` passe outre.",
+        "operationId": "create_company_profile_company_profiles_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyProfileCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/company-profiles/{company_id}": {
+      "get": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Get Company Profile",
+        "operationId": "get_company_profile_company_profiles__company_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Update Company Profile",
+        "operationId": "update_company_profile_company_profiles__company_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/company-profiles/{company_id}/roles": {
+      "post": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Add Company Role",
+        "description": "La table de rôles personne↔société — rôles canoniques + libellé\nlibre, même vocabulaire que relationship_kind.",
+        "operationId": "add_company_role_company_profiles__company_id__roles_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyRoleCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/company-profiles/{company_id}/roles/{role_id}": {
+      "delete": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Remove Company Role",
+        "operationId": "remove_company_role_company_profiles__company_id__roles__role_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -10824,6 +11242,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImportReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/imports/client-profiles": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Import Client Profiles",
+        "description": "V4a — l'import repointé FICHES : colonnes→champs person, dédup\nemail (lier, pas dupliquer), SANS parcours (étape séparée optionnelle\n— le wizard dossiers existant la garde). Aucun mail : une fiche\nn'invite personne.",
+        "operationId": "import_client_profiles_imports_client_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileImportReport"
                 }
               }
             }
@@ -18967,6 +19432,18 @@
             ],
             "title": "Journey Template Id"
           },
+          "company_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Profile Id"
+          },
           "origin_country": {
             "anyOf": [
               {
@@ -19424,6 +19901,18 @@
             ],
             "title": "Journey Template Id"
           },
+          "company_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Profile Id"
+          },
           "origin_country": {
             "anyOf": [
               {
@@ -19786,6 +20275,18 @@
             ],
             "title": "Journey Template Id"
           },
+          "company_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Profile Id"
+          },
           "origin_country": {
             "anyOf": [
               {
@@ -20111,6 +20612,18 @@
               }
             ],
             "title": "Owner Agent Id"
+          },
+          "company_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Profile Id"
           },
           "billed_amount": {
             "anyOf": [
@@ -20504,6 +21017,17 @@
             "type": "string",
             "title": "Derived Status"
           },
+          "status_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Override"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -20776,6 +21300,17 @@
             "type": "string",
             "title": "Derived Status"
           },
+          "status_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Override"
+          },
           "completeness": {
             "$ref": "#/components/schemas/ProfileCompletenessResponse"
           },
@@ -20972,6 +21507,21 @@
               }
             ],
             "title": "Custom Fields"
+          },
+          "status_override": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "prospect",
+                  "client"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Override"
           }
         },
         "additionalProperties": false,
@@ -21107,6 +21657,401 @@
           "body"
         ],
         "title": "CommentUpdateRequest"
+      },
+      "CompanyCaseSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "reference",
+          "created_at"
+        ],
+        "title": "CompanyCaseSummaryResponse"
+      },
+      "CompanyProfileCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "custom_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Fields"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "allow_duplicate": {
+            "type": "boolean",
+            "title": "Allow Duplicate",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CompanyProfileCreateRequest",
+        "description": "Création d'une fiche société. La dédup (agence, dénomination) est\nune SUGGESTION : 409 souple avec la référence de l'homonyme —\n`allow_duplicate=true` passe outre (deux sociétés homonymes existent\ndans la vraie vie)."
+      },
+      "CompanyProfileListItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "roles_count": {
+            "type": "integer",
+            "title": "Roles Count"
+          },
+          "cases_count": {
+            "type": "integer",
+            "title": "Cases Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "tags",
+          "roles_count",
+          "cases_count",
+          "created_at"
+        ],
+        "title": "CompanyProfileListItemResponse"
+      },
+      "CompanyProfileListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyProfileListItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "CompanyProfileListResponse"
+      },
+      "CompanyProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileFieldSectionResponse"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyRoleResponse"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyCaseSummaryResponse"
+            },
+            "type": "array",
+            "title": "Cases"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "custom_fields",
+          "source",
+          "tags",
+          "sections",
+          "roles",
+          "cases",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CompanyProfileResponse"
+      },
+      "CompanyProfileUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "custom_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Fields"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CompanyProfileUpdateRequest"
+      },
+      "CompanyRoleCreateRequest": {
+        "properties": {
+          "client_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Profile Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "manager",
+              "partner",
+              "contact",
+              "beneficiary",
+              "other"
+            ],
+            "title": "Role"
+          },
+          "role_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "client_profile_id",
+          "role"
+        ],
+        "title": "CompanyRoleCreateRequest",
+        "description": "Lier une PERSONNE (fiche client) à la société avec un rôle\ncanonique — même vocabulaire que case_person.relationship_kind."
+      },
+      "CompanyRoleResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "client_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Profile Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "role_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Label"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "client_profile_id",
+          "role",
+          "role_label",
+          "first_name",
+          "last_name",
+          "email"
+        ],
+        "title": "CompanyRoleResponse"
       },
       "CompleteTaskRequest": {
         "properties": {
@@ -25942,8 +26887,15 @@
             "title": "Id"
           },
           "journey_template_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Journey Template Id"
           },
           "crm_slug": {
@@ -25999,8 +26951,15 @@
             "title": "Id"
           },
           "journey_template_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Journey Template Id"
           },
           "crm_slug": {
@@ -26037,7 +26996,6 @@
         },
         "type": "object",
         "required": [
-          "journey_template_id",
           "crm_slug",
           "name",
           "mapping"
@@ -26721,6 +27679,28 @@
             "minLength": 1,
             "title": "Relationship"
           },
+          "relationship_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "spouse",
+                  "child",
+                  "parent",
+                  "sibling",
+                  "manager",
+                  "partner",
+                  "contact",
+                  "beneficiary",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Kind"
+          },
           "email": {
             "anyOf": [
               {
@@ -26898,6 +27878,17 @@
               }
             ],
             "title": "Relationship"
+          },
+          "relationship_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Kind"
           },
           "full_name": {
             "anyOf": [
@@ -27216,6 +28207,28 @@
               }
             ],
             "title": "Relationship"
+          },
+          "relationship_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "spouse",
+                  "child",
+                  "parent",
+                  "sibling",
+                  "manager",
+                  "partner",
+                  "contact",
+                  "beneficiary",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Kind"
           },
           "email": {
             "anyOf": [
@@ -28689,6 +29702,141 @@
         ],
         "title": "ProfileFieldSectionResponse",
         "description": "Une catégorie du RAIL DU PICKER sur la fiche (correctif final rail) :\nTOUTES les catégories du catalogue sont servies — même source, même\nordre, même clé stable (`key`) — y compris à zéro champ person (le\nfront décide de leur rendu). Le panier « Sans catégorie » (key/name\nnull) ferme la liste s'il reste des clés hors catalogue."
+      },
+      "ProfileImportReport": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileImportRowOutcome"
+            },
+            "type": "array",
+            "title": "Created"
+          },
+          "linked": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileImportRowOutcome"
+            },
+            "type": "array",
+            "title": "Linked"
+          },
+          "ignored": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileImportRowOutcome"
+            },
+            "type": "array",
+            "title": "Ignored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rows",
+          "created",
+          "linked",
+          "ignored"
+        ],
+        "title": "ProfileImportReport"
+      },
+      "ProfileImportRequest": {
+        "properties": {
+          "csv_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv Text"
+          },
+          "file_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File B64"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Mapping"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mapping"
+        ],
+        "title": "ProfileImportRequest"
+      },
+      "ProfileImportRowOutcome": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row"
+        ],
+        "title": "ProfileImportRowOutcome"
       },
       "ProfileMergeRequest": {
         "properties": {

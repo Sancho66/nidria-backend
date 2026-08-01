@@ -26,6 +26,11 @@ from src.imports.imports_manager import ImportsManager
 from src.imports.imports_schema import CrmDetailResponse, CrmListResponse
 from src.imports.mapping_manager import MappingManager
 from src.imports.mapping_schema import MappingListResponse, MappingResponse, MappingUpsertRequest
+from src.imports.profile_import_manager import (
+    ProfileImportManager,
+    ProfileImportReport,
+    ProfileImportRequest,
+)
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -33,6 +38,7 @@ BINDINGS = [
     RouteBinding("GET", "/imports/crms", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/crms/{slug}", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/cases", Audience.AGENT, Permission.IMPORT_MANAGE),
+    RouteBinding("POST", "/imports/client-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/cases/preview", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/mappings", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/mappings/resolve", Audience.AGENT, Permission.IMPORT_MANAGE),
@@ -70,6 +76,17 @@ async def import_cases(
     for mail in pending:
         background.add_task(send_email, mail.to, mail.subject, mail.text, mail.html)
     return report
+
+
+@router.post("/client-profiles", response_model=ProfileImportReport)
+async def import_client_profiles(
+    body: ProfileImportRequest, agent: AgentDep, db: DbDep
+) -> ProfileImportReport:
+    """V4a — l'import repointé FICHES : colonnes→champs person, dédup
+    email (lier, pas dupliquer), SANS parcours (étape séparée optionnelle
+    — le wizard dossiers existant la garde). Aucun mail : une fiche
+    n'invite personne."""
+    return await ProfileImportManager(db).run_import(agent, body)
 
 
 @router.post("/cases/preview", response_model=ImportPreview)

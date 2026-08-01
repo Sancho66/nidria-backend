@@ -292,6 +292,7 @@ class CasesManager:
                 kind=CasePersonKind.FAMILY.value,
                 full_name=member.full_name,
                 relationship=member.relationship,
+                relationship_kind=member.relationship_kind,
                 custom_fields=dict(member.custom_fields or {}),
             )
             self._copy_civil_fields(member, family)
@@ -661,6 +662,32 @@ class CasesManager:
                 )
                 case.status = new_status
 
+        if "company_profile_id" in data:
+            new_company = data.pop("company_profile_id")
+            if new_company is not None:
+                from src.company_profiles.company_profiles_repository import (
+                    CompanyProfilesRepository,
+                )
+
+                company = await CompanyProfilesRepository(self.db).get_for_agency(
+                    agent.agency_id, new_company
+                )
+                if company is None:
+                    raise NotFoundError(
+                        "Company profile not found.", code="company_profile.not_found"
+                    )
+            if new_company != case.company_profile_id:
+                self._log(
+                    case.id,
+                    agent,
+                    "case.company_changed",
+                    {
+                        "old": str(case.company_profile_id) if case.company_profile_id else None,
+                        "new": str(new_company) if new_company else None,
+                    },
+                )
+                case.company_profile_id = new_company
+
         if "owner_agent_id" in data:
             new_owner = data.pop("owner_agent_id")
             if new_owner is not None:
@@ -846,6 +873,7 @@ class CasesManager:
             id=person.id,
             kind=person.kind,
             relationship=person.relationship,
+            relationship_kind=person.relationship_kind,
             full_name=person.full_name,
             expat_user_id=person.expat_user_id,
             first_name=expat.first_name if expat else None,
@@ -1010,6 +1038,7 @@ class CasesManager:
             kind=CasePersonKind.FAMILY.value,
             full_name=payload.full_name,
             relationship=payload.relationship,
+            relationship_kind=payload.relationship_kind,
             expat_user_id=expat.id if expat is not None else None,
             custom_fields=custom,
         )
@@ -1255,6 +1284,8 @@ class CasesManager:
                 person.full_name = provided["full_name"]
             if "relationship" in provided and provided["relationship"] is not None:
                 person.relationship = provided["relationship"]
+            if "relationship_kind" in provided:
+                person.relationship_kind = provided["relationship_kind"]
         self._apply_civil_fields(person, payload)
         # custom_fields: partial MERGE on the keys PRESENT in the payload
         # (point 1 — never a retroactive required block on absent keys).

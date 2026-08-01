@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,6 +54,7 @@ class ClientProfileListItemResponse(BaseModel):
     # Statut client DÉRIVÉ (Phase 0 D9 : jamais deux vérités) — 'prospect'
     # si aucun dossier au-delà de prospect, sinon le plus avancé.
     derived_status: str
+    status_override: str | None = None
     tags: list[str] = []
     # Dernière activité : max(activity_log) des dossiers vivants de la
     # fiche ; à défaut, updated_at de la fiche (verdict annuaire F3.2).
@@ -98,6 +99,7 @@ class ClientProfileResponse(BaseModel):
     tags: list[str]
     cases: list[ProfileCaseSummaryResponse]
     derived_status: str
+    status_override: str | None = None
     completeness: ProfileCompletenessResponse
     # Lot sections : les références person groupées par leurs sections
     # réelles — même univers que la complétude, fini le fourre-tout.
@@ -137,6 +139,8 @@ class ClientProfileUpdateRequest(_CivilStatusFields):
     model_config = ConfigDict(extra="forbid")
 
     custom_fields: dict[str, Any] | None = None
+    # V1b : forcer le statut (null explicite = retour à la dérivation).
+    status_override: Literal["prospect", "client"] | None = None
 
 
 class ProfileActivityEntryResponse(BaseModel):

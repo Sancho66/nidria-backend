@@ -49,6 +49,10 @@ class ClientProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_name: Mapped[str | None] = mapped_column(String(100))
     email: Mapped[str | None] = mapped_column(String(255), index=True)
 
+    # V1b (solde CRM) : statut FORCÉ par l'agence — NULL = la dérivation
+    # (une seule vérité par défaut) ; 'prospect'|'client' = l'agence prime.
+    status_override: Mapped[str | None] = mapped_column(String(10))
+
     # --- miroir civil de case_person (mêmes types, mêmes longueurs) -------
     passport_number: Mapped[str | None] = mapped_column(String(50))
     date_of_birth: Mapped[date | None] = mapped_column(Date)

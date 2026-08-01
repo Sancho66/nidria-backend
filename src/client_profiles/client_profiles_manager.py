@@ -50,10 +50,12 @@ def _is_empty(value: Any) -> bool:
     return value in (None, "", [], {})
 
 
-def derived_client_status(cases: list[ClientCase]) -> str:
+def derived_client_status(cases: list[ClientCase], override: str | None = None) -> str:
     """Phase 0 D9 — le statut client est DÉRIVÉ, jamais stocké (une seule
     vérité par construction) : 'prospect' tant qu'aucun dossier n'est allé
     au-delà de prospect, 'client' sinon."""
+    if override:  # V1b : l'override de l'agence PRIME ; NULL = dérivation
+        return override
     beyond = any(c.status != CaseStatus.PROSPECT.value for c in cases)
     return "client" if beyond else "prospect"
 
@@ -199,11 +201,25 @@ class ClientProfilesManager:
         *,
         search: str | None,
         status: str | None = None,
+        tags: list[str] | None = None,
+        client_space_activated: bool | None = None,
+        has_active_case: bool | None = None,
+        sort_by: str = "name",
+        sort_order: str = "asc",
         page: int,
         page_size: int,
     ) -> ClientProfileListResponse:
         profiles, total = await self.repo.list_page(
-            agent.agency_id, search=search, status=status, page=page, page_size=page_size
+            agent.agency_id,
+            search=search,
+            status=status,
+            tags=tags,
+            client_space_activated=client_space_activated,
+            has_active_case=has_active_case,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            page=page,
+            page_size=page_size,
         )
         cases = await self.repo.cases_for_profiles(
             agent.agency_id, [p.expat_user_id for p in profiles if p.expat_user_id]
@@ -229,7 +245,8 @@ class ClientProfilesManager:
                     active_cases_count=sum(
                         1 for c in profile_cases if c.status != CaseStatus.CLOSED.value
                     ),
-                    derived_status=derived_client_status(profile_cases),
+                    derived_status=derived_client_status(profile_cases, profile.status_override),
+                    status_override=profile.status_override,
                     tags=list(profile.tags or []),
                     last_activity_at=max(case_activity) if case_activity else profile.updated_at,
                     client_space_activated=(account.activated_at is not None if account else False),
@@ -300,7 +317,10 @@ class ClientProfilesManager:
                 )
                 for _expat, case, journey_name in cases
             ],
-            derived_status=derived_client_status([c for _e, c, _n in cases]),
+            derived_status=derived_client_status(
+                [c for _e, c, _n in cases], profile.status_override
+            ),
+            status_override=profile.status_override,
             completeness=completeness(profile, person_defs),
             sections=resolve_field_sections(person_defs, agency_lang),
             created_at=profile.created_at,
@@ -318,11 +338,13 @@ class ClientProfilesManager:
         non) → 409 nommé."""
         from src.client_profiles.backfill import CIVIL_COLUMNS
 
-        if await self.repo.email_taken(agent.agency_id, payload.email):
+        existing_id = await self.repo.profile_id_for_email(agent.agency_id, payload.email)
+        if existing_id is not None:
+            # 409 AVEC RÉFÉRENCE (V1a) : le front pointe la fiche existante.
             raise ConflictError(
                 "A client profile with this email already exists in this agency.",
                 code="profile.email_taken",
-                params={"email": payload.email},
+                params={"email": payload.email, "profile_id": str(existing_id)},
             )
         profile = ClientProfile(
             agency_id=agent.agency_id,
@@ -394,6 +416,9 @@ class ClientProfilesManager:
                 profile.preferred_channels = seen
                 continue
             setattr(profile, field, value.value if hasattr(value, "value") else value)
+        if "status_override" in provided:
+            profile.status_override = provided["status_override"]
+            touched.append("status_override")
         if "custom_fields" in provided and payload.custom_fields is not None:
             all_defs = await CustomFieldsRepository(self.db).list_for_agency(agent.agency_id)
             active = [d for d in all_defs if d.archived_at is None]

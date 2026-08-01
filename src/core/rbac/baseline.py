@@ -154,6 +154,9 @@ def collect_bindings() -> list[RouteBinding]:
         BINDINGS as client_profiles_bindings,
     )
     from src.comments.comments_router import BINDINGS as comments_bindings
+    from src.company_profiles.company_profiles_router import (
+        BINDINGS as company_profiles_bindings,
+    )
     from src.consents.consents_router import BINDINGS as consents_bindings
     from src.costs.costs_router import BINDINGS as costs_bindings
     from src.custom_fields.custom_fields_router import BINDINGS as custom_fields_bindings
@@ -187,6 +190,7 @@ def collect_bindings() -> list[RouteBinding]:
         *journeys_bindings,
         *cases_bindings,
         *client_profiles_bindings,
+        *company_profiles_bindings,
         *custom_fields_bindings,
         *imports_bindings,
         *views_bindings,

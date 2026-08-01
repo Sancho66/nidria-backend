@@ -10,7 +10,9 @@ class MappingUpsertRequest(BaseModel):
     # one (a same-name create conflicts → 409). `name` is part of the natural
     # key now, so it is required.
     id: uuid.UUID | None = None
-    journey_template_id: uuid.UUID
+    # V4b : NULL = config au niveau AGENCE (cibles = le référentiel
+    # person, consommée par l'import-fiches).
+    journey_template_id: uuid.UUID | None = None
     crm_slug: str = Field(min_length=1, max_length=100)
     # Required when crm_slug == "custom" (Autre / CRM générique): the free CRM
     # label. Ignored (nulled) for a referenced CRM.
@@ -23,7 +25,7 @@ class MappingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    journey_template_id: uuid.UUID
+    journey_template_id: uuid.UUID | None
     crm_slug: str
     custom_crm_name: str | None
     name: str

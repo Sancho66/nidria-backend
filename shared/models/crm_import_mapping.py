@@ -25,20 +25,24 @@ class CrmImportMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "crm_import_mapping"
     __table_args__ = (
+        # V4b : journey NULL = config d'AGENCE (mapping vers le référentiel
+        # person, pour l'import-fiches). NULLS NOT DISTINCT (PG15+) pour
+        # que deux configs d'agence homonymes restent un 409.
         UniqueConstraint(
             "agency_id",
             "journey_template_id",
             "crm_slug",
             "name",
             name="uq_crm_import_mapping",
+            postgresql_nulls_not_distinct=True,
         ),
     )
 
     agency_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    journey_template_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
+    journey_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=True
     )
     crm_slug: Mapped[str] = mapped_column(String(100), nullable=False)
     # Free CRM label for an "Autre / CRM générique" import (crm_slug="custom"):

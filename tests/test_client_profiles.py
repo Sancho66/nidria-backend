@@ -645,6 +645,7 @@ async def test_direct_profile_creation_dedup_and_deferred_linkage(
     )
     assert r.status_code == 409
     assert r.json()["code"] == "profile.email_taken"
+    assert r.json()["params"]["profile_id"] == profile_id  # la RÉFÉRENCE (V1a)
     # Une AUTRE agence peut avoir le même email (annuaires distincts).
     other = await make_agent(role=system_roles["admin"])
     r = await client.post(
@@ -661,6 +662,12 @@ async def test_direct_profile_creation_dedup_and_deferred_linkage(
     detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
     assert detail["expat_user_id"] is not None  # ADOPTÉE, pas une 2e fiche
     assert len(detail["cases"]) == 1
+    # L'ESPACE VIVANT (V1a) : le compte est né avec la démarche et son
+    # invitation d'activation est partie — l'espace client existe.
+    case_born = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    principal = case_born["persons"][0]
+    assert principal["expat_user_id"] == detail["expat_user_id"]
+    assert principal["client_space_state"] is not None  # invitation vivante
     # Le prefill F2.1 a posé le civil de la fiche sur le dossier.
     case_detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
     assert case_detail["persons"][0]["nationality"] == "AR"
@@ -981,3 +988,190 @@ async def test_every_person_field_has_exactly_one_profile_section(
     completeness = detail["completeness"]
     assert sorted(served) == sorted(completeness["filled"] + completeness["missing"])
     assert len(served) == len(set(served))
+
+
+# --- MÉGA-LOT SOLDE CRM ---------------------------------------------------------------
+
+
+async def test_status_override_primes_over_derivation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """V1b — l'override de l'agence PRIME sur la dérivation (liste,
+    détail, FILTRE), null explicite rend la main, le geste est tracé."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Over", "last_name": "Ride", "email": "override@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    listing = (await client.get("/client-profiles?search=override@", headers=headers)).json()
+    item = listing["items"][0]
+    assert item["derived_status"] == "prospect"  # dossier né prospect
+    profile_id = item["id"]
+
+    r = await client.patch(
+        f"/client-profiles/{profile_id}", headers=headers, json={"status_override": "client"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["derived_status"] == "client"  # l'override prime
+    assert r.json()["status_override"] == "client"
+    # Le FILTRE suit l'override, pas la dérivation.
+    filtered = (
+        await client.get("/client-profiles?search=override@&status=client", headers=headers)
+    ).json()
+    assert filtered["total"] == 1
+    filtered = (
+        await client.get("/client-profiles?search=override@&status=prospect", headers=headers)
+    ).json()
+    assert filtered["total"] == 0
+    # Tracé.
+    n_logs = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM activity_log WHERE action_type = 'profile.updated' "
+                "AND details->'fields' ? 'status_override'"
+            )
+        )
+    ).scalar_one()
+    assert n_logs >= 1
+    # Null explicite → retour à la dérivation.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}", headers=headers, json={"status_override": None}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["derived_status"] == "prospect"
+    assert r.json()["status_override"] is None
+
+
+async def test_relationship_kind_enumerated(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """V2a — le rôle canonique énuméré à côté du libellé libre, posé à la
+    création, éditable au PATCH, hors catalogue → 422."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Rel", "last_name": "Kind", "email": "relkind@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    case_id = r.json()["id"]
+    r = await client.post(
+        f"/cases/{case_id}/persons",
+        headers=headers,
+        json={"full_name": "Marie K", "relationship": "Épouse", "relationship_kind": "spouse"},
+    )
+    assert r.status_code == 201, r.text
+    person = r.json()
+    assert person["relationship"] == "Épouse"  # le libellé LIBRE reste
+    assert person["relationship_kind"] == "spouse"
+    r = await client.patch(
+        f"/cases/{case_id}/persons/{person['id']}",
+        headers=headers,
+        json={"relationship_kind": "partner"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["relationship_kind"] == "partner"
+    r = await client.post(
+        f"/cases/{case_id}/persons",
+        headers=headers,
+        json={"full_name": "X", "relationship": "x", "relationship_kind": "belle_mere"},
+    )
+    assert r.status_code == 422
+
+
+async def test_directory_filters_and_sorts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """V3 — les filtres (tags, espace activé, has_active_case) et les
+    tris SQL (pagination juste), au MÊME coût constant (témoin)."""
+    from sqlalchemy import event
+
+    from src.client_profiles.client_profiles_manager import ClientProfilesManager
+
+    headers = agent_headers(admin)
+    for i, email_addr in enumerate(("f1@ex.com", "f2@ex.com")):
+        r = await client.post(
+            "/cases",
+            headers=headers,
+            json={"first_name": f"Filt{i}", "last_name": "Annuaire", "email": email_addr},
+        )
+        assert r.status_code == 201, r.text
+        if i == 0:
+            # f1 : tagué + dossier clos (pas de dossier actif).
+            listing = (await client.get("/client-profiles?search=f1@", headers=headers)).json()
+            await client.patch(
+                f"/client-profiles/{listing['items'][0]['id']}",
+                headers=headers,
+                json={},
+            )
+            await db_session.execute(
+                text("UPDATE client_profile SET tags = '[\"vip\"]' WHERE id = :i"),
+                {"i": listing["items"][0]["id"]},
+            )
+            await db_session.execute(
+                text("UPDATE client_case SET status = 'closed' WHERE id = :c"),
+                {"c": r.json()["id"]},
+            )
+            await db_session.commit()
+    tagged = (await client.get("/client-profiles?tags=vip&search=@ex.com", headers=headers)).json()
+    assert [i["email"] for i in tagged["items"]] == ["f1@ex.com"]
+    actives = (
+        await client.get("/client-profiles?has_active_case=true&search=@ex.com", headers=headers)
+    ).json()
+    assert [i["email"] for i in actives["items"]] == ["f2@ex.com"]
+    inactives = (
+        await client.get("/client-profiles?has_active_case=false&search=@ex.com", headers=headers)
+    ).json()
+    assert [i["email"] for i in inactives["items"]] == ["f1@ex.com"]
+    not_activated = (
+        await client.get(
+            "/client-profiles?client_space_activated=false&search=@ex.com", headers=headers
+        )
+    ).json()
+    assert not_activated["total"] == 2  # personne n'a activé
+    by_created = (
+        await client.get(
+            "/client-profiles?sort_by=created_at&sort_order=desc&search=@ex.com", headers=headers
+        )
+    ).json()
+    assert [i["email"] for i in by_created["items"]] == ["f2@ex.com", "f1@ex.com"]
+    # Témoin : filtres + tri dernière activité, coût toujours constant.
+    engine = db_session.get_bind()
+    counter = {"n": 0}
+
+    def _count(*_args: object, **_kwargs: object) -> None:
+        counter["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _count)
+    try:
+        await ClientProfilesManager(db_session).list_profiles(
+            admin,
+            search=None,
+            status=None,
+            tags=["vip"],
+            has_active_case=True,
+            sort_by="last_activity",
+            sort_order="desc",
+            page=1,
+            page_size=20,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    assert counter["n"] <= 6, f"directory ran {counter['n']} queries"

@@ -28,6 +28,12 @@ class ClientCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     agency_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    # V2c (solde CRM) : le dossier CONCERNE une société (nullable — la
+    # plupart des dossiers restent purement personne, comme client_profile_id
+    # sur case_person).
+    company_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("company_profile.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     principal_expat_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("expat_user.id", ondelete="RESTRICT"), index=True, nullable=False
     )

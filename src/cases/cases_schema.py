@@ -22,6 +22,22 @@ from src.progress.progress_schema import StepProgressResponse
 _COUNTRY_PATTERN = r"^[A-Z]{2}$"
 
 
+# V2a (solde CRM) : les rôles canoniques d'une personne au dossier — la
+# famille ET les rôles société (gérant, associé, contact, bénéficiaire),
+# « other » couvre le libre (le libellé vit dans `relationship`).
+RelationshipKind = Literal[
+    "spouse",
+    "child",
+    "parent",
+    "sibling",
+    "manager",
+    "partner",
+    "contact",
+    "beneficiary",
+    "other",
+]
+
+
 class _CivilStatusFields(BaseModel):
     """Case-scoped civil/professional status — all optional, never on
     expat_user."""
@@ -115,6 +131,9 @@ class CaseUpdateRequest(BaseModel):
     reference: str | None = Field(default=None, max_length=100)
     tags: list[str] | None = None
     owner_agent_id: uuid.UUID | None = None
+    # V2c (solde CRM) : le dossier CONCERNE une société — fiche société de
+    # MON agence (garde en manager), null explicite = délier.
+    company_profile_id: uuid.UUID | None = None
     # Billed price (cost.manage enforced in the manager). exclude_unset
     # semantics: billed_amount=null CLEARS the price (both fields);
     # billed_currency alone re-denominates an existing price.
@@ -130,6 +149,7 @@ class CaseResponse(BaseModel):
     principal_expat_user_id: uuid.UUID
     owner_agent_id: uuid.UUID | None
     journey_template_id: uuid.UUID | None
+    company_profile_id: uuid.UUID | None = None
     # Addresses, flat. origin_country/dest_country unchanged (filters
     # /sorts/views read them); street/city/postal_code are the additions.
     origin_country: str | None
@@ -200,6 +220,7 @@ class PersonResponse(_CivilStatusFields):
     id: uuid.UUID
     kind: str
     relationship: str | None
+    relationship_kind: str | None = None
     full_name: str | None
     # PATCH email, etat (b) : l'invitation a ete renvoyee a la nouvelle
     # adresse (l'ancienne est annulee, son token mort) — le front informe.
@@ -242,6 +263,7 @@ class PersonCreateRequest(_CivilStatusFields):
 
     full_name: str = Field(min_length=1, max_length=200)
     relationship: str = Field(min_length=1, max_length=50)
+    relationship_kind: RelationshipKind | None = None
     email: NormalizedEmailStr | None = None
     custom_fields: dict[str, Any] = Field(default_factory=dict)
 
@@ -258,6 +280,7 @@ class PersonUpdateRequest(_CivilStatusFields):
 
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
     relationship: str | None = Field(default=None, min_length=1, max_length=50)
+    relationship_kind: RelationshipKind | None = None
     email: NormalizedEmailStr | Literal[""] | None = None
     custom_fields: dict[str, Any] | None = None
 
