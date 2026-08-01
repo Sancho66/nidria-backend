@@ -31,6 +31,7 @@ BINDINGS = [
     RouteBinding("GET", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_VIEW),
     RouteBinding("POST", "/company-profiles", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding("PATCH", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_EDIT),
+    RouteBinding("DELETE", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding(
         "POST", "/company-profiles/{company_id}/roles", Audience.AGENT, Permission.CASE_EDIT
     ),
@@ -77,6 +78,13 @@ async def update_company_profile(
     company_id: uuid.UUID, payload: CompanyProfileUpdateRequest, agent: AgentDep, db: DbDep
 ) -> CompanyProfileResponse:
     return await CompanyProfilesManager(db).update(agent, company_id, payload)
+
+
+@router.delete("/company-profiles/{company_id}", status_code=204)
+async def delete_company_profile(company_id: uuid.UUID, agent: AgentDep, db: DbDep) -> None:
+    """Suppression unitaire — 409 company_profile.has_cases si un dossier
+    la référence ; les rôles se dissolvent (cascade)."""
+    await CompanyProfilesManager(db).delete_company(agent, company_id)
 
 
 @router.post(

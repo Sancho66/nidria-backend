@@ -262,6 +262,34 @@ class ClientProfilesRepository:
         )
         return [tuple(r) for r in rows]
 
+    async def protecting_case_count(self, profile: ClientProfile) -> int:
+        """Suppression — le compte des dossiers qui PROTÈGENT la fiche :
+        tout dossier référencé (vivant, clos OU supprimé — l'historique
+        est sacré), par la liaison person OU par le compte principal."""
+        case_ids = set(
+            (
+                await self.db.execute(
+                    select(CasePerson.case_id).where(CasePerson.client_profile_id == profile.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if profile.expat_user_id is not None:
+            case_ids |= set(
+                (
+                    await self.db.execute(
+                        select(ClientCase.id).where(
+                            ClientCase.agency_id == profile.agency_id,
+                            ClientCase.principal_expat_user_id == profile.expat_user_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return len(case_ids)
+
     async def persons_linked_to_profile(self, profile_id: uuid.UUID) -> list[CasePerson]:
         stmt = select(CasePerson).where(CasePerson.client_profile_id == profile_id)
         return list((await self.db.execute(stmt)).scalars().all())

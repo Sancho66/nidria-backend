@@ -70,6 +70,7 @@ BINDINGS = [
         "GET", "/client-profiles/{profile_id}/activity", Audience.AGENT, Permission.CASE_VIEW
     ),
     RouteBinding("PATCH", "/client-profiles/{profile_id}", Audience.AGENT, Permission.CASE_EDIT),
+    RouteBinding("DELETE", "/client-profiles/{profile_id}", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding(
         "POST", "/client-profiles/{profile_id}/merge", Audience.AGENT, Permission.CASE_EDIT
     ),
@@ -163,6 +164,13 @@ async def update_client_profile(
     """Écriture de la fiche (complément annuaire) — miroir d'édition de
     PersonUpdateRequest sur le plan PROFILE, gate `case.edit`."""
     return await ClientProfilesManager(db).update_profile(agent, profile_id, payload)
+
+
+@router.delete("/client-profiles/{profile_id}", status_code=204)
+async def delete_client_profile(profile_id: uuid.UUID, agent: AgentDep, db: DbDep) -> None:
+    """Suppression unitaire — 409 profile.has_cases si un dossier la
+    référence (vivant, clos ou supprimé : l'historique est sacré)."""
+    await ClientProfilesManager(db).delete_profile(agent, profile_id)
 
 
 @router.get("/client-profiles/{profile_id}/notes", response_model=list[CaseNoteResponse])

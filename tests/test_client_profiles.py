@@ -1407,3 +1407,88 @@ async def test_profile_serves_its_companies_reverse_link(
     assert r.status_code == 204
     detail = (await client.get(f"/client-profiles/{person_id}", headers=headers)).json()
     assert [c["name"] for c in detail["companies"]] == ["Beta GmbH"]
+
+
+async def test_delete_profile_rules(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Suppression unitaire — fiche libre : 204 + cascade (notes, rôles) ;
+    fiche avec dossier (même clos) : 409 avec le compte ; fiche liée à un
+    compte sans dossier : 204, le compte global SURVIT intouché."""
+    headers = agent_headers(admin)
+    # 1. Fiche libre avec note + rôle société → 204, tout part en cascade.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "À", "last_name": "Supprimer", "email": "delete-me@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    free_id = r.json()["id"]
+    r = await client.post(
+        f"/client-profiles/{free_id}/notes", headers=headers, json={"body": "note orpheline"}
+    )
+    assert r.status_code == 201, r.text
+    r = await client.post("/company-profiles", headers=headers, json={"name": "CascadeCo"})
+    company_id = r.json()["id"]
+    r = await client.post(
+        f"/company-profiles/{company_id}/roles",
+        headers=headers,
+        json={"client_profile_id": free_id, "role": "contact"},
+    )
+    assert r.status_code == 201, r.text
+    r = await client.delete(f"/client-profiles/{free_id}", headers=headers)
+    assert r.status_code == 204
+    assert (await client.get(f"/client-profiles/{free_id}", headers=headers)).status_code == 404
+    n_notes = (
+        await db_session.execute(text("SELECT count(*) FROM client_profile_note"))
+    ).scalar_one()
+    n_roles = (
+        await db_session.execute(text("SELECT count(*) FROM company_profile_role"))
+    ).scalar_one()
+    assert (n_notes, n_roles) == (0, 0)  # cascade propre
+
+    # 2. Fiche avec dossier (passé CLOS — l'historique est sacré) → 409.
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Avec", "last_name": "Dossier", "email": "has-case@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    await db_session.execute(
+        text("UPDATE client_case SET status = 'closed' WHERE id = :i"), {"i": r.json()["id"]}
+    )
+    await db_session.commit()
+    listing = (await client.get("/client-profiles?search=has-case@", headers=headers)).json()
+    protected_id = listing["items"][0]["id"]
+    r = await client.delete(f"/client-profiles/{protected_id}", headers=headers)
+    assert r.status_code == 409
+    assert r.json()["code"] == "profile.has_cases"
+    assert r.json()["params"]["cases_count"] == 1
+
+    # 3. Fiche LIÉE à un compte, zéro dossier → 204, le compte survit.
+    expat = await make_expat_user(activated=True, email="compte-survit@example.com")
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Compte", "last_name": "Survit", "email": "compte-survit@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    linked_id = r.json()["id"]
+    await db_session.execute(
+        text("UPDATE client_profile SET expat_user_id = :e WHERE id = :i"),
+        {"e": expat.id, "i": linked_id},
+    )
+    await db_session.commit()
+    r = await client.delete(f"/client-profiles/{linked_id}", headers=headers)
+    assert r.status_code == 204
+    n_accounts = (
+        await db_session.execute(
+            text("SELECT count(*) FROM expat_user WHERE email = 'compte-survit@example.com'")
+        )
+    ).scalar_one()
+    assert n_accounts == 1  # le compte global est INTOUCHÉ

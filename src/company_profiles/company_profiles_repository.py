@@ -104,6 +104,17 @@ class CompanyProfilesRepository:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
+    async def protecting_case_count(self, company_id: uuid.UUID) -> int:
+        """Suppression — TOUT dossier référencé protège (supprimés
+        inclus : l'historique est sacré)."""
+        return int(
+            (
+                await self.db.execute(
+                    select(func.count()).where(ClientCase.company_profile_id == company_id)
+                )
+            ).scalar_one()
+        )
+
     async def counts_for_companies(
         self, company_ids: list[uuid.UUID]
     ) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, int]]:

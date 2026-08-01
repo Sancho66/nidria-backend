@@ -156,3 +156,51 @@ async def test_company_roles_and_case_link(
     role_id = detail["roles"][0]["id"]
     r = await client.delete(f"/company-profiles/{company_id}/roles/{role_id}", headers=headers)
     assert r.status_code == 204
+
+
+async def test_delete_company_rules(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Suppression société — des rôles OK (ils se dissolvent), un dossier
+    lié → 409 avec le compte."""
+    headers = agent_headers(admin)
+    r = await client.post("/company-profiles", headers=headers, json={"name": "DeletableCo"})
+    company_id = r.json()["id"]
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Rôle", "last_name": "Dissous", "email": "role-dissous@example.com"},
+    )
+    person_id = r.json()["id"]
+    r = await client.post(
+        f"/company-profiles/{company_id}/roles",
+        headers=headers,
+        json={"client_profile_id": person_id, "role": "manager"},
+    )
+    assert r.status_code == 201, r.text
+    r = await client.delete(f"/company-profiles/{company_id}", headers=headers)
+    assert r.status_code == 204  # les rôles n'ont pas protégé
+    # Un dossier lié protège.
+    r = await client.post("/company-profiles", headers=headers, json={"name": "ProtectedCo"})
+    protected_id = r.json()["id"]
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Doss", "last_name": "Lié", "email": "doss-lie@example.com"},
+    )
+    case_id = r.json()["id"]
+    r = await client.patch(
+        f"/cases/{case_id}", headers=headers, json={"company_profile_id": protected_id}
+    )
+    assert r.status_code == 200, r.text
+    r = await client.delete(f"/company-profiles/{protected_id}", headers=headers)
+    assert r.status_code == 409
+    assert r.json()["code"] == "company_profile.has_cases"
+    assert r.json()["params"]["cases_count"] == 1

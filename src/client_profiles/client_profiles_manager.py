@@ -504,6 +504,27 @@ class ClientProfilesManager:
         await self.db.commit()
         return await self.get_profile(agent, profile_id)
 
+    async def delete_profile(self, agent: Agent, profile_id: uuid.UUID) -> None:
+        """Suppression UNITAIRE (le bulk est une boucle front). LA règle :
+        une fiche avec DOSSIER — vivant, clos ou supprimé, l'historique
+        est sacré — ne se supprime PAS (409 avec le compte). Une fiche
+        libre part avec ses notes, tags, rôles société et valeurs
+        (cascades FK). Le compte espace client, lui, SURVIT intouché
+        (doctrine RGPD — global, pas à l'agence). Trace : l'activity_log
+        est case-scopé, une fiche sans dossier n'y laisse RIEN — la seule
+        trace de la suppression est l'absence (un journal plateforme
+        serait un autre chantier, nommé au rapport)."""
+        profile = await self._get(agent, profile_id)
+        protecting = await self.repo.protecting_case_count(profile)
+        if protecting:
+            raise ConflictError(
+                "This profile is referenced by cases and cannot be deleted.",
+                code="profile.has_cases",
+                params={"cases_count": protecting},
+            )
+        await self.db.delete(profile)
+        await self.db.commit()
+
     # --- notes de fiche (miroir strict de case_note) ----------------------
 
     async def list_notes(self, agent: Agent, profile_id: uuid.UUID) -> list[ClientProfileNote]:

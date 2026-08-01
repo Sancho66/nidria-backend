@@ -177,6 +177,20 @@ class CompanyProfilesManager:
             page_size=page_size,
         )
 
+    async def delete_company(self, agent: Agent, company_id: uuid.UUID) -> None:
+        """Même règle que la fiche personne : un dossier lié (même
+        supprimé) → 409 ; les rôles, eux, se dissolvent (cascade)."""
+        company = await self._get(agent, company_id)
+        protecting = await self.repo.protecting_case_count(company.id)
+        if protecting:
+            raise ConflictError(
+                "This company profile is referenced by cases and cannot be deleted.",
+                code="company_profile.has_cases",
+                params={"cases_count": protecting},
+            )
+        await self.db.delete(company)
+        await self.db.commit()
+
     async def add_role(
         self, agent: Agent, company_id: uuid.UUID, payload: CompanyRoleCreateRequest
     ) -> CompanyProfileResponse:

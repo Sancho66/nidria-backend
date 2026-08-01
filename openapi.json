@@ -5982,6 +5982,46 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Delete Client Profile",
+        "description": "Suppression unitaire — 409 profile.has_cases si un dossier la\nréférence (vivant, clos ou supprimé : l'historique est sacré).",
+        "operationId": "delete_client_profile_client_profiles__profile_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/client-profiles/{profile_id}/completeness": {
@@ -6800,6 +6840,46 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Delete Company Profile",
+        "description": "Suppression unitaire — 409 company_profile.has_cases si un dossier\nla référence ; les rôles se dissolvent (cascade).",
+        "operationId": "delete_company_profile_company_profiles__company_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
