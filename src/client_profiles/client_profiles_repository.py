@@ -83,31 +83,6 @@ class ClientProfilesRepository:
         )
         return func.coalesce(latest, ClientProfile.updated_at)
 
-    @staticmethod
-    def _beyond_prospect_exists(agency_id: uuid.UUID):  # type: ignore[no-untyped-def]
-        """Projection SQL de `derived_client_status` (une seule vérité, deux
-        projections — l'accord est verrouillé par test) : il EXISTE un
-        dossier VIVANT de l'agence, où le client est principal ou membre,
-        allé au-delà de prospect."""
-        member_case_ids = (
-            select(CasePerson.case_id)
-            .where(CasePerson.expat_user_id == ClientProfile.expat_user_id)
-            # Sans correlate explicite, SQLAlchemy re-FROM client_profile ici
-            # (produit cartésien = filtre GLOBAL, plus par fiche).
-            .correlate(ClientProfile)
-        )
-        return exists(
-            select(ClientCase.id).where(
-                ClientCase.agency_id == agency_id,
-                ClientCase.deleted_at.is_(None),
-                ClientCase.status != CaseStatus.PROSPECT.value,
-                or_(
-                    ClientCase.principal_expat_user_id == ClientProfile.expat_user_id,
-                    ClientCase.id.in_(member_case_ids),
-                ),
-            )
-        )
-
     async def list_page(
         self,
         agency_id: uuid.UUID,
@@ -147,8 +122,10 @@ class ClientProfilesRepository:
             stmt = stmt.where(predicate)
             count_stmt = count_stmt.where(predicate)
         if status is not None:
-            beyond = self._beyond_prospect_exists(agency_id)
-            derived = beyond if status == "client" else ~beyond
+            # La règle actée : dossier VIVANT → client (le filtre est la
+            # projection SQL exacte de derived_client_status).
+            alive = self._linked_case_exists(agency_id)
+            derived = alive if status == "client" else ~alive
             # V1b : l'override PRIME — la dérivation ne joue que sans lui.
             status_predicate = or_(
                 ClientProfile.status_override == status,

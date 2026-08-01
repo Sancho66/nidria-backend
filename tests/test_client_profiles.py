@@ -156,7 +156,7 @@ async def test_list_and_detail_gated_and_scoped(
     assert listing["total"] == 1
     item = listing["items"][0]
     assert item["email"] == "fiche1@example.com"
-    assert item["derived_status"] == "prospect"  # dossier né prospect
+    assert item["derived_status"] == "client"  # règle actée : dossier vivant → client
     detail = (await client.get(f"/client-profiles/{item['id']}", headers=headers)).json()
     assert detail["email"] == "fiche1@example.com"
     assert len(detail["cases"]) == 1
@@ -390,25 +390,25 @@ async def test_directory_list_filters_and_aggregates(
     l'accord filtre SQL ↔ derived_status Python est vérifié item par item) ;
     chaque item porte tags, dernière activité, espace client activé."""
     headers = agent_headers(admin)
-    # Prospect pur (dossier né prospect) + client (dossier avancé).
-    for i, email_addr in enumerate(("annuaire-p@example.com", "annuaire-c@example.com")):
-        r = await client.post(
-            "/cases",
-            headers=headers,
-            json={"first_name": f"Annuaire{i}", "last_name": "Test", "email": email_addr},
-        )
-        assert r.status_code == 201, r.text
-        if email_addr.startswith("annuaire-c"):
-            await db_session.execute(
-                text("UPDATE client_case SET status = 'in_progress' WHERE id = :i"),
-                {"i": r.json()["id"]},
-            )
-            await db_session.commit()
+    # Prospect = fiche DIRECTE sans dossier ; client = fiche avec dossier
+    # vivant (règle actée — même en statut prospect côté dossier).
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Annuaire0", "last_name": "Test", "email": "annuaire-p@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Annuaire1", "last_name": "Test", "email": "annuaire-c@example.com"},
+    )
+    assert r.status_code == 201, r.text
     all_items = (await client.get("/client-profiles?search=annuaire-", headers=headers)).json()
     assert all_items["total"] == 2
     for item in all_items["items"]:
         assert isinstance(item["tags"], list)
-        assert item["last_activity_at"] is not None  # activity_log du dossier
+        assert item["last_activity_at"] is not None  # activité ou updated_at fiche
         assert item["client_space_activated"] is False  # jamais activé
     prospects = (
         await client.get("/client-profiles?search=annuaire-&status=prospect", headers=headers)
@@ -1001,8 +1001,9 @@ async def test_status_override_primes_over_derivation(
     make_client_case: MakeClientCase,
     make_expat_user: MakeExpatUser,
 ) -> None:
-    """V1b — l'override de l'agence PRIME sur la dérivation (liste,
-    détail, FILTRE), null explicite rend la main, le geste est tracé."""
+    """V1b + règle actée — dossier vivant → client par dérivation ; SEUL
+    l'override explicite de l'agence peut afficher Prospect ; null rend
+    la main ; le FILTRE suit l'override ; le geste est tracé."""
     headers = agent_headers(admin)
     r = await client.post(
         "/cases",
@@ -1012,22 +1013,22 @@ async def test_status_override_primes_over_derivation(
     assert r.status_code == 201, r.text
     listing = (await client.get("/client-profiles?search=override@", headers=headers)).json()
     item = listing["items"][0]
-    assert item["derived_status"] == "prospect"  # dossier né prospect
+    assert item["derived_status"] == "client"  # dossier vivant → client
     profile_id = item["id"]
 
+    # L'OVERRIDE force Prospect malgré le dossier vivant (le seul chemin).
     r = await client.patch(
-        f"/client-profiles/{profile_id}", headers=headers, json={"status_override": "client"}
+        f"/client-profiles/{profile_id}", headers=headers, json={"status_override": "prospect"}
     )
     assert r.status_code == 200, r.text
-    assert r.json()["derived_status"] == "client"  # l'override prime
-    assert r.json()["status_override"] == "client"
-    # Le FILTRE suit l'override, pas la dérivation.
+    assert r.json()["derived_status"] == "prospect"
+    assert r.json()["status_override"] == "prospect"
     filtered = (
-        await client.get("/client-profiles?search=override@&status=client", headers=headers)
+        await client.get("/client-profiles?search=override@&status=prospect", headers=headers)
     ).json()
     assert filtered["total"] == 1
     filtered = (
-        await client.get("/client-profiles?search=override@&status=prospect", headers=headers)
+        await client.get("/client-profiles?search=override@&status=client", headers=headers)
     ).json()
     assert filtered["total"] == 0
     # Tracé.
@@ -1040,12 +1041,12 @@ async def test_status_override_primes_over_derivation(
         )
     ).scalar_one()
     assert n_logs >= 1
-    # Null explicite → retour à la dérivation.
+    # Null explicite → retour à la dérivation (client).
     r = await client.patch(
         f"/client-profiles/{profile_id}", headers=headers, json={"status_override": None}
     )
     assert r.status_code == 200, r.text
-    assert r.json()["derived_status"] == "prospect"
+    assert r.json()["derived_status"] == "client"
     assert r.json()["status_override"] is None
 
 
@@ -1312,3 +1313,49 @@ async def test_patch_tags_for_bulk_actions(
     assert r.json()["tags"] == ["vip", "salon-2026"]  # dédupliqué, ordre gardé
     listing = (await client.get("/client-profiles?tags=salon-2026", headers=headers)).json()
     assert [i["id"] for i in listing["items"]] == [profile_id]
+
+
+async def test_living_case_never_shows_prospect_without_explicit_override(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Constat capture — une fiche avec dossier VIVANT ne peut JAMAIS
+    s'afficher Prospect (liste ET détail), même si le dossier est en
+    statut 'prospect' ; seul l'override explicite le peut, et ni le
+    backfill ni l'import n'en posent."""
+    headers = agent_headers(admin)
+    # Le scénario exact de la capture : dossier créé, resté en 'prospect'.
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Ana", "last_name": "Costa", "email": "ana-costa@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    await db_session.execute(
+        text("UPDATE client_case SET status = 'prospect' WHERE id = :i"), {"i": r.json()["id"]}
+    )
+    await db_session.commit()
+    listing = (await client.get("/client-profiles?search=ana-costa@", headers=headers)).json()
+    item = listing["items"][0]
+    assert item["cases_count"] == 1
+    assert item["derived_status"] == "client"  # JAMAIS Prospect avec un dossier vivant
+    detail = (await client.get(f"/client-profiles/{item['id']}", headers=headers)).json()
+    assert detail["derived_status"] == "client"  # liste == détail
+    assert detail["status_override"] is None  # aucun override posé par la création
+    # L'import n'en pose pas non plus.
+    r = await client.post(
+        "/imports/client-profiles",
+        headers=headers,
+        json={
+            "csv_text": "Prénom,Nom,Email\nSans,Dossier,import-p@example.com\n",
+            "mapping": {"Prénom": "first_name", "Nom": "last_name", "Email": "email"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    imported = (await client.get("/client-profiles?search=import-p@", headers=headers)).json()
+    assert imported["items"][0]["derived_status"] == "prospect"  # sans dossier
+    assert imported["items"][0]["status_override"] is None

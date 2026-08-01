@@ -51,13 +51,14 @@ def _is_empty(value: Any) -> bool:
 
 
 def derived_client_status(cases: list[ClientCase], override: str | None = None) -> str:
-    """Phase 0 D9 — le statut client est DÉRIVÉ, jamais stocké (une seule
-    vérité par construction) : 'prospect' tant qu'aucun dossier n'est allé
-    au-delà de prospect, 'client' sinon."""
-    if override:  # V1b : l'override de l'agence PRIME ; NULL = dérivation
+    """La RÈGLE ACTÉE (constat capture, 16/08) : un dossier VIVANT →
+    client, peu importe son statut — l'ancienne lecture « au-delà de
+    prospect » affichait Prospect à côté d'« 1 dossier », contradiction
+    visible. Prospect = fiche sans aucun dossier vivant. L'OVERRIDE
+    explicite de l'agence (V1b) prime toujours ; NULL = dérivation."""
+    if override:
         return override
-    beyond = any(c.status != CaseStatus.PROSPECT.value for c in cases)
-    return "client" if beyond else "prospect"
+    return "client" if cases else "prospect"
 
 
 async def person_scope_definitions(
