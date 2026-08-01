@@ -15,7 +15,9 @@ from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
+from shared.models.client_profile_note import ClientProfileNote
 from shared.models.custom_field import CustomFieldDefinition
+from src.cases.cases_schema import CaseNoteCreateRequest, CaseNoteUpdateRequest
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
 from src.client_profiles.client_profiles_schema import (
     ClientProfileCreateRequest,
@@ -24,11 +26,21 @@ from src.client_profiles.client_profiles_schema import (
     ClientProfileResponse,
     ClientProfileUpdateRequest,
     NewCaseForProfileRequest,
+    ProfileActivityEntryResponse,
+    ProfileActivityListResponse,
     ProfileCaseSummaryResponse,
     ProfileCompletenessResponse,
+    ProfileFieldSectionResponse,
 )
 from src.core.enums import CaseStatus
-from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
+from src.core.rbac.enforcement import effective_permissions
+from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_validation import visible_values
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS, profile_field_value
@@ -62,6 +74,33 @@ def completeness(
     filled = [r for r in references if not _is_empty(profile_field_value(profile, r))]
     missing = [r for r in references if _is_empty(profile_field_value(profile, r))]
     return ProfileCompletenessResponse(filled=filled, missing=missing)
+
+
+def resolve_field_sections(references: list[str], lang: str) -> "list[ProfileFieldSectionResponse]":
+    """CORRECTION (complément sections) : la catégorie EXISTE déjà sur le
+    champ — c'est celle du catalogue (`SECTION_TYPES`, le rail du picker).
+    Aucune règle de résolution à inventer : première catégorie du
+    catalogue qui déclare la clé dans ses `field_keys` ; ordre des groupes
+    = ordre du catalogue, ordre des références = leur ordre dans la
+    catégorie ; « Sans catégorie » (name null) ferme la liste."""
+    from src.journeys.field_catalog import SECTION_TYPES
+
+    remaining = list(references)
+    out: list[ProfileFieldSectionResponse] = []
+    for section_type in SECTION_TYPES.values():
+        member_refs = [k for k in section_type.field_keys if k in remaining]
+        if not member_refs:
+            continue
+        out.append(
+            ProfileFieldSectionResponse(
+                name=section_type.labels.get(lang) or section_type.labels["fr"],
+                references=member_refs,
+            )
+        )
+        remaining = [r for r in remaining if r not in member_refs]
+    if remaining:
+        out.append(ProfileFieldSectionResponse(name=None, references=remaining))
+    return out
 
 
 def profile_divergences(
@@ -260,6 +299,10 @@ class ClientProfilesManager:
             ],
             derived_status=derived_client_status([c for _e, c, _n in cases]),
             completeness=completeness(profile, person_defs),
+            sections=resolve_field_sections(
+                sorted(COLLECTABLE_BASE_FIELDS) + [d.key for d in person_defs],
+                agency_lang,
+            ),
             created_at=profile.created_at,
             updated_at=profile.updated_at,
         )
@@ -388,6 +431,95 @@ class ClientProfilesManager:
                 )
         await self.db.commit()
         return await self.get_profile(agent, profile_id)
+
+    # --- notes de fiche (miroir strict de case_note) ----------------------
+
+    async def list_notes(self, agent: Agent, profile_id: uuid.UUID) -> list[ClientProfileNote]:
+        profile = await self._get(agent, profile_id)
+        include_confidential = Permission.NOTE_VIEW_CONFIDENTIAL.value in effective_permissions(
+            agent
+        )
+        return await self.repo.list_notes(profile.id, include_confidential)
+
+    async def create_note(
+        self, agent: Agent, profile_id: uuid.UUID, payload: CaseNoteCreateRequest
+    ) -> ClientProfileNote:
+        profile = await self._get(agent, profile_id)
+        if payload.is_confidential and (
+            Permission.NOTE_VIEW_CONFIDENTIAL.value not in effective_permissions(agent)
+        ):
+            raise ForbiddenError(
+                "Creating a confidential note requires the dedicated permission.",
+                code="profile.note_confidential_forbidden",
+            )
+        note = ClientProfileNote(
+            profile_id=profile.id,
+            author_agent_id=agent.id,
+            body=payload.body,
+            is_confidential=payload.is_confidential,
+        )
+        self.db.add(note)
+        await self.db.commit()
+        await self.db.refresh(note)
+        return note
+
+    async def _get_own_note(
+        self, agent: Agent, profile_id: uuid.UUID, note_id: uuid.UUID
+    ) -> ClientProfileNote:
+        profile = await self._get(agent, profile_id)
+        note = await self.repo.get_note(profile.id, note_id)
+        if note is None:
+            raise NotFoundError("Note not found.", code="profile.note_not_found")
+        if note.author_agent_id != agent.id:
+            raise ForbiddenError(
+                "Only the author can modify a note.", code="profile.note_not_author"
+            )
+        return note
+
+    async def update_note(
+        self,
+        agent: Agent,
+        profile_id: uuid.UUID,
+        note_id: uuid.UUID,
+        payload: CaseNoteUpdateRequest,
+    ) -> ClientProfileNote:
+        note = await self._get_own_note(agent, profile_id, note_id)
+        note.body = payload.body
+        await self.db.commit()
+        await self.db.refresh(note)
+        return note
+
+    async def delete_note(self, agent: Agent, profile_id: uuid.UUID, note_id: uuid.UUID) -> None:
+        note = await self._get_own_note(agent, profile_id, note_id)
+        await self.db.delete(note)
+        await self.db.commit()
+
+    # --- activité agrégée (lecture croisée) -------------------------------
+
+    async def activity(
+        self, agent: Agent, profile_id: uuid.UUID, *, page: int, page_size: int
+    ) -> ProfileActivityListResponse:
+        profile = await self._get(agent, profile_id)
+        case_ids = await self.repo.case_ids_linked_to_profile(profile.id)
+        rows, total = await self.repo.activity_page(case_ids, page=page, page_size=page_size)
+        return ProfileActivityListResponse(
+            items=[
+                ProfileActivityEntryResponse(
+                    id=log.id,
+                    actor_type=log.actor_type,
+                    actor_id=log.actor_id,
+                    action_type=log.action_type,
+                    details=dict(log.details or {}),
+                    created_at=log.created_at,
+                    case_id=log.case_id,
+                    case_reference=reference,
+                )
+                for log, reference in rows
+            ],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
 
     async def merge_profiles(
         self, agent: Agent, target_id: uuid.UUID, source_id: uuid.UUID

@@ -11,6 +11,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from src.cases.cases_schema import (
+    CaseNoteCreateRequest,
+    CaseNoteResponse,
+    CaseNoteUpdateRequest,
+)
 from src.client_profiles.client_profiles_manager import ClientProfilesManager
 from src.client_profiles.client_profiles_schema import (
     ClientProfileCreateRequest,
@@ -19,6 +24,7 @@ from src.client_profiles.client_profiles_schema import (
     ClientProfileUpdateRequest,
     FieldGestureRequest,
     NewCaseForProfileRequest,
+    ProfileActivityListResponse,
     ProfileCompletenessResponse,
     ProfileMergeRequest,
 )
@@ -42,6 +48,27 @@ BINDINGS = [
         Permission.CASE_VIEW,
     ),
     RouteBinding("POST", "/client-profiles", Audience.AGENT, Permission.CASE_EDIT),
+    RouteBinding(
+        "GET", "/client-profiles/{profile_id}/notes", Audience.AGENT, Permission.CASE_VIEW
+    ),
+    RouteBinding(
+        "POST", "/client-profiles/{profile_id}/notes", Audience.AGENT, Permission.CASE_EDIT
+    ),
+    RouteBinding(
+        "PATCH",
+        "/client-profiles/{profile_id}/notes/{note_id}",
+        Audience.AGENT,
+        Permission.CASE_EDIT,
+    ),
+    RouteBinding(
+        "DELETE",
+        "/client-profiles/{profile_id}/notes/{note_id}",
+        Audience.AGENT,
+        Permission.CASE_EDIT,
+    ),
+    RouteBinding(
+        "GET", "/client-profiles/{profile_id}/activity", Audience.AGENT, Permission.CASE_VIEW
+    ),
     RouteBinding("PATCH", "/client-profiles/{profile_id}", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding(
         "POST", "/client-profiles/{profile_id}/merge", Audience.AGENT, Permission.CASE_EDIT
@@ -122,6 +149,56 @@ async def update_client_profile(
     """Écriture de la fiche (complément annuaire) — miroir d'édition de
     PersonUpdateRequest sur le plan PROFILE, gate `case.edit`."""
     return await ClientProfilesManager(db).update_profile(agent, profile_id, payload)
+
+
+@router.get("/client-profiles/{profile_id}/notes", response_model=list[CaseNoteResponse])
+async def list_profile_notes(profile_id: uuid.UUID, agent: AgentDep, db: DbDep) -> Any:
+    """Notes de fiche — MÊMES FORMES que les notes de dossier (contrat
+    CaseNote réutilisé tel quel), même règle de confidentialité."""
+    return await ClientProfilesManager(db).list_notes(agent, profile_id)
+
+
+@router.post(
+    "/client-profiles/{profile_id}/notes", response_model=CaseNoteResponse, status_code=201
+)
+async def create_profile_note(
+    profile_id: uuid.UUID, payload: CaseNoteCreateRequest, agent: AgentDep, db: DbDep
+) -> Any:
+    return await ClientProfilesManager(db).create_note(agent, profile_id, payload)
+
+
+@router.patch("/client-profiles/{profile_id}/notes/{note_id}", response_model=CaseNoteResponse)
+async def update_profile_note(
+    profile_id: uuid.UUID,
+    note_id: uuid.UUID,
+    payload: CaseNoteUpdateRequest,
+    agent: AgentDep,
+    db: DbDep,
+) -> Any:
+    return await ClientProfilesManager(db).update_note(agent, profile_id, note_id, payload)
+
+
+@router.delete("/client-profiles/{profile_id}/notes/{note_id}", status_code=204)
+async def delete_profile_note(
+    profile_id: uuid.UUID, note_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> None:
+    await ClientProfilesManager(db).delete_note(agent, profile_id, note_id)
+
+
+@router.get("/client-profiles/{profile_id}/activity", response_model=ProfileActivityListResponse)
+async def get_profile_activity(
+    profile_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> ProfileActivityListResponse:
+    """Le fil d'activité de la fiche — les activity_log de TOUS ses
+    dossiers, fusionnés antichronologiques, chaque entrée nommant son
+    dossier d'origine. Lecture croisée, aucun journal nouveau."""
+    return await ClientProfilesManager(db).activity(
+        agent, profile_id, page=page, page_size=page_size
+    )
 
 
 @router.post("/client-profiles/{profile_id}/merge", response_model=ClientProfileResponse)

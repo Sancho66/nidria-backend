@@ -85,6 +85,8 @@ class CustomFieldsManager:
             )
             definition.label = scalar or definition.label
             definition.label_i18n = blob
+        if "scope" in provided and provided["scope"] is not None:
+            definition.scope = provided["scope"]
         if "required" in provided and provided["required"] is not None:
             definition.required = provided["required"]
         if "position" in provided and provided["position"] is not None:

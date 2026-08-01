@@ -687,3 +687,239 @@ async def test_direct_profile_creation_dedup_and_deferred_linkage(
     assert detail["expat_user_id"] is not None
     listing = (await client.get("/client-profiles?search=direct-case@", headers=headers)).json()
     assert listing["total"] == 1
+
+
+# --- LOT SECTIONS : sections réelles sur la fiche + toggle scope ----------------------
+
+
+async def test_profile_sections_follow_real_referential_sections(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """CORRECTION (complément) — la fiche groupe par la CATÉGORIE
+    EXISTANTE du catalogue (le rail du picker) : rien à inventer.
+    birth_country vit en Identité au catalogue ; une clé d'agence hors
+    catalogue tombe dans « Sans catégorie », TOUJOURS en dernier."""
+    headers = agent_headers(admin)
+    await _person_def(db_session, admin.agency_id, "birth_country")
+    await _person_def(db_session, admin.agency_id, "champ_maison")  # hors catalogue
+    await db_session.commit()
+
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Sect", "last_name": "Ion", "email": "sections@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    listing = (await client.get("/client-profiles?search=sections@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    sections = detail["sections"]
+    by_name = {s["name"]: s["references"] for s in sections}
+    # Les catégories du catalogue, dans SA langue (agence fr) et SON ordre.
+    assert "nationality" in by_name["Identité"]
+    assert "birth_country" in by_name["Identité"]
+    assert "phone" in by_name["Contact"]
+    # La clé d'agence hors catalogue → panier final « Sans catégorie »
+    # (avec les colonnes civiles que le rail du picker ne référence pas,
+    # ex. birth_name — la vérité du catalogue, pas un bug).
+    assert sections[-1]["name"] is None
+    assert "champ_maison" in sections[-1]["references"]
+    # L'univers des sections == l'univers de la complétude (rien de perdu).
+    completeness = detail["completeness"]
+    in_sections = [ref for s in sections for ref in s["references"]]
+    assert sorted(in_sections) == sorted(completeness["filled"] + completeness["missing"])
+
+
+async def test_scope_toggle_reclassifies_definition(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Lot sections point 2 — le TOGGLE scope : l'agence reclasse
+    elle-même une définition 'case' en 'person' (elle apparaît sur la
+    fiche et la complétude), et inversement. Les valeurs ne bougent pas."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/agencies/me/custom-fields",
+        headers=headers,
+        json={
+            "key": "tax_residence_country",
+            "label": "Pays de résidence fiscale",
+            "field_type": "text",
+        },
+    )
+    assert r.status_code == 201, r.text
+    field_id = r.json()["id"]
+    assert r.json()["scope"] == "case"  # naît 'case' (défaut prudent)
+
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Toggle", "last_name": "Scope", "email": "toggle@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    listing = (await client.get("/client-profiles?search=toggle@", headers=headers)).json()
+    profile_id = listing["items"][0]["id"]
+    completeness = (
+        await client.get(f"/client-profiles/{profile_id}/completeness", headers=headers)
+    ).json()
+    assert "tax_residence_country" not in completeness["missing"]  # case : hors fiche
+
+    # LE TOGGLE : case → person.
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{field_id}", headers=headers, json={"scope": "person"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["scope"] == "person"
+    completeness = (
+        await client.get(f"/client-profiles/{profile_id}/completeness", headers=headers)
+    ).json()
+    assert "tax_residence_country" in completeness["missing"]  # sur la fiche
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert any("tax_residence_country" in s["references"] for s in detail["sections"])
+
+    # Retour : person → case, la fiche l'oublie (les valeurs ne bougent pas).
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{field_id}", headers=headers, json={"scope": "case"}
+    )
+    assert r.status_code == 200, r.text
+    completeness = (
+        await client.get(f"/client-profiles/{profile_id}/completeness", headers=headers)
+    ).json()
+    assert "tax_residence_country" not in completeness["missing"]
+
+    # Valeur hors catalogue → 422 (Literal).
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{field_id}", headers=headers, json={"scope": "global"}
+    )
+    assert r.status_code == 422
+
+
+async def test_profile_notes_mirror_case_note_contract(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Complément 2 — notes de fiche : mêmes formes que les notes de
+    dossier (body, confidentialité, auteur, horodatage), même règle de
+    confidentialité, seul l'auteur modifie/supprime."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Note", "last_name": "Fiche", "email": "note-fiche@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    profile_id = r.json()["id"]
+
+    # Créer : une normale + une confidentielle (admin a la permission).
+    r = await client.post(
+        f"/client-profiles/{profile_id}/notes", headers=headers, json={"body": "Vu au salon."}
+    )
+    assert r.status_code == 201, r.text
+    note_id = r.json()["id"]
+    assert r.json()["author_agent_id"] == str(admin.id)
+    r = await client.post(
+        f"/client-profiles/{profile_id}/notes",
+        headers=headers,
+        json={"body": "Budget sensible.", "is_confidential": True},
+    )
+    assert r.status_code == 201, r.text
+
+    # La liste : l'admin voit 2 ; un viewer (sans note.view_confidential)
+    # ne voit que la normale — même règle que le dossier.
+    notes = (await client.get(f"/client-profiles/{profile_id}/notes", headers=headers)).json()
+    assert len(notes) == 2
+    viewer = await make_agent(agency_id=admin.agency_id, role=system_roles["viewer"])
+    notes = (
+        await client.get(f"/client-profiles/{profile_id}/notes", headers=agent_headers(viewer))
+    ).json()
+    assert [n["body"] for n in notes] == ["Vu au salon."]
+
+    # Modifier : seul l'AUTEUR — un autre agent → 403 nommé.
+    other = await make_agent(agency_id=admin.agency_id, role=system_roles["admin"])
+    r = await client.patch(
+        f"/client-profiles/{profile_id}/notes/{note_id}",
+        headers=agent_headers(other),
+        json={"body": "Piraté."},
+    )
+    assert r.status_code == 403
+    assert r.json()["code"] == "profile.note_not_author"
+    r = await client.patch(
+        f"/client-profiles/{profile_id}/notes/{note_id}",
+        headers=headers,
+        json={"body": "Vu au salon, rappelé le 12."},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["body"] == "Vu au salon, rappelé le 12."
+
+    # Supprimer : l'auteur, 204 ; la note disparaît.
+    r = await client.delete(f"/client-profiles/{profile_id}/notes/{note_id}", headers=headers)
+    assert r.status_code == 204
+    notes = (await client.get(f"/client-profiles/{profile_id}/notes", headers=headers)).json()
+    assert [n["body"] for n in notes] == ["Budget sensible."]
+
+    # Cross-agence : 404 non-révélateur.
+    stranger = await make_agent(role=system_roles["admin"])
+    r = await client.get(f"/client-profiles/{profile_id}/notes", headers=agent_headers(stranger))
+    assert r.status_code == 404
+
+
+async def test_profile_activity_is_a_cross_read_of_case_logs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Complément 3 — le fil d'activité de la fiche : les activity_log de
+    TOUS ses dossiers fusionnés antichronologiques, paginés, chaque
+    entrée nommant son dossier d'origine ; les profile.updated y sont
+    (loggés sur les dossiers). Aucun journal nouveau."""
+    headers = agent_headers(admin)
+    case_ids = []
+    for _i in range(2):
+        r = await client.post(
+            "/cases",
+            headers=headers,
+            json={"first_name": "Fil", "last_name": "Activité", "email": "fil@example.com"},
+        )
+        assert r.status_code == 201, r.text
+        case_ids.append(r.json()["id"])
+    listing = (await client.get("/client-profiles?search=fil@", headers=headers)).json()
+    profile_id = listing["items"][0]["id"]
+    # Un PATCH fiche → profile.updated sur chaque dossier vivant.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}", headers=headers, json={"nationality": "JP"}
+    )
+    assert r.status_code == 200, r.text
+
+    feed = (await client.get(f"/client-profiles/{profile_id}/activity", headers=headers)).json()
+    assert feed["total"] >= 2
+    entries = feed["items"]
+    # Antichronologique, et chaque entrée dit son dossier d'origine.
+    times = [e["created_at"] for e in entries]
+    assert times == sorted(times, reverse=True)
+    assert {e["case_id"] for e in entries} == set(case_ids)  # les DEUX dossiers
+    assert any(e["action_type"] == "profile.updated" for e in entries)
+    # Paginé : page_size=1 → 1 entrée, même total.
+    page1 = (
+        await client.get(f"/client-profiles/{profile_id}/activity?page_size=1", headers=headers)
+    ).json()
+    assert len(page1["items"]) == 1
+    assert page1["total"] == feed["total"]

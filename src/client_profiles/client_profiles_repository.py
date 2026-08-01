@@ -13,6 +13,7 @@ from shared.models.agency import Agency
 from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
+from shared.models.client_profile_note import ClientProfileNote
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplate
 from src.core.enums import CaseStatus
@@ -200,6 +201,62 @@ class ClientProfilesRepository:
             .group_by(ActivityLog.case_id)
         )
         return {case_id: latest for case_id, latest in rows}
+
+    async def list_notes(
+        self, profile_id: uuid.UUID, include_confidential: bool
+    ) -> list[ClientProfileNote]:
+        stmt = (
+            select(ClientProfileNote)
+            .where(ClientProfileNote.profile_id == profile_id)
+            .order_by(ClientProfileNote.created_at.desc())
+        )
+        if not include_confidential:
+            stmt = stmt.where(ClientProfileNote.is_confidential.is_(False))
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def get_note(self, profile_id: uuid.UUID, note_id: uuid.UUID) -> ClientProfileNote | None:
+        stmt = select(ClientProfileNote).where(
+            ClientProfileNote.id == note_id, ClientProfileNote.profile_id == profile_id
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def case_ids_linked_to_profile(self, profile_id: uuid.UUID) -> list[uuid.UUID]:
+        """Les dossiers VIVANTS de la fiche via le lien case_person.
+        client_profile_id — la matière de l'activité agrégée."""
+        stmt = (
+            select(CasePerson.case_id)
+            .join(ClientCase, ClientCase.id == CasePerson.case_id)
+            .where(
+                CasePerson.client_profile_id == profile_id,
+                ClientCase.deleted_at.is_(None),
+            )
+            .distinct()
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def activity_page(
+        self, case_ids: list[uuid.UUID], *, page: int, page_size: int
+    ) -> tuple[list[tuple[ActivityLog, str | None]], int]:
+        """Les activity_log de TOUS les dossiers de la fiche, fusionnés
+        antichronologiques, chaque ligne portant la référence de son
+        dossier d'origine. Lecture croisée pure — aucun journal nouveau."""
+        if not case_ids:
+            return [], 0
+        stmt = (
+            select(ActivityLog, ClientCase.reference)
+            .join(ClientCase, ClientCase.id == ActivityLog.case_id)
+            .where(ActivityLog.case_id.in_(case_ids))
+            .order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        rows = [(log, ref) for log, ref in (await self.db.execute(stmt)).all()]
+        total = int(
+            (
+                await self.db.execute(select(func.count()).where(ActivityLog.case_id.in_(case_ids)))
+            ).scalar_one()
+        )
+        return rows, total
 
     async def agency_default_language(self, agency_id: uuid.UUID) -> str:
         value = (

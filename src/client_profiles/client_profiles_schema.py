@@ -31,6 +31,16 @@ class ProfileCompletenessResponse(BaseModel):
     missing: list[str]
 
 
+class ProfileFieldSectionResponse(BaseModel):
+    """Un groupe de champs person de la fiche, par SECTION RÉELLE du
+    référentiel (lot sections) : l'identité canonique vient des sections
+    des parcours de l'agence (seed_key, sinon nom) — le panier « Sans
+    section » ferme la liste (name null)."""
+
+    name: str | None
+    references: list[str]
+
+
 class ClientProfileListItemResponse(BaseModel):
     # `id` EST le client_profile_id (une seule clé, pas de champ dupliqué).
     id: uuid.UUID
@@ -87,6 +97,9 @@ class ClientProfileResponse(BaseModel):
     cases: list[ProfileCaseSummaryResponse]
     derived_status: str
     completeness: ProfileCompletenessResponse
+    # Lot sections : les références person groupées par leurs sections
+    # réelles — même univers que la complétude, fini le fourre-tout.
+    sections: list[ProfileFieldSectionResponse] = []
     created_at: datetime
     updated_at: datetime
 
@@ -122,6 +135,30 @@ class ClientProfileUpdateRequest(_CivilStatusFields):
     model_config = ConfigDict(extra="forbid")
 
     custom_fields: dict[str, Any] | None = None
+
+
+class ProfileActivityEntryResponse(BaseModel):
+    """Une ligne du fil d'activité de la fiche (complément sections) —
+    la forme dossier (`ActivityLogResponse`) + le dossier d'ORIGINE.
+    Lecture croisée : aucun journal nouveau."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    actor_type: str
+    actor_id: uuid.UUID | None
+    action_type: str
+    details: dict[str, Any]
+    created_at: datetime
+    case_id: uuid.UUID
+    case_reference: str | None
+
+
+class ProfileActivityListResponse(BaseModel):
+    items: list[ProfileActivityEntryResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 class ProfileMergeRequest(BaseModel):

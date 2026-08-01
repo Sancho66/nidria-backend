@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,6 +22,10 @@ class CustomFieldDefinitionResponse(BaseModel):
     label_i18n: dict[str, str]
     field_type: str
     options: list[str] | None
+    # Portée (chantier fiches) : 'person' = trait stable du client (fiche,
+    # promouvable) ; 'case' = propre à la mission. L'AGENCE est le juge
+    # final — reclassable par le PATCH (toggle scope).
+    scope: str
     required: bool
     position: int
     archived_at: datetime | None
@@ -48,8 +53,12 @@ class CustomFieldDefinitionCreate(BaseModel):
 
 
 class CustomFieldDefinitionUpdate(BaseModel):
-    """`key` and `field_type` are IMMUTABLE — deliberately absent."""
+    """`key` and `field_type` are IMMUTABLE — deliberately absent.
+    `scope` est le TOGGLE de reclassification (annuaire, sections) : les
+    valeurs ne bougent JAMAIS (elles vivent dans les sacs JSONB) — seule
+    la surface change (fiche/complétude/prefill pour 'person')."""
 
+    scope: Literal["person", "case"] | None = None
     label: str | None = Field(default=None, min_length=1, max_length=200)
     label_i18n: dict[str, str] | None = None
     options: list[str] | None = None

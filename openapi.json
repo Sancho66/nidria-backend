@@ -5951,6 +5951,304 @@
         }
       }
     },
+    "/client-profiles/{profile_id}/notes": {
+      "get": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "List Profile Notes",
+        "description": "Notes de fiche — MÊMES FORMES que les notes de dossier (contrat\nCaseNote réutilisé tel quel), même règle de confidentialité.",
+        "operationId": "list_profile_notes_client_profiles__profile_id__notes_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CaseNoteResponse"
+                  },
+                  "title": "Response List Profile Notes Client Profiles  Profile Id  Notes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Create Profile Note",
+        "operationId": "create_profile_note_client_profiles__profile_id__notes_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseNoteCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseNoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client-profiles/{profile_id}/notes/{note_id}": {
+      "patch": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Update Profile Note",
+        "operationId": "update_profile_note_client_profiles__profile_id__notes__note_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseNoteUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseNoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Delete Profile Note",
+        "operationId": "delete_profile_note_client_profiles__profile_id__notes__note_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client-profiles/{profile_id}/activity": {
+      "get": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Get Profile Activity",
+        "description": "Le fil d'activité de la fiche — les activity_log de TOUS ses\ndossiers, fusionnés antichronologiques, chaque entrée nommant son\ndossier d'origine. Lecture croisée, aucun journal nouveau.",
+        "operationId": "get_profile_activity_client_profiles__profile_id__activity_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileActivityListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/client-profiles/{profile_id}/merge": {
       "post": {
         "tags": [
@@ -20481,6 +20779,14 @@
           "completeness": {
             "$ref": "#/components/schemas/ProfileCompletenessResponse"
           },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileFieldSectionResponse"
+            },
+            "type": "array",
+            "title": "Sections",
+            "default": []
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -21566,6 +21872,10 @@
             ],
             "title": "Options"
           },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
           "required": {
             "type": "boolean",
             "title": "Required"
@@ -21595,6 +21905,7 @@
           "label_i18n",
           "field_type",
           "options",
+          "scope",
           "required",
           "position",
           "archived_at"
@@ -21603,6 +21914,21 @@
       },
       "CustomFieldDefinitionUpdate": {
         "properties": {
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "person",
+                  "case"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
           "label": {
             "anyOf": [
               {
@@ -21669,7 +21995,7 @@
         },
         "type": "object",
         "title": "CustomFieldDefinitionUpdate",
-        "description": "`key` and `field_type` are IMMUTABLE — deliberately absent."
+        "description": "`key` and `field_type` are IMMUTABLE — deliberately absent.\n`scope` est le TOGGLE de reclassification (annuaire, sections) : les\nvaleurs ne bougent JAMAIS (elles vivent dans les sacs JSONB) — seule\nla surface change (fiche/complétude/prefill pour 'person')."
       },
       "CustomFieldType": {
         "type": "string",
@@ -28115,6 +28441,105 @@
         "title": "PrincipalSummaryResponse",
         "description": "Identity subset for list items — the full PrincipalResponse\n(activated) stays a detail-endpoint concern."
       },
+      "ProfileActivityEntryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "actor_type": {
+            "type": "string",
+            "title": "Actor Type"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "action_type": {
+            "type": "string",
+            "title": "Action Type"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "case_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "actor_type",
+          "actor_id",
+          "action_type",
+          "details",
+          "created_at",
+          "case_id",
+          "case_reference"
+        ],
+        "title": "ProfileActivityEntryResponse",
+        "description": "Une ligne du fil d'activité de la fiche (complément sections) —\nla forme dossier (`ActivityLogResponse`) + le dossier d'ORIGINE.\nLecture croisée : aucun journal nouveau."
+      },
+      "ProfileActivityListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileActivityEntryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ProfileActivityListResponse"
+      },
       "ProfileCaseSummaryResponse": {
         "properties": {
           "id": {
@@ -28200,6 +28625,35 @@
         ],
         "title": "ProfileCompletenessResponse",
         "description": "La complétude transversale (F2.4) : quels champs de portée personne\nsont déjà valorisés sur la fiche — le futur allègement de collecte."
+      },
+      "ProfileFieldSectionResponse": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "References"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "references"
+        ],
+        "title": "ProfileFieldSectionResponse",
+        "description": "Un groupe de champs person de la fiche, par SECTION RÉELLE du\nréférentiel (lot sections) : l'identité canonique vient des sections\ndes parcours de l'agence (seed_key, sinon nom) — le panier « Sans\nsection » ferme la liste (name null)."
       },
       "ProfileMergeRequest": {
         "properties": {
