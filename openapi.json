@@ -21876,6 +21876,10 @@
             "type": "string",
             "title": "Scope"
           },
+          "profile_section": {
+            "type": "string",
+            "title": "Profile Section"
+          },
           "required": {
             "type": "boolean",
             "title": "Required"
@@ -21906,6 +21910,7 @@
           "field_type",
           "options",
           "scope",
+          "profile_section",
           "required",
           "position",
           "archived_at"
@@ -21928,6 +21933,24 @@
               }
             ],
             "title": "Scope"
+          },
+          "profile_section": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "identity",
+                  "contact",
+                  "id_documents",
+                  "situation",
+                  "misc"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Section"
           },
           "label": {
             "anyOf": [
@@ -28628,6 +28651,17 @@
       },
       "ProfileFieldSectionResponse": {
         "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "name": {
             "anyOf": [
               {
@@ -28649,11 +28683,12 @@
         },
         "type": "object",
         "required": [
+          "key",
           "name",
           "references"
         ],
         "title": "ProfileFieldSectionResponse",
-        "description": "Un groupe de champs person de la fiche, par SECTION RÉELLE du\nréférentiel (lot sections) : l'identité canonique vient des sections\ndes parcours de l'agence (seed_key, sinon nom) — le panier « Sans\nsection » ferme la liste (name null)."
+        "description": "Une catégorie du RAIL DU PICKER sur la fiche (correctif final rail) :\nTOUTES les catégories du catalogue sont servies — même source, même\nordre, même clé stable (`key`) — y compris à zéro champ person (le\nfront décide de leur rendu). Le panier « Sans catégorie » (key/name\nnull) ferme la liste s'il reste des clés hors catalogue."
       },
       "ProfileMergeRequest": {
         "properties": {

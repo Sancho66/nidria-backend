@@ -87,6 +87,8 @@ class CustomFieldsManager:
             definition.label_i18n = blob
         if "scope" in provided and provided["scope"] is not None:
             definition.scope = provided["scope"]
+        if "profile_section" in provided and provided["profile_section"] is not None:
+            definition.profile_section = provided["profile_section"]
         if "required" in provided and provided["required"] is not None:
             definition.required = provided["required"]
         if "position" in provided and provided["position"] is not None:

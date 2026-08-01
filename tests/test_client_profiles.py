@@ -692,7 +692,7 @@ async def test_direct_profile_creation_dedup_and_deferred_linkage(
 # --- LOT SECTIONS : sections réelles sur la fiche + toggle scope ----------------------
 
 
-async def test_profile_sections_follow_real_referential_sections(
+async def test_profile_sections_follow_fiche_taxonomy(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -700,40 +700,33 @@ async def test_profile_sections_follow_real_referential_sections(
     make_client_case: MakeClientCase,
     make_expat_user: MakeExpatUser,
 ) -> None:
-    """CORRECTION (complément) — la fiche groupe par la CATÉGORIE
-    EXISTANTE du catalogue (le rail du picker) : rien à inventer.
-    birth_country vit en Identité au catalogue ; une clé d'agence hors
-    catalogue tombe dans « Sans catégorie », TOUJOURS en dernier."""
+    """Lot taxonomie — la fiche sert SES sections (identity/contact/
+    id_documents/situation/misc), i18n en langue d'agence : les civils
+    par le mapping code, les custom par leur colonne (défaut misc)."""
     headers = agent_headers(admin)
-    await _person_def(db_session, admin.agency_id, "birth_country")
-    await _person_def(db_session, admin.agency_id, "champ_maison")  # hors catalogue
+    await _person_def(db_session, admin.agency_id, "champ_maison")  # né misc
     await db_session.commit()
 
     r = await client.post(
         "/cases",
         headers=headers,
-        json={"first_name": "Sect", "last_name": "Ion", "email": "sections@example.com"},
+        json={"first_name": "Taxo", "last_name": "Fiche", "email": "taxo@example.com"},
     )
     assert r.status_code == 201, r.text
-    listing = (await client.get("/client-profiles?search=sections@", headers=headers)).json()
+    listing = (await client.get("/client-profiles?search=taxo@", headers=headers)).json()
     detail = (
         await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
     ).json()
     sections = detail["sections"]
-    by_name = {s["name"]: s["references"] for s in sections}
-    # Les catégories du catalogue, dans SA langue (agence fr) et SON ordre.
-    assert "nationality" in by_name["Identité"]
-    assert "birth_country" in by_name["Identité"]
-    assert "phone" in by_name["Contact"]
-    # La clé d'agence hors catalogue → panier final « Sans catégorie »
-    # (avec les colonnes civiles que le rail du picker ne référence pas,
-    # ex. birth_name — la vérité du catalogue, pas un bug).
-    assert sections[-1]["name"] is None
-    assert "champ_maison" in sections[-1]["references"]
-    # L'univers des sections == l'univers de la complétude (rien de perdu).
-    completeness = detail["completeness"]
-    in_sections = [ref for s in sections for ref in s["references"]]
-    assert sorted(in_sections) == sorted(completeness["filled"] + completeness["missing"])
+    by_key = {s["key"]: s for s in sections}
+    # Les civils suivent le mapping code.
+    assert "nationality" in by_key["identity"]["references"]
+    assert "phone" in by_key["contact"]["references"]
+    assert "passport_number" in by_key["id_documents"]["references"]
+    assert "profession" in by_key["situation"]["references"]
+    # Le custom d'agence naît en Divers, reclassable par le toggle élargi.
+    assert by_key["misc"]["references"] == ["champ_maison"]
+    assert by_key["misc"]["name"] == "Divers"  # i18n langue d'agence (fr)
 
 
 async def test_scope_toggle_reclassifies_definition(
@@ -800,6 +793,26 @@ async def test_scope_toggle_reclassifies_definition(
     # Valeur hors catalogue → 422 (Literal).
     r = await client.patch(
         f"/agencies/me/custom-fields/{field_id}", headers=headers, json={"scope": "global"}
+    )
+    assert r.status_code == 422
+
+    # TOGGLE ÉLARGI (lot taxonomie) : reclasser la SECTION fiche — misc →
+    # situation, la fiche suit ; hors taxonomie → 422.
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{field_id}",
+        headers=headers,
+        json={"scope": "person", "profile_section": "situation"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["profile_section"] == "situation"
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "tax_residence_country" in by_key["situation"]
+    assert "tax_residence_country" not in by_key["misc"]
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{field_id}",
+        headers=headers,
+        json={"profile_section": "rubrique_inconnue"},
     )
     assert r.status_code == 422
 
@@ -923,3 +936,48 @@ async def test_profile_activity_is_a_cross_read_of_case_logs(
     ).json()
     assert len(page1["items"]) == 1
     assert page1["total"] == feed["total"]
+
+
+async def test_every_person_field_has_exactly_one_profile_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """LA PIÈCE MAÎTRESSE (lot taxonomie) — l'ÉGALITÉ picker==fiche est
+    REMPLACÉE par l'EXHAUSTIVITÉ : tout champ person a exactement UNE
+    profile_section. Structurel (mappings code complets et valides) ET
+    servi (l'union des sections == l'univers complétude, sans doublon,
+    les 5 sections toujours là — deux univers picker/fiche assumés)."""
+    from src.client_profiles.profile_sections import (
+        CIVIL_PROFILE_SECTION,
+        PRESET_PROFILE_SECTION,
+        PROFILE_SECTIONS,
+    )
+    from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
+
+    # STRUCTUREL — les 10 civils couverts exactement, valeurs valides.
+    assert set(CIVIL_PROFILE_SECTION) == set(COLLECTABLE_BASE_FIELDS)
+    assert set(CIVIL_PROFILE_SECTION.values()) <= set(PROFILE_SECTIONS)
+    assert set(PRESET_PROFILE_SECTION.values()) <= set(PROFILE_SECTIONS)
+
+    headers = agent_headers(admin)
+    await _person_def(db_session, admin.agency_id, "clef_libre")
+    await db_session.commit()
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Exhau", "last_name": "Stif", "email": "exhaustif@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    detail = (await client.get(f"/client-profiles/{r.json()['id']}", headers=headers)).json()
+    sections = detail["sections"]
+    # Les 5 sections, l'ordre de la taxonomie, i18n fr — TOUJOURS servies.
+    assert [s["key"] for s in sections] == list(PROFILE_SECTIONS.keys())
+    # EXACTEMENT une section par champ : union == univers, zéro doublon.
+    served = [ref for s in sections for ref in s["references"]]
+    completeness = detail["completeness"]
+    assert sorted(served) == sorted(completeness["filled"] + completeness["missing"])
+    assert len(served) == len(set(served))

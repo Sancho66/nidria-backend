@@ -76,31 +76,34 @@ def completeness(
     return ProfileCompletenessResponse(filled=filled, missing=missing)
 
 
-def resolve_field_sections(references: list[str], lang: str) -> "list[ProfileFieldSectionResponse]":
-    """CORRECTION (complément sections) : la catégorie EXISTE déjà sur le
-    champ — c'est celle du catalogue (`SECTION_TYPES`, le rail du picker).
-    Aucune règle de résolution à inventer : première catégorie du
-    catalogue qui déclare la clé dans ses `field_keys` ; ordre des groupes
-    = ordre du catalogue, ordre des références = leur ordre dans la
-    catégorie ; « Sans catégorie » (name null) ferme la liste."""
-    from src.journeys.field_catalog import SECTION_TYPES
+def resolve_field_sections(
+    person_defs: list[CustomFieldDefinition], lang: str
+) -> "list[ProfileFieldSectionResponse]":
+    """Lot taxonomie — la fiche sert SES sections (PROFILE_SECTIONS,
+    i18n ×7), le picker de collecte garde les siennes : deux univers
+    assumés. Le contrat est l'EXHAUSTIVITÉ (prouvée par test) : tout
+    champ person a exactement UNE section — les colonnes civiles par le
+    mapping code, les définitions custom par leur colonne (défaut
+    'misc'). Les 5 sections sont TOUJOURS servies, vides incluses."""
+    from src.client_profiles.profile_sections import (
+        CIVIL_PROFILE_SECTION,
+        PROFILE_SECTIONS,
+    )
 
-    remaining = list(references)
-    out: list[ProfileFieldSectionResponse] = []
-    for section_type in SECTION_TYPES.values():
-        member_refs = [k for k in section_type.field_keys if k in remaining]
-        if not member_refs:
-            continue
-        out.append(
-            ProfileFieldSectionResponse(
-                name=section_type.labels.get(lang) or section_type.labels["fr"],
-                references=member_refs,
-            )
+    buckets: dict[str, list[str]] = {key: [] for key in PROFILE_SECTIONS}
+    for reference in sorted(COLLECTABLE_BASE_FIELDS):
+        buckets[CIVIL_PROFILE_SECTION[reference]].append(reference)
+    for definition in person_defs:
+        section = getattr(definition, "profile_section", None) or "misc"
+        buckets.get(section, buckets["misc"]).append(definition.key)
+    return [
+        ProfileFieldSectionResponse(
+            key=section_key,
+            name=labels.get(lang) or labels["fr"],
+            references=buckets[section_key],
         )
-        remaining = [r for r in remaining if r not in member_refs]
-    if remaining:
-        out.append(ProfileFieldSectionResponse(name=None, references=remaining))
-    return out
+        for section_key, labels in PROFILE_SECTIONS.items()
+    ]
 
 
 def profile_divergences(
@@ -299,10 +302,7 @@ class ClientProfilesManager:
             ],
             derived_status=derived_client_status([c for _e, c, _n in cases]),
             completeness=completeness(profile, person_defs),
-            sections=resolve_field_sections(
-                sorted(COLLECTABLE_BASE_FIELDS) + [d.key for d in person_defs],
-                agency_lang,
-            ),
+            sections=resolve_field_sections(person_defs, agency_lang),
             created_at=profile.created_at,
             updated_at=profile.updated_at,
         )

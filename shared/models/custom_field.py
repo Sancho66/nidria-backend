@@ -47,6 +47,12 @@ class CustomFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scope: Mapped[str] = mapped_column(
         String(10), nullable=False, default="case", server_default="case"
     )
+    # Taxonomie FICHE (lot taxonomie) : la section de la définition sur la
+    # fiche client — 'misc' par défaut pour les custom d'agence,
+    # reclassable par le toggle. Voir src/client_profiles/profile_sections.
+    profile_section: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="misc", server_default="misc"
+    )
     required: Mapped[bool] = mapped_column(default=False, nullable=False)
     position: Mapped[int] = mapped_column(default=0, nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

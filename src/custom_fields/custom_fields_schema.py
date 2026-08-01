@@ -26,6 +26,7 @@ class CustomFieldDefinitionResponse(BaseModel):
     # promouvable) ; 'case' = propre à la mission. L'AGENCE est le juge
     # final — reclassable par le PATCH (toggle scope).
     scope: str
+    profile_section: str
     required: bool
     position: int
     archived_at: datetime | None
@@ -59,6 +60,11 @@ class CustomFieldDefinitionUpdate(BaseModel):
     la surface change (fiche/complétude/prefill pour 'person')."""
 
     scope: Literal["person", "case"] | None = None
+    # Taxonomie fiche : reclasser la section de la définition (toggle
+    # élargi — même PATCH, même gate).
+    profile_section: Literal["identity", "contact", "id_documents", "situation", "misc"] | None = (
+        None
+    )
     label: str | None = Field(default=None, min_length=1, max_length=200)
     label_i18n: dict[str, str] | None = None
     options: list[str] | None = None

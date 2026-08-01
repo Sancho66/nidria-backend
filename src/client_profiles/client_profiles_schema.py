@@ -32,11 +32,13 @@ class ProfileCompletenessResponse(BaseModel):
 
 
 class ProfileFieldSectionResponse(BaseModel):
-    """Un groupe de champs person de la fiche, par SECTION RÉELLE du
-    référentiel (lot sections) : l'identité canonique vient des sections
-    des parcours de l'agence (seed_key, sinon nom) — le panier « Sans
-    section » ferme la liste (name null)."""
+    """Une catégorie du RAIL DU PICKER sur la fiche (correctif final rail) :
+    TOUTES les catégories du catalogue sont servies — même source, même
+    ordre, même clé stable (`key`) — y compris à zéro champ person (le
+    front décide de leur rendu). Le panier « Sans catégorie » (key/name
+    null) ferme la liste s'il reste des clés hors catalogue."""
 
+    key: str | None
     name: str | None
     references: list[str]
 
