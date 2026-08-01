@@ -353,3 +353,337 @@ async def test_prefill_divergence_and_both_gestures(
     )
     assert r.status_code == 422
     assert r.json()["code"] == "profile.reference_not_person_scope"
+
+
+# --- ANNUAIRE F3 : ouvertures (views clients, filtres, coût de lecture) ---------------
+
+
+async def test_views_open_to_clients_entity(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """F3.1 — l'API des vues accepte l'entité 'clients' (persistance
+    identique), la liste filtre par entité, le n'importe-quoi reste 422."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/views", headers=headers, json={"name": "Mes clients", "entity": "clients"}
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["entity"] == "clients"
+    listed = (await client.get("/views?entity=clients", headers=headers)).json()
+    assert [v["name"] for v in listed] == ["Mes clients"]
+    assert (await client.get("/views?entity=cases", headers=headers)).json() == []
+    r = await client.post("/views", headers=headers, json={"name": "Bad", "entity": "unicorns"})
+    assert r.status_code == 422
+
+
+async def test_directory_list_filters_and_aggregates(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """F3.2 — le filtre status suit LA dérivation (jamais deux vérités :
+    l'accord filtre SQL ↔ derived_status Python est vérifié item par item) ;
+    chaque item porte tags, dernière activité, espace client activé."""
+    headers = agent_headers(admin)
+    # Prospect pur (dossier né prospect) + client (dossier avancé).
+    for i, email_addr in enumerate(("annuaire-p@example.com", "annuaire-c@example.com")):
+        r = await client.post(
+            "/cases",
+            headers=headers,
+            json={"first_name": f"Annuaire{i}", "last_name": "Test", "email": email_addr},
+        )
+        assert r.status_code == 201, r.text
+        if email_addr.startswith("annuaire-c"):
+            await db_session.execute(
+                text("UPDATE client_case SET status = 'in_progress' WHERE id = :i"),
+                {"i": r.json()["id"]},
+            )
+            await db_session.commit()
+    all_items = (await client.get("/client-profiles?search=annuaire-", headers=headers)).json()
+    assert all_items["total"] == 2
+    for item in all_items["items"]:
+        assert isinstance(item["tags"], list)
+        assert item["last_activity_at"] is not None  # activity_log du dossier
+        assert item["client_space_activated"] is False  # jamais activé
+    prospects = (
+        await client.get("/client-profiles?search=annuaire-&status=prospect", headers=headers)
+    ).json()
+    clients_only = (
+        await client.get("/client-profiles?search=annuaire-&status=client", headers=headers)
+    ).json()
+    # L'ACCORD : le filtre SQL renvoie exactement les items dont la
+    # dérivation Python dit ce statut — et les deux moitiés se recomposent.
+    assert {i["email"] for i in prospects["items"]} == {"annuaire-p@example.com"}
+    assert {i["email"] for i in clients_only["items"]} == {"annuaire-c@example.com"}
+    assert all(i["derived_status"] == "prospect" for i in prospects["items"])
+    assert all(i["derived_status"] == "client" for i in clients_only["items"])
+    assert prospects["total"] + clients_only["total"] == all_items["total"]
+
+
+async def test_profile_case_summary_has_current_step_in_agency_language(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """F3.3 — la relation dossier de la fiche porte l'étape en cours,
+    résolue dans la langue de l'agence."""
+    headers = agent_headers(admin)
+    r = await client.post("/journeys", headers=headers, json={"name": "Parcours annuaire"})
+    assert r.status_code == 201, r.text
+    template_id = r.json()["id"]
+    r = await client.post(
+        f"/journeys/{template_id}/steps", headers=headers, json={"name": "Première étape"}
+    )
+    assert r.status_code == 201, r.text
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={
+            "first_name": "Etape",
+            "last_name": "Annuaire",
+            "email": "etape-annuaire@example.com",
+        },
+    )
+    assert r.status_code == 201, r.text
+    # L'instanciation du progress passe par l'assignation (même règle que
+    # la liste dossiers : sans progress, pas d'étape en cours).
+    r = await client.post(
+        f"/cases/{r.json()['id']}/journey",
+        headers=headers,
+        json={"journey_template_id": template_id},
+    )
+    assert r.status_code == 201, r.text
+    listing = (await client.get("/client-profiles?search=etape-annuaire", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["cases"][0]["current_step_name"] == "Première étape"
+
+
+async def test_directory_list_query_count_is_constant(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """F3.4 — témoin de comptage : la liste tourne en un nombre FIXE de
+    requêtes groupées quel que soit le nombre de fiches (pas de N+1)."""
+    from sqlalchemy import event
+
+    from src.client_profiles.client_profiles_manager import ClientProfilesManager
+
+    headers = agent_headers(admin)
+    for i in range(3):
+        r = await client.post(
+            "/cases",
+            headers=headers,
+            json={"first_name": f"Fleet{i}", "last_name": "Witness", "email": f"w{i}@example.com"},
+        )
+        assert r.status_code == 201, r.text
+    engine = db_session.get_bind()
+    counter = {"n": 0}
+
+    def _count(*_args: object, **_kwargs: object) -> None:
+        counter["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _count)
+    try:
+        result = await ClientProfilesManager(db_session).list_profiles(
+            admin, search=None, status=None, page=1, page_size=20
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    assert result.total >= 3
+    # 6 = items + count + dossiers + membres + selectinload expat + activité
+    # groupée — CONSTANT quelle que soit la taille de la page.
+    assert counter["n"] <= 6, f"directory list ran {counter['n']} queries"
+
+
+async def test_profile_patch_mirrors_person_contract(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Complément annuaire — PATCH de la fiche : écriture d'un champ civil
+    et d'un custom person (forme PersonUpdateRequest), refus nommé d'un
+    champ de portée dossier, refus cross-agence, dossiers intouchés
+    (divergence visible à la lecture), tracé activity_log."""
+    headers = agent_headers(admin)
+    agency_id = admin.agency_id
+    await _person_def(db_session, agency_id, "birth_country")
+    case_def = CustomFieldDefinition(
+        agency_id=agency_id, key="visa_type", label="visa_type", field_type="text", scope="case"
+    )
+    db_session.add(case_def)
+    await db_session.commit()
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={
+            "first_name": "Patch",
+            "last_name": "Fiche",
+            "email": "patch-fiche@example.com",
+            "nationality": "FR",
+        },
+    )
+    assert r.status_code == 201, r.text
+    case_id = r.json()["id"]
+    listing = (await client.get("/client-profiles?search=patch-fiche", headers=headers)).json()
+    profile_id = listing["items"][0]["id"]
+
+    # ÉCRITURE : un civil (enum inclus) + un custom person, forme person.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}",
+        headers=headers,
+        json={
+            "nationality": "PT",
+            "sex": "F",
+            "preferred_channels": ["email", "email", "whatsapp"],
+            "custom_fields": {"birth_country": "PT"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["nationality"] == "PT"
+    assert body["sex"] == "F"
+    assert body["preferred_channels"] == ["email", "whatsapp"]  # dédupliqué
+    assert body["custom_fields"]["birth_country"] == "PT"
+    # Le DOSSIER n'a pas bougé — sa divergence devient visible (F2.2).
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    person = detail["persons"][0]
+    assert person["nationality"] == "FR"
+    assert person["differs_from_profile"] == ["nationality"]
+    # Tracé sur le dossier vivant de la fiche.
+    n_logs = (
+        await db_session.execute(
+            text("SELECT count(*) FROM activity_log WHERE action_type = 'profile.updated'")
+        )
+    ).scalar_one()
+    assert n_logs == 1
+
+    # REFUS : une clé custom de portée dossier → 422 nommé.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}",
+        headers=headers,
+        json={"custom_fields": {"visa_type": "gold"}},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "profile.reference_not_person_scope"
+    # REFUS : un champ hors miroir (concept personne-au-dossier) → 422.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}", headers=headers, json={"full_name": "X"}
+    )
+    assert r.status_code == 422
+
+    # REFUS cross-agence : 404 non-révélateur.
+    other = await make_agent(role=system_roles["admin"])
+    r = await client.patch(
+        f"/client-profiles/{profile_id}",
+        headers=agent_headers(other),
+        json={"nationality": "BR"},
+    )
+    assert r.status_code == 404
+
+
+async def test_direct_profile_creation_dedup_and_deferred_linkage(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Complément 2 (F4) — la fiche naît SANS compte (prospect à froid),
+    l'email est dédupliqué 409 par agence, et la liaison se fait au PREMIER
+    dossier (adoption par email) — par la « Nouvelle démarche » comme par
+    un POST /cases ordinaire. Jamais deux fiches pour un même client."""
+    headers = agent_headers(admin)
+    # CRÉATION DIRECTE : identité + un civil du miroir.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={
+            "first_name": "Froid",
+            "last_name": "Prospect",
+            "email": "froid@example.com",
+            "nationality": "AR",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    profile_id = body["id"]
+    assert body["expat_user_id"] is None  # AUCUN compte créé
+    assert body["nationality"] == "AR"
+    assert body["derived_status"] == "prospect"
+    # Visible dans l'annuaire (recherche sur l'identité propre).
+    listing = (await client.get("/client-profiles?search=froid@", headers=headers)).json()
+    assert listing["total"] == 1
+    assert listing["items"][0]["client_space_activated"] is False
+
+    # DÉDUP : même email, même agence → 409 nommé (casse ignorée).
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Bis", "last_name": "Bis", "email": "FROID@example.com"},
+    )
+    assert r.status_code == 409
+    assert r.json()["code"] == "profile.email_taken"
+    # Une AUTRE agence peut avoir le même email (annuaires distincts).
+    other = await make_agent(role=system_roles["admin"])
+    r = await client.post(
+        "/client-profiles",
+        headers=agent_headers(other),
+        json={"first_name": "Autre", "last_name": "Agence", "email": "froid@example.com"},
+    )
+    assert r.status_code == 201, r.text
+
+    # LIAISON DIFFÉRÉE chemin 1 — « Nouvelle démarche » depuis la fiche.
+    r = await client.post(f"/client-profiles/{profile_id}/cases", headers=headers, json={})
+    assert r.status_code in (200, 201), r.text
+    case_id = r.json()["id"]
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert detail["expat_user_id"] is not None  # ADOPTÉE, pas une 2e fiche
+    assert len(detail["cases"]) == 1
+    # Le prefill F2.1 a posé le civil de la fiche sur le dossier.
+    case_detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    assert case_detail["persons"][0]["nationality"] == "AR"
+    assert case_detail["persons"][0]["client_profile_id"] == profile_id
+    # L'annuaire ne compte toujours qu'UNE fiche pour cet email.
+    listing = (await client.get("/client-profiles?search=froid@", headers=headers)).json()
+    assert listing["total"] == 1
+
+    # LIAISON DIFFÉRÉE chemin 2 — un POST /cases ordinaire adopte aussi.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Direct", "last_name": "Case", "email": "direct-case@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    second_profile_id = r.json()["id"]
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Direct", "last_name": "Case", "email": "direct-case@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    detail = (await client.get(f"/client-profiles/{second_profile_id}", headers=headers)).json()
+    assert detail["expat_user_id"] is not None
+    listing = (await client.get("/client-profiles?search=direct-case@", headers=headers)).json()
+    assert listing["total"] == 1

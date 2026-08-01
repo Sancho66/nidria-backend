@@ -6,13 +6,19 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.cases.cases_schema import _CivilStatusFields
+from src.core.email import NormalizedEmailStr
+
 
 class ProfileCaseSummaryResponse(BaseModel):
-    """Un dossier de la fiche, en résumé."""
+    """Un dossier de la fiche, en résumé. `current_step_name` est résolu
+    dans la langue par défaut de l'AGENCE (annuaire F3.3) — même règle de
+    bande de progression que la liste dossiers, batché sans N+1."""
 
     id: uuid.UUID
     status: str
     journey_name: str | None
+    current_step_name: str | None = None
     reference: str | None
     created_at: datetime
 
@@ -26,6 +32,7 @@ class ProfileCompletenessResponse(BaseModel):
 
 
 class ClientProfileListItemResponse(BaseModel):
+    # `id` EST le client_profile_id (une seule clé, pas de champ dupliqué).
     id: uuid.UUID
     first_name: str
     last_name: str
@@ -35,6 +42,11 @@ class ClientProfileListItemResponse(BaseModel):
     # Statut client DÉRIVÉ (Phase 0 D9 : jamais deux vérités) — 'prospect'
     # si aucun dossier au-delà de prospect, sinon le plus avancé.
     derived_status: str
+    tags: list[str] = []
+    # Dernière activité : max(activity_log) des dossiers vivants de la
+    # fiche ; à défaut, updated_at de la fiche (verdict annuaire F3.2).
+    last_activity_at: datetime | None = None
+    client_space_activated: bool = False
     created_at: datetime
 
 
@@ -49,11 +61,13 @@ class ClientProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    expat_user_id: uuid.UUID
+    # NULL = fiche pas encore liée à un compte (création directe F4) —
+    # l'identité vient alors des colonnes propres de la fiche.
+    expat_user_id: uuid.UUID | None
     first_name: str
     last_name: str
     email: str
-    preferred_lang: str
+    preferred_lang: str | None
     activated_at: datetime | None
     # Le miroir civil (les 10 colonnes) + le sac custom (valeurs visibles).
     passport_number: str | None
@@ -75,6 +89,39 @@ class ClientProfileResponse(BaseModel):
     completeness: ProfileCompletenessResponse
     created_at: datetime
     updated_at: datetime
+
+
+class ClientProfileCreateRequest(_CivilStatusFields):
+    """Création DIRECTE de fiche (complément 2, F4) — le prospect à froid,
+    AVANT tout dossier. `email` requis : il porte la dédup (409 par agence)
+    et la liaison différée au premier dossier (adoption par email). Même
+    mixin civil que le PATCH ; `custom_fields` scope='person' seules."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    email: NormalizedEmailStr
+    custom_fields: dict[str, Any] | None = None
+
+
+class ClientProfileUpdateRequest(_CivilStatusFields):
+    """PATCH de la fiche — MIROIR de `PersonUpdateRequest` : même mixin
+    civil (mêmes types, mêmes longueurs, mêmes enums), mêmes sémantiques
+    exclude_unset (champ absent = intouché, null explicite = effacé),
+    `custom_fields` en merge partiel — clés scope='person' SEULES (une clé
+    de portée dossier → 422 nommé).
+
+    Écarts avec PersonUpdateRequest, NOMMÉS : pas de `full_name` /
+    `relationship` (concepts de personne-au-dossier ; l'identité de la
+    fiche vit sur le compte expat_user), pas d'`email` (liaison de compte,
+    pas une donnée de fiche). `source`/`tags` ne sont pas non plus dans ce
+    PATCH (absents aussi du contrat person — à ouvrir si le front le
+    demande)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    custom_fields: dict[str, Any] | None = None
 
 
 class ProfileMergeRequest(BaseModel):

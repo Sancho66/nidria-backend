@@ -18,15 +18,17 @@ from shared.models.client_profile import ClientProfile
 from shared.models.custom_field import CustomFieldDefinition
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
 from src.client_profiles.client_profiles_schema import (
+    ClientProfileCreateRequest,
     ClientProfileListItemResponse,
     ClientProfileListResponse,
     ClientProfileResponse,
+    ClientProfileUpdateRequest,
     NewCaseForProfileRequest,
     ProfileCaseSummaryResponse,
     ProfileCompletenessResponse,
 )
 from src.core.enums import CaseStatus
-from src.core.exceptions import NotFoundError, ValidationError
+from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_validation import visible_values
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS, profile_field_value
@@ -96,6 +98,23 @@ async def link_and_prefill_person(
     repo = ClientProfilesRepository(db)
     profile = await repo.get_by_expat(agency_id, person.expat_user_id)
     if profile is None:
+        # ADOPTION (F4, liaison différée) : une fiche créée en direct
+        # (sans compte) qui porte l'email de ce compte est LA fiche de ce
+        # client — on la lie au lieu d'en créer une seconde.
+        from sqlalchemy import select as sa_select
+
+        from shared.models.expat_user import ExpatUser as ExpatUserModel
+
+        account_email = (
+            await db.execute(
+                sa_select(ExpatUserModel.email).where(ExpatUserModel.id == person.expat_user_id)
+            )
+        ).scalar_one_or_none()
+        if account_email:
+            profile = await repo.get_unlinked_by_email(agency_id, account_email)
+            if profile is not None:
+                profile.expat_user_id = person.expat_user_id
+    if profile is None:
         profile = ClientProfile(agency_id=agency_id, expat_user_id=person.expat_user_id)
         db.add(profile)
         await db.flush()
@@ -133,31 +152,45 @@ class ClientProfilesManager:
         return profile
 
     async def list_profiles(
-        self, agent: Agent, *, search: str | None, page: int, page_size: int
+        self,
+        agent: Agent,
+        *,
+        search: str | None,
+        status: str | None = None,
+        page: int,
+        page_size: int,
     ) -> ClientProfileListResponse:
         profiles, total = await self.repo.list_page(
-            agent.agency_id, search=search, page=page, page_size=page_size
+            agent.agency_id, search=search, status=status, page=page, page_size=page_size
         )
         cases = await self.repo.cases_for_profiles(
-            agent.agency_id, [p.expat_user_id for p in profiles]
+            agent.agency_id, [p.expat_user_id for p in profiles if p.expat_user_id]
         )
         by_expat: dict[uuid.UUID, list[ClientCase]] = {}
         for expat_id, case, _name in cases:
             by_expat.setdefault(expat_id, []).append(case)
+        last_activity = await self.repo.last_activity_for_cases(
+            list({case.id for _e, case, _n in cases})
+        )
         items = []
         for profile in profiles:
-            profile_cases = by_expat.get(profile.expat_user_id, [])
+            profile_cases = by_expat.get(profile.expat_user_id, []) if profile.expat_user_id else []
+            case_activity = [last_activity[c.id] for c in profile_cases if c.id in last_activity]
+            account = profile.expat_user
             items.append(
                 ClientProfileListItemResponse(
                     id=profile.id,
-                    first_name=profile.expat_user.first_name,
-                    last_name=profile.expat_user.last_name,
-                    email=profile.expat_user.email,
+                    first_name=account.first_name if account else (profile.first_name or ""),
+                    last_name=account.last_name if account else (profile.last_name or ""),
+                    email=account.email if account else (profile.email or ""),
                     cases_count=len(profile_cases),
                     active_cases_count=sum(
                         1 for c in profile_cases if c.status != CaseStatus.CLOSED.value
                     ),
                     derived_status=derived_client_status(profile_cases),
+                    tags=list(profile.tags or []),
+                    last_activity_at=max(case_activity) if case_activity else profile.updated_at,
+                    client_space_activated=(account.activated_at is not None if account else False),
                     created_at=profile.created_at,
                 )
             )
@@ -165,18 +198,41 @@ class ClientProfilesManager:
 
     async def get_profile(self, agent: Agent, profile_id: uuid.UUID) -> ClientProfileResponse:
         profile = await self._get(agent, profile_id)
-        cases = await self.repo.cases_for_profiles(agent.agency_id, [profile.expat_user_id])
+        cases = await self.repo.cases_for_profiles(
+            agent.agency_id, [profile.expat_user_id] if profile.expat_user_id else []
+        )
         person_defs = await person_scope_definitions(self.db, agent.agency_id)
         all_defs = await CustomFieldsRepository(self.db).list_for_agency(agent.agency_id)
         active_defs = [d for d in all_defs if d.archived_at is None]
+        # Annuaire F3.3 : l'étape en cours par dossier, batchée (UNE requête
+        # progress), résolue dans la LANGUE DE L'AGENCE — même règle de bande
+        # de progression que la liste dossiers.
+        from src.core.i18n import resolve_i18n
+        from src.progress.progress_repository import ProgressRepository
+
+        with_journey = [c.id for _e, c, _n in cases if c.journey_template_id is not None]
+        step_rows = (
+            await ProgressRepository(self.db).current_steps_for_cases(with_journey)
+            if with_journey
+            else {}
+        )
+        agency_lang = await self.repo.agency_default_language(agent.agency_id)
+        current_steps: dict[uuid.UUID, str | None] = {}
+        for case_id, (step, _index, _total) in step_rows.items():
+            current_steps[case_id] = (
+                resolve_i18n(step.name_i18n, agency_lang, agency_lang, step.name)
+                if step is not None
+                else None
+            )
+        account = profile.expat_user
         return ClientProfileResponse(
             id=profile.id,
             expat_user_id=profile.expat_user_id,
-            first_name=profile.expat_user.first_name,
-            last_name=profile.expat_user.last_name,
-            email=profile.expat_user.email,
-            preferred_lang=profile.expat_user.preferred_lang,
-            activated_at=profile.expat_user.activated_at,
+            first_name=account.first_name if account else (profile.first_name or ""),
+            last_name=account.last_name if account else (profile.last_name or ""),
+            email=account.email if account else (profile.email or ""),
+            preferred_lang=account.preferred_lang if account else None,
+            activated_at=account.activated_at if account else None,
             passport_number=profile.passport_number,
             date_of_birth=profile.date_of_birth,
             nationality=profile.nationality,
@@ -196,6 +252,7 @@ class ClientProfilesManager:
                     id=case.id,
                     status=case.status,
                     journey_name=journey_name,
+                    current_step_name=current_steps.get(case.id),
                     reference=case.reference,
                     created_at=case.created_at,
                 )
@@ -206,6 +263,131 @@ class ClientProfilesManager:
             created_at=profile.created_at,
             updated_at=profile.updated_at,
         )
+
+    async def create_profile(
+        self, agent: Agent, payload: ClientProfileCreateRequest
+    ) -> ClientProfileResponse:
+        """Création DIRECTE de fiche (complément 2, F4) — le prospect à
+        froid, avant tout dossier. Fiche NON LIÉE (expat_user_id NULL) :
+        AUCUN compte n'est créé ici — la liaison est différée au premier
+        dossier (adoption par email dans link_and_prefill_person). Dédup :
+        l'email déjà présent dans l'annuaire de l'agence (fiche liée ou
+        non) → 409 nommé."""
+        from src.client_profiles.backfill import CIVIL_COLUMNS
+
+        if await self.repo.email_taken(agent.agency_id, payload.email):
+            raise ConflictError(
+                "A client profile with this email already exists in this agency.",
+                code="profile.email_taken",
+                params={"email": payload.email},
+            )
+        profile = ClientProfile(
+            agency_id=agent.agency_id,
+            expat_user_id=None,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            email=payload.email,
+        )
+        provided = payload.model_dump(exclude_unset=True)
+        for field in (*CIVIL_COLUMNS, "preferred_channels"):
+            if field not in provided:
+                continue
+            value = provided[field]
+            if field == "preferred_channels":
+                seen: list[str] = []
+                for c in value or []:
+                    v = c.value if hasattr(c, "value") else c
+                    if v not in seen:
+                        seen.append(v)
+                profile.preferred_channels = seen
+                continue
+            setattr(profile, field, value.value if hasattr(value, "value") else value)
+        if payload.custom_fields:
+            all_defs = await CustomFieldsRepository(self.db).list_for_agency(agent.agency_id)
+            active = [d for d in all_defs if d.archived_at is None]
+            case_scope_keys = {d.key for d in active if d.scope != "person"}
+            offending = sorted(set(payload.custom_fields) & case_scope_keys)
+            if offending:
+                raise ValidationError(
+                    f"{offending[0]!r} is not a person-scoped field.",
+                    code="profile.reference_not_person_scope",
+                    params={"reference": offending[0]},
+                )
+            from src.custom_fields.custom_fields_validation import validate_and_merge
+
+            profile.custom_fields = validate_and_merge(
+                [d for d in active if d.scope == "person"], {}, payload.custom_fields
+            )
+        self.db.add(profile)
+        await self.db.commit()
+        return await self.get_profile(agent, profile.id)
+
+    async def update_profile(
+        self, agent: Agent, profile_id: uuid.UUID, payload: ClientProfileUpdateRequest
+    ) -> ClientProfileResponse:
+        """PATCH de la fiche — le miroir d'édition de PersonUpdateRequest,
+        appliqué au plan PROFILE : mêmes sémantiques exclude_unset et la
+        même transformation des valeurs que `_apply_civil_fields` côté
+        dossier. Les dossiers ne bougent pas d'un octet (leur divergence
+        éventuelle devient visible à la lecture — F2.2). Tracé sur chaque
+        dossier vivant de la fiche (activity_log est case-scopé — une fiche
+        sans dossier ne laisse que son updated_at)."""
+        from src.client_profiles.backfill import CIVIL_COLUMNS
+
+        profile = await self._get(agent, profile_id)
+        provided = payload.model_dump(exclude_unset=True)
+        touched: list[str] = []
+        for field in (*CIVIL_COLUMNS, "preferred_channels"):
+            if field not in provided:
+                continue
+            value = provided[field]
+            touched.append(field)
+            if field == "preferred_channels":
+                seen: list[str] = []
+                for c in value or []:
+                    v = c.value if hasattr(c, "value") else c
+                    if v not in seen:
+                        seen.append(v)
+                profile.preferred_channels = seen
+                continue
+            setattr(profile, field, value.value if hasattr(value, "value") else value)
+        if "custom_fields" in provided and payload.custom_fields is not None:
+            all_defs = await CustomFieldsRepository(self.db).list_for_agency(agent.agency_id)
+            active = [d for d in all_defs if d.archived_at is None]
+            case_scope_keys = {d.key for d in active if d.scope != "person"}
+            offending = sorted(set(payload.custom_fields) & case_scope_keys)
+            if offending:
+                raise ValidationError(
+                    f"{offending[0]!r} is not a person-scoped field.",
+                    code="profile.reference_not_person_scope",
+                    params={"reference": offending[0]},
+                )
+            from src.custom_fields.custom_fields_validation import validate_and_merge
+
+            profile.custom_fields = validate_and_merge(
+                [d for d in active if d.scope == "person"],
+                dict(profile.custom_fields or {}),
+                payload.custom_fields,
+            )
+            touched.extend(sorted(payload.custom_fields))
+        if touched:
+            from src.activity.activity_manager import ActivityManager
+            from src.core.enums import ActorType
+
+            cases = await self.repo.cases_for_profiles(
+                agent.agency_id, [profile.expat_user_id] if profile.expat_user_id else []
+            )
+            activity = ActivityManager(self.db)
+            for case_id in {case.id for _e, case, _n in cases}:
+                activity.log_action(
+                    case_id=case_id,
+                    actor_type=ActorType.AGENT,
+                    actor_id=agent.id,
+                    action_type="profile.updated",
+                    details={"profile_id": str(profile.id), "fields": touched},
+                )
+        await self.db.commit()
+        return await self.get_profile(agent, profile_id)
 
     async def merge_profiles(
         self, agent: Agent, target_id: uuid.UUID, source_id: uuid.UUID
@@ -386,11 +568,17 @@ class ClientProfilesManager:
         from src.cases.cases_manager import CasesManager
         from src.cases.cases_schema import CaseCreateRequest
 
+        account = profile.expat_user
+        if account is None and not profile.email:
+            raise ValidationError(
+                "This profile has no email to create a case with.",
+                code="profile.no_email",
+            )
         request = CaseCreateRequest(
-            first_name=profile.expat_user.first_name,
-            last_name=profile.expat_user.last_name,
-            email=profile.expat_user.email,
-            preferred_lang=profile.expat_user.preferred_lang,
+            first_name=account.first_name if account else (profile.first_name or ""),
+            last_name=account.last_name if account else (profile.last_name or ""),
+            email=account.email if account else profile.email,
+            preferred_lang=account.preferred_lang if account else "fr",
             journey_template_id=payload.journey_template_id,
             origin_country=payload.origin_country,
             dest_country=payload.dest_country,

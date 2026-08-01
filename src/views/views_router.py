@@ -58,7 +58,9 @@ async def list_available_columns(agent: AgentDep, db: DbDep) -> AvailableColumns
 async def list_views(
     agent: AgentDep,
     db: DbDep,
-    entity: Annotated[str | None, Query(description="Filter to one entity ('cases')")] = None,
+    entity: Annotated[
+        str | None, Query(description="Filter to one entity ('cases' | 'clients')")
+    ] = None,
 ) -> list[SavedViewRead]:
     return await ViewsManager(db).list_(agent, entity)
 

@@ -35,9 +35,19 @@ class ClientProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     agency_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    expat_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("expat_user.id", ondelete="RESTRICT"), index=True, nullable=False
+    # NULLABLE (complément 2, F4) : une fiche peut naître SANS compte
+    # (prospect à froid, création directe) — la liaison se fait au PREMIER
+    # dossier (adoption par email dans link_and_prefill_person). L'UNIQUE
+    # (agency, expat) ne contraint pas les NULL (sémantique Postgres).
+    expat_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("expat_user.id", ondelete="RESTRICT"), index=True, nullable=True
     )
+    # Identité PROPRE de la fiche (posée à la création directe) : sert tant
+    # que la fiche n'est pas liée ; après liaison, l'identité du COMPTE
+    # prime à la lecture, ces colonnes restent la trace d'origine.
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    email: Mapped[str | None] = mapped_column(String(255), index=True)
 
     # --- miroir civil de case_person (mêmes types, mêmes longueurs) -------
     passport_number: Mapped[str | None] = mapped_column(String(50))

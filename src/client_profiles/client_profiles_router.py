@@ -5,7 +5,7 @@ EST du travail client), les GESTES d'écriture au niveau de l'édition de
 dossier (`case.edit` — cohérence F2.3)."""
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,8 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from src.client_profiles.client_profiles_manager import ClientProfilesManager
 from src.client_profiles.client_profiles_schema import (
+    ClientProfileCreateRequest,
     ClientProfileListResponse,
     ClientProfileResponse,
+    ClientProfileUpdateRequest,
     FieldGestureRequest,
     NewCaseForProfileRequest,
     ProfileCompletenessResponse,
@@ -39,6 +41,8 @@ BINDINGS = [
         Audience.AGENT,
         Permission.CASE_VIEW,
     ),
+    RouteBinding("POST", "/client-profiles", Audience.AGENT, Permission.CASE_EDIT),
+    RouteBinding("PATCH", "/client-profiles/{profile_id}", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding(
         "POST", "/client-profiles/{profile_id}/merge", Audience.AGENT, Permission.CASE_EDIT
     ),
@@ -65,11 +69,15 @@ async def list_client_profiles(
     agent: AgentDep,
     db: DbDep,
     search: str | None = None,
+    status: Annotated[
+        Literal["prospect", "client"] | None,
+        Query(description="Filter on the DERIVED client status (annuaire F3.2)."),
+    ] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> ClientProfileListResponse:
     return await ClientProfilesManager(db).list_profiles(
-        agent, search=search, page=page, page_size=page_size
+        agent, search=search, status=status, page=page, page_size=page_size
     )
 
 
@@ -96,6 +104,24 @@ async def get_profile_completeness(
     )
 
     return completeness(profile, await person_scope_definitions(db, agent.agency_id))
+
+
+@router.post("/client-profiles", response_model=ClientProfileResponse, status_code=201)
+async def create_client_profile(
+    payload: ClientProfileCreateRequest, agent: AgentDep, db: DbDep
+) -> ClientProfileResponse:
+    """Création directe de fiche (F4) — prospect à froid, sans compte ;
+    liaison différée au premier dossier, dédup email 409 par agence."""
+    return await ClientProfilesManager(db).create_profile(agent, payload)
+
+
+@router.patch("/client-profiles/{profile_id}", response_model=ClientProfileResponse)
+async def update_client_profile(
+    profile_id: uuid.UUID, payload: ClientProfileUpdateRequest, agent: AgentDep, db: DbDep
+) -> ClientProfileResponse:
+    """Écriture de la fiche (complément annuaire) — miroir d'édition de
+    PersonUpdateRequest sur le plan PROFILE, gate `case.edit`."""
+    return await ClientProfilesManager(db).update_profile(agent, profile_id, payload)
 
 
 @router.post("/client-profiles/{profile_id}/merge", response_model=ClientProfileResponse)

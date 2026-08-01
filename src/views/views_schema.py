@@ -2,17 +2,28 @@
 
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Entities a saved view can target:
-# - "cases": named table views of the cases list.
-# - "cases_all": the per-agent customizable "All" view of the cases
-#   list (is_default_all=True). A distinct entity value (not a flag on
-#   "cases") so the (agent, agency, entity) partial unique index on
-#   is_default_all rows stays per-surface — Prism's exact scheme.
-Entity = Literal["cases", "cases_all"]
+
+class ListableEntity(StrEnum):
+    """Entities a saved view can target — one member per listable surface,
+    extensible (annuaire F3: the clients directory joins the cases list):
+    - "cases": named table views of the cases list.
+    - "cases_all": the per-agent customizable "All" view of the cases
+      list (is_default_all=True). A distinct entity value (not a flag on
+      "cases") so the (agent, agency, entity) partial unique index on
+      is_default_all rows stays per-surface — Prism's exact scheme.
+    - "clients": named table views of the clients directory."""
+
+    CASES = "cases"
+    CASES_ALL = "cases_all"
+    CLIENTS = "clients"
+
+
+Entity = ListableEntity
 
 # The entity values a customizable "All" view can target. The
 # /views/default-all endpoints and the manager reject any other.
@@ -45,7 +56,7 @@ class SavedViewRead(BaseModel):
 
 class SavedViewCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    entity: Entity = "cases"
+    entity: Entity = ListableEntity.CASES
     filters: dict[str, Any] = Field(default_factory=dict)
     # Optional ordered list of column keys to show. None = frontend
     # defaults (see GET /cases/columns).
