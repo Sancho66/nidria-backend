@@ -282,6 +282,9 @@ class CasesManager:
         from src.client_profiles.client_profiles_manager import link_and_prefill_person
 
         await link_and_prefill_person(self.db, agent.agency_id, principal)
+        from src.client_profiles.client_profiles_manager import auto_promote_person_gaps
+
+        await auto_promote_person_gaps(self.db, agent, principal)
         # FAMILY members ride along with their data (they belong to the
         # client, not to the dossier's lifecycle).
         for member in source_persons:
@@ -851,6 +854,14 @@ class CasesManager:
         "employer",
     )
 
+    async def _profile_for(self, person: CasePerson) -> "ClientProfileModel | None":
+        """La fiche liée pour une réponse d'ÉCRITURE person — le détail
+        dossier la charge en batch ; ici, une lecture unitaire suffit et la
+        réponse cesse de mentir sur differs_from_profile (diagnostic badge)."""
+        if person.client_profile_id is None:
+            return None
+        return await self.db.get(ClientProfileModel, person.client_profile_id)
+
     @staticmethod
     def _person_response(
         person: CasePerson,
@@ -1049,6 +1060,11 @@ class CasesManager:
             from src.client_profiles.client_profiles_manager import link_and_prefill_person
 
             await link_and_prefill_person(self.db, agent.agency_id, person)
+            from src.client_profiles.client_profiles_manager import (
+                auto_promote_person_gaps,
+            )
+
+            await auto_promote_person_gaps(self.db, agent, person)
         await self.db.flush()
         # Fin du gel de composition (Nicolas, repro b) : la personne ajoutée
         # gagne ses lignes each_person sur les étapes déjà actives, dans
@@ -1067,7 +1083,10 @@ class CasesManager:
         reloaded = await self.repo.get_person(case.id, person.id)
         assert reloaded is not None
         return self._person_response(
-            reloaded, definitions, await self._pending_invitations(case.id)
+            reloaded,
+            definitions,
+            await self._pending_invitations(case.id),
+            await self._profile_for(reloaded),
         )
 
     async def _member_pending_items(
@@ -1293,6 +1312,16 @@ class CasesManager:
             person.custom_fields = validate_and_merge(
                 definitions, person.custom_fields or {}, payload.custom_fields
             )
+        # AUTO-PROMOTION (chantier fiches) : les références ÉCRITES dont la
+        # fiche liée n'a AUCUNE valeur montent automatiquement (tracé
+        # auto=true) ; une valeur différente sur la fiche ne bouge pas (la
+        # divergence reste visible).
+        from src.client_profiles.client_profiles_manager import auto_promote_person_gaps
+
+        written_refs = [f for f in self._CIVIL_FIELDS if f in provided] + list(
+            (payload.custom_fields or {}) if "custom_fields" in provided else {}
+        )
+        await auto_promote_person_gaps(self.db, agent, person, references=written_refs)
         self._log(case.id, agent, "person.updated", {"person_id": str(person.id)})
         # Filling a civil field can complete an auto step or make an
         # agency_validation step ready to validate — recompute now.
@@ -1311,7 +1340,10 @@ class CasesManager:
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
         response = self._person_response(
-            reloaded, definitions, await self._pending_invitations(case.id)
+            reloaded,
+            definitions,
+            await self._pending_invitations(case.id),
+            await self._profile_for(reloaded),
         )
         response.invitation_resent = invitation_resent
         return response
@@ -1383,7 +1415,10 @@ class CasesManager:
         reloaded = await self.repo.get_person(case.id, person_id)
         assert reloaded is not None
         response = self._person_response(
-            reloaded, definitions, await self._pending_invitations(case.id)
+            reloaded,
+            definitions,
+            await self._pending_invitations(case.id),
+            await self._profile_for(reloaded),
         )
         response.invitation_resent = True
         return response

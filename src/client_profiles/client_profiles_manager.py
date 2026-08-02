@@ -186,6 +186,63 @@ async def link_and_prefill_person(
     return profile
 
 
+async def auto_promote_person_gaps(
+    db: AsyncSession,
+    agent: Agent,
+    person: CasePerson,
+    references: list[str] | None = None,
+) -> list[str]:
+    """À l'écriture d'un champ person sur une personne LIÉE : la fiche
+    n'a AUCUNE valeur pour ce champ → PROMOTION AUTOMATIQUE (tracée
+    « depuis le dossier », details.auto=true) ; la fiche a une valeur
+    DIFFÉRENTE → rien (la divergence existe, le front la montre).
+    `references=None` = tout le référentiel person (création) ; sinon les
+    seules références écrites (édition)."""
+    if person.client_profile_id is None:
+        return []
+    profile = await db.get(ClientProfile, person.client_profile_id)
+    if profile is None:
+        return []
+    person_defs = await person_scope_definitions(db, profile.agency_id)
+    person_keys = {d.key for d in person_defs}
+    if references is None:
+        candidates = sorted(COLLECTABLE_BASE_FIELDS) + sorted(person_keys)
+    else:
+        candidates = [r for r in references if r in COLLECTABLE_BASE_FIELDS or r in person_keys]
+    promoted: list[str] = []
+    sack = dict(profile.custom_fields or {})
+    for reference in candidates:
+        case_value = (
+            getattr(person, reference, None)
+            if reference in COLLECTABLE_BASE_FIELDS
+            else (person.custom_fields or {}).get(reference)
+        )
+        fiche_value = profile_field_value(profile, reference)
+        if _is_empty(case_value) or not _is_empty(fiche_value):
+            continue
+        if reference in COLLECTABLE_BASE_FIELDS:
+            setattr(profile, reference, case_value)
+        else:
+            sack[reference] = case_value
+        promoted.append(reference)
+    if any(r not in COLLECTABLE_BASE_FIELDS for r in promoted):
+        profile.custom_fields = sack
+    if promoted:
+        from src.activity.activity_manager import ActivityManager
+        from src.core.enums import ActorType
+
+        activity = ActivityManager(db)
+        for reference in promoted:
+            activity.log_action(
+                case_id=person.case_id,
+                actor_type=ActorType.AGENT,
+                actor_id=agent.id,
+                action_type="profile.field_promoted",
+                details={"reference": reference, "person_id": str(person.id), "auto": True},
+            )
+    return promoted
+
+
 class ClientProfilesManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db

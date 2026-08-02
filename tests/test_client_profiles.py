@@ -1492,3 +1492,71 @@ async def test_delete_profile_rules(
         )
     ).scalar_one()
     assert n_accounts == 1  # le compte global est INTOUCHÉ
+
+
+async def test_auto_promotion_on_person_write(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Écriture d'un champ person sur une personne LIÉE : fiche vide pour
+    ce champ → promotion AUTOMATIQUE tracée ; fiche différente → rien (la
+    divergence reste) — et la réponse d'ÉCRITURE dit la vérité
+    (differs_from_profile servi, le trou du badge est bouché)."""
+    headers = agent_headers(admin)
+    await _person_def(db_session, admin.agency_id, "birth_country")
+    await db_session.commit()
+    # Création AVEC valeurs : auto-promotion dès la naissance (fiche vide).
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={
+            "first_name": "Auto",
+            "last_name": "Promo",
+            "email": "auto-promo@example.com",
+            "nationality": "FR",
+            "custom_fields": {"birth_country": "FR"},
+        },
+    )
+    assert r.status_code == 201, r.text
+    case_id = r.json()["id"]
+    listing = (await client.get("/client-profiles?search=auto-promo@", headers=headers)).json()
+    profile_id = listing["items"][0]["id"]
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert detail["nationality"] == "FR"  # promue à la création
+    assert detail["custom_fields"]["birth_country"] == "FR"
+    n_auto = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM activity_log WHERE action_type = 'profile.field_promoted' "
+                "AND (details->>'auto')::boolean"
+            )
+        )
+    ).scalar_one()
+    assert n_auto == 2  # nationality + birth_country, tracées depuis le dossier
+
+    # ÉCRITURE d'un champ que la fiche n'a pas → promotion auto.
+    case_detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    person = case_detail["persons"][0]
+    r = await client.patch(
+        f"/cases/{case_id}/persons/{person['id']}",
+        headers=headers,
+        json={"profession": "Notaire"},
+    )
+    assert r.status_code == 200, r.text
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert detail["profession"] == "Notaire"
+    # ÉCRITURE d'une valeur DIFFÉRENTE de la fiche → rien ne bouge, et la
+    # RÉPONSE DU PATCH sert la divergence (le badge d'Alexandre).
+    r = await client.patch(
+        f"/cases/{case_id}/persons/{person['id']}",
+        headers=headers,
+        json={"nationality": "PT"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["differs_from_profile"] == ["nationality"]  # la réponse dit VRAI
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert detail["nationality"] == "FR"  # la fiche n'a pas bougé
