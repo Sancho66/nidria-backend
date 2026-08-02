@@ -16,11 +16,13 @@ class ListableEntity(StrEnum):
       list (is_default_all=True). A distinct entity value (not a flag on
       "cases") so the (agent, agency, entity) partial unique index on
       is_default_all rows stays per-surface — Prism's exact scheme.
-    - "clients": named table views of the clients directory."""
+    - "clients": named table views of the clients directory.
+    - "companies": named table views of the companies directory."""
 
     CASES = "cases"
     CASES_ALL = "cases_all"
     CLIENTS = "clients"
+    COMPANIES = "companies"
 
 
 Entity = ListableEntity

@@ -2,7 +2,7 @@
 client : lecture `case.view`, écritures `case.edit`."""
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,11 +49,24 @@ async def list_company_profiles(
     agent: AgentDep,
     db: DbDep,
     search: str | None = None,
+    tags: Annotated[list[str] | None, Query(description="ANY-of tag filter.")] = None,
+    has_active_case: bool | None = None,
+    has_people: bool | None = None,
+    sort_by: Annotated[Literal["name", "last_activity", "created_at"], Query()] = "name",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "asc",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> CompanyProfileListResponse:
     return await CompanyProfilesManager(db).list_companies(
-        agent, search=search, page=page, page_size=page_size
+        agent,
+        search=search,
+        tags=tags,
+        has_active_case=has_active_case,
+        has_people=has_people,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
     )
 
 

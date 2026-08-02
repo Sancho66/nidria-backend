@@ -204,3 +204,102 @@ async def test_delete_company_rules(
     assert r.status_code == 409
     assert r.json()["code"] == "company_profile.has_cases"
     assert r.json()["params"]["cases_count"] == 1
+
+
+async def test_company_directory_filters_sorts_and_cost(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Annuaire Sociétés au niveau Personnes — filtres (tags,
+    has_active_case, has_people), tris SQL (name/created/last_activity),
+    last_activity_at servi, l'entité vues « companies », et le coût
+    CONSTANT au témoin (le pattern des personnes)."""
+    from sqlalchemy import event
+
+    from src.company_profiles.company_profiles_manager import CompanyProfilesManager
+
+    headers = agent_headers(admin)
+    # Alpha : taguée, avec personne + dossier vivant. Beta : nue.
+    r = await client.post(
+        "/company-profiles", headers=headers, json={"name": "Alpha SL", "tags": ["vip"]}
+    )
+    alpha_id = r.json()["id"]
+    r = await client.post("/company-profiles", headers=headers, json={"name": "Beta GmbH"})
+    assert r.status_code == 201, r.text
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Rôle", "last_name": "Alpha", "email": "role-alpha@example.com"},
+    )
+    r = await client.post(
+        f"/company-profiles/{alpha_id}/roles",
+        headers=headers,
+        json={"client_profile_id": r.json()["id"], "role": "manager"},
+    )
+    assert r.status_code == 201, r.text
+    r = await client.post(
+        "/cases",
+        headers=headers,
+        json={"first_name": "Doss", "last_name": "Alpha", "email": "doss-alpha@example.com"},
+    )
+    case_id = r.json()["id"]
+    r = await client.patch(
+        f"/cases/{case_id}", headers=headers, json={"company_profile_id": alpha_id}
+    )
+    assert r.status_code == 200, r.text
+
+    # FILTRES.
+    for query, expected in (
+        ("tags=vip", ["Alpha SL"]),
+        ("has_active_case=true", ["Alpha SL"]),
+        ("has_active_case=false", ["Beta GmbH"]),
+        ("has_people=true", ["Alpha SL"]),
+        ("has_people=false", ["Beta GmbH"]),
+    ):
+        listing = (await client.get(f"/company-profiles?{query}", headers=headers)).json()
+        assert [i["name"] for i in listing["items"]] == expected, query
+    # TRIS + le champ d'activité servi.
+    listing = (
+        await client.get("/company-profiles?sort_by=last_activity&sort_order=desc", headers=headers)
+    ).json()
+    assert [i["name"] for i in listing["items"]] == ["Alpha SL", "Beta GmbH"]
+    assert listing["items"][0]["last_activity_at"] is not None
+    listing = (
+        await client.get("/company-profiles?sort_by=created_at&sort_order=desc", headers=headers)
+    ).json()
+    assert [i["name"] for i in listing["items"]] == ["Beta GmbH", "Alpha SL"]
+
+    # L'ENTITÉ VUES « companies ».
+    r = await client.post(
+        "/views", headers=headers, json={"name": "Mes sociétés", "entity": "companies"}
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["entity"] == "companies"
+
+    # TÉMOIN : coût constant, filtres + tri activité compris.
+    engine = db_session.get_bind()
+    counter = {"n": 0}
+
+    def _count(*_args: object, **_kwargs: object) -> None:
+        counter["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _count)
+    try:
+        await CompanyProfilesManager(db_session).list_companies(
+            admin,
+            search=None,
+            tags=["vip"],
+            has_active_case=True,
+            sort_by="last_activity",
+            sort_order="desc",
+            page=1,
+            page_size=20,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    # 5 = liste + count + compteurs rôles + compteurs dossiers + activité.
+    assert counter["n"] <= 5, f"company directory ran {counter['n']} queries"

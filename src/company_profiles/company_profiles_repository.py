@@ -1,8 +1,10 @@
 """Accès DB des fiches société — requêtes pures, dans LEUR repo."""
 
 import uuid
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ARRAY, Text, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.client_case import ClientCase
@@ -36,11 +38,61 @@ class CompanyProfilesRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    @staticmethod
+    def _active_case_exists() -> Any:
+        """Annuaire — un dossier VIVANT NON CLOS lié à la société."""
+        from src.core.enums import CaseStatus
+
+        return exists(
+            select(ClientCase.id).where(
+                ClientCase.company_profile_id == CompanyProfile.id,
+                ClientCase.deleted_at.is_(None),
+                ClientCase.status != CaseStatus.CLOSED.value,
+            )
+        )
+
+    @staticmethod
+    def _has_people_exists() -> Any:
+        return exists(
+            select(CompanyProfileRole.id).where(
+                CompanyProfileRole.company_profile_id == CompanyProfile.id
+            )
+        )
+
+    @staticmethod
+    def _last_activity_expr() -> Any:
+        """Le tri « dernière activité » — MÊME dérivation que les
+        personnes : max(activity_log) des dossiers vivants liés, plancher
+        updated_at de la fiche société. Sous-requête scalaire (pagination
+        juste, coût dans la même requête)."""
+        from shared.models.activity import ActivityLog
+
+        linked_case_ids = (
+            select(ClientCase.id)
+            .where(
+                ClientCase.company_profile_id == CompanyProfile.id,
+                ClientCase.deleted_at.is_(None),
+            )
+            .correlate(CompanyProfile)
+        )
+        latest = (
+            select(func.max(ActivityLog.created_at))
+            .where(ActivityLog.case_id.in_(linked_case_ids))
+            .correlate(CompanyProfile)
+            .scalar_subquery()
+        )
+        return func.coalesce(latest, CompanyProfile.updated_at)
+
     async def list_page(
         self,
         agency_id: uuid.UUID,
         *,
         search: str | None,
+        tags: list[str] | None = None,
+        has_active_case: bool | None = None,
+        has_people: bool | None = None,
+        sort_by: str = "name",
+        sort_order: str = "asc",
         page: int,
         page_size: int,
     ) -> tuple[list[CompanyProfile], int]:
@@ -51,17 +103,58 @@ class CompanyProfilesRepository:
             .where(CompanyProfile.agency_id == agency_id)
         )
         if search:
-            predicate = CompanyProfile.name.ilike(f"%{search}%")
+            predicate: Any = CompanyProfile.name.ilike(f"%{search}%")
             stmt = stmt.where(predicate)
             count_stmt = count_stmt.where(predicate)
+        if tags:
+            predicate = func.jsonb_exists_any(CompanyProfile.tags, cast(tags, ARRAY(Text)))
+            stmt = stmt.where(predicate)
+            count_stmt = count_stmt.where(predicate)
+        if has_active_case is not None:
+            active = self._active_case_exists()
+            predicate = active if has_active_case else ~active
+            stmt = stmt.where(predicate)
+            count_stmt = count_stmt.where(predicate)
+        if has_people is not None:
+            peopled = self._has_people_exists()
+            predicate = peopled if has_people else ~peopled
+            stmt = stmt.where(predicate)
+            count_stmt = count_stmt.where(predicate)
+        sort_exprs = {
+            "name": (CompanyProfile.name,),
+            "created_at": (CompanyProfile.created_at,),
+            "last_activity": (self._last_activity_expr(),),
+        }
+        exprs = sort_exprs.get(sort_by, (CompanyProfile.name,))
+        ordered = [e.desc() if sort_order == "desc" else e.asc() for e in exprs]
         stmt = (
-            stmt.order_by(CompanyProfile.name, CompanyProfile.created_at)
+            stmt.order_by(*ordered, CompanyProfile.created_at)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
         items = list((await self.db.execute(stmt)).scalars().all())
         total = int((await self.db.execute(count_stmt)).scalar_one())
         return items, total
+
+    async def last_activity_for_companies(
+        self, company_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        """max(activity_log) par société (via ses dossiers vivants) — une
+        requête groupée pour la page."""
+        from shared.models.activity import ActivityLog
+
+        if not company_ids:
+            return {}
+        rows = await self.db.execute(
+            select(ClientCase.company_profile_id, func.max(ActivityLog.created_at))
+            .join(ClientCase, ClientCase.id == ActivityLog.case_id)
+            .where(
+                ClientCase.company_profile_id.in_(company_ids),
+                ClientCase.deleted_at.is_(None),
+            )
+            .group_by(ClientCase.company_profile_id)
+        )
+        return {cid: latest for cid, latest in rows if cid is not None}
 
     async def roles_with_identity(
         self, company_ids: list[uuid.UUID]

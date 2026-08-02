@@ -85,6 +85,9 @@ class CompanyProfileListItemResponse(BaseModel):
     tags: list[str]
     roles_count: int
     cases_count: int
+    # Même dérivation que les personnes : max activité des dossiers liés,
+    # plancher updated_at de la fiche société.
+    last_activity_at: datetime | None = None
     created_at: datetime
 
 

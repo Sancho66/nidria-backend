@@ -154,12 +154,32 @@ class CompanyProfilesManager:
         return await self.get(agent, company_id)
 
     async def list_companies(
-        self, agent: Agent, *, search: str | None, page: int, page_size: int
+        self,
+        agent: Agent,
+        *,
+        search: str | None,
+        tags: list[str] | None = None,
+        has_active_case: bool | None = None,
+        has_people: bool | None = None,
+        sort_by: str = "name",
+        sort_order: str = "asc",
+        page: int,
+        page_size: int,
     ) -> CompanyProfileListResponse:
         companies, total = await self.repo.list_page(
-            agent.agency_id, search=search, page=page, page_size=page_size
+            agent.agency_id,
+            search=search,
+            tags=tags,
+            has_active_case=has_active_case,
+            has_people=has_people,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            page=page,
+            page_size=page_size,
         )
-        roles_count, cases_count = await self.repo.counts_for_companies([c.id for c in companies])
+        company_ids = [c.id for c in companies]
+        roles_count, cases_count = await self.repo.counts_for_companies(company_ids)
+        last_activity = await self.repo.last_activity_for_companies(company_ids)
         return CompanyProfileListResponse(
             items=[
                 CompanyProfileListItemResponse(
@@ -168,6 +188,7 @@ class CompanyProfilesManager:
                     tags=list(company.tags or []),
                     roles_count=roles_count.get(company.id, 0),
                     cases_count=cases_count.get(company.id, 0),
+                    last_activity_at=last_activity.get(company.id, company.updated_at),
                     created_at=company.created_at,
                 )
                 for company in companies

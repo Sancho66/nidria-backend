@@ -6658,6 +6658,88 @@
             }
           },
           {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ANY-of tag filter.",
+              "title": "Tags"
+            },
+            "description": "ANY-of tag filter."
+          },
+          {
+            "name": "has_active_case",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Active Case"
+            }
+          },
+          {
+            "name": "has_people",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has People"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "last_activity",
+                "created_at"
+              ],
+              "type": "string",
+              "default": "name",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Order"
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -22097,6 +22179,18 @@
             "type": "integer",
             "title": "Cases Count"
           },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -27149,10 +27243,11 @@
         "enum": [
           "cases",
           "cases_all",
-          "clients"
+          "clients",
+          "companies"
         ],
         "title": "ListableEntity",
-        "description": "Entities a saved view can target — one member per listable surface,\nextensible (annuaire F3: the clients directory joins the cases list):\n- \"cases\": named table views of the cases list.\n- \"cases_all\": the per-agent customizable \"All\" view of the cases\n  list (is_default_all=True). A distinct entity value (not a flag on\n  \"cases\") so the (agent, agency, entity) partial unique index on\n  is_default_all rows stays per-surface — Prism's exact scheme.\n- \"clients\": named table views of the clients directory."
+        "description": "Entities a saved view can target — one member per listable surface,\nextensible (annuaire F3: the clients directory joins the cases list):\n- \"cases\": named table views of the cases list.\n- \"cases_all\": the per-agent customizable \"All\" view of the cases\n  list (is_default_all=True). A distinct entity value (not a flag on\n  \"cases\") so the (agent, agency, entity) partial unique index on\n  is_default_all rows stays per-surface — Prism's exact scheme.\n- \"clients\": named table views of the clients directory.\n- \"companies\": named table views of the companies directory."
       },
       "LoginRequest": {
         "properties": {
