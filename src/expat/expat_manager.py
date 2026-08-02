@@ -315,6 +315,9 @@ class ExpatPortalManager:
             coerced = validated.model_dump(exclude_unset=True).get(requirement.reference)
             # Enums (sex, marital_status) → store their .value.
             setattr(person, requirement.reference, getattr(coerced, "value", coerced))
+            from src.client_profiles.client_profiles_manager import discard_inherited_keys
+
+            discard_inherited_keys(person, [requirement.reference])
         else:  # custom_field
             definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
             person.custom_fields = validate_and_merge(
@@ -323,6 +326,9 @@ class ExpatPortalManager:
                 {requirement.reference: value},
                 allow_clear=True,  # the client may retract a required value (dégel)
             )
+            from src.client_profiles.client_profiles_manager import discard_inherited_keys
+
+            discard_inherited_keys(person, [requirement.reference])
 
     # --- CASE-level requirement fulfillment (sections chantier, vague C2) -----------
     #

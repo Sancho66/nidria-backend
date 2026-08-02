@@ -243,6 +243,9 @@ class PersonResponse(_CivilStatusFields):
     # portée personne dont les DEUX côtés portent une valeur différente.
     client_profile_id: uuid.UUID | None = None
     differs_from_profile: list[str] = []
+    # Option B : les valeurs venues de la FICHE au prefill, pas encore
+    # saisies — le front y pose la mention discrète « de la fiche ».
+    inherited_keys: list[str] = []
     # ACTIVE → when the client activated; PENDING/EXPIRED → when the current
     # link dies/died (NULL when no invitation row exists at all).
     activated_at: datetime | None = None

@@ -905,6 +905,7 @@ class CasesManager:
             employer=person.employer,
             custom_fields=visible_values(active_definitions, person.custom_fields or {}),
             client_profile_id=person.client_profile_id,
+            inherited_keys=list(person.inherited_keys or []),
             # Chantier fiches F2.2 : la divergence fiche↔dossier est une
             # COMPARAISON à la lecture (verdict Phase 0 — zéro marqueur,
             # zéro sync). Fiche non chargée par l'appelant → liste vide.
@@ -1322,6 +1323,10 @@ class CasesManager:
             (payload.custom_fields or {}) if "custom_fields" in provided else {}
         )
         await auto_promote_person_gaps(self.db, agent, person, references=written_refs)
+        # Option B : la saisie (même identique) retire la mention fiche.
+        from src.client_profiles.client_profiles_manager import discard_inherited_keys
+
+        discard_inherited_keys(person, written_refs)
         self._log(case.id, agent, "person.updated", {"person_id": str(person.id)})
         # Filling a civil field can complete an auto step or make an
         # agency_validation step ready to validate — recompute now.

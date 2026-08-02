@@ -141,6 +141,7 @@ async def link_and_prefill_person(
     snapshot posé sur le dossier (doctrine inchangée). Sans compte → None."""
     if person.expat_user_id is None:
         return None
+    inherited: set[str] = set(person.inherited_keys or [])
     repo = ClientProfilesRepository(db)
     profile = await repo.get_by_expat(agency_id, person.expat_user_id)
     if profile is None:
@@ -171,6 +172,7 @@ async def link_and_prefill_person(
             fiche_value = getattr(profile, reference, None)
             if not _is_empty(fiche_value):
                 setattr(person, reference, fiche_value)
+                inherited.add(reference)
     if not person.preferred_channels and profile.preferred_channels:
         person.preferred_channels = list(profile.preferred_channels)
     sack = dict(person.custom_fields or {})
@@ -180,10 +182,23 @@ async def link_and_prefill_person(
             fiche_value = (profile.custom_fields or {}).get(definition.key)
             if not _is_empty(fiche_value):
                 sack[definition.key] = fiche_value
+                inherited.add(definition.key)
                 changed = True
     if changed:
         person.custom_fields = sack
+    if inherited != set(person.inherited_keys or []):
+        person.inherited_keys = sorted(inherited)
     return profile
+
+
+def discard_inherited_keys(person: CasePerson, references: list[str]) -> None:
+    """Option B — TOUTE écriture d'une référence (agence OU client, y
+    compris un effacement ou un pull) retire la mention « de la fiche » :
+    la valeur devient un choix du dossier."""
+    current = set(person.inherited_keys or [])
+    remaining = current - set(references)
+    if remaining != current:
+        person.inherited_keys = sorted(remaining)
 
 
 async def auto_promote_person_gaps(
@@ -826,6 +841,7 @@ class ClientProfilesManager:
                 params={"reference": reference},
             )
         self._write(person, reference, value)
+        discard_inherited_keys(person, [reference])
         from src.activity.activity_manager import ActivityManager
         from src.core.enums import ActorType
 

@@ -28326,6 +28326,14 @@
             "title": "Differs From Profile",
             "default": []
           },
+          "inherited_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Inherited Keys",
+            "default": []
+          },
           "activated_at": {
             "anyOf": [
               {

@@ -51,6 +51,12 @@ class CasePerson(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # sibling/manager/partner/contact/beneficiary/other) — `relationship`
     # reste le libellé libre. NULL sur le principal.
     relationship_kind: Mapped[str | None] = mapped_column(String(20))
+    # Option B (hérité/saisi) : les références dont la valeur vient de la
+    # FICHE au prefill — effacées à TOUTE écriture (agence ou client).
+    # Vide = tout est saisi (le stock existant, honnête par défaut).
+    inherited_keys: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     # --- civil status (all nullable, case-scoped) ---------------------------------
     passport_number: Mapped[str | None] = mapped_column(String(50))

@@ -1560,3 +1560,95 @@ async def test_auto_promotion_on_person_write(
     assert r.json()["differs_from_profile"] == ["nationality"]  # la réponse dit VRAI
     detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
     assert detail["nationality"] == "FR"  # la fiche n'a pas bougé
+
+
+async def test_inherited_keys_marker_lifecycle(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Option B — le marqueur hérité/saisi : POSÉ au prefill (les valeurs
+    venues de la fiche), SERVI au contrat person, EFFACÉ à toute écriture
+    — agence (PATCH person) OU client (fulfill d'exigence)."""
+    headers = agent_headers(admin)
+    expat = await make_expat_user(activated=True, email="inherit@example.com")
+    # La fiche porte nationality + profession AVANT le dossier.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={
+            "first_name": "Inh",
+            "last_name": "Erit",
+            "email": "inherit@example.com",
+            "nationality": "FR",
+            "profession": "Notaire",
+        },
+    )
+    assert r.status_code == 201, r.text
+    profile_id = r.json()["id"]
+    # Parcours avec exigence base_field nationality (le chemin CLIENT).
+    tid = (await client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    sid = (
+        await client.post(f"/journeys/{tid}/steps", headers=headers, json={"name": "Collecte"})
+    ).json()["id"]
+    await client.post(
+        f"/journeys/{tid}/fields",
+        headers=headers,
+        json={"kind": "base_field", "reference": "nationality"},
+    )
+    r = await client.post(
+        f"/journeys/{tid}/steps/{sid}/requirements",
+        headers=headers,
+        json={"kind": "base_field", "reference": "nationality", "scope": "principal"},
+    )
+    assert r.status_code == 201, r.text
+
+    # « Nouvelle démarche » : le prefill pose les valeurs ET le marqueur.
+    r = await client.post(f"/client-profiles/{profile_id}/cases", headers=headers, json={})
+    assert r.status_code in (200, 201), r.text
+    case_id = r.json()["id"]
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    person = detail["persons"][0]
+    assert person["nationality"] == "FR"
+    assert sorted(person["inherited_keys"]) == ["nationality", "profession"]  # SERVI
+
+    # Écriture AGENCE : profession saisie (même valeur !) → mention retirée.
+    r = await client.patch(
+        f"/cases/{case_id}/persons/{person['id']}",
+        headers=headers,
+        json={"profession": "Notaire"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["inherited_keys"] == ["nationality"]
+
+    # Écriture CLIENT : le fulfill de nationality → mention retirée aussi.
+    steps = (
+        await client.post(
+            f"/cases/{case_id}/journey", headers=headers, json={"journey_template_id": tid}
+        )
+    ).json()
+    r = await client.patch(
+        f"/cases/{case_id}/steps/{steps[0]['id']}", headers=headers, json={"status": "in_progress"}
+    )
+    assert r.status_code == 200, r.text
+    exp_detail = (await client.get(f"/expat/cases/{case_id}", headers=expat_headers(expat))).json()
+    req = next(
+        r
+        for step in exp_detail["timeline"]
+        for r in step["requirements"]
+        if r["reference"] == "nationality"
+    )
+    r = await client.put(
+        f"/expat/cases/{case_id}/requirements/{req['id']}",
+        headers=expat_headers(expat),
+        json={"value": "PT"},
+    )
+    assert r.status_code == 200, r.text
+    detail = (await client.get(f"/cases/{case_id}", headers=headers)).json()
+    person = detail["persons"][0]
+    assert person["nationality"] == "PT"
+    assert person["inherited_keys"] == []  # le client a saisi : plus d'hérité
