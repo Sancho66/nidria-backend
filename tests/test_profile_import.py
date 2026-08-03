@@ -223,3 +223,59 @@ async def test_address_column_imports_as_full_text_street(
     assert detail["custom_fields"]["residence_address"] == {
         "street": "12 rue de la Paix, 75002 Paris, France"
     }
+
+
+async def test_bad_cells_never_kill_the_batch(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA RÈGLE ABSOLUE (debug Teamleader 03/08) — une cellule mauvaise =
+    trou laissé, une ligne mauvaise = ignorée avec raison, le batch ne
+    meurt JAMAIS sur une donnée : 'unknown' dans sex (VARCHAR(1) — le 500
+    prod), téléphone trop long, date illisible, doublon intra-batch qui
+    LIE au lieu de dupliquer."""
+    headers = agent_headers(admin)
+    csv_text = (
+        "Prénom,Nom,Email,Genre,Téléphone,Naissance\n"
+        "Kevin,Olivetto,kevin@example.com,unknown,0601020304,1977-04-02\n"
+        f"Long,Phone,long@example.com,M,{'9' * 80},pas-une-date\n"
+        "Kevin,Olivetto,KEVIN@example.com,,,\n"
+        "Sans,Identité,,M,,\n"
+    )
+    r = await client.post(
+        "/imports/client-profiles",
+        headers=headers,
+        json={
+            "csv_text": csv_text,
+            "mapping": {
+                "Prénom": "first_name",
+                "Nom": "last_name",
+                "Email": "email",
+                "Genre": "sex",
+                "Téléphone": "phone",
+                "Naissance": "date_of_birth",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text  # JAMAIS un 500 sur de la donnée
+    rep = r.json()
+    assert rep["total_rows"] == 4
+    assert [c["email"] for c in rep["created"]] == ["kevin@example.com", "long@example.com"]
+    assert len(rep["linked"]) == 1  # le doublon intra-batch LIE (casse ignorée)
+    assert [i["reason"] for i in rep["ignored"]] == ["no_email"]
+    # Les cellules mauvaises = TROUS, les bonnes ont tenu.
+    listing = (await client.get("/client-profiles?search=kevin@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["sex"] is None  # 'unknown' → trou (plus jamais un DataError)
+    assert detail["phone"] == "0601020304"
+    assert detail["date_of_birth"] == "1977-04-02"
+    long_listing = (await client.get("/client-profiles?search=long@", headers=headers)).json()
+    long_detail = (
+        await client.get(f"/client-profiles/{long_listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert long_detail["phone"] is None  # 80 chars → trou (cap 50 du contrat)
+    assert long_detail["date_of_birth"] is None  # date illisible → trou

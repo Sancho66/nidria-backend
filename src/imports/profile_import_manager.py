@@ -8,7 +8,6 @@ créées / liées / ignorées, ligne par ligne."""
 
 import base64
 import uuid
-from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -147,6 +146,9 @@ class ProfileImportManager:
         passent par la coercition TYPÉE du référentiel ; une déf address
         reçoit le texte intégral dans `street` (règle honnête, pas de
         parsing magique) ; une cellule illisible laisse le trou."""
+        from pydantic import ValidationError as PydanticValidationError
+
+        from src.cases.cases_schema import PersonUpdateRequest
         from src.core.enums import CustomFieldType
         from src.custom_fields.custom_fields_validation import _coerce_one
 
@@ -154,13 +156,17 @@ class ProfileImportManager:
             raw = values.get(column)
             if raw is None or not _is_empty(getattr(profile, column, None)):
                 continue
-            if column == "date_of_birth":
-                try:
-                    setattr(profile, column, date.fromisoformat(raw))
-                except ValueError:
-                    continue  # cellule illisible : trou laissé, pas d'échec de ligne
-            else:
-                setattr(profile, column, raw)
+            # LA RÈGLE ABSOLUE (debug Teamleader 03/08) : chaque cellule
+            # civile passe par la VALIDATION DU CONTRAT PERSON (longueurs,
+            # enums, dates — le patron du fulfill expat). Échec = trou
+            # laissé ; le batch ne meurt JAMAIS sur une donnée ('unknown'
+            # dans sex VARCHAR(1) tuait les 1844 lignes en DataError).
+            try:
+                validated = PersonUpdateRequest.model_validate({column: raw})
+            except PydanticValidationError:
+                continue  # cellule illisible : trou laissé
+            coerced = validated.model_dump(exclude_unset=True).get(column)
+            setattr(profile, column, getattr(coerced, "value", coerced))
         sack = dict(profile.custom_fields or {})
         changed = False
         for key in person_keys:
