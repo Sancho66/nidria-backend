@@ -65,7 +65,7 @@ PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
 # F5 (fiches société) : la MÊME taxonomie, nommée dès maintenant.
 COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = PROFILE_SECTIONS
 
-# V2b — le plan de valeurs SOCIÉTÉ sur la taxonomie : les 8 presets
+# V2b — le plan de valeurs SOCIÉTÉ sur la taxonomie : les presets
 # company du catalogue → leur section de fiche société. Les clés libres
 # d'agence tombent en 'misc'.
 COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
@@ -84,10 +84,18 @@ COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "phone": "contact",
     "website": "contact",
     "address": "contact",  # texte intégral (la règle connue — pas de parsing)
-    # activité
+    # activité (audit catalogue : industry/effectif triple source
+    # TL+HubSpot+Pipedrive ; activity_code = registre NACE, fichiers Nico)
     "share_capital": "situation",
     "partners_count": "situation",
+    "industry": "situation",
+    "employee_count": "situation",
+    "activity_code": "situation",
 }
+
+# Cibles company NUMÉRIQUES : coercées en number à l'import (la règle
+# « suggérable = coerçable » — échec de cellule = issue + trou, jamais 500).
+COMPANY_NUMBER_TARGETS: Final[tuple[str, ...]] = ("employee_count", "share_capital")
 
 # Alias d'import acceptés → clé canonique (compat : une seule vérité par
 # concept ; `registration_number` demandé = `company_registration_number`).
@@ -121,6 +129,8 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "residence_address": "contact",
     "secondary_email": "contact",
     "whatsapp": "contact",
+    "website": "contact",  # audit catalogue : présence en ligne (TL + HubSpot)
+    "linkedin_url": "contact",  # audit catalogue : le seul réseau métier
     "preferred_language": "contact",
     "preferred_contact_channel": "contact",
     # id_documents — les numéros et titres officiels de la personne

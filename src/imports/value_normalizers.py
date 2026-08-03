@@ -180,6 +180,29 @@ def normalize_import_value(target: str, raw: str, options: list[str] | None = No
     return raw
 
 
+def normalize_number_value(raw: str) -> str:
+    """Formats numériques du monde réel → forme coerçable : symboles
+    monétaires retirés, séparateurs de milliers (espace, insécable, fine)
+    ôtés ENTRE chiffres, virgule décimale unique → point. Une plage
+    (« 51-200 ») reste telle quelle — la coercition aval la refuse
+    (issue + trou, jamais un 500)."""
+    s = raw.strip()
+    for symbol in ("€", "$", "£"):
+        s = s.replace(symbol, "")
+    s = s.strip()
+    separators = (" ", " ", " ")
+    s = "".join(
+        c
+        for i, c in enumerate(s)
+        if not (
+            c in separators and 0 < i < len(s) - 1 and s[i - 1].isdigit() and s[i + 1].isdigit()
+        )
+    )
+    if s.count(",") == 1 and "." not in s:
+        s = s.replace(",", ".")
+    return s
+
+
 # --- composition d'adresse (lot composition visible) ----------------------------------
 
 ADDRESS_SUBFIELDS: Final[tuple[str, ...]] = ("street", "city", "postal_code", "country")

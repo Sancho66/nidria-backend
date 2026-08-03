@@ -623,6 +623,28 @@ class CompanyImportManager:
                     values.pop("country")
             if "email" in values:
                 values["email"] = values["email"].lower()
+            # Cibles numériques (audit catalogue) : effectif/capital coercés
+            # en number — « 51-200 » = issue + trou, jamais un 500.
+            from src.client_profiles.profile_sections import COMPANY_NUMBER_TARGETS
+            from src.custom_fields.custom_fields_validation import _coerce_number
+            from src.imports.value_normalizers import normalize_number_value
+
+            number_values: dict[str, int | float] = {}
+            for number_target in COMPANY_NUMBER_TARGETS:
+                raw_number = values.pop(number_target, None)
+                if raw_number is None:
+                    continue
+                try:
+                    number_values[number_target] = _coerce_number(
+                        normalize_number_value(raw_number)
+                    )
+                except ValueError:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get(number_target, number_target),
+                            code="invalid_value",
+                        )
+                    )
             from src.imports.value_normalizers import assemble_address
 
             address_values: dict[str, dict[str, str]] = {}
@@ -646,6 +668,7 @@ class CompanyImportManager:
                     address_values[base] = assembled
             name = values.get("name")
             person: dict[str, Any] = dict(values)
+            person.update(number_values)
             person.update(address_values)
             if values.get("tags"):
                 person["tags"] = list(

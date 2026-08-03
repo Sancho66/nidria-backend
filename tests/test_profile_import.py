@@ -678,6 +678,8 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
     # (presets du catalogue, déclarés à la volée à l'import).
     expected_person["Numéro de TVA du contact"] = "tax_id"
     expected_person["Numéro d'identification national (Siret)"] = "company_registration_number"
+    # Audit catalogue : le NON de « Site web » est renversé — preset website.
+    expected_person["Site web"] = "website"
     hit = {h: t for h, t in expected_person.items() if person.get(h) == t}
     ratio = len(hit) / len(expected_person)
     assert ratio >= 0.8, f"personnes: {ratio:.0%} — manquées: {set(expected_person) - set(hit)}"
@@ -708,6 +710,11 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
         "Téléphone": "phone",
         "Numéro d'identification national (Siret)": "company_registration_number",
         "Tags": "tags",
+        # Audit catalogue : trois re-verdicts — Secteur et Code APE sortent
+        # du sack libre, # Collaborateurs sort du pack finance.
+        "Secteur": "industry",
+        "Code APE": "activity_code",
+        "# Collaborateurs": "employee_count",
     }
     hit_c = {h: t for h, t in expected_company.items() if company.get(h) == t}
     ratio_c = len(hit_c) / len(expected_company)
@@ -879,6 +886,7 @@ async def test_every_suggested_target_coerces_real_world_values(
         "Tags": "VIP;prospect",
         "Numéro de TVA du contact": "FR12345678901",
         "Numéro d'identification national (Siret)": "84512345678901",
+        "Site web": "https://kevin.example.com",
     }
     columns = [c for c in suggestions if c in real_world]
     csv_text = (
@@ -1058,3 +1066,229 @@ async def test_suggest_offers_address_subfields(
     # L'inverse de l'anti-parsing tient : Numéro de la rue reste exclu
     # (pas de concaténation multi-colonnes).
     assert "Numéro de la rue" not in s
+
+
+async def test_audit_alias_pack_suggestions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Audit catalogue — le pack alias : le vocabulaire HubSpot/Pipedrive
+    accroche les cibles EXISTANTES (Date of Birth était muet !), Gender
+    gagne `sex` sur Salutation (repli), le domaine ne vole pas l'URL
+    pleine, et les exclusions EN gravées restent muettes (la frontière)."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={
+            "headers": [
+                "First Name",
+                "Last Name",
+                "Email",
+                "Salutation",
+                "Gender",
+                "Date of Birth",
+                "Preferred Language",
+                "Company Name",
+                "Work Email",
+                "Degree",
+                "School",
+                "Field of Study",
+                "Label",
+                "LinkedIn URL",
+                "Website URL",
+                "Industry",
+                "Country/Region",
+                "Relationship Status",
+                "Number of Employees",
+                "Annual Revenue",
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    s = body["suggestions"]
+    expected = {
+        "Gender": "sex",
+        "Date of Birth": "date_of_birth",
+        "Preferred Language": "preferred_language",
+        "Company Name": "employer",
+        "Work Email": "secondary_email",
+        "Degree": "education_level",
+        "School": "last_institution",
+        "Field of Study": "field_of_study",
+        "Label": "tags",
+        "LinkedIn URL": "linkedin_url",
+        "Website URL": "website",
+        "Industry": "industry",
+    }
+    for header, target in expected.items():
+        assert s.get(header) == target, f"{header}: {s.get(header)} != {target}"
+    # Salutation est un REPLI : la colonne Genre directe a pris la cible.
+    assert "Salutation" not in s
+    # Country/Region : la même ambiguïté à trois lectures que Pays.
+    assert body["ambiguous"]["Country/Region"] == [
+        "nationality",
+        "tax_residence_country",
+        "residence_address.country",
+    ]
+    # Les exclusions gravées (la frontière visible) — jamais suggérées.
+    for trap in ("Relationship Status", "Number of Employees", "Annual Revenue"):
+        assert trap not in s, trap
+
+    # Civilité SEULE (fichiers FR sans colonne Genre) : le repli la prend.
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Civilité", "Prénom"]},
+    )
+    assert r.json()["suggestions"]["Civilité"] == "sex"
+
+    r = await client.post(
+        "/imports/company-profiles/suggest-mapping",
+        headers=headers,
+        json={
+            "headers": [
+                "Nom",
+                "Date de création",
+                "Company Domain Name",
+                "Website URL",
+                "Phone Number",
+                "Employee Range",
+                "Year Founded",
+                "Annual Revenue",
+                "Type",
+                "Description",
+                "LinkedIn Company Page",
+                "Fax",
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    s = r.json()["suggestions"]
+    assert s["Date de création"] == "registration_date"  # verdict : ALIAS, pas de preset
+    assert s["Phone Number"] == "phone"
+    # Le domaine est un REPLI : l'URL pleine gagne quand les deux existent.
+    assert s["Website URL"] == "website"
+    assert "Company Domain Name" not in s
+    for trap in (
+        "Employee Range",
+        "Year Founded",
+        "Annual Revenue",
+        "Type",
+        "Description",
+        "LinkedIn Company Page",
+        "Fax",
+    ):
+        assert trap not in s, trap
+
+
+async def test_company_number_targets_coerced_on_real_values(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Audit catalogue — effectif/capital coercés en NUMBER à la naissance
+    (la règle « suggérable = coerçable ») : « 12 » → 12, « 10 000 € » →
+    10000, « 51-200 » (la plage HubSpot) = issue + trou motivé, JAMAIS un
+    500 ; industry/activity_code rangés en section situation."""
+    headers = agent_headers(admin)
+    csv_text = (
+        "Nom,Effectif,Capital social,Secteur,Code APE\n"
+        "Acme BG,12,10 000 €,Domiciliation,70.22Z\n"
+        "Range Corp,51-200,dix mille,Conseil,\n"
+    )
+    mapping = {
+        "Nom": "name",
+        "Effectif": "employee_count",
+        "Capital social": "share_capital",
+        "Secteur": "industry",
+        "Code APE": "activity_code",
+    }
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    first = rows[0]["person"]
+    assert first["employee_count"] == 12  # un NOMBRE, pas la chaîne
+    assert first["share_capital"] == 10000  # séparateur de milliers + devise ôtés
+    assert first["industry"] == "Domiciliation"
+    assert first["activity_code"] == "70.22Z"
+    assert rows[0]["issues"] == []
+    # La plage et le littéral : deux trous MOTIVÉS, la ligne vit (create).
+    second = rows[1]
+    assert second["status"] == "create"
+    assert {"column": "Effectif", "code": "invalid_value"} in second["issues"]
+    assert {"column": "Capital social", "code": "invalid_value"} in second["issues"]
+    assert "employee_count" not in second["person"]
+    assert "share_capital" not in second["person"]
+
+    # L'import réel range les nombres dans la fiche, section situation.
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["created"]) == 2
+    company_id = r.json()["created"][0]["company_profile_id"]
+    detail = (await client.get(f"/company-profiles/{company_id}", headers=headers)).json()
+    assert detail["custom_fields"]["employee_count"] == 12
+    assert detail["custom_fields"]["share_capital"] == 10000
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "industry" in by_key["situation"]
+    assert "employee_count" in by_key["situation"]
+    assert "activity_code" in by_key["situation"]
+
+
+async def test_online_presence_presets_declared_on_the_fly(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Audit catalogue — website/linkedin_url entrent ENTIERS : mappés non
+    déclarés, la déf naît à l'import (scope person, section contact de la
+    taxonomie, type text) et la fiche les sert en section contact."""
+    headers = agent_headers(admin)
+    body = {
+        "csv_text": (
+            "Prénom,Nom,Email,Site web,LinkedIn\n"
+            "Enligne,Présence,enligne@example.com,"
+            "https://enligne.example.com,https://linkedin.com/in/enligne\n"
+        ),
+        "mapping": {
+            "Prénom": "first_name",
+            "Nom": "last_name",
+            "Email": "email",
+            "Site web": "website",
+            "LinkedIn": "linkedin_url",
+        },
+    }
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    for key in ("website", "linkedin_url"):
+        row = (
+            await db_session.execute(
+                text(
+                    "SELECT scope, profile_section, field_type FROM custom_field_definition "
+                    f"WHERE key = '{key}'"
+                )
+            )
+        ).first()
+        assert list(row) == ["person", "contact", "text"], key
+    listing = (await client.get("/client-profiles?search=enligne@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["custom_fields"]["website"] == "https://enligne.example.com"
+    assert detail["custom_fields"]["linkedin_url"] == "https://linkedin.com/in/enligne"
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "website" in by_key["contact"]
+    assert "linkedin_url" in by_key["contact"]

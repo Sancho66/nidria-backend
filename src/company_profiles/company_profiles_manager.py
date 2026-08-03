@@ -29,7 +29,7 @@ def _is_empty(value: Any) -> bool:
 def resolve_company_sections(
     custom_fields: dict[str, Any], lang: str
 ) -> list[ProfileFieldSectionResponse]:
-    """Le plan de valeurs société sur la taxonomie posée (V2b) : les 8
+    """Le plan de valeurs société sur la taxonomie posée (V2b) : les
     presets company mappés, les clés libres en 'misc'. Les 5 sections
     TOUJOURS servies — même contrat que la fiche personne."""
     from src.client_profiles.profile_sections import (

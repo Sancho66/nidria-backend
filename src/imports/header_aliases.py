@@ -55,6 +55,12 @@ PERSON_EXCLUDED: Final[frozenset[str]] = frozenset(
         "ID externe",
         "Traçage prospects",
         "Taux horaire",
+        # audit catalogue (vocabulaire HubSpot) :
+        "Relationship status",  # doublon flou de marital_status, valeurs incoerçables
+        "State",  # le Province EN — aucun sous-champ adresse correspondant
+        "State/Region",
+        "Number of employees",  # donnée SOCIÉTÉ enrichie sur la fiche personne
+        "Annual revenue",
     )
 )
 
@@ -87,6 +93,7 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     # civil
     "date de naissance": "date_of_birth",
     "naissance": "date_of_birth",
+    "date of birth": "date_of_birth",
     "birth date": "date_of_birth",
     "birthdate": "date_of_birth",
     "birthday": "date_of_birth",
@@ -115,6 +122,7 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "employer": "employer",
     "societe": "employer",  # la société d'un CONTACT = son employeur
     "company": "employer",
+    "company name": "employer",
     "nom de naissance": "birth_name",
     "maiden name": "birth_name",
     # adresse : TEXTE INTÉGRAL pour les colonnes complètes…
@@ -127,6 +135,7 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     # parsing ne vaut que dans l'AUTRE sens : jamais découper une colonne).
     "rue": "residence_address.street",
     "street": "residence_address.street",
+    "street address": "residence_address.street",
     "ville": "residence_address.city",
     "city": "residence_address.city",
     "town": "residence_address.city",
@@ -138,7 +147,35 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "langue": "preferred_language",
     "language": "preferred_language",
     "langue preferee": "preferred_language",
+    "preferred language": "preferred_language",
     "whatsapp": "whatsapp",
+    # présence en ligne (audit catalogue : TL « Site web » + HubSpot)
+    "site web": "website",
+    "website": "website",
+    "site internet": "website",
+    "website url": "website",
+    "linkedin": "linkedin_url",
+    "linkedin url": "linkedin_url",
+    "profil linkedin": "linkedin_url",
+    "linkedin profile": "linkedin_url",
+    # éducation / vie professionnelle (vocabulaire HubSpot → presets)
+    "degree": "education_level",
+    "diplome": "education_level",
+    "school": "last_institution",
+    "ecole": "last_institution",
+    "etablissement": "last_institution",
+    "field of study": "field_of_study",
+    "domaine d etudes": "field_of_study",
+    "industry": "industry",
+    "secteur": "industry",
+    "secteur d activite": "industry",
+    # email secondaire (aujourd'hui muet — audit catalogue)
+    "work email": "secondary_email",
+    "secondary email": "secondary_email",
+    "email secondaire": "secondary_email",
+    "second email": "secondary_email",
+    "email 2": "secondary_email",
+    "e mail 2": "secondary_email",
     # numéros officiels (verdicts actés au lot plafond)
     "numero de tva du contact": "tax_id",  # la TVA d'un contact = son NIF
     "vat": "tax_id",
@@ -149,6 +186,7 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "tags": "tags",
     "etiquettes": "tags",
     "labels": "tags",
+    "label": "tags",  # le label Pipedrive = un tag
 }
 
 # AMBIGUÏTÉ OFFERTE, jamais devinée : ces en-têtes proposent PLUSIEURS
@@ -158,6 +196,7 @@ PERSON_AMBIGUOUS: Final[dict[str, list[str]]] = {
     # le choix est explicite, rien ne se devine.
     "pays": ["nationality", "tax_residence_country", "residence_address.country"],
     "country": ["nationality", "tax_residence_country", "residence_address.country"],
+    "country region": ["nationality", "tax_residence_country", "residence_address.country"],
     "pays de residence": ["tax_residence_country", "residence_address.country", "nationality"],
 }
 
@@ -168,6 +207,14 @@ PERSON_FALLBACK_ALIASES: Final[dict[str, str]] = {
     "cell phone": "phone",
     "portable": "phone",
     "gsm": "phone",
+    "mobile phone": "phone",
+    "mobile phone number": "phone",
+    "telephone portable": "phone",
+    "telephone mobile": "phone",
+    # civilité : REPLI — si une colonne Genre directe existe, elle gagne
+    # (le normaliseur de valeurs traite M./Mme/Mr).
+    "civilite": "sex",
+    "salutation": "sex",
 }
 
 # --- SOCIÉTÉS -------------------------------------------------------------------------
@@ -183,8 +230,7 @@ COMPANY_EXCLUDED: Final[frozenset[str]] = frozenset(
         "TVA",  # le TAUX, pas le numéro — faux ami de vat_number
         "Gestionnaire de compte",  # agent CRM
         "Actif",
-        "Secteur",  # pas de cible société v1 (sack libre au PATCH)
-        "Code APE",
+        "Fax",  # obsolète (déjà la règle person)
         "Client COMPTA",  # colonnes métier de l'agence (sack libre)
         "Comptable",
         "Date of VAT Reg",
@@ -204,18 +250,28 @@ COMPANY_EXCLUDED: Final[frozenset[str]] = frozenset(
         "Crédits prépayés restants",
         "N° Compte IBAN",
         "Code BIC",
-        "Notation",  # les 10 colonnes finance CRM
-        "Chiffre d'affaires",
+        "Notation",  # le pack finance CRM (« # Collaborateurs » en est
+        "Chiffre d'affaires",  # sorti — un effectif n'est pas un ratio)
         "Marge bén. br.",
         "Bénéfice",
         "Quick ratio",
         "Degré ind. fin.",
-        "# Collaborateurs",
         "Valeur ajoutée",
         "Valeur ajout. par collaborateur",
         "ROE",
         "Taux horaire",
         "Opt-in courriers marketing",
+        # audit catalogue (vocabulaire HubSpot) :
+        "Employee range",  # plage enrichie (« 51-200 ») — pas un nombre
+        "Revenue range",
+        "Annual revenue",  # l'EN de « Chiffre d'affaires » — même pack finance
+        "Year founded",  # année seule — pas coerçable en date sans inventer
+        "State",  # le Province EN — aucun sous-champ correspondant
+        "State/Region",
+        "Type",  # taxonomie CRM (prospect/partner) — les tags couvrent
+        "Description",  # texte libre CRM
+        "About us",
+        "LinkedIn company page",  # véto audit — le site suffit
     )
 )
 
@@ -233,6 +289,7 @@ COMPANY_ALIASES: Final[dict[str, str]] = {
     "tva intracommunautaire": "vat_number",
     "pays": "country",
     "country": "country",
+    "country region": "country",
     "adresse e mail": "email",
     "adresse email": "email",
     "email": "email",
@@ -240,9 +297,11 @@ COMPANY_ALIASES: Final[dict[str, str]] = {
     "courriel": "email",
     "telephone": "phone",
     "phone": "phone",
+    "phone number": "phone",
     "tel": "phone",
     "site web": "website",
     "website": "website",
+    "website url": "website",
     "web": "website",
     "site internet": "website",
     "numero d identification national siret": "company_registration_number",
@@ -259,6 +318,7 @@ COMPANY_ALIASES: Final[dict[str, str]] = {
     "adresse complete": "address",
     "rue": "address.street",
     "street": "address.street",
+    "street address": "address.street",
     "ville": "address.city",
     "city": "address.city",
     "code postal": "address.postal_code",
@@ -268,14 +328,48 @@ COMPANY_ALIASES: Final[dict[str, str]] = {
     "siege social": "headquarters_address",
     "capital social": "share_capital",
     "share capital": "share_capital",
+    # activité (audit catalogue — re-verdicts Teamleader + standards CRM)
+    "secteur": "industry",
+    "secteur d activite": "industry",
+    "industry": "industry",
+    "industrie": "industry",
+    "effectif": "employee_count",
+    "effectifs": "employee_count",
+    "nombre d employes": "employee_count",
+    "nombre de salaries": "employee_count",
+    "number of employees": "employee_count",
+    "employee count": "employee_count",
+    "employees": "employee_count",
+    "headcount": "employee_count",
+    "collaborateurs": "employee_count",  # « # Collaborateurs » normalisé
+    "code ape": "activity_code",
+    "code naf": "activity_code",
+    "nace": "activity_code",
+    "code nace": "activity_code",
+    "activity code": "activity_code",
+    # immatriculation : la date de création d'une société = son
+    # immatriculation (verdict audit — alias, pas de second preset)
+    "date de creation": "registration_date",
+    "date de constitution": "registration_date",
+    "date d immatriculation": "registration_date",
+    "incorporation date": "registration_date",
+    "registration date": "registration_date",
     "tags": "tags",
     "etiquettes": "tags",
+    "label": "tags",
+    "labels": "tags",
 }
 
 COMPANY_FALLBACK_ALIASES: Final[dict[str, str]] = {
     "mobile": "phone",
     "cell": "phone",
     "portable": "phone",
+    # domaine : REPLI — l'URL pleine (« Website URL ») gagne si présente ;
+    # le domaine HubSpot (leur clé de dédup) ne sert que faute de mieux.
+    "domain": "website",
+    "company domain name": "website",
+    "domaine": "website",
+    "nom de domaine": "website",
 }
 
 
