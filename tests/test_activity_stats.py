@@ -333,10 +333,15 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     # La semaine PRÉCÉDENTE, bornée JUSTE : l'événement lundi-3j compté,
     # le lundi-10j (ancien) JAMAIS.
     prev_block = week["previous_period"]
-    assert prev_block["agency"]["steps_completed"] == 1
-    assert prev_block["me"]["steps_completed"] == 1
-    assert prev_block["agency"]["documents_validated"] == 1
-    assert prev_block["agency"]["manual_reminders"] == 0
+    # L'ARÊTE DU LUNDI (rouge CI du 03/08) : un lundi, « hier » tombe dans
+    # la semaine PRÉCÉDENTE — ses trois événements (étape admin, doc de
+    # l'autre, relance manuelle de l'autre) s'y comptent. Aucun n'entre au
+    # barème temps gagné (10 inchangé).
+    prev_extra = 0 if yesterday_in_week else 1
+    assert prev_block["agency"]["steps_completed"] == 1 + prev_extra
+    assert prev_block["me"]["steps_completed"] == 1 + prev_extra
+    assert prev_block["agency"]["documents_validated"] == 1 + prev_extra
+    assert prev_block["agency"]["manual_reminders"] == 0 + prev_extra
     assert prev_block["time_saved_minutes"] == 10  # le doc client de lundi-3j
     assert prev_block["clients_time_saved_minutes"] == 10
     assert prev_block["until"].startswith(monday.date().isoformat())
