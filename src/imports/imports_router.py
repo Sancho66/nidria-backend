@@ -12,6 +12,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -48,6 +49,18 @@ BINDINGS = [
     RouteBinding("POST", "/imports/client-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding(
         "POST", "/imports/client-profiles/preview", Audience.AGENT, Permission.IMPORT_MANAGE
+    ),
+    RouteBinding(
+        "POST",
+        "/imports/client-profiles/suggest-mapping",
+        Audience.AGENT,
+        Permission.IMPORT_MANAGE,
+    ),
+    RouteBinding(
+        "POST",
+        "/imports/company-profiles/suggest-mapping",
+        Audience.AGENT,
+        Permission.IMPORT_MANAGE,
     ),
     RouteBinding("POST", "/imports/company-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding(
@@ -101,6 +114,101 @@ async def import_client_profiles(
     — le wizard dossiers existant la garde). Aucun mail : une fiche
     n'invite personne."""
     return await ProfileImportManager(db).run_import(agent, body)
+
+
+class SuggestMappingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    headers: list[str] = Field(min_length=1, max_length=200)
+
+
+class SuggestMappingResponse(BaseModel):
+    suggestions: dict[str, str]
+    # L'ambiguïté SE PROPOSE, elle ne se devine pas : plusieurs cibles
+    # offertes au combobox, rien d'auto-posé (« Pays » → nationalité OU
+    # pays de résidence fiscale).
+    ambiguous: dict[str, list[str]] = {}
+    unmatched: list[str]
+
+
+@router.post("/client-profiles/suggest-mapping", response_model=SuggestMappingResponse)
+async def suggest_client_profiles_mapping(
+    body: SuggestMappingRequest, agent: AgentDep, db: DbDep
+) -> SuggestMappingResponse:
+    """Lot mapping — l'auto-suggestion BACK : la table d'alias exhaustive
+    (exclusions d'abord — les faux amis ne sont jamais suggérés), alias
+    exacts FR/EN, replis (Mobile→phone), défs d'agence en dynamique,
+    fuzzy prudent en dernier recours."""
+    from src.client_profiles.backfill import CIVIL_COLUMNS
+    from src.client_profiles.client_profiles_manager import person_scope_definitions
+    from src.client_profiles.profile_sections import PRESET_PROFILE_SECTION
+    from src.imports.header_aliases import (
+        PERSON_ALIASES,
+        PERSON_AMBIGUOUS,
+        PERSON_EXCLUDED,
+        PERSON_FALLBACK_ALIASES,
+        normalize_header,
+        suggest_mapping,
+    )
+    from src.imports.profile_import_manager import IDENTITY_TARGETS
+    from src.journeys.field_catalog import FIELD_PRESETS
+
+    person_defs = await person_scope_definitions(db, agent.agency_id)
+    # LOT PLAFOND : le catalogue ENTIER est cible (un preset non déclaré
+    # se déclare à l'import) — le vocabulaire dynamique porte les clés et
+    # TOUS les labels i18n des presets person + les défs de l'agence.
+    valid = (
+        set(IDENTITY_TARGETS)
+        | set(CIVIL_COLUMNS)
+        | {d.key for d in person_defs}
+        | set(PRESET_PROFILE_SECTION)
+        | {"tags"}
+    )
+    dynamic = {normalize_header(d.key): d.key for d in person_defs}
+    dynamic.update({normalize_header(d.label): d.key for d in person_defs if d.label})
+    for key in PRESET_PROFILE_SECTION:
+        preset = FIELD_PRESETS.get(key)
+        if preset is None:
+            continue
+        dynamic.setdefault(normalize_header(key), key)
+        for label in preset.labels.values():
+            dynamic.setdefault(normalize_header(label), key)
+    suggestions, ambiguous, unmatched = suggest_mapping(
+        body.headers,
+        valid,
+        aliases=PERSON_ALIASES,
+        fallback_aliases=PERSON_FALLBACK_ALIASES,
+        excluded=PERSON_EXCLUDED,
+        extra_keys=dynamic,
+        ambiguous=PERSON_AMBIGUOUS,
+    )
+    return SuggestMappingResponse(suggestions=suggestions, ambiguous=ambiguous, unmatched=unmatched)
+
+
+@router.post("/company-profiles/suggest-mapping", response_model=SuggestMappingResponse)
+async def suggest_company_profiles_mapping(
+    body: SuggestMappingRequest, agent: AgentDep, db: DbDep
+) -> SuggestMappingResponse:
+    from src.client_profiles.profile_sections import (
+        COMPANY_PRESET_PROFILE_SECTION,
+        COMPANY_TARGET_ALIASES,
+    )
+    from src.imports.header_aliases import (
+        COMPANY_ALIASES,
+        COMPANY_EXCLUDED,
+        COMPANY_FALLBACK_ALIASES,
+        suggest_mapping,
+    )
+
+    valid = {"name", "tags"} | set(COMPANY_PRESET_PROFILE_SECTION) | set(COMPANY_TARGET_ALIASES)
+    suggestions, ambiguous, unmatched = suggest_mapping(
+        body.headers,
+        valid,
+        aliases=COMPANY_ALIASES,
+        fallback_aliases=COMPANY_FALLBACK_ALIASES,
+        excluded=COMPANY_EXCLUDED,
+    )
+    return SuggestMappingResponse(suggestions=suggestions, ambiguous=ambiguous, unmatched=unmatched)
 
 
 @router.post("/client-profiles/preview", response_model=ProfileImportPreviewResponse)

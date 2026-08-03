@@ -529,3 +529,299 @@ async def test_company_preview_real_file_hooks_widened_targets(
     print(f"\nRÉCAP CHIFFRÉ Companies réel (439 lignes): {counts}")
     assert counts["vat_number"] > 300  # la TVA tombe massivement
     assert counts["country"] > 300
+
+
+CONTACT_HEADERS_42 = [
+    "Teamleader ID",
+    "Prénom",
+    "Nom de famille",
+    "Rue",
+    "Numéro de la rue",
+    "Code postal",
+    "Ville",
+    "adresse postale",
+    "Opt-in courriers marketing",
+    "Province",
+    "Pays",
+    "Date de naissance",
+    "Genre",
+    "Langue",
+    "Adresse e-mail",
+    "Téléphone",
+    "Mobile",
+    "Fax",
+    "Site web",
+    "Numéro de TVA du contact",
+    "Numéro d'identification national (Siret)",
+    "Actif",
+    "Tags",
+    "Liste des prix",
+    "Nombre de minutes non facturées",
+    "Entreprises",
+    "Société",
+    "Fonction",
+    "Sous-fonction",
+    "Décideur",
+    "Dernière activité",
+    "Dernier rendez-vous",
+    "Date ajoutée",
+    "Dernière modification",
+    "Crédits prépayés restants",
+    "N° Compte IBAN",
+    "Code BIC",
+    "Conditions de paiement",
+    "Total à facturer",
+    "ID externe",
+    "Traçage prospects",
+    "Taux horaire",
+]
+COMPANY_HEADERS_54 = [
+    "Teamleader ID",
+    "Nom",
+    "Rue",
+    "Numéro de la rue",
+    "Code postal",
+    "Ville",
+    "Pays",
+    "Langue",
+    "Numéro de TVA",
+    "Adresse e-mail facturation",
+    "Numéro d'identification national (Siret)",
+    "Adresse e-mail",
+    "Site web",
+    "Type d'entreprise",
+    "Téléphone",
+    "Fax",
+    "Tags",
+    "Gestionnaire de compte",
+    "Actif",
+    "Secteur",
+    "Code APE",
+    "Client COMPTA",
+    "Comptable",
+    "Date of VAT Reg",
+    "end contrat Dom",
+    "NUM IRINA",
+    "second Email",
+    "TVA",
+    "Province",
+    "Liste des prix",
+    "Conditions de paiement",
+    "Total à facturer",
+    "ID externe",
+    "Nombre de minutes non facturées",
+    "Dernière activité",
+    "Dernier rendez-vous",
+    "Date ajoutée",
+    "Dernière modification",
+    "Entreprises associées",
+    "Crédits prépayés restants",
+    "N° Compte IBAN",
+    "Code BIC",
+    "Notation",
+    "Chiffre d'affaires",
+    "Marge bén. br.",
+    "Bénéfice",
+    "Quick ratio",
+    "Degré ind. fin.",
+    "# Collaborateurs",
+    "Valeur ajoutée",
+    "Valeur ajout. par collaborateur",
+    "ROE",
+    "Taux horaire",
+    "Opt-in courriers marketing",
+]
+
+
+async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Lot mapping — LE TÉMOIN CHIFFRÉ sur les en-têtes réels (42+54) :
+    ≥80 % des colonnes MAPPABLES auto-suggérées, ZÉRO faux ami suggéré
+    (Pays contacts, e-mail facturation, TVA taux), les exclusions tiennent."""
+    headers = agent_headers(admin)
+    # Les défs person que l'agence de Nico a (preferred_language existe
+    # partout via les 21 ; residence_address idem).
+    for key in ("preferred_language", "residence_address"):
+        db_session.add(
+            CustomFieldDefinition(
+                agency_id=admin.agency_id, key=key, label=key, field_type="text", scope="person"
+            )
+        )
+    await db_session.commit()
+
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": CONTACT_HEADERS_42},
+    )
+    assert r.status_code == 200, r.text
+    person = r.json()["suggestions"]
+    # Les colonnes MAPPABLES du fichier Contacts (verdicts du tableau) :
+    expected_person = {
+        "Prénom": "first_name",
+        "Nom de famille": "last_name",
+        "adresse postale": "residence_address",
+        "Date de naissance": "date_of_birth",
+        "Genre": "sex",
+        "Langue": "preferred_language",
+        "Adresse e-mail": "email",
+        "Téléphone": "phone",
+        "Société": "employer",
+        "Fonction": "profession",
+        "Tags": "tags",
+    }
+    # Lot plafond : TVA contact → tax_id, Siret → company_registration_number
+    # (presets du catalogue, déclarés à la volée à l'import).
+    expected_person["Numéro de TVA du contact"] = "tax_id"
+    expected_person["Numéro d'identification national (Siret)"] = "company_registration_number"
+    hit = {h: t for h, t in expected_person.items() if person.get(h) == t}
+    ratio = len(hit) / len(expected_person)
+    assert ratio >= 0.8, f"personnes: {ratio:.0%} — manquées: {set(expected_person) - set(hit)}"
+    # « Pays » : l'ambiguïté SE PROPOSE (deux cibles), rien d'auto-posé.
+    assert "Pays" not in person
+    assert r.json()["ambiguous"]["Pays"] == ["nationality", "tax_residence_country"]
+    # Mobile silencieux (Téléphone direct présent).
+    assert "Mobile" not in person
+
+    r = await client.post(
+        "/imports/company-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": COMPANY_HEADERS_54},
+    )
+    assert r.status_code == 200, r.text
+    company = r.json()["suggestions"]
+    expected_company = {
+        "Nom": "name",
+        "Pays": "country",
+        "Numéro de TVA": "vat_number",
+        "Adresse e-mail": "email",
+        "Site web": "website",
+        "Type d'entreprise": "legal_form",
+        "Téléphone": "phone",
+        "Numéro d'identification national (Siret)": "company_registration_number",
+        "Tags": "tags",
+    }
+    hit_c = {h: t for h, t in expected_company.items() if company.get(h) == t}
+    ratio_c = len(hit_c) / len(expected_company)
+    assert ratio_c >= 0.8, (
+        f"sociétés: {ratio_c:.0%} — manquées: {set(expected_company) - set(hit_c)}"
+    )
+    for trap in ("Adresse e-mail facturation", "TVA", "Langue", "second Email"):
+        assert trap not in company, trap
+    print(
+        f"\nTÉMOIN: personnes {len(hit)}/{len(expected_person)} ({ratio:.0%}), "
+        f"sociétés {len(hit_c)}/{len(expected_company)} ({ratio_c:.0%})"
+    )
+
+
+async def test_tags_import_target(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Point 2 — la cible manquante livrée : `tags` aux deux imports
+    (split ,/;, dédup, fill-gap : l'existant gagne)."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/imports/client-profiles",
+        headers=headers,
+        json={
+            "csv_text": (
+                'Prénom,Nom,Email,Tags\nTag,Guée,tag-import@example.com,"VIP; salon-2026;VIP"\n'
+            ),
+            "mapping": {
+                "Prénom": "first_name",
+                "Nom": "last_name",
+                "Email": "email",
+                "Tags": "tags",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    listing = (await client.get("/client-profiles?search=tag-import@", headers=headers)).json()
+    assert listing["items"][0]["tags"] == ["VIP", "salon-2026"]  # split + dédup
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={
+            "csv_text": 'Nom,Tags\nTagCo,"holding,btp"\n',
+            "mapping": {"Nom": "name", "Tags": "tags"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    listing = (await client.get("/company-profiles?search=TagCo", headers=headers)).json()
+    assert listing["items"][0]["tags"] == ["holding", "btp"]
+
+
+async def test_catalog_preset_declared_on_the_fly_idempotent(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Lot plafond — mapper un preset NON déclaré le DÉCLARE (la mécanique
+    du picker, helper partagé) : déf créée avec le type, le label i18n, le
+    scope person et SA section de taxonomie ; idempotent au 2e import ;
+    JAMAIS au preview (zéro écriture)."""
+    headers = agent_headers(admin)
+    body = {
+        "csv_text": (
+            "Prénom,Nom,Email,Visa,Tags\nSur,Catalogue,catalogue@example.com,Long séjour,VIP\n"
+        ),
+        "mapping": {
+            "Prénom": "first_name",
+            "Nom": "last_name",
+            "Email": "email",
+            "Visa": "visa_type",  # preset du catalogue, NON déclaré
+            "Tags": "tags",
+        },
+    }
+    # PREVIEW : la cible passe, RIEN n'est déclaré.
+    r = await client.post("/imports/client-profiles/preview", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["rows"][0]["person"]["visa_type"] == "Long séjour"
+    n_defs = (
+        await db_session.execute(
+            text("SELECT count(*) FROM custom_field_definition WHERE key = 'visa_type'")
+        )
+    ).scalar_one()
+    assert n_defs == 0  # zéro écriture au dry-run
+
+    # IMPORT : la déf naît — scope person, section de la taxonomie.
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["tags_applied"] == 1  # le compteur du rapport
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT scope, profile_section, field_type FROM custom_field_definition "
+                "WHERE key = 'visa_type'"
+            )
+        )
+    ).first()
+    assert list(row) == ["person", "id_documents", "select"] or list(row)[:2] == [
+        "person",
+        "id_documents",
+    ]
+    # IDEMPOTENT : rejouer ne crée pas de doublon.
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    n_defs = (
+        await db_session.execute(
+            text("SELECT count(*) FROM custom_field_definition WHERE key = 'visa_type'")
+        )
+    ).scalar_one()
+    assert n_defs == 1
+    # La valeur est sur la fiche, servie dans SA section.
+    listing = (await client.get("/client-profiles?search=catalogue@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["custom_fields"]["visa_type"] == "Long séjour"
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "visa_type" in by_key["id_documents"]

@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
-from shared.models.custom_field import CustomFieldDefinition
 from shared.models.journey import (
     JourneySection,
     JourneyStepParticipant,
@@ -176,9 +175,11 @@ class JourneysManager:
         self, agent: Agent, fields: list[JourneyTemplateField]
     ) -> None:
         """Create the agency's custom_field_definition rows for catalogue
-        keys referenced by the cloned fields and absent from the agency
-        (any state, archived included). Non-catalogue keys are skipped —
-        an own-template clone already has its definitions."""
+        keys referenced by the cloned fields — délégué au helper PARTAGÉ
+        (custom_fields_manager.materialize_preset_definitions), le même
+        que l'import fiches (lot plafond des cibles)."""
+        from src.custom_fields.custom_fields_manager import materialize_preset_definitions
+
         wanted = {
             f.reference
             for f in fields
@@ -186,28 +187,8 @@ class JourneysManager:
         }
         if not wanted:
             return
-        existing = {
-            d.key
-            for d in await CustomFieldsRepository(self.db).list_for_agency(
-                agent.agency_id, include_archived=True
-            )
-        }
         lang = await self.agency_default(agent.agency_id)
-        for key in sorted(wanted - existing):
-            preset = FIELD_PRESETS[key]
-            options = None
-            if preset.options is not None:
-                options = preset.options.get(lang) or preset.options["fr"]
-            self.db.add(
-                CustomFieldDefinition(
-                    agency_id=agent.agency_id,
-                    key=key,
-                    label=preset.labels.get(lang) or preset.labels["fr"],
-                    label_i18n=dict(preset.labels),
-                    field_type=preset.field_type,
-                    options=options,
-                )
-            )
+        await materialize_preset_definitions(self.db, agent.agency_id, wanted, lang)
 
     async def get_clone_source(self, agent: Agent, template_id: uuid.UUID) -> JourneyTemplate:
         """Resolve a clone SOURCE: the agency's own template OR a library

@@ -91,6 +91,8 @@ class ProfileImportReport(BaseModel):
     created: list[ProfileImportRowOutcome]
     linked: list[ProfileImportRowOutcome]
     ignored: list[ProfileImportRowOutcome]
+    # Lot plafond : les lignes dont les tags ont été posés sur la fiche.
+    tags_applied: int = 0
 
 
 class ImportPreviewSummary(BaseModel):
@@ -139,7 +141,22 @@ class ProfileImportManager:
 
         person_defs = await person_scope_definitions(self.db, agent.agency_id)
         defs_by_key = {d.key: d for d in person_defs}
-        valid_targets = set(IDENTITY_TARGETS) | set(CIVIL_COLUMNS) | set(defs_by_key)
+        # LOT PLAFOND : les cibles = LE CATALOGUE ENTIER (presets person)
+        # + les customs déclarés. Un preset non déclaré est coercé par sa
+        # définition de catalogue (pseudo-déf) ; sa DÉCLARATION réelle
+        # n'arrive qu'à l'import (jamais au preview — zéro écriture).
+        from src.client_profiles.profile_sections import PRESET_PROFILE_SECTION
+        from src.journeys.field_catalog import FIELD_PRESETS
+
+        preset_person_keys = set(PRESET_PROFILE_SECTION)
+        # `tags` : cible structurelle (split , ou ; — dédupliqué).
+        valid_targets = (
+            set(IDENTITY_TARGETS)
+            | set(CIVIL_COLUMNS)
+            | set(defs_by_key)
+            | preset_person_keys
+            | {"tags"}
+        )
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
             raise ValidationError(
@@ -196,6 +213,12 @@ class ProfileImportManager:
                     person[target] = values[target]
             if email:
                 person["email"] = email
+            if values.get("tags"):
+                person["tags"] = list(
+                    dict.fromkeys(
+                        t.strip() for t in values["tags"].replace(";", ",").split(",") if t.strip()
+                    )
+                )
             for civil in CIVIL_COLUMNS:
                 raw = values.get(civil)
                 if raw is None:
@@ -209,10 +232,27 @@ class ProfileImportManager:
                     continue
                 coerced = validated.model_dump(exclude_unset=True).get(civil)
                 person[civil] = getattr(coerced, "value", coerced)
-            for key, definition in defs_by_key.items():
+            custom_keys = (set(values) & (set(defs_by_key) | preset_person_keys)) - set(
+                CIVIL_COLUMNS
+            )
+            for key in sorted(custom_keys):
                 raw = values.get(key)
                 if raw is None:
                     continue
+                definition = defs_by_key.get(key)
+                if definition is None:
+                    # Preset non déclaré : la pseudo-déf du CATALOGUE porte
+                    # le type et les options (langue d'agence en repli fr).
+                    preset = FIELD_PRESETS[key]
+                    from shared.models.custom_field import CustomFieldDefinition
+
+                    definition = CustomFieldDefinition(
+                        agency_id=agent.agency_id,
+                        key=key,
+                        label=preset.labels["fr"],
+                        field_type=preset.field_type,
+                        options=(preset.options or {}).get("fr") if preset.options else None,
+                    )
                 try:
                     if definition.field_type == CustomFieldType.ADDRESS.value:
                         person[key] = _coerce_one(definition, {"street": raw})
@@ -288,6 +328,17 @@ class ProfileImportManager:
 
     async def run_import(self, agent: Agent, body: ProfileImportRequest) -> ProfileImportReport:
         verdicts = await self._analyze(agent, body)
+        # DÉCLARATION À LA VOLÉE (la mécanique du picker, helper partagé) :
+        # les presets du catalogue mappés mais non déclarés deviennent des
+        # défs de l'agence — idempotent, jamais au preview.
+        from src.client_profiles.client_profiles_repository import (
+            ClientProfilesRepository as _CPRepo,
+        )
+        from src.custom_fields.custom_fields_manager import materialize_preset_definitions
+
+        used_targets = set(body.mapping.values()) | {c.target for c in body.corrections}
+        lang = await _CPRepo(self.db).agency_default_language(agent.agency_id)
+        await materialize_preset_definitions(self.db, agent.agency_id, used_targets, lang)
         created: list[ProfileImportRowOutcome] = []
         linked: list[ProfileImportRowOutcome] = []
         ignored: list[ProfileImportRowOutcome] = []
@@ -339,7 +390,11 @@ class ProfileImportManager:
             )
         await self.db.commit()
         return ProfileImportReport(
-            total_rows=len(verdicts), created=created, linked=linked, ignored=ignored
+            total_rows=len(verdicts),
+            created=created,
+            linked=linked,
+            ignored=ignored,
+            tags_applied=sum(1 for v in verdicts if v.status != "ignore" and v.person.get("tags")),
         )
 
     @staticmethod
@@ -353,6 +408,10 @@ class ProfileImportManager:
         changed = False
         for target, value in person.items():
             if target in IDENTITY_TARGETS:
+                continue
+            if target == "tags":
+                if not (fill_gaps_only and profile.tags):
+                    profile.tags = value
                 continue
             if target in CIVIL_COLUMNS:
                 if fill_gaps_only and not _is_empty(getattr(profile, target, None)):
@@ -403,6 +462,7 @@ class CompanyImportReport(BaseModel):
     created: list[CompanyImportRowOutcome]
     linked: list[CompanyImportRowOutcome]
     ignored: list[CompanyImportRowOutcome]
+    tags_applied: int = 0
 
 
 class CompanyImportPreviewResponse(BaseModel):
@@ -431,7 +491,9 @@ class CompanyImportManager:
 
         from src.client_profiles.profile_sections import COMPANY_TARGET_ALIASES
 
-        valid_targets = {"name"} | set(COMPANY_PRESET_PROFILE_SECTION) | set(COMPANY_TARGET_ALIASES)
+        valid_targets = (
+            {"name", "tags"} | set(COMPANY_PRESET_PROFILE_SECTION) | set(COMPANY_TARGET_ALIASES)
+        )
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
             raise ValidationError(
@@ -498,6 +560,12 @@ class CompanyImportManager:
                 values["email"] = values["email"].lower()
             name = values.get("name")
             person: dict[str, Any] = dict(values)
+            if values.get("tags"):
+                person["tags"] = list(
+                    dict.fromkeys(
+                        t.strip() for t in values["tags"].replace(";", ",").split(",") if t.strip()
+                    )
+                )
             if not name:
                 verdicts.append(
                     RowVerdict(
@@ -593,13 +661,19 @@ class CompanyImportManager:
             )
         await self.db.commit()
         return CompanyImportReport(
-            total_rows=len(verdicts), created=created, linked=linked, ignored=ignored
+            total_rows=len(verdicts),
+            created=created,
+            linked=linked,
+            ignored=ignored,
+            tags_applied=sum(1 for v in verdicts if v.status != "ignore" and v.person.get("tags")),
         )
 
     @staticmethod
     def _fill_gaps(company: Any, values: dict[str, Any]) -> None:
         from src.client_profiles.profile_sections import COMPANY_PRESET_PROFILE_SECTION
 
+        if values.get("tags") and not company.tags:
+            company.tags = values["tags"]
         sack = dict(company.custom_fields or {})
         changed = False
         for key in COMPANY_PRESET_PROFILE_SECTION:

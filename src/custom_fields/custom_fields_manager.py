@@ -18,6 +18,51 @@ from src.custom_fields.custom_fields_schema import (
 from src.usage.usage_manager import UsageManager
 
 
+async def materialize_preset_definitions(
+    db: "AsyncSession", agency_id: "uuid.UUID", keys: set[str], lang: str
+) -> list[str]:
+    """LA mécanique du picker (extraite de JourneysManager._materialize_
+    catalog_definitions, réutilisée par l'import) : créer les défs
+    manquantes pour des clés du CATALOGUE — label i18n complet, options
+    en langue d'agence, les existantes (archivées comprises) jamais
+    recréées (idempotent). Correctif au passage : scope et profile_section
+    suivent la CLASSIFICATION du catalogue (les packs person naissaient
+    'case'/'misc' depuis la migration f2d6 — bug latent des deux
+    appelants). Retourne les clés créées."""
+    from shared.models.custom_field import CustomFieldDefinition
+    from src.client_profiles.profile_sections import PRESET_PROFILE_SECTION
+    from src.custom_fields.custom_fields_repository import CustomFieldsRepository
+    from src.journeys.field_catalog import FIELD_PRESETS
+
+    wanted = {k for k in keys if k in FIELD_PRESETS}
+    if not wanted:
+        return []
+    existing = {
+        d.key
+        for d in await CustomFieldsRepository(db).list_for_agency(agency_id, include_archived=True)
+    }
+    created: list[str] = []
+    for key in sorted(wanted - existing):
+        preset = FIELD_PRESETS[key]
+        options = None
+        if preset.options is not None:
+            options = preset.options.get(lang) or preset.options["fr"]
+        db.add(
+            CustomFieldDefinition(
+                agency_id=agency_id,
+                key=key,
+                label=preset.labels.get(lang) or preset.labels["fr"],
+                label_i18n=dict(preset.labels),
+                field_type=preset.field_type,
+                options=options,
+                scope="person" if key in PRESET_PROFILE_SECTION else "case",
+                profile_section=PRESET_PROFILE_SECTION.get(key, "misc"),
+            )
+        )
+        created.append(key)
+    return created
+
+
 class CustomFieldsManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db

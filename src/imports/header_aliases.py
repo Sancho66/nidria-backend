@@ -1,0 +1,324 @@
+"""La TABLE D'ALIAS des en-têtes d'import (lot mapping complet).
+
+Chaque en-tête des exports réels (Teamleader Contacts 42 + Companies 54)
+a un VERDICT : aliasé vers une cible, ou EXCLU MOTIVÉ (le tableau
+complet vit au rapport du lot ; les raisons d'exclusion sont ici en
+commentaire — le code est la source).
+
+Le matching est à trois étages, dans l'ordre :
+1. EXCLUSIONS d'abord (les faux amis ne sont JAMAIS suggérés —
+   « Adresse e-mail facturation » ne doit pas accrocher email en fuzzy) ;
+2. alias EXACTS normalisés (FR/EN du vocabulaire CRM courant) ;
+3. repli (fallback — Mobile→phone si aucune colonne téléphone directe),
+   clés de défs d'agence (dynamique), puis fuzzy PRUDENT (difflib ≥0.85).
+Une cible n'est suggérée qu'UNE fois (la première colonne gagne)."""
+
+import difflib
+import unicodedata
+from typing import Final
+
+
+def normalize_header(header: str) -> str:
+    """minuscules, accents retirés, ponctuation → espaces, trim."""
+    s = unicodedata.normalize("NFKD", header)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = "".join(c if c.isalnum() else " " for c in s.lower())
+    return " ".join(s.split())
+
+
+# --- PERSONNES ------------------------------------------------------------------------
+
+# En-têtes JAMAIS suggérés (faux amis et hors-cible volontaires).
+PERSON_EXCLUDED: Final[frozenset[str]] = frozenset(
+    normalize_header(h)
+    for h in (
+        "Teamleader ID",  # identifiant CRM source
+        "Rue",  # fragment d'adresse (la règle anti-parsing)
+        "Numéro de la rue",
+        "Code postal",
+        "Ville",
+        "Province",
+        "Opt-in courriers marketing",  # préférence marketing CRM
+        "Fax",  # obsolète
+        "Actif",  # état CRM
+        "Liste des prix",  # facturation CRM
+        "Nombre de minutes non facturées",
+        "Entreprises",  # multivalué, rattachement société hors v1
+        "Sous-fonction",
+        "Décideur",  # aucune cible fiche — volontaire
+        "Dernière activité",  # métadonnées CRM (l'activité Nidria se dérive)
+        "Dernier rendez-vous",
+        "Date ajoutée",
+        "Dernière modification",
+        "Crédits prépayés restants",
+        "N° Compte IBAN",  # bancaire — pas de cible fiche v1
+        "Code BIC",
+        "Conditions de paiement",
+        "Total à facturer",
+        "ID externe",
+        "Traçage prospects",
+        "Taux horaire",
+    )
+)
+
+# Alias exacts normalisés → cible. FR (Teamleader) + EN courant CRM.
+PERSON_ALIASES: Final[dict[str, str]] = {
+    # identité
+    "prenom": "first_name",
+    "first name": "first_name",
+    "firstname": "first_name",
+    "given name": "first_name",
+    "nom de famille": "last_name",
+    "nom": "last_name",
+    "last name": "last_name",
+    "lastname": "last_name",
+    "surname": "last_name",
+    "family name": "last_name",
+    # email
+    "adresse e mail": "email",
+    "adresse email": "email",
+    "email": "email",
+    "e mail": "email",
+    "courriel": "email",
+    "mail": "email",
+    "email address": "email",
+    # téléphone
+    "telephone": "phone",
+    "phone": "phone",
+    "phone number": "phone",
+    "tel": "phone",
+    # civil
+    "date de naissance": "date_of_birth",
+    "naissance": "date_of_birth",
+    "birth date": "date_of_birth",
+    "birthdate": "date_of_birth",
+    "birthday": "date_of_birth",
+    "dob": "date_of_birth",
+    "genre": "sex",
+    "sexe": "sex",
+    "gender": "sex",
+    "nationalite": "nationality",
+    "nationality": "nationality",
+    "lieu de naissance": "place_of_birth",
+    "birthplace": "place_of_birth",
+    "place of birth": "place_of_birth",
+    "etat civil": "marital_status",
+    "situation matrimoniale": "marital_status",
+    "marital status": "marital_status",
+    "passeport": "passport_number",
+    "passport": "passport_number",
+    "passport number": "passport_number",
+    "numero de passeport": "passport_number",
+    "profession": "profession",
+    "metier": "profession",
+    "fonction": "profession",  # la fonction d'un contact = sa profession
+    "job title": "profession",
+    "poste": "profession",
+    "employeur": "employer",
+    "employer": "employer",
+    "societe": "employer",  # la société d'un CONTACT = son employeur
+    "company": "employer",
+    "nom de naissance": "birth_name",
+    "maiden name": "birth_name",
+    # adresse : le TEXTE INTÉGRAL seulement (les fragments sont exclus)
+    "adresse postale": "residence_address",
+    "adresse": "residence_address",
+    "adresse complete": "residence_address",
+    "address": "residence_address",
+    "full address": "residence_address",
+    # défs person courantes (suggérées si la déf existe chez l'agence)
+    "langue": "preferred_language",
+    "language": "preferred_language",
+    "langue preferee": "preferred_language",
+    "whatsapp": "whatsapp",
+    # numéros officiels (verdicts actés au lot plafond)
+    "numero de tva du contact": "tax_id",  # la TVA d'un contact = son NIF
+    "vat": "tax_id",
+    "vat number": "tax_id",
+    "numero d identification national siret": "company_registration_number",
+    "siret": "company_registration_number",  # la société DU CLIENT (pack person)
+    # fiche
+    "tags": "tags",
+    "etiquettes": "tags",
+    "labels": "tags",
+}
+
+# AMBIGUÏTÉ OFFERTE, jamais devinée : ces en-têtes proposent PLUSIEURS
+# cibles au combobox — rien d'auto-posé.
+PERSON_AMBIGUOUS: Final[dict[str, list[str]]] = {
+    "pays": ["nationality", "tax_residence_country"],
+    "country": ["nationality", "tax_residence_country"],
+    "pays de residence": ["tax_residence_country", "nationality"],
+}
+
+# Replis : suggérés SEULEMENT si la cible n'a pas déjà de colonne directe.
+PERSON_FALLBACK_ALIASES: Final[dict[str, str]] = {
+    "mobile": "phone",
+    "cell": "phone",
+    "cell phone": "phone",
+    "portable": "phone",
+    "gsm": "phone",
+}
+
+# --- SOCIÉTÉS -------------------------------------------------------------------------
+
+COMPANY_EXCLUDED: Final[frozenset[str]] = frozenset(
+    normalize_header(h)
+    for h in (
+        "Teamleader ID",
+        "Rue",  # fragments (pas de colonne adresse assemblée chez Teamleader)
+        "Numéro de la rue",
+        "Code postal",
+        "Ville",
+        "Province",
+        "Langue",  # pas de cible langue société
+        "Adresse e-mail facturation",  # FAUX AMI de email (facturation)
+        "TVA",  # le TAUX, pas le numéro — faux ami de vat_number
+        "Gestionnaire de compte",  # agent CRM
+        "Actif",
+        "Secteur",  # pas de cible société v1 (sack libre au PATCH)
+        "Code APE",
+        "Client COMPTA",  # colonnes métier de l'agence (sack libre)
+        "Comptable",
+        "Date of VAT Reg",
+        "end contrat Dom",
+        "NUM IRINA",
+        "second Email",
+        "Liste des prix",
+        "Conditions de paiement",
+        "Total à facturer",
+        "ID externe",
+        "Nombre de minutes non facturées",
+        "Dernière activité",
+        "Dernier rendez-vous",
+        "Date ajoutée",
+        "Dernière modification",
+        "Entreprises associées",
+        "Crédits prépayés restants",
+        "N° Compte IBAN",
+        "Code BIC",
+        "Notation",  # les 10 colonnes finance CRM
+        "Chiffre d'affaires",
+        "Marge bén. br.",
+        "Bénéfice",
+        "Quick ratio",
+        "Degré ind. fin.",
+        "# Collaborateurs",
+        "Valeur ajoutée",
+        "Valeur ajout. par collaborateur",
+        "ROE",
+        "Taux horaire",
+        "Opt-in courriers marketing",
+    )
+)
+
+COMPANY_ALIASES: Final[dict[str, str]] = {
+    "nom": "name",
+    "name": "name",
+    "company": "name",
+    "company name": "name",
+    "societe": "name",
+    "raison sociale": "name",
+    "denomination": "name",
+    "numero de tva": "vat_number",
+    "vat": "vat_number",
+    "vat number": "vat_number",
+    "tva intracommunautaire": "vat_number",
+    "pays": "country",
+    "country": "country",
+    "adresse e mail": "email",
+    "adresse email": "email",
+    "email": "email",
+    "e mail": "email",
+    "courriel": "email",
+    "telephone": "phone",
+    "phone": "phone",
+    "tel": "phone",
+    "site web": "website",
+    "website": "website",
+    "web": "website",
+    "site internet": "website",
+    "numero d identification national siret": "company_registration_number",
+    "siret": "company_registration_number",
+    "siren": "company_registration_number",
+    "eik": "company_registration_number",
+    "registration number": "company_registration_number",
+    "numero d immatriculation": "company_registration_number",
+    "type d entreprise": "legal_form",
+    "forme juridique": "legal_form",
+    "legal form": "legal_form",
+    "adresse": "address",
+    "address": "address",
+    "adresse complete": "address",
+    "adresse du siege": "headquarters_address",
+    "siege social": "headquarters_address",
+    "capital social": "share_capital",
+    "share capital": "share_capital",
+    "tags": "tags",
+    "etiquettes": "tags",
+}
+
+COMPANY_FALLBACK_ALIASES: Final[dict[str, str]] = {
+    "mobile": "phone",
+    "cell": "phone",
+    "portable": "phone",
+}
+
+
+def suggest_mapping(
+    headers: list[str],
+    valid_targets: set[str],
+    *,
+    aliases: dict[str, str],
+    fallback_aliases: dict[str, str],
+    excluded: frozenset[str],
+    extra_keys: dict[str, str] | None = None,
+    ambiguous: dict[str, list[str]] | None = None,
+) -> tuple[dict[str, str], dict[str, list[str]], list[str]]:
+    """(suggestions {colonne: cible}, colonnes sans suggestion). Une cible
+    n'est prise qu'une fois — la première colonne gagne, ordre du fichier.
+    `extra_keys` : alias dynamiques (clé normalisée → cible), typiquement
+    les clés/labels des défs d'agence."""
+    suggestions: dict[str, str] = {}
+    offered: dict[str, list[str]] = {}
+    unmatched: list[str] = []
+    taken: set[str] = set()
+    dynamic = extra_keys or {}
+    ambiguous_map = ambiguous or {}
+    fallback_pending: list[tuple[str, str]] = []
+
+    for header in headers:
+        n = normalize_header(header)
+        if not n or n in excluded:
+            unmatched.append(header)
+            continue
+        if n in ambiguous_map:
+            options = [t for t in ambiguous_map[n] if t in valid_targets and t not in taken]
+            if options:
+                offered[header] = options
+            else:
+                unmatched.append(header)
+            continue
+        target = aliases.get(n) or dynamic.get(n)
+        if target is None and n in fallback_aliases:
+            fallback_pending.append((header, fallback_aliases[n]))
+            continue
+        if target is None:
+            # FUZZY prudent, dernier recours : proche d'un alias connu.
+            close = difflib.get_close_matches(n, list(aliases) + list(dynamic), n=1, cutoff=0.85)
+            if close:
+                target = aliases.get(close[0]) or dynamic.get(close[0])
+        if target and target in valid_targets and target not in taken:
+            suggestions[header] = target
+            taken.add(target)
+        else:
+            unmatched.append(header)
+
+    # Replis : seulement si la cible est restée libre (Mobile→phone).
+    for header, target in fallback_pending:
+        if target in valid_targets and target not in taken:
+            suggestions[header] = target
+            taken.add(target)
+        else:
+            unmatched.append(header)
+    return suggestions, offered, unmatched

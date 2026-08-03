@@ -11473,6 +11473,99 @@
         ]
       }
     },
+    "/imports/client-profiles/suggest-mapping": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Suggest Client Profiles Mapping",
+        "description": "Lot mapping — l'auto-suggestion BACK : la table d'alias exhaustive\n(exclusions d'abord — les faux amis ne sont jamais suggérés), alias\nexacts FR/EN, replis (Mobile→phone), défs d'agence en dynamique,\nfuzzy prudent en dernier recours.",
+        "operationId": "suggest_client_profiles_mapping_imports_client_profiles_suggest_mapping_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestMappingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestMappingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/imports/company-profiles/suggest-mapping": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Suggest Company Profiles Mapping",
+        "operationId": "suggest_company_profiles_mapping_imports_company_profiles_suggest_mapping_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestMappingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestMappingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/imports/client-profiles/preview": {
       "post": {
         "tags": [
@@ -22189,6 +22282,11 @@
             },
             "type": "array",
             "title": "Ignored"
+          },
+          "tags_applied": {
+            "type": "integer",
+            "title": "Tags Applied",
+            "default": 0
           }
         },
         "type": "object",
@@ -30570,6 +30668,11 @@
             },
             "type": "array",
             "title": "Ignored"
+          },
+          "tags_applied": {
+            "type": "integer",
+            "title": "Tags Applied",
+            "default": 0
           }
         },
         "type": "object",
@@ -33756,6 +33859,60 @@
         "type": "object",
         "title": "SubscriptionUpdateRequest",
         "description": "PATCH /agencies/{id}/subscription (superadmin) - the post-closing\ngesture: pose the plan, cycle, founding terms and conversion date.\nPartial: absent fields stay untouched."
+      },
+      "SuggestMappingRequest": {
+        "properties": {
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Headers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "headers"
+        ],
+        "title": "SuggestMappingRequest"
+      },
+      "SuggestMappingResponse": {
+        "properties": {
+          "suggestions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Suggestions"
+          },
+          "ambiguous": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Ambiguous",
+            "default": {}
+          },
+          "unmatched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unmatched"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suggestions",
+          "unmatched"
+        ],
+        "title": "SuggestMappingResponse"
       },
       "TemplateCaseFieldResponse": {
         "properties": {
