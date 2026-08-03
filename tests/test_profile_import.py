@@ -1,6 +1,8 @@
 """V4 (solde CRM) — l'import-fiches (créées/liées/ignorées, fill-gap,
 sans parcours) et les configs d'agence (journey nullable)."""
 
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -390,3 +392,140 @@ async def test_corrections_flow_through_the_same_mill(
         await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
     ).json()
     assert detail["sex"] == "F"
+
+
+async def test_company_import_widened_targets_and_typed_coercions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Audit import P1 — les cibles société élargies (vat_number, country,
+    email, phone, website, address, alias registration_number) : rangées
+    dans les sections posées, coercitions typées (pays invalide = issue +
+    trou, email minusculisé), fixture aux en-têtes Teamleader réels
+    (cyrillique compris)."""
+    headers = agent_headers(admin)
+    csv_text = Path("tests/fixtures/companies_teamleader_synthetic.csv").read_text()
+    mapping = {
+        "Nom": "name",
+        "Numéro de TVA": "vat_number",
+        "Pays": "country",
+        "Adresse e-mail": "email",
+        "Téléphone": "phone",
+        "Site web": "website",
+        "Numéro d'identification national (Siret)": "registration_number",  # ALIAS
+    }
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    preview = r.json()
+    assert preview["summary"]["create"] == 3
+    first = preview["rows"][0]["person"]
+    assert first["name"] == "Домициляция ЕООД"  # cyrillique intact
+    assert first["vat_number"] == "BG123456789"
+    assert first["country"] == "BG"
+    assert first["company_registration_number"] == "204558877"  # l'alias normalisé
+    second = preview["rows"][1]["person"]
+    assert second["email"] == "hola@iberia.es"  # minusculisé
+    third = preview["rows"][2]
+    # 'Bulgarie' en toutes lettres ≠ ISO-2 (la règle V1, format seul) →
+    # issue + trou ; 'XX' passerait (format-valide, pas de liste blanche).
+    assert {"column": "Pays", "code": "invalid_value"} in third["issues"]
+    assert "country" not in third["person"]  # trou, la ligne vit
+
+    # L'import réel range les valeurs dans les SECTIONS posées.
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["created"]) == 3
+    company_id = r.json()["created"][0]["company_profile_id"]
+    detail = (await client.get(f"/company-profiles/{company_id}", headers=headers)).json()
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "vat_number" in by_key["id_documents"]
+    assert "email" in by_key["contact"] and "country" in by_key["contact"]
+    assert detail["custom_fields"]["vat_number"] == "BG123456789"
+    # Compat PATCH : le sack reste libre, les cibles nommées passent telles
+    # quelles (aucune rupture de l'existant).
+    r = await client.patch(
+        f"/company-profiles/{company_id}",
+        headers=headers,
+        json={"custom_fields": {"website": "https://nouveau.bg"}},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["custom_fields"]["website"] == "https://nouveau.bg"
+
+
+@pytest.mark.skipif(
+    not Path(
+        "/Users/alexandre/Desktop/FreelanceProject/nidria/nidria-frontend/.debug-import/Companies-2026-08-03-16-15-09.xlsx"
+    ).exists(),
+    reason="fichier réel absent (poste local uniquement)",
+)
+async def test_company_preview_real_file_hooks_widened_targets(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le fichier Companies RÉEL en preview : TVA, pays, email, téléphone
+    TOMBENT dans les cibles élargies — le récap chiffré du rapport."""
+    import base64
+
+    headers = agent_headers(admin)
+    raw = Path(
+        "/Users/alexandre/Desktop/FreelanceProject/nidria/nidria-frontend/.debug-import/Companies-2026-08-03-16-15-09.xlsx"
+    ).read_bytes()
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={
+            "file_b64": base64.b64encode(raw).decode(),
+            "filename": "Companies.xlsx",
+            "mapping": {
+                "Nom": "name",
+                "Numéro de TVA": "vat_number",
+                "Pays": "country",
+                "Adresse e-mail": "email",
+                "Téléphone": "phone",
+                "Site web": "website",
+                "Numéro d'identification national (Siret)": "registration_number",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    preview = r.json()
+    assert preview["total_rows"] == 439
+    assert preview["summary"]["create"] >= 430
+    counts = {"vat_number": 0, "country": 0, "email": 0, "phone": 0}
+    body = dict(page_size=500, page=1)
+    # une seule page suffit (500 ≥ 439)
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={
+            "file_b64": base64.b64encode(raw).decode(),
+            "filename": "Companies.xlsx",
+            "mapping": {
+                "Nom": "name",
+                "Numéro de TVA": "vat_number",
+                "Pays": "country",
+                "Adresse e-mail": "email",
+                "Téléphone": "phone",
+            },
+            **body,
+        },
+    )
+    for row in r.json()["rows"]:
+        for key in counts:
+            if row["person"].get(key):
+                counts[key] += 1
+    print(f"\nRÉCAP CHIFFRÉ Companies réel (439 lignes): {counts}")
+    assert counts["vat_number"] > 300  # la TVA tombe massivement
+    assert counts["country"] > 300

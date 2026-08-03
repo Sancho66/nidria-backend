@@ -3285,6 +3285,13 @@
       "category": "crm-smb",
       "contact_fields": [
         {
+          "csv": "Teamleader ID",
+          "source": "teamleader_id",
+          "type": "string",
+          "format": "",
+          "dedup": true
+        },
+        {
           "csv": "Prénom",
           "source": "first_name",
           "type": "string",
@@ -3294,69 +3301,6 @@
         {
           "csv": "Nom de famille",
           "source": "last_name",
-          "type": "string",
-          "format": "",
-          "dedup": false
-        },
-        {
-          "csv": "Adresse e-mail",
-          "source": "email",
-          "type": "string",
-          "format": "email",
-          "dedup": true
-        },
-        {
-          "csv": "Teamleader ID",
-          "source": "teamleader_id",
-          "type": "string",
-          "format": "",
-          "dedup": true
-        },
-        {
-          "csv": "Date de naissance",
-          "source": "date_of_birth",
-          "type": "datetime",
-          "format": "YYYY-MM-DD",
-          "dedup": false
-        },
-        {
-          "csv": "Genre",
-          "source": "gender",
-          "type": "enum",
-          "format": "",
-          "dedup": false
-        },
-        {
-          "csv": "Téléphone",
-          "source": "telephone",
-          "type": "string",
-          "format": "",
-          "dedup": false
-        },
-        {
-          "csv": "Mobile",
-          "source": "mobile",
-          "type": "string",
-          "format": "",
-          "dedup": false
-        },
-        {
-          "csv": "Fonction",
-          "source": "job_title",
-          "type": "string",
-          "format": "",
-          "dedup": false
-        },
-        {
-          "csv": "Société",
-          "source": "company",
-          "type": "string",
-          "format": "",
-          "dedup": false
-        },
-        {
-          "csv": "Langue",
-          "source": "language",
           "type": "string",
           "format": "",
           "dedup": false
@@ -3390,9 +3334,114 @@
           "dedup": false
         },
         {
+          "csv": "adresse postale",
+          "source": "postal_address",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Opt-in courriers marketing",
+          "source": "marketing_opt_in",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Province",
+          "source": "province",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
           "csv": "Pays",
           "source": "country",
           "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Date de naissance",
+          "source": "date_of_birth",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Genre",
+          "source": "gender",
+          "type": "enum",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Langue",
+          "source": "language",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Adresse e-mail",
+          "source": "email",
+          "type": "string",
+          "format": "email",
+          "dedup": true
+        },
+        {
+          "csv": "Téléphone",
+          "source": "telephone",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Mobile",
+          "source": "mobile",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Fax",
+          "source": "fax",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Site web",
+          "source": "website",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Numéro de TVA du contact",
+          "source": "vat_number",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Numéro d'identification national (Siret)",
+          "source": "national_id",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Actif",
+          "source": "active",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Tags",
+          "source": "tags",
+          "type": "array",
           "format": "",
           "dedup": false
         },
@@ -3404,23 +3453,100 @@
           "dedup": false
         },
         {
-          "csv": "IBAN",
+          "csv": "Nombre de minutes non facturées",
+          "source": "unbilled_minutes",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Entreprises",
+          "source": "companies",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Société",
+          "source": "company",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Fonction",
+          "source": "job_title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Sous-fonction",
+          "source": "sub_job_title",
+          "type": "string",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Décideur",
+          "source": "decision_maker",
+          "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Dernière activité",
+          "source": "last_activity",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Dernier rendez-vous",
+          "source": "last_meeting",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Date ajoutée",
+          "source": "added_date",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Dernière modification",
+          "source": "last_modified",
+          "type": "datetime",
+          "format": "ISO8601",
+          "dedup": false
+        },
+        {
+          "csv": "Crédits prépayés restants",
+          "source": "prepaid_credits",
+          "type": "number",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "N° Compte IBAN",
           "source": "iban",
           "type": "string",
           "format": "",
           "dedup": false
         },
         {
-          "csv": "BIC",
+          "csv": "Code BIC",
           "source": "bic",
           "type": "string",
           "format": "",
           "dedup": false
         },
         {
-          "csv": "Crédits prépayés",
-          "source": "prepaid_credits",
-          "type": "number",
+          "csv": "Conditions de paiement",
+          "source": "payment_terms",
+          "type": "string",
           "format": "",
           "dedup": false
         },
@@ -3432,16 +3558,23 @@
           "dedup": false
         },
         {
-          "csv": "Taux horaire",
-          "source": "hourly_rate",
-          "type": "number",
+          "csv": "ID externe",
+          "source": "external_id",
+          "type": "string",
           "format": "",
-          "dedup": false
+          "dedup": true
         },
         {
           "csv": "Traçage prospects",
           "source": "lead_tracking",
           "type": "boolean",
+          "format": "",
+          "dedup": false
+        },
+        {
+          "csv": "Taux horaire",
+          "source": "hourly_rate",
+          "type": "number",
           "format": "",
           "dedup": false
         }

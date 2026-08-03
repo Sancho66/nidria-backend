@@ -69,14 +69,30 @@ COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = PROFILE_SECTIONS
 # company du catalogue → leur section de fiche société. Les clés libres
 # d'agence tombent en 'misc'.
 COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
+    # identité légale
     "company_name": "identity",
     "legal_form": "identity",
     "registration_date": "identity",
-    "company_registration_number": "id_documents",
+    # numéros officiels (audit import : les cibles de tout export réel)
+    "company_registration_number": "id_documents",  # Siret/EIK
+    "vat_number": "id_documents",
+    # contact
     "headquarters_address": "contact",
     "legal_representative_name": "contact",
+    "country": "contact",
+    "email": "contact",
+    "phone": "contact",
+    "website": "contact",
+    "address": "contact",  # texte intégral (la règle connue — pas de parsing)
+    # activité
     "share_capital": "situation",
     "partners_count": "situation",
+}
+
+# Alias d'import acceptés → clé canonique (compat : une seule vérité par
+# concept ; `registration_number` demandé = `company_registration_number`).
+COMPANY_TARGET_ALIASES: Final[dict[str, str]] = {
+    "registration_number": "company_registration_number",
 }
 
 # Les 10 colonnes civiles natives → leur section fiche (mapping code :

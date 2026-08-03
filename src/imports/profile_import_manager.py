@@ -429,7 +429,9 @@ class CompanyImportManager:
         )
         parsed = parse_upload(body.filename, content)
 
-        valid_targets = {"name"} | set(COMPANY_PRESET_PROFILE_SECTION)
+        from src.client_profiles.profile_sections import COMPANY_TARGET_ALIASES
+
+        valid_targets = {"name"} | set(COMPANY_PRESET_PROFILE_SECTION) | set(COMPANY_TARGET_ALIASES)
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
             raise ValidationError(
@@ -453,6 +455,7 @@ class CompanyImportManager:
         corrections_by_row: dict[int, list[ImportCorrection]] = {}
         for correction in body.corrections:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
+        columns_by_target = {t: c for c, t in body.mapping.items()}
 
         repo = CompanyProfilesRepository(self.db)
         verdicts: list[RowVerdict] = []
@@ -473,6 +476,26 @@ class CompanyImportManager:
                     values[correction.target] = corrected
                 else:
                     values.pop(correction.target, None)
+            # Alias → clé canonique, puis coercitions TYPÉES (la règle
+            # absolue : échec de cellule = issue + trou, jamais un 500).
+            for alias, canonical in COMPANY_TARGET_ALIASES.items():
+                if alias in values:
+                    values.setdefault(canonical, values.pop(alias))
+            if "country" in values:
+                from src.custom_fields.custom_fields_validation import _coerce_country
+
+                try:
+                    values["country"] = _coerce_country(values["country"])
+                except ValueError:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get("country", "country"),
+                            code="invalid_value",
+                        )
+                    )
+                    values.pop("country")
+            if "email" in values:
+                values["email"] = values["email"].lower()
             name = values.get("name")
             person: dict[str, Any] = dict(values)
             if not name:
