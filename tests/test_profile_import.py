@@ -279,3 +279,114 @@ async def test_bad_cells_never_kill_the_batch(
     ).json()
     assert long_detail["phone"] is None  # 80 chars → trou (cap 50 du contrat)
     assert long_detail["date_of_birth"] is None  # date illisible → trou
+
+
+async def test_preview_and_import_render_identical_verdicts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA GARANTIE STRUCTURELLE — une seule fonction d'analyse : même
+    fichier → le preview (dry-run, ZÉRO écriture) et l'import réel
+    rendent des verdicts IDENTIQUES ligne à ligne."""
+    headers = agent_headers(admin)
+    # Une fiche existante pour un verdict 'link' en base.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Déjà", "last_name": "Base", "email": "en-base@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    csv_text = (
+        "Prénom,Nom,Email,Genre\n"
+        "Neuve,Cliente,neuve@example.com,F\n"
+        "Déjà,Base,en-base@example.com,M\n"
+        "Neuve,Doublon,NEUVE@example.com,\n"
+        "Sans,Email,,M\n"
+        "Mauvais,Genre,genre@example.com,unknown\n"
+    )
+    mapping = {"Prénom": "first_name", "Nom": "last_name", "Email": "email", "Genre": "sex"}
+    body = {"csv_text": csv_text, "mapping": mapping}
+
+    r = await client.post("/imports/client-profiles/preview", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    preview = r.json()
+    # ZÉRO écriture au dry-run.
+    n_before = (await db_session.execute(text("SELECT count(*) FROM client_profile"))).scalar_one()
+    assert preview["summary"] == {
+        "create": 2,
+        "link": 2,
+        "ignore": 1,
+        "ignore_reasons": {"no_email": 1},
+    }
+    statuses = {row["row_index"]: row["status"] for row in preview["rows"]}
+    # La cellule mauvaise = ISSUE, la ligne vit (create).
+    bad_row = next(row for row in preview["rows"] if row["row_index"] == 5)
+    assert bad_row["status"] == "create"
+    assert bad_row["issues"] == [{"column": "Genre", "code": "invalid_value"}]
+    assert "sex" not in bad_row["person"]  # trou annoncé
+    assert preview["rows"][0]["person"]["sex"] == "F"  # normalisé servi
+
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    report = r.json()
+    n_after = (await db_session.execute(text("SELECT count(*) FROM client_profile"))).scalar_one()
+    assert n_before == n_after - 2  # le preview n'avait RIEN écrit
+    # IDENTITÉ ligne à ligne : le rapport réel == les verdicts du preview.
+    real_statuses: dict[int, str] = {}
+    for outcome in report["created"]:
+        real_statuses[outcome["row"]] = "create"
+    for outcome in report["linked"]:
+        real_statuses[outcome["row"]] = "link"
+    for outcome in report["ignored"]:
+        real_statuses[outcome["row"]] = "ignore"
+    assert real_statuses == statuses
+
+
+async def test_corrections_flow_through_the_same_mill(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Corrections — appliquées après parse, avant validation : l'email
+    vide corrigé fait passer la ligne d'ignore à create ; une correction
+    invalide = motivée, jamais un 500."""
+    headers = agent_headers(admin)
+    csv_text = "Prénom,Nom,Email,Genre\nCorrigée,Cliente,,unknown\n"
+    mapping = {"Prénom": "first_name", "Nom": "last_name", "Email": "email", "Genre": "sex"}
+    # SANS correction : ignore no_email.
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.json()["rows"][0]["status"] == "ignore"
+    # AVEC corrections : email posé (ignore → create) + genre corrigé
+    # valide + une correction à cible inconnue (issue motivée, pas de 500).
+    body = {
+        "csv_text": csv_text,
+        "mapping": mapping,
+        "corrections": [
+            {"row_index": 1, "target": "email", "value": "corrigee@example.com"},
+            {"row_index": 1, "target": "sex", "value": "F"},
+            {"row_index": 1, "target": "code_postal", "value": "75002"},
+        ],
+    }
+    r = await client.post("/imports/client-profiles/preview", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    row = r.json()["rows"][0]
+    assert row["status"] == "create"
+    assert row["person"]["email"] == "corrigee@example.com"
+    assert row["person"]["sex"] == "F"  # la correction passe la moulinette
+    assert {"column": "(correction)", "code": "unknown_target"} in row["issues"]
+    # L'import réel avec les mêmes corrections écrit le corrigé.
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    assert [c["email"] for c in r.json()["created"]] == ["corrigee@example.com"]
+    listing = (await client.get("/client-profiles?search=corrigee@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["sex"] == "F"

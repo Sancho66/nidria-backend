@@ -11473,6 +11473,99 @@
         ]
       }
     },
+    "/imports/client-profiles/preview": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Preview Import Client Profiles",
+        "description": "Lot aperçu — le DRY-RUN : la MÊME analyse que l'import réel\n(corrections comprises), zéro écriture, verdicts ligne à ligne\npaginés + récap global.",
+        "operationId": "preview_import_client_profiles_imports_client_profiles_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileImportPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileImportPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/imports/company-profiles/preview": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Preview Import Company Profiles",
+        "operationId": "preview_import_company_profiles_imports_company_profiles_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyImportPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyImportPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/imports/company-profiles": {
       "post": {
         "tags": [
@@ -21964,6 +22057,112 @@
         ],
         "title": "CompanyCaseSummaryResponse"
       },
+      "CompanyImportPreviewRequest": {
+        "properties": {
+          "csv_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv Text"
+          },
+          "file_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File B64"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Mapping"
+          },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/ImportCorrection"
+            },
+            "type": "array",
+            "title": "Corrections"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "default": 100
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mapping"
+        ],
+        "title": "CompanyImportPreviewRequest"
+      },
+      "CompanyImportPreviewResponse": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ImportPreviewSummary"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RowVerdict"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rows",
+          "summary",
+          "rows",
+          "page",
+          "page_size"
+        ],
+        "title": "CompanyImportPreviewResponse"
+      },
       "CompanyImportReport": {
         "properties": {
           "total_rows": {
@@ -22043,6 +22242,13 @@
             "type": "object",
             "minProperties": 1,
             "title": "Mapping"
+          },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/ImportCorrection"
+            },
+            "type": "array",
+            "title": "Corrections"
           }
         },
         "additionalProperties": false,
@@ -25865,6 +26071,35 @@
         "title": "ImpersonatorInfo",
         "description": "Present on /me when the token was issued by impersonation —\nthe frontend banner reads it."
       },
+      "ImportCorrection": {
+        "properties": {
+          "row_index": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Row Index"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Target"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row_index",
+          "target",
+          "value"
+        ],
+        "title": "ImportCorrection",
+        "description": "Une correction front : appliquée APRÈS parse, AVANT validation —\nla valeur corrigée passe la MÊME moulinette que la cellule d'origine.\nUne correction invalide = issue rapportée / ligne ignorée motivée,\nJAMAIS un 500 (la règle absolue tient)."
+      },
       "ImportCreated": {
         "properties": {
           "row": {
@@ -26033,6 +26268,37 @@
         ],
         "title": "ImportPreview",
         "description": "The read-only dry-run: per-row predicted statuses + coerced values, with\nNO dossier created, NO email queued, NO transaction. Dedup follows the SAME\nagency-scoped rule as the real import — cross-agency existence is never\nrevealed."
+      },
+      "ImportPreviewSummary": {
+        "properties": {
+          "create": {
+            "type": "integer",
+            "title": "Create"
+          },
+          "link": {
+            "type": "integer",
+            "title": "Link"
+          },
+          "ignore": {
+            "type": "integer",
+            "title": "Ignore"
+          },
+          "ignore_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Ignore Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "create",
+          "link",
+          "ignore",
+          "ignore_reasons"
+        ],
+        "title": "ImportPreviewSummary"
       },
       "ImportRejected": {
         "properties": {
@@ -30172,6 +30438,112 @@
         "title": "ProfileFieldSectionResponse",
         "description": "Une catégorie du RAIL DU PICKER sur la fiche (correctif final rail) :\nTOUTES les catégories du catalogue sont servies — même source, même\nordre, même clé stable (`key`) — y compris à zéro champ person (le\nfront décide de leur rendu). Le panier « Sans catégorie » (key/name\nnull) ferme la liste s'il reste des clés hors catalogue."
       },
+      "ProfileImportPreviewRequest": {
+        "properties": {
+          "csv_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv Text"
+          },
+          "file_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File B64"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Mapping"
+          },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/ImportCorrection"
+            },
+            "type": "array",
+            "title": "Corrections"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "default": 100
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mapping"
+        ],
+        "title": "ProfileImportPreviewRequest"
+      },
+      "ProfileImportPreviewResponse": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ImportPreviewSummary"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RowVerdict"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rows",
+          "summary",
+          "rows",
+          "page",
+          "page_size"
+        ],
+        "title": "ProfileImportPreviewResponse"
+      },
       "ProfileImportReport": {
         "properties": {
           "total_rows": {
@@ -30251,6 +30623,13 @@
             "type": "object",
             "minProperties": 1,
             "title": "Mapping"
+          },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/ImportCorrection"
+            },
+            "type": "array",
+            "title": "Corrections"
           }
         },
         "additionalProperties": false,
@@ -31366,6 +31745,82 @@
           "cloned_from_role_id"
         ],
         "title": "RoleResponse"
+      },
+      "RowIssue": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "column",
+          "code"
+        ],
+        "title": "RowIssue"
+      },
+      "RowVerdict": {
+        "properties": {
+          "row_index": {
+            "type": "integer",
+            "title": "Row Index"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "create",
+              "link",
+              "ignore"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "person": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Person"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/RowIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row_index",
+          "status"
+        ],
+        "title": "RowVerdict"
       },
       "SavedViewCreate": {
         "properties": {

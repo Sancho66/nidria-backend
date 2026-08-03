@@ -28,9 +28,13 @@ from src.imports.mapping_manager import MappingManager
 from src.imports.mapping_schema import MappingListResponse, MappingResponse, MappingUpsertRequest
 from src.imports.profile_import_manager import (
     CompanyImportManager,
+    CompanyImportPreviewRequest,
+    CompanyImportPreviewResponse,
     CompanyImportReport,
     CompanyImportRequest,
     ProfileImportManager,
+    ProfileImportPreviewRequest,
+    ProfileImportPreviewResponse,
     ProfileImportReport,
     ProfileImportRequest,
 )
@@ -42,7 +46,13 @@ BINDINGS = [
     RouteBinding("GET", "/imports/crms/{slug}", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/cases", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/client-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
+    RouteBinding(
+        "POST", "/imports/client-profiles/preview", Audience.AGENT, Permission.IMPORT_MANAGE
+    ),
     RouteBinding("POST", "/imports/company-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
+    RouteBinding(
+        "POST", "/imports/company-profiles/preview", Audience.AGENT, Permission.IMPORT_MANAGE
+    ),
     RouteBinding("POST", "/imports/cases/preview", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/mappings", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/mappings/resolve", Audience.AGENT, Permission.IMPORT_MANAGE),
@@ -91,6 +101,23 @@ async def import_client_profiles(
     — le wizard dossiers existant la garde). Aucun mail : une fiche
     n'invite personne."""
     return await ProfileImportManager(db).run_import(agent, body)
+
+
+@router.post("/client-profiles/preview", response_model=ProfileImportPreviewResponse)
+async def preview_import_client_profiles(
+    body: ProfileImportPreviewRequest, agent: AgentDep, db: DbDep
+) -> ProfileImportPreviewResponse:
+    """Lot aperçu — le DRY-RUN : la MÊME analyse que l'import réel
+    (corrections comprises), zéro écriture, verdicts ligne à ligne
+    paginés + récap global."""
+    return await ProfileImportManager(db).preview(agent, body)
+
+
+@router.post("/company-profiles/preview", response_model=CompanyImportPreviewResponse)
+async def preview_import_company_profiles(
+    body: CompanyImportPreviewRequest, agent: AgentDep, db: DbDep
+) -> CompanyImportPreviewResponse:
+    return await CompanyImportManager(db).preview(agent, body)
 
 
 @router.post("/company-profiles", response_model=CompanyImportReport)
