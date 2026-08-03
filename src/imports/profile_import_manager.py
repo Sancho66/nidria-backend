@@ -219,10 +219,13 @@ class ProfileImportManager:
                         t.strip() for t in values["tags"].replace(";", ",").split(",") if t.strip()
                     )
                 )
+            from src.imports.value_normalizers import normalize_import_value
+
             for civil in CIVIL_COLUMNS:
                 raw = values.get(civil)
                 if raw is None:
                     continue
+                raw = normalize_import_value(civil, raw)
                 try:
                     validated = PersonUpdateRequest.model_validate({civil: raw})
                 except PydanticValidationError:
@@ -253,6 +256,7 @@ class ProfileImportManager:
                         field_type=preset.field_type,
                         options=(preset.options or {}).get("fr") if preset.options else None,
                     )
+                raw = normalize_import_value(key, raw, definition.option_values or None)
                 try:
                     if definition.field_type == CustomFieldType.ADDRESS.value:
                         person[key] = _coerce_one(definition, {"street": raw})

@@ -825,3 +825,128 @@ async def test_catalog_preset_declared_on_the_fly_idempotent(
     assert detail["custom_fields"]["visa_type"] == "Long séjour"
     by_key = {s["key"]: s["references"] for s in detail["sections"]}
     assert "visa_type" in by_key["id_documents"]
+
+
+async def test_every_suggested_target_coerces_real_world_values(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA RÈGLE STRUCTURELLE (urgence 04/08) — toute cible que le
+    suggéreur propose accepte les formats du monde réel de sa colonne :
+    le suggest sur les 42 en-têtes réels, puis un preview avec une valeur
+    TYPE par colonne suggérée → ZÉRO invalid_value. Un suggéreur qui
+    propose une cible incoerçable casse ce test."""
+    headers = agent_headers(admin)
+    for key in ("preferred_language", "residence_address"):
+        db_session.add(
+            CustomFieldDefinition(
+                agency_id=admin.agency_id,
+                key=key,
+                label=key,
+                field_type="select" if key == "preferred_language" else "text",
+                options=["Français", "Anglais", "Espagnol", "Autre"]
+                if key == "preferred_language"
+                else None,
+                scope="person",
+            )
+        )
+    await db_session.commit()
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": CONTACT_HEADERS_42},
+    )
+    assert r.status_code == 200, r.text
+    suggestions = r.json()["suggestions"]
+    # Les valeurs TYPE du monde réel, par en-tête (les traits du fichier).
+    real_world = {
+        "Prénom": "Kevin",
+        "Nom de famille": "Olivetto",
+        "Adresse e-mail": "kevin@example.com",
+        "Téléphone": "+33 6 00 00 00 01",
+        "Date de naissance": "1977-04-02",
+        "Genre": "M",
+        "Langue": "FR",
+        "adresse postale": "12 rue de la Paix, 75002 Paris",
+        "Fonction": "Notaire",
+        "Société": "MrM Ascenseurs",
+        "Tags": "VIP;prospect",
+        "Numéro de TVA du contact": "FR12345678901",
+        "Numéro d'identification national (Siret)": "84512345678901",
+    }
+    columns = [c for c in suggestions if c in real_world]
+    csv_text = (
+        ",".join(f'"{c}"' for c in columns)
+        + "\n"
+        + ",".join(f'"{real_world[c]}"' for c in columns)
+        + "\n"
+    )
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": {c: suggestions[c] for c in columns}},
+    )
+    assert r.status_code == 200, r.text
+    row = r.json()["rows"][0]
+    assert row["issues"] == [], f"cibles incoerçables: {row['issues']}"
+    # La langue ISO est NORMALISÉE vers l'option canonique du select.
+    assert row["person"]["preferred_language"] == "Français"
+    assert row["person"]["sex"] == "M"
+
+
+async def test_language_and_enum_value_normalization(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Urgence 04/08 — les formats du monde réel : ISO et noms complets
+    pour la langue (vers l'option de la déf, quelle que soit sa langue de
+    déclaration), Homme/Female pour le sexe, Marié/veuve pour l'état
+    civil ; l'illisible reste un trou motivé."""
+    headers = agent_headers(admin)
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="preferred_language",
+            label="Langue",
+            field_type="select",
+            options=["French", "English", "Other"],  # déf déclarée EN ANGLAIS
+            scope="person",
+        )
+    )
+    await db_session.commit()
+    csv_text = (
+        "Prénom,Nom,Email,Langue,Genre,EtatCivil\n"
+        "A,Un,l1@example.com,fr,Homme,Marié\n"
+        "B,Deux,l2@example.com,Français,Female,veuve\n"
+        "C,Trois,l3@example.com,klingon,unknown,compliqué\n"
+    )
+    mapping = {
+        "Prénom": "first_name",
+        "Nom": "last_name",
+        "Email": "email",
+        "Langue": "preferred_language",
+        "Genre": "sex",
+        "EtatCivil": "marital_status",
+    }
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    assert rows[0]["person"]["preferred_language"] == "French"  # 'fr' → option EN de la déf
+    assert rows[0]["person"]["sex"] == "M"  # Homme
+    assert rows[0]["person"]["marital_status"] == "married"  # Marié
+    assert rows[1]["person"]["preferred_language"] == "French"  # nom FR → option EN
+    assert rows[1]["person"]["sex"] == "F"  # Female
+    assert rows[1]["person"]["marital_status"] == "widowed"  # veuve
+    third = rows[2]
+    assert "preferred_language" not in third["person"]  # klingon → trou
+    assert "sex" not in third["person"]
+    assert "marital_status" not in third["person"]
+    assert len(third["issues"]) == 3  # trois issues motivées, la ligne vit
