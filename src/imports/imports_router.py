@@ -157,11 +157,19 @@ async def suggest_client_profiles_mapping(
     # LOT PLAFOND : le catalogue ENTIER est cible (un preset non déclaré
     # se déclare à l'import) — le vocabulaire dynamique porte les clés et
     # TOUS les labels i18n des presets person + les défs de l'agence.
+    from src.imports.value_normalizers import ADDRESS_SUBFIELDS
+
+    address_bases = {d.key for d in person_defs if d.field_type == "address"} | {
+        k
+        for k in PRESET_PROFILE_SECTION
+        if FIELD_PRESETS.get(k) is not None and FIELD_PRESETS[k].field_type == "address"
+    }
     valid = (
         set(IDENTITY_TARGETS)
         | set(CIVIL_COLUMNS)
         | {d.key for d in person_defs}
         | set(PRESET_PROFILE_SECTION)
+        | {f"{b}.{sub}" for b in address_bases for sub in ADDRESS_SUBFIELDS}
         | {"tags"}
     )
     dynamic = {normalize_header(d.key): d.key for d in person_defs}
@@ -199,8 +207,14 @@ async def suggest_company_profiles_mapping(
         COMPANY_FALLBACK_ALIASES,
         suggest_mapping,
     )
+    from src.imports.value_normalizers import ADDRESS_SUBFIELDS
 
-    valid = {"name", "tags"} | set(COMPANY_PRESET_PROFILE_SECTION) | set(COMPANY_TARGET_ALIASES)
+    valid = (
+        {"name", "tags"}
+        | set(COMPANY_PRESET_PROFILE_SECTION)
+        | set(COMPANY_TARGET_ALIASES)
+        | {f"{b}.{sub}" for b in ("address", "headquarters_address") for sub in ADDRESS_SUBFIELDS}
+    )
     suggestions, ambiguous, unmatched = suggest_mapping(
         body.headers,
         valid,

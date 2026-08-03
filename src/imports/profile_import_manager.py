@@ -149,12 +149,24 @@ class ProfileImportManager:
         from src.journeys.field_catalog import FIELD_PRESETS
 
         preset_person_keys = set(PRESET_PROFILE_SECTION)
+        # Composition d'adresse : les bases typées address acceptent le
+        # mapping PAR SOUS-CHAMP (base.street|city|postal_code|country) EN
+        # PLUS du texte intégral — les deux modes exclusifs par base.
+        from src.imports.value_normalizers import ADDRESS_SUBFIELDS
+
+        address_bases = {k for k, d in defs_by_key.items() if d.field_type == "address"} | {
+            k
+            for k in preset_person_keys
+            if k not in defs_by_key and FIELD_PRESETS[k].field_type == "address"
+        }
+        dotted_targets = {f"{b}.{sub}" for b in address_bases for sub in ADDRESS_SUBFIELDS}
         # `tags` : cible structurelle (split , ou ; — dédupliqué).
         valid_targets = (
             set(IDENTITY_TARGETS)
             | set(CIVIL_COLUMNS)
             | set(defs_by_key)
             | preset_person_keys
+            | dotted_targets
             | {"tags"}
         )
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
@@ -176,6 +188,16 @@ class ProfileImportManager:
                 code="import.unknown_columns",
                 params={"columns": unknown_columns},
             )
+
+        # EXCLUSIVITÉ des deux modes par base : texte intégral OU composé.
+        mapped = set(body.mapping.values()) | {c.target for c in body.corrections}
+        for base in address_bases:
+            if base in mapped and any(t.startswith(base + ".") for t in mapped):
+                raise ValidationError(
+                    f"{base!r} is mapped both as full text and by sub-fields.",
+                    code="import.address_mode_conflict",
+                    params={"target": base},
+                )
 
         corrections_by_row: dict[int, list[ImportCorrection]] = {}
         for correction in body.corrections:
@@ -235,6 +257,28 @@ class ProfileImportManager:
                     continue
                 coerced = validated.model_dump(exclude_unset=True).get(civil)
                 person[civil] = getattr(coerced, "value", coerced)
+            # COMPOSITION : les sous-champs mappés s'assemblent en objet
+            # adresse propre (validation PAR sous-champ, le reste vit).
+            from src.imports.value_normalizers import assemble_address
+
+            for base in address_bases:
+                parts = {
+                    t.split(".", 1)[1]: values.pop(t)
+                    for t in list(values)
+                    if t.startswith(base + ".")
+                }
+                if not parts:
+                    continue
+                assembled, failed = assemble_address(parts)
+                for sub in failed:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get(f"{base}.{sub}", f"{base}.{sub}"),
+                            code="invalid_value",
+                        )
+                    )
+                if assembled:
+                    person[base] = assembled
             custom_keys = (set(values) & (set(defs_by_key) | preset_person_keys)) - set(
                 CIVIL_COLUMNS
             )
@@ -341,6 +385,9 @@ class ProfileImportManager:
         from src.custom_fields.custom_fields_manager import materialize_preset_definitions
 
         used_targets = set(body.mapping.values()) | {c.target for c in body.corrections}
+        # Les cibles POINTÉES déclarent leur BASE (residence_address.street
+        # → la déf residence_address doit exister pour porter l'objet).
+        used_targets |= {t.split(".", 1)[0] for t in used_targets if "." in t}
         lang = await _CPRepo(self.db).agency_default_language(agent.agency_id)
         await materialize_preset_definitions(self.db, agent.agency_id, used_targets, lang)
         created: list[ProfileImportRowOutcome] = []
@@ -494,9 +541,15 @@ class CompanyImportManager:
         parsed = parse_upload(body.filename, content)
 
         from src.client_profiles.profile_sections import COMPANY_TARGET_ALIASES
+        from src.imports.value_normalizers import ADDRESS_SUBFIELDS
 
+        company_address_bases = {"address", "headquarters_address"}
+        dotted_targets = {f"{b}.{sub}" for b in company_address_bases for sub in ADDRESS_SUBFIELDS}
         valid_targets = (
-            {"name", "tags"} | set(COMPANY_PRESET_PROFILE_SECTION) | set(COMPANY_TARGET_ALIASES)
+            {"name", "tags"}
+            | set(COMPANY_PRESET_PROFILE_SECTION)
+            | set(COMPANY_TARGET_ALIASES)
+            | dotted_targets
         )
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
@@ -510,6 +563,14 @@ class CompanyImportManager:
                 "The mapping must bind one column to 'name' (the dedup key).",
                 code="import.name_target_required",
             )
+        mapped = set(body.mapping.values()) | {c.target for c in body.corrections}
+        for base in company_address_bases:
+            if base in mapped and any(t.startswith(base + ".") for t in mapped):
+                raise ValidationError(
+                    f"{base!r} is mapped both as full text and by sub-fields.",
+                    code="import.address_mode_conflict",
+                    params={"target": base},
+                )
         unknown_columns = sorted(set(body.mapping) - set(parsed.headers))
         if unknown_columns:
             raise ValidationError(
@@ -562,8 +623,30 @@ class CompanyImportManager:
                     values.pop("country")
             if "email" in values:
                 values["email"] = values["email"].lower()
+            from src.imports.value_normalizers import assemble_address
+
+            address_values: dict[str, dict[str, str]] = {}
+            for base in company_address_bases:
+                parts = {
+                    t.split(".", 1)[1]: values.pop(t)
+                    for t in list(values)
+                    if t.startswith(base + ".")
+                }
+                if not parts:
+                    continue
+                assembled, failed = assemble_address(parts)
+                for sub in failed:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get(f"{base}.{sub}", f"{base}.{sub}"),
+                            code="invalid_value",
+                        )
+                    )
+                if assembled:
+                    address_values[base] = assembled
             name = values.get("name")
             person: dict[str, Any] = dict(values)
+            person.update(address_values)
             if values.get("tags"):
                 person["tags"] = list(
                     dict.fromkeys(

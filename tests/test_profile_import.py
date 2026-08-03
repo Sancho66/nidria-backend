@@ -683,7 +683,11 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
     assert ratio >= 0.8, f"personnes: {ratio:.0%} — manquées: {set(expected_person) - set(hit)}"
     # « Pays » : l'ambiguïté SE PROPOSE (deux cibles), rien d'auto-posé.
     assert "Pays" not in person
-    assert r.json()["ambiguous"]["Pays"] == ["nationality", "tax_residence_country"]
+    assert r.json()["ambiguous"]["Pays"] == [
+        "nationality",
+        "tax_residence_country",
+        "residence_address.country",
+    ]
     # Mobile silencieux (Téléphone direct présent).
     assert "Mobile" not in person
 
@@ -950,3 +954,107 @@ async def test_language_and_enum_value_normalization(
     assert "sex" not in third["person"]
     assert "marital_status" not in third["person"]
     assert len(third["issues"]) == 3  # trois issues motivées, la ligne vit
+
+
+async def test_address_composition_contract(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Lot composition — le mapping PAR SOUS-CHAMP : l'objet s'assemble
+    proprement (cyrillique compris), un sous-champ mauvais = retiré +
+    signalé (le reste vit), les deux modes exclusifs par base → 422, le
+    texte intégral conservé pour les colonnes complètes."""
+    headers = agent_headers(admin)
+    csv_text = (
+        "Prénom,Nom,Email,Rue,Ville,CP,PaysAdr\n"
+        "Compo,Sée,compo@example.com,ул. Витоша 15,София,1000,BG\n"
+        "Mauvais,Pays,mauvais-pays@example.com,1 rue A,Paris,75001,Francia\n"
+    )
+    mapping = {
+        "Prénom": "first_name",
+        "Nom": "last_name",
+        "Email": "email",
+        "Rue": "residence_address.street",
+        "Ville": "residence_address.city",
+        "CP": "residence_address.postal_code",
+        "PaysAdr": "residence_address.country",
+    }
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    assert rows[0]["person"]["residence_address"] == {
+        "street": "ул. Витоша 15",
+        "city": "София",
+        "postal_code": "1000",
+        "country": "BG",
+    }
+    # 'Francia' ≠ ISO-2 → le sous-champ pays tombe, LE RESTE s'assemble.
+    assert rows[1]["person"]["residence_address"] == {
+        "street": "1 rue A",
+        "city": "Paris",
+        "postal_code": "75001",
+    }
+    assert {"column": "PaysAdr", "code": "invalid_value"} in rows[1]["issues"]
+
+    # EXCLUSIVITÉ : texte intégral + sous-champ sur la même base → 422.
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={
+            "csv_text": csv_text,
+            "mapping": {**mapping, "CP": "residence_address"},
+        },
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "import.address_mode_conflict"
+
+    # L'import réel écrit l'objet assemblé, déclaration à la volée comprise.
+    r = await client.post(
+        "/imports/client-profiles",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    listing = (await client.get("/client-profiles?search=compo@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["custom_fields"]["residence_address"]["city"] == "София"
+
+
+async def test_suggest_offers_address_subfields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Lot composition — le suggéreur propose les sous-champs pour les
+    fragments, la 3e lecture de Pays entre dans l'ambiguë, et « adresse
+    postale » complète garde le texte intégral."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": CONTACT_HEADERS_42},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    s = body["suggestions"]
+    assert s["Rue"] == "residence_address.street"
+    assert s["Ville"] == "residence_address.city"
+    assert s["Code postal"] == "residence_address.postal_code"
+    assert s["adresse postale"] == "residence_address"  # texte intégral conservé
+    assert body["ambiguous"]["Pays"] == [
+        "nationality",
+        "tax_residence_country",
+        "residence_address.country",
+    ]
+    # L'inverse de l'anti-parsing tient : Numéro de la rue reste exclu
+    # (pas de concaténation multi-colonnes).
+    assert "Numéro de la rue" not in s

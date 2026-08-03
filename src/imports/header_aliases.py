@@ -33,11 +33,8 @@ PERSON_EXCLUDED: Final[frozenset[str]] = frozenset(
     normalize_header(h)
     for h in (
         "Teamleader ID",  # identifiant CRM source
-        "Rue",  # fragment d'adresse (la règle anti-parsing)
-        "Numéro de la rue",
-        "Code postal",
-        "Ville",
-        "Province",
+        "Numéro de la rue",  # pas de concaténation multi-colonnes (anti-magie)
+        "Province",  # aucun sous-champ adresse correspondant
         "Opt-in courriers marketing",  # préférence marketing CRM
         "Fax",  # obsolète
         "Actif",  # état CRM
@@ -120,12 +117,23 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "company": "employer",
     "nom de naissance": "birth_name",
     "maiden name": "birth_name",
-    # adresse : le TEXTE INTÉGRAL seulement (les fragments sont exclus)
+    # adresse : TEXTE INTÉGRAL pour les colonnes complètes…
     "adresse postale": "residence_address",
     "adresse": "residence_address",
     "adresse complete": "residence_address",
     "address": "residence_address",
     "full address": "residence_address",
+    # …et SOUS-CHAMPS pour les fragments (composition visible — l'anti-
+    # parsing ne vaut que dans l'AUTRE sens : jamais découper une colonne).
+    "rue": "residence_address.street",
+    "street": "residence_address.street",
+    "ville": "residence_address.city",
+    "city": "residence_address.city",
+    "town": "residence_address.city",
+    "code postal": "residence_address.postal_code",
+    "postal code": "residence_address.postal_code",
+    "zip": "residence_address.postal_code",
+    "zip code": "residence_address.postal_code",
     # défs person courantes (suggérées si la déf existe chez l'agence)
     "langue": "preferred_language",
     "language": "preferred_language",
@@ -146,9 +154,11 @@ PERSON_ALIASES: Final[dict[str, str]] = {
 # AMBIGUÏTÉ OFFERTE, jamais devinée : ces en-têtes proposent PLUSIEURS
 # cibles au combobox — rien d'auto-posé.
 PERSON_AMBIGUOUS: Final[dict[str, list[str]]] = {
-    "pays": ["nationality", "tax_residence_country"],
-    "country": ["nationality", "tax_residence_country"],
-    "pays de residence": ["tax_residence_country", "nationality"],
+    # TROIS lectures — nationalité, résidence fiscale, pays de l'adresse :
+    # le choix est explicite, rien ne se devine.
+    "pays": ["nationality", "tax_residence_country", "residence_address.country"],
+    "country": ["nationality", "tax_residence_country", "residence_address.country"],
+    "pays de residence": ["tax_residence_country", "residence_address.country", "nationality"],
 }
 
 # Replis : suggérés SEULEMENT si la cible n'a pas déjà de colonne directe.
@@ -166,10 +176,7 @@ COMPANY_EXCLUDED: Final[frozenset[str]] = frozenset(
     normalize_header(h)
     for h in (
         "Teamleader ID",
-        "Rue",  # fragments (pas de colonne adresse assemblée chez Teamleader)
-        "Numéro de la rue",
-        "Code postal",
-        "Ville",
+        "Numéro de la rue",  # pas de concaténation multi-colonnes
         "Province",
         "Langue",  # pas de cible langue société
         "Adresse e-mail facturation",  # FAUX AMI de email (facturation)
@@ -250,6 +257,13 @@ COMPANY_ALIASES: Final[dict[str, str]] = {
     "adresse": "address",
     "address": "address",
     "adresse complete": "address",
+    "rue": "address.street",
+    "street": "address.street",
+    "ville": "address.city",
+    "city": "address.city",
+    "code postal": "address.postal_code",
+    "postal code": "address.postal_code",
+    "zip": "address.postal_code",
     "adresse du siege": "headquarters_address",
     "siege social": "headquarters_address",
     "capital social": "share_capital",

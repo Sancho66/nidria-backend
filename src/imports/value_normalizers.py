@@ -178,3 +178,36 @@ def normalize_import_value(target: str, raw: str, options: list[str] | None = No
     if target == "preferred_language":
         return normalize_language_value(raw, options)
     return raw
+
+
+# --- composition d'adresse (lot composition visible) ----------------------------------
+
+ADDRESS_SUBFIELDS: Final[tuple[str, ...]] = ("street", "city", "postal_code", "country")
+_ADDRESS_CAPS: Final[dict[str, int]] = {"street": 255, "city": 100, "postal_code": 20}
+
+
+def assemble_address(parts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Sous-champs mappés → l'objet adresse PROPRE. Validation par
+    sous-champ (caps de la règle V1, pays ISO-2) : un sous-champ mauvais
+    = retiré + signalé, le reste s'assemble — la règle absolue à la
+    granularité du sous-champ. Retourne (objet, sous-champs en échec)."""
+    from src.custom_fields.custom_fields_validation import _coerce_country
+
+    out: dict[str, str] = {}
+    failed: list[str] = []
+    for sub, raw in parts.items():
+        value = raw.strip()
+        if not value:
+            continue
+        if sub == "country":
+            try:
+                out["country"] = _coerce_country(value)
+            except ValueError:
+                failed.append(sub)
+            continue
+        cap = _ADDRESS_CAPS.get(sub)
+        if cap is not None and len(value) > cap:
+            failed.append(sub)
+            continue
+        out[sub] = value
+    return out, failed
