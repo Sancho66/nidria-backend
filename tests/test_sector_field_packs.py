@@ -91,29 +91,33 @@ def test_sector_tags_on_existing_sections() -> None:
         assert got == sectors, key
 
 
-# --- (c) preferred_language widening (additive) --------------------------------------------
+# --- (c) la langue : LA COLONNE, seule vérité (lot dédoublonnage) ---------------------------
 
 
-def test_preferred_language_has_eight_options_originals_intact() -> None:
-    opts = FIELD_PRESETS["preferred_language"].options
-    assert opts is not None
-    # 8 options in every language, added before the "Other" catch-all.
+def test_preferred_language_preset_is_dead_and_the_column_covers_the_languages() -> None:
+    """Ré-acté au dédoublonnage — le preset `preferred_language` (select à
+    8 options) est MORT : la colonne `preferred_lang` est la seule vérité
+    (c'est la double écriture sack/colonne qui causait la non-synchro).
+    La garde change d'objet mais garde son intention : les langues du
+    produit restent couvertes, désormais par le normaliseur de la colonne."""
+    from src.imports.value_normalizers import normalize_language_code
+
+    assert "preferred_language" not in FIELD_PRESETS
+    # Les 7 langues produit reconnues, en code comme en toutes lettres.
     for lang in LANGS:
-        assert len(opts[lang]) == 8, lang
-    # The 5 originals are intact and in order (fr reference).
-    assert opts["fr"] == [
-        "Français",
-        "Anglais",
-        "Espagnol",
-        "Portugais",
-        "Russe",
-        "Allemand",
-        "Italien",
-        "Autre",
-    ]
-    assert opts["en"][:4] == ["French", "English", "Spanish", "Portuguese"]
-    assert opts["en"][-1] == "Other"  # catch-all stays last
-    assert {"Russian", "German", "Italian"} <= set(opts["en"])
+        assert normalize_language_code(lang) == lang
+    for written, code in (
+        ("Français", "fr"),
+        ("English", "en"),
+        ("Español", "es"),
+        ("русский", "ru"),
+        ("Português", "pt"),
+        ("italiano", "it"),
+        ("magyar", "hu"),
+    ):
+        assert normalize_language_code(written) == code, written
+    # Hors produit → None : un trou motivé, jamais une valeur inventée.
+    assert normalize_language_code("klingon") is None
 
 
 # --- (d) non-regression: a pre-existing preset/section is untouched -------------------------

@@ -25,7 +25,7 @@ def _norm(value: str) -> str:
 
 # Identité de langue → toutes ses écritures connues (ISO + noms dans les
 # langues du produit + variantes courantes).
-_LANGUAGE_FORMS: Final[dict[str, frozenset[str]]] = {
+_LANGUAGE_FORMS_RAW: Final[dict[str, frozenset[str]]] = {
     "fr": frozenset(
         {
             "fr",
@@ -103,6 +103,16 @@ _LANGUAGE_FORMS: Final[dict[str, frozenset[str]]] = {
         }
     ),
     "other": frozenset({"other", "autre", "otro", "outro", "altro", "andere", "другой", "egyeb"}),
+}
+
+# LES DEUX CÔTÉS PASSENT LA MÊME MOULINETTE. Sans ça, toute forme dont
+# `_norm` change l'écriture est invisible : NFKD décompose « русский »
+# (й = и + brève combinante, retirée) en « русскии » — le russe écrit en
+# cyrillique n'était JAMAIS reconnu. Normaliser la table à la source
+# ferme la classe entière du bug (toute langue non latine).
+_LANGUAGE_FORMS: Final[dict[str, frozenset[str]]] = {
+    identity: frozenset(_norm(form) for form in forms)
+    for identity, forms in _LANGUAGE_FORMS_RAW.items()
 }
 
 
