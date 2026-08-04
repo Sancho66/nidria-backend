@@ -722,11 +722,15 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
     (Pays contacts, e-mail facturation, TVA taux), les exclusions tiennent."""
     headers = agent_headers(admin)
     # Les défs person que l'agence de Nico a (preferred_language existe
-    # partout via les 21 ; residence_address idem).
-    for key in ("preferred_language", "residence_address"):
+    # partout via les 21 ; residence_address idem). Une déf DÉCLARÉE porte
+    # le type de son preset — `residence_address` est une ADRESSE : c'est
+    # ce type qui ouvre ses sous-champs, à la suggestion comme à l'import
+    # (source unique `import_targets` ; une déf déclarée `text` fermerait
+    # la composition des DEUX côtés, cohéremment).
+    for key, kind in (("preferred_language", "text"), ("residence_address", "address")):
         db_session.add(
             CustomFieldDefinition(
-                agency_id=admin.agency_id, key=key, label=key, field_type="text", scope="person"
+                agency_id=admin.agency_id, key=key, label=key, field_type=kind, scope="person"
             )
         )
     await db_session.commit()
@@ -1791,3 +1795,164 @@ async def test_company_sack_labels_survive_import_creation(
     first = r.json()["rows"][0]
     assert {"column": "Note du juriste", "code": "invalid_value"} in first["issues"]
     assert "note_du_juriste" not in first["person"]
+
+
+async def test_agency_config_accepts_the_whole_import_universe(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LE BUG SIGNALÉ + SA GARDE STRUCTURELLE — `POST /imports/mappings`
+    refusait `residence_address.street` : une agence composait une adresse
+    dans le wizard sans pouvoir ENREGISTRER la correspondance. La cause
+    était la DUPLICATION de la règle (trois copies). Preuve que la
+    duplication ne peut plus revenir : l'univers est calculé par LA
+    fonction partagée (`import_targets.person_targets`) et envoyé EN
+    ENTIER à la config — toute cible que l'import accepte s'enregistre."""
+    from src.imports.import_targets import person_targets
+
+    headers = agent_headers(admin)
+    # Une agence réelle : un custom libre + une base adresse DÉCLARÉE
+    # (l'univers doit porter ses sous-champs, pas seulement ceux du
+    # catalogue).
+    for key, kind in (("num_dossier", "text"), ("adresse_bureau", "address")):
+        db_session.add(
+            CustomFieldDefinition(
+                agency_id=admin.agency_id,
+                key=key,
+                label=key,
+                field_type=kind,
+                scope="person",
+            )
+        )
+    await db_session.commit()
+
+    # LA CIBLE DU BUG, nommée : elle s'enregistre maintenant.
+    r = await client.post(
+        "/imports/mappings",
+        headers=headers,
+        json={
+            "crm_slug": "custom",
+            "custom_crm_name": "Mon vieux CRM",
+            "name": "Adresse composée",
+            "mapping": {
+                "Email": "email",
+                "Rue": "residence_address.street",
+                "Ville": "residence_address.city",
+                "CP": "residence_address.postal_code",
+                "Pays": "residence_address.country",
+                "Bureau rue": "adresse_bureau.street",
+                "Langue": "preferred_lang",
+                "Étiquettes": "tags",
+                "Passeport exp.": "passport_expiry",  # preset du catalogue NON déclaré
+            },
+        },
+    )
+    assert r.status_code in (200, 201), r.text
+
+    # L'ÉGALITÉ DES UNIVERS : tout ce que l'import accepte, la config
+    # l'enregistre — la liste vient de la source, elle ne peut pas dater.
+    universe = sorted((await person_targets(db_session, admin.agency_id)).valid)
+    assert "residence_address.street" in universe
+    assert "adresse_bureau.postal_code" in universe  # base DÉCLARÉE, pas catalogue
+    r = await client.post(
+        "/imports/mappings",
+        headers=headers,
+        json={
+            "crm_slug": "custom",
+            "custom_crm_name": "Mon vieux CRM",
+            "name": "Univers entier",
+            "mapping": {f"col{i}": target for i, target in enumerate(universe)},
+        },
+    )
+    assert r.status_code in (200, 201), (
+        f"la config refuse des cibles que l'import accepte : {r.text}"
+    )
+
+    # LE TROISIÈME CÔTÉ DU TRIANGLE : le SUGGÉREUR puise au même univers —
+    # il ne peut donc proposer ni offrir en ambiguïté une cible que
+    # l'import refuserait (la plainte du front : « il propose une
+    # correspondance que son propre import rejette »).
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": CONTACT_HEADERS_42},
+    )
+    assert r.status_code == 200, r.text
+    offered = set(r.json()["suggestions"].values()) | {
+        t for options in r.json()["ambiguous"].values() for t in options
+    }
+    assert offered <= set(universe), f"suggérées hors univers : {offered - set(universe)}"
+
+    # ET LA FRONTIÈRE TIENT : hors univers → 422 nommé, dans les deux
+    # sens (une clé inventée, et l'univers société écarté de la personne).
+    for bad_target in ("montant_facture", "legal_form", "residence_address.province"):
+        r = await client.post(
+            "/imports/mappings",
+            headers=headers,
+            json={
+                "crm_slug": "custom",
+                "custom_crm_name": "Mon vieux CRM",
+                "name": f"Refus {bad_target}",
+                "mapping": {"Email": "email", "X": bad_target},
+            },
+        )
+        assert r.status_code == 422, bad_target
+        assert r.json()["code"] == "import.unknown_targets"
+        assert bad_target in r.json()["params"]["targets"]
+
+
+async def test_company_import_and_suggest_share_one_universe(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le miroir société : suggéreur et import lisent LA MÊME source
+    (`company_targets`) — le suggéreur ne peut donc pas proposer une
+    combinaison que l'import rejette. Constat nommé au rapport : il
+    n'existe PAS de config société au contrat (une config est personne,
+    `journey_template_id` NULL) — la face société n'a rien à aligner."""
+    from src.imports.import_targets import company_targets
+
+    headers = agent_headers(admin)
+    universe = (await company_targets(db_session, admin.agency_id)).valid
+    # La composition d'adresse société est DANS l'univers, aux deux bases.
+    assert {"address.street", "headquarters_address.city"} <= universe
+
+    # Tout l'univers passe l'import société — SAUF les deux bases en
+    # texte intégral, volontairement EXCLUSIVES de leurs sous-champs
+    # (422 `import.address_mode_conflict`, la règle du lot adresse) : on
+    # mappe donc la composition, pas les deux modes à la fois.
+    mappable = sorted(universe - {"address", "headquarters_address"})
+    mapping = {f"col{i}": target for i, target in enumerate(mappable)}
+    columns = list(mapping)
+    header_line = ",".join(columns)
+    value_line = ",".join("UniversCo" if mapping[c] == "name" else "" for c in columns)
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={"csv_text": f"{header_line}\n{value_line}\n", "mapping": mapping},
+    )
+    assert r.status_code == 200, f"l'import société refuse une cible de son univers : {r.text}"
+    # Et les deux bases en texte intégral passent SEULES (l'autre mode).
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={
+            "csv_text": "Nom,Adresse,Siège\nUniversCo,12 rue A,3 av B\n",
+            "mapping": {"Nom": "name", "Adresse": "address", "Siège": "headquarters_address"},
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # Et le suggéreur ne rend QUE des cibles de cet univers.
+    r = await client.post(
+        "/imports/company-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Nom", "Rue", "Ville", "Code postal", "Numéro de TVA", "Site web"]},
+    )
+    assert r.status_code == 200, r.text
+    suggested = set(r.json()["suggestions"].values())
+    assert suggested <= universe, f"le suggéreur propose hors univers : {suggested - universe}"

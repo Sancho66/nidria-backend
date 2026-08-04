@@ -22,13 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.client_profile import ClientProfile
 from src.client_profiles.backfill import CIVIL_COLUMNS
-from src.client_profiles.client_profiles_manager import person_scope_definitions
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
 from src.core.exceptions import ValidationError
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.imports.csv_reader import parse_upload
 
-IDENTITY_TARGETS = ("first_name", "last_name", "email")
+# L'identité vient de `import_targets` (LA source) ; les appelants
+# historiques l'importent encore d'ici, le nom reste donc visible.
+from src.imports.import_targets import IDENTITY_TARGETS
 
 
 def _resolve_street_pairs(
@@ -197,41 +198,19 @@ class ProfileImportManager:
         )
         parsed = parse_upload(body.filename, content)
 
-        person_defs = await person_scope_definitions(self.db, agent.agency_id)
-        # LOT PLAFOND : les cibles = LE CATALOGUE ENTIER (presets person)
-        # + les customs déclarés. Un preset non déclaré est coercé par sa
-        # définition de catalogue (pseudo-déf) ; sa DÉCLARATION réelle
-        # n'arrive qu'à l'import (jamais au preview — zéro écriture).
-        # Univers société hors fiche personne (demande design A) : les
-        # clés écartées ne sont plus des cibles — même déclarées.
-        from src.client_profiles.profile_sections import (
-            PERSON_SHEET_EXCLUDED_KEYS,
-            PRESET_PROFILE_SECTION,
-        )
-        from src.journeys.field_catalog import FIELD_PRESETS
-
-        defs_by_key = {d.key: d for d in person_defs if d.key not in PERSON_SHEET_EXCLUDED_KEYS}
-        preset_person_keys = set(PRESET_PROFILE_SECTION) - PERSON_SHEET_EXCLUDED_KEYS
+        # L'UNIVERS DES CIBLES vient de `import_targets` — LA source, celle
+        # que la config d'agence consomme aussi (un test prouve l'égalité).
         # Composition d'adresse : les bases typées address acceptent le
         # mapping PAR SOUS-CHAMP (base.street|city|postal_code|country) EN
         # PLUS du texte intégral — les deux modes exclusifs par base.
-        from src.imports.value_normalizers import ADDRESS_SUBFIELDS
+        from src.imports.import_targets import person_targets
 
-        address_bases = {k for k, d in defs_by_key.items() if d.field_type == "address"} | {
-            k
-            for k in preset_person_keys
-            if k not in defs_by_key and FIELD_PRESETS[k].field_type == "address"
-        }
-        dotted_targets = {f"{b}.{sub}" for b in address_bases for sub in ADDRESS_SUBFIELDS}
-        # `tags` : cible structurelle (split , ou ; — dédupliqué).
-        valid_targets = (
-            set(IDENTITY_TARGETS)
-            | set(CIVIL_COLUMNS)
-            | set(defs_by_key)
-            | preset_person_keys
-            | dotted_targets
-            | {"tags", "preferred_lang"}
-        )
+        targets = await person_targets(self.db, agent.agency_id)
+        defs_by_key = targets.defs_by_key
+        preset_person_keys = targets.preset_keys
+        address_bases = targets.address_bases
+        dotted_targets = targets.dotted
+        valid_targets = targets.valid
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
             raise ValidationError(
@@ -458,6 +437,8 @@ class ProfileImportManager:
                 if definition is None:
                     # Preset non déclaré : la pseudo-déf du CATALOGUE porte
                     # le type et les options (langue d'agence en repli fr).
+                    from src.journeys.field_catalog import FIELD_PRESETS
+
                     preset = FIELD_PRESETS[key]
                     from shared.models.custom_field import CustomFieldDefinition
 
@@ -734,7 +715,6 @@ class CompanyImportManager:
 
     async def _analyze(self, agent: Agent, body: CompanyImportRequest) -> list[RowVerdict]:
         """La même garantie que les personnes : UNE analyse, zéro écriture."""
-        from src.client_profiles.profile_sections import COMPANY_PRESET_PROFILE_SECTION
         from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 
         if body.csv_text is None and body.file_b64 is None:
@@ -745,22 +725,18 @@ class CompanyImportManager:
         parsed = parse_upload(body.filename, content)
 
         from src.client_profiles.profile_sections import COMPANY_TARGET_ALIASES
-        from src.imports.value_normalizers import ADDRESS_SUBFIELDS
 
-        company_address_bases = {"address", "headquarters_address"}
-        dotted_targets = {f"{b}.{sub}" for b in company_address_bases for sub in ADDRESS_SUBFIELDS}
-        # Les clés à LABEL de l'agence (nées de la grille — demande design
-        # A) sont des cibles directes : label et kind de naissance connus.
-        label_rows = await CompanyProfilesRepository(self.db).field_labels(agent.agency_id)
-        labels_by_key = {row.key: row for row in label_rows}
-        keys_by_label = {row.label.strip().lower(): row.key for row in label_rows}
-        valid_targets = (
-            {"name", "tags"}
-            | set(COMPANY_PRESET_PROFILE_SECTION)
-            | set(COMPANY_TARGET_ALIASES)
-            | dotted_targets
-            | set(labels_by_key)
-        )
+        # L'univers société vient de `import_targets` — LA source (le plan
+        # de valeurs, ses alias, les deux bases adresse en sous-champs, et
+        # les clés BAPTISÉES de l'agence avec leur kind de naissance).
+        from src.imports.import_targets import company_targets
+
+        targets = await company_targets(self.db, agent.agency_id)
+        company_address_bases = targets.address_bases
+        dotted_targets = targets.dotted
+        labels_by_key = targets.labels_by_key
+        keys_by_label = targets.keys_by_label
+        valid_targets = targets.valid
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
             raise ValidationError(

@@ -90,17 +90,15 @@ class MappingManager:
             declared = await self.import_repo.declared_fields(payload.journey_template_id)
             validate_mapping_targets(payload.mapping, declared, defs_by_key)
         else:
-            # V4b — config d'AGENCE : les cibles sont le RÉFÉRENTIEL person
-            # (identité + civils + custom scope='person'), le vocabulaire de
-            # l'import-fiches.
-            from src.client_profiles.backfill import CIVIL_COLUMNS
-            from src.client_profiles.profile_sections import PERSON_SHEET_EXCLUDED_KEYS
-            from src.imports.profile_import_manager import IDENTITY_TARGETS
+            # V4b — config d'AGENCE : les cibles sont celles de
+            # l'import-fiches, SANS DIVERGENCE POSSIBLE. La règle vit dans
+            # `import_targets.person_targets` et nulle part ailleurs : une
+            # config enregistre exactement ce que l'import accepterait —
+            # composition d'adresse (`<base>.<sous-champ>`), catalogue
+            # entier des presets, tags et langue compris.
+            from src.imports.import_targets import person_targets
 
-            person_keys = {
-                d.key for d in definitions if d.scope == "person"
-            } - PERSON_SHEET_EXCLUDED_KEYS
-            valid = set(IDENTITY_TARGETS) | set(CIVIL_COLUMNS) | person_keys
+            valid = (await person_targets(self.db, agent.agency_id)).valid
             bad = sorted(set(payload.mapping.values()) - valid)
             if bad:
                 raise ValidationError(
