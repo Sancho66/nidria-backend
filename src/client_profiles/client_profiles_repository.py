@@ -231,6 +231,32 @@ class ClientProfilesRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def profile_ids_for_emails(
+        self, agency_id: uuid.UUID, emails: set[str]
+    ) -> dict[str, uuid.UUID]:
+        """Le miroir GROUPÉ de profile_id_for_email pour l'import (anti
+        N+1) : une seule requête pour tout le fichier, même lecture
+        lower(coalesce(compte, colonne propre)), rendue en dictionnaire
+        email → id de fiche de CETTE agence."""
+        if not emails:
+            return {}
+        effective_email = func.lower(func.coalesce(ExpatUser.email, ClientProfile.email))
+        stmt = (
+            select(effective_email, ClientProfile.id)
+            .select_from(ClientProfile)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(
+                ClientProfile.agency_id == agency_id,
+                effective_email.in_({e.lower() for e in emails}),
+            )
+        )
+        out: dict[str, uuid.UUID] = {}
+        for email, profile_id in (await self.db.execute(stmt)).all():
+            # Doublon d'email dans le référentiel : la première fiche fait
+            # foi (même arbitraire que le limit(1) du chemin unitaire).
+            out.setdefault(email, profile_id)
+        return out
+
     async def get_unlinked_by_email(self, agency_id: uuid.UUID, email: str) -> ClientProfile | None:
         """L'adoption de la liaison différée (F4) : la fiche non liée de
         l'agence qui porte cet email en colonne propre."""

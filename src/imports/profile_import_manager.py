@@ -307,6 +307,30 @@ class ProfileImportManager:
         from src.core.enums import CustomFieldType
         from src.custom_fields.custom_fields_validation import _coerce_one
 
+        # LE SELECT GROUPÉ (anti N+1) : les emails du fichier se relèvent en
+        # une pré-passe légère (colonne mappée, correction éventuelle), la
+        # base répond UNE fois pour tout le fichier — la boucle de verdicts
+        # ne fait plus que des lectures de dictionnaire. La pré-passe est un
+        # SURSET volontaire (une correction hors cibles y entre quand même) :
+        # un email de trop dans le IN est inoffensif, un email manquant
+        # fausserait le verdict.
+        email_columns = [c for c, t in body.mapping.items() if t == "email"]
+        candidate_emails: set[str] = set()
+        for index, row in enumerate(parsed.rows, start=1):
+            cell = ""
+            for column in email_columns:
+                raw_cell = (row.get(column) or "").strip()
+                if raw_cell:
+                    cell = raw_cell
+            for correction in corrections_by_row.get(index, ()):
+                if correction.target == "email":
+                    cell = correction.value.strip()
+            if cell:
+                candidate_emails.add(cell.lower())
+        existing_by_email = await self.repo.profile_ids_for_emails(
+            agent.agency_id, candidate_emails
+        )
+
         verdicts: list[RowVerdict] = []
         seen_emails: dict[str, int] = {}
         for index, row in enumerate(parsed.rows, start=1):
@@ -461,7 +485,7 @@ class ProfileImportManager:
                     )
                 )
                 continue
-            existing_id = await self.repo.profile_id_for_email(agent.agency_id, email)
+            existing_id = existing_by_email.get(email)
             if existing_id is not None:
                 verdicts.append(
                     RowVerdict(
@@ -784,6 +808,25 @@ class CompanyImportManager:
         columns_by_target.update({t: " + ".join(cols) for t, cols in street_pairs.items()})
 
         repo = CompanyProfilesRepository(self.db)
+        # LE SYMÉTRIQUE du SELECT groupé fiches (anti N+1) : une pré-passe
+        # légère relève les noms du fichier (colonnes mappées, corrections)
+        # avant la boucle — surset volontaire : un nom de trop dans le IN
+        # est inoffensif, un nom manquant fausserait le verdict.
+        name_columns = [c for c, t in body.mapping.items() if t == "name"]
+        candidate_names: set[str] = set()
+        for index, row in enumerate(parsed.rows, start=1):
+            cell = ""
+            for column in name_columns:
+                raw_cell = (row.get(column) or "").strip()
+                if raw_cell:
+                    cell = raw_cell
+            for correction in corrections_by_row.get(index, ()):
+                if correction.target == "name":
+                    cell = correction.value.strip()
+            if cell:
+                candidate_names.add(cell.lower())
+        existing_by_name = await repo.ids_for_names(agent.agency_id, candidate_names)
+
         verdicts: list[RowVerdict] = []
         seen_names: dict[str, int] = {}
         for index, row in enumerate(parsed.rows, start=1):
@@ -909,7 +952,7 @@ class CompanyImportManager:
                 )
                 continue
             key = name.strip().lower()
-            existing_id = await repo.id_for_name(agent.agency_id, name)
+            existing_id = existing_by_name.get(key)
             if existing_id is not None:
                 verdicts.append(
                     RowVerdict(

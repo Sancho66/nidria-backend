@@ -38,6 +38,24 @@ class CompanyProfilesRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def ids_for_names(self, agency_id: uuid.UUID, names: set[str]) -> dict[str, uuid.UUID]:
+        """Le miroir GROUPÉ de id_for_name pour l'import (anti N+1) : UNE
+        requête IN sur les noms normalisés (casse ignorée) scopée agence,
+        rendue en dictionnaire nom → id de fiche société."""
+        if not names:
+            return {}
+        lowered = func.lower(CompanyProfile.name)
+        stmt = select(lowered, CompanyProfile.id).where(
+            CompanyProfile.agency_id == agency_id,
+            lowered.in_({n.strip().lower() for n in names}),
+        )
+        out: dict[str, uuid.UUID] = {}
+        for name, company_id in (await self.db.execute(stmt)).all():
+            # Homonymes dans le référentiel : la première fiche fait foi
+            # (même arbitraire que le limit(1) du chemin unitaire).
+            out.setdefault(name, company_id)
+        return out
+
     @staticmethod
     def _active_case_exists() -> Any:
         """Annuaire — un dossier VIVANT NON CLOS lié à la société."""
