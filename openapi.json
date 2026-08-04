@@ -22200,6 +22200,13 @@
             "type": "array",
             "title": "Corrections"
           },
+          "create_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldCreationSpec"
+            },
+            "type": "array",
+            "title": "Create Fields"
+          },
           "page": {
             "type": "integer",
             "minimum": 1.0,
@@ -22244,6 +22251,13 @@
           "page_size": {
             "type": "integer",
             "title": "Page Size"
+          },
+          "fields_created": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fields Created"
           }
         },
         "type": "object",
@@ -22287,6 +22301,13 @@
             "type": "integer",
             "title": "Tags Applied",
             "default": 0
+          },
+          "fields_created": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fields Created"
           }
         },
         "type": "object",
@@ -22347,6 +22368,13 @@
             },
             "type": "array",
             "title": "Corrections"
+          },
+          "create_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldCreationSpec"
+            },
+            "type": "array",
+            "title": "Create Fields"
           }
         },
         "additionalProperties": false,
@@ -22355,7 +22383,7 @@
           "mapping"
         ],
         "title": "CompanyImportRequest",
-        "description": "Import de fiches SOCIÉTÉ — endpoint séparé (même verdict que\nl'annuaire : cibles disjointes de l'import personnes). Cibles :\n`name` (dénomination, la clé de dédup, OBLIGATOIRE au mapping) + les\n8 presets company de la taxonomie posée. Les clés libres restent au\nPATCH (pas de référentiel société au MVP — écart nommé)."
+        "description": "Import de fiches SOCIÉTÉ — endpoint séparé (même verdict que\nl'annuaire : cibles disjointes de l'import personnes). Cibles :\n`name` (dénomination, la clé de dédup, OBLIGATOIRE au mapping) + les\npresets company de la taxonomie posée. Les clés libres restent au\nPATCH (pas de référentiel société au MVP — écart nommé)."
       },
       "CompanyImportRowOutcome": {
         "properties": {
@@ -23607,7 +23635,6 @@
                 "enum": [
                   "identity",
                   "contact",
-                  "id_documents",
                   "situation",
                   "misc"
                 ]
@@ -26070,6 +26097,41 @@
           "can_validate"
         ],
         "title": "ExternalTimelineStepResponse"
+      },
+      "FieldCreationSpec": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Column"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "boolean"
+            ],
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "label",
+          "kind"
+        ],
+        "title": "FieldCreationSpec",
+        "description": "« Champ à créer » depuis la grille : la colonne, son label\n(pré-rempli du nom de colonne au front), le kind SIMPLE. Le scope est\nporté par l'ENDPOINT (import personnes → person, sociétés → sack) —\nplus simple au contrat, nommé au rapport."
       },
       "FieldGestureRequest": {
         "properties": {
@@ -30586,6 +30648,13 @@
             "type": "array",
             "title": "Corrections"
           },
+          "create_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldCreationSpec"
+            },
+            "type": "array",
+            "title": "Create Fields"
+          },
           "page": {
             "type": "integer",
             "minimum": 1.0,
@@ -30630,6 +30699,13 @@
           "page_size": {
             "type": "integer",
             "title": "Page Size"
+          },
+          "fields_created": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fields Created"
           }
         },
         "type": "object",
@@ -30673,6 +30749,13 @@
             "type": "integer",
             "title": "Tags Applied",
             "default": 0
+          },
+          "fields_created": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fields Created"
           }
         },
         "type": "object",
@@ -30733,6 +30816,13 @@
             },
             "type": "array",
             "title": "Corrections"
+          },
+          "create_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldCreationSpec"
+            },
+            "type": "array",
+            "title": "Create Fields"
           }
         },
         "additionalProperties": false,

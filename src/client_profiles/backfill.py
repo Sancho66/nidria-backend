@@ -163,3 +163,18 @@ def backfill_client_profiles(conn: Connection) -> dict[str, int]:
             )
             stats["persons_linked"] += result.rowcount or 0
     return stats
+
+
+def merge_person_id_documents_sections(conn: Connection) -> dict[str, Any]:
+    """Fusion id_documents → identity côté PERSONNE (parité société) —
+    LA fonction, partagée migration/tests/protocole dump-prod : les défs
+    encore rangées en 'id_documents' re-pointent 'identity'. Le code ne
+    connaît plus cette section (taxonomie à 4) ; sans re-point, elles
+    tomberaient en 'misc' au rendu. Idempotente, rejouable."""
+    result = conn.execute(
+        text(
+            "UPDATE custom_field_definition SET profile_section = 'identity' "
+            "WHERE profile_section = 'id_documents'"
+        )
+    )
+    return {"definitions_repointed": result.rowcount or 0}

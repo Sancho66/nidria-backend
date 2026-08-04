@@ -893,9 +893,9 @@ async def test_catalog_preset_declared_on_the_fly_idempotent(
             )
         )
     ).first()
-    assert list(row) == ["person", "id_documents", "select"] or list(row)[:2] == [
+    assert list(row) == ["person", "identity", "select"] or list(row)[:2] == [
         "person",
-        "id_documents",
+        "identity",  # fusion id_documents → identity (taxonomie à 4)
     ]
     # IDEMPOTENT : rejouer ne crée pas de doublon.
     r = await client.post("/imports/client-profiles", headers=headers, json=body)
@@ -913,7 +913,7 @@ async def test_catalog_preset_declared_on_the_fly_idempotent(
     ).json()
     assert detail["custom_fields"]["visa_type"] == "Long séjour"
     by_key = {s["key"]: s["references"] for s in detail["sections"]}
-    assert "visa_type" in by_key["id_documents"]
+    assert "visa_type" in by_key["identity"]  # fusion id_documents → identity
 
 
 async def test_every_suggested_target_coerces_real_world_values(

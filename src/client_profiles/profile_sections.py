@@ -1,11 +1,13 @@
 """La taxonomie FICHE (lot taxonomie) — les sections PROPRES de la fiche.
 
 Deux univers assumés : le picker de collecte garde SES catégories
-(`SECTION_TYPES`, le rail) ; la fiche sert LES SIENNES — cinq sections
-stables, i18n ×7. Le contrat n'est plus l'égalité picker==fiche mais
-l'EXHAUSTIVITÉ : tout champ person a exactement UNE profile_section
-(les colonnes civiles par le mapping code ci-dessous, les définitions
-custom par leur colonne `profile_section`, défaut 'misc').
+(`SECTION_TYPES`, le rail) ; la fiche sert LES SIENNES — QUATRE sections
+stables (fusion id_documents → identity, parité personne/société : un
+numéro officiel EST l'identité), i18n ×7. Le contrat n'est plus
+l'égalité picker==fiche mais l'EXHAUSTIVITÉ : tout champ person a
+exactement UNE profile_section (les colonnes civiles par le mapping
+code ci-dessous, les définitions custom par leur colonne
+`profile_section`, défaut 'misc').
 
 Posée AUSSI pour F5 (fiches société) : `COMPANY_PROFILE_SECTIONS`
 réutilise la même taxonomie — F5 n'invente rien.
@@ -33,15 +35,6 @@ PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
         "it": "Contatti",
         "hu": "Kapcsolat",
     },
-    "id_documents": {
-        "fr": "Documents d'identité",
-        "en": "Identity documents",
-        "es": "Documentos de identidad",
-        "ru": "Документы",
-        "pt": "Documentos de identidade",
-        "it": "Documenti d'identità",
-        "hu": "Személyes okmányok",
-    },
     "situation": {
         "fr": "Situation",
         "en": "Situation",
@@ -62,12 +55,9 @@ PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
     },
 }
 
-# Fiches société : la taxonomie à QUATRE sections — id_documents
-# fusionne dans l'identité légale (un numéro officiel de société EST
-# son identité).
-COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
-    k: v for k, v in PROFILE_SECTIONS.items() if k != "id_documents"
-}
+# Fiches société : la MÊME taxonomie à 4 — la parité est revenue (la
+# fusion id_documents → identity vaut désormais des deux côtés).
+COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = PROFILE_SECTIONS
 
 # V2b — le plan de valeurs SOCIÉTÉ sur la taxonomie : les presets
 # company du catalogue → leur section de fiche société. Les clés libres
@@ -107,6 +97,32 @@ COMPANY_TARGET_ALIASES: Final[dict[str, str]] = {
     "registration_number": "company_registration_number",
 }
 
+# L'ordre INTERNE de la section identity fusionnée : l'état civil
+# d'abord, les documents ensuite (l'ordre du catalogue). Les clés hors
+# liste (customs d'agence rangés en identity par le toggle) suivent,
+# dans leur ordre d'arrivée — tri stable.
+IDENTITY_SECTION_ORDER: Final[tuple[str, ...]] = (
+    # état civil
+    "date_of_birth",
+    "nationality",
+    "place_of_birth",
+    "sex",
+    "birth_name",
+    "birth_country",
+    "second_nationality",
+    # documents (l'ordre du catalogue)
+    "passport_number",
+    "passport_expiry",
+    "visa_type",
+    "visa_number",
+    "visa_permit_expiry",
+    "residence_permit_number",
+    "driving_license_number",
+    "license_country",
+    "license_to_exchange",
+    "tax_id",
+)
+
 # Les 10 colonnes civiles natives → leur section fiche (mapping code :
 # ce ne sont pas des lignes custom_field_definition).
 CIVIL_PROFILE_SECTION: Final[dict[str, str]] = {
@@ -115,7 +131,7 @@ CIVIL_PROFILE_SECTION: Final[dict[str, str]] = {
     "place_of_birth": "identity",
     "sex": "identity",
     "birth_name": "identity",
-    "passport_number": "id_documents",
+    "passport_number": "identity",  # fusion id_documents → identity
     "phone": "contact",
     "marital_status": "situation",
     "profession": "situation",
@@ -126,9 +142,20 @@ CIVIL_PROFILE_SECTION: Final[dict[str, str]] = {
 # backfill de migration (les custom nés d'agence restent 'misc',
 # reclassables par le toggle élargi). Tableau champ→section au rapport.
 PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
-    # identity
+    # identity — l'état civil…
     "birth_country": "identity",
     "second_nationality": "identity",
+    # …puis les numéros et titres officiels (fusion id_documents →
+    # identity : un document officiel EST l'identité, parité société)
+    "passport_expiry": "identity",
+    "visa_type": "identity",
+    "visa_number": "identity",
+    "visa_permit_expiry": "identity",
+    "residence_permit_number": "identity",
+    "driving_license_number": "identity",
+    "license_country": "identity",
+    "license_to_exchange": "identity",
+    "tax_id": "identity",
     # contact
     "residence_address": "contact",
     "secondary_email": "contact",
@@ -136,16 +163,6 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "website": "contact",  # audit catalogue : présence en ligne (TL + HubSpot)
     "linkedin_url": "contact",  # audit catalogue : le seul réseau métier
     "preferred_contact_channel": "contact",
-    # id_documents — les numéros et titres officiels de la personne
-    "passport_expiry": "id_documents",
-    "visa_type": "id_documents",
-    "visa_number": "id_documents",
-    "visa_permit_expiry": "id_documents",
-    "residence_permit_number": "id_documents",
-    "driving_license_number": "id_documents",
-    "license_country": "id_documents",
-    "license_to_exchange": "id_documents",
-    "tax_id": "id_documents",
     # situation — l'état de vie courant (famille, société, emploi,
     # logement, fiscalité, langue, scolarité, véhicule, patrimoine)
     "spouse_name": "situation",

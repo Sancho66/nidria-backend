@@ -61,10 +61,9 @@ class CustomFieldDefinitionUpdate(BaseModel):
 
     scope: Literal["person", "case"] | None = None
     # Taxonomie fiche : reclasser la section de la définition (toggle
-    # élargi — même PATCH, même gate).
-    profile_section: Literal["identity", "contact", "id_documents", "situation", "misc"] | None = (
-        None
-    )
+    # élargi — même PATCH, même gate). 4 valeurs depuis la fusion
+    # id_documents → identity (parité personne/société).
+    profile_section: Literal["identity", "contact", "situation", "misc"] | None = None
     label: str | None = Field(default=None, min_length=1, max_length=200)
     label_i18n: dict[str, str] | None = None
     options: list[str] | None = None

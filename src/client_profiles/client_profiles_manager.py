@@ -88,9 +88,12 @@ def resolve_field_sections(
     assumés. Le contrat est l'EXHAUSTIVITÉ (prouvée par test) : tout
     champ person a exactement UNE section — les colonnes civiles par le
     mapping code, les définitions custom par leur colonne (défaut
-    'misc'). Les 5 sections sont TOUJOURS servies, vides incluses."""
+    'misc'). Les 4 sections sont TOUJOURS servies, vides incluses
+    (fusion id_documents → identity : l'état civil d'abord, les
+    documents ensuite — l'ordre du catalogue)."""
     from src.client_profiles.profile_sections import (
         CIVIL_PROFILE_SECTION,
+        IDENTITY_SECTION_ORDER,
         PROFILE_SECTIONS,
     )
 
@@ -100,6 +103,8 @@ def resolve_field_sections(
     for definition in person_defs:
         section = getattr(definition, "profile_section", None) or "misc"
         buckets.get(section, buckets["misc"]).append(definition.key)
+    rank = {key: index for index, key in enumerate(IDENTITY_SECTION_ORDER)}
+    buckets["identity"].sort(key=lambda key: rank.get(key, len(rank)))  # tri stable
     return [
         ProfileFieldSectionResponse(
             key=section_key,

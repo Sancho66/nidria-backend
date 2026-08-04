@@ -707,9 +707,11 @@ async def test_profile_sections_follow_fiche_taxonomy(
     make_client_case: MakeClientCase,
     make_expat_user: MakeExpatUser,
 ) -> None:
-    """Lot taxonomie — la fiche sert SES sections (identity/contact/
-    id_documents/situation/misc), i18n en langue d'agence : les civils
-    par le mapping code, les custom par leur colonne (défaut misc)."""
+    """Lot taxonomie (ré-acté à la fusion id_documents → identity) — la
+    fiche sert SES 4 sections (identity/contact/situation/misc), i18n en
+    langue d'agence : les civils par le mapping code, les custom par
+    leur colonne (défaut misc) ; dans identity, l'état civil d'abord,
+    les documents ensuite (l'ordre du catalogue)."""
     headers = agent_headers(admin)
     await _person_def(db_session, admin.agency_id, "champ_maison")  # né misc
     await db_session.commit()
@@ -726,10 +728,18 @@ async def test_profile_sections_follow_fiche_taxonomy(
     ).json()
     sections = detail["sections"]
     by_key = {s["key"]: s for s in sections}
-    # Les civils suivent le mapping code.
-    assert "nationality" in by_key["identity"]["references"]
+    # Les civils suivent le mapping code — id_documents n'existe plus,
+    # le passeport vit dans identity, APRÈS l'état civil (ordre catalogue).
+    assert "id_documents" not in by_key
+    assert by_key["identity"]["references"] == [
+        "date_of_birth",
+        "nationality",
+        "place_of_birth",
+        "sex",
+        "birth_name",
+        "passport_number",
+    ]
     assert "phone" in by_key["contact"]["references"]
-    assert "passport_number" in by_key["id_documents"]["references"]
     assert "profession" in by_key["situation"]["references"]
     # Le custom d'agence naît en Divers, reclassable par le toggle élargi.
     assert by_key["misc"]["references"] == ["champ_maison"]
@@ -957,7 +967,8 @@ async def test_every_person_field_has_exactly_one_profile_section(
     REMPLACÉE par l'EXHAUSTIVITÉ : tout champ person a exactement UNE
     profile_section. Structurel (mappings code complets et valides) ET
     servi (l'union des sections == l'univers complétude, sans doublon,
-    les 5 sections toujours là — deux univers picker/fiche assumés)."""
+    les 4 sections toujours là — deux univers picker/fiche assumés ;
+    fusion id_documents → identity, parité société)."""
     from src.client_profiles.profile_sections import (
         CIVIL_PROFILE_SECTION,
         PRESET_PROFILE_SECTION,
@@ -965,7 +976,9 @@ async def test_every_person_field_has_exactly_one_profile_section(
     )
     from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS
 
-    # STRUCTUREL — les 10 civils couverts exactement, valeurs valides.
+    # STRUCTUREL — les 10 civils couverts exactement, valeurs valides,
+    # et LA liste exacte des 4 sections (l'univers, gravé).
+    assert list(PROFILE_SECTIONS) == ["identity", "contact", "situation", "misc"]
     assert set(CIVIL_PROFILE_SECTION) == set(COLLECTABLE_BASE_FIELDS)
     assert set(CIVIL_PROFILE_SECTION.values()) <= set(PROFILE_SECTIONS)
     assert set(PRESET_PROFILE_SECTION.values()) <= set(PROFILE_SECTIONS)
@@ -981,13 +994,87 @@ async def test_every_person_field_has_exactly_one_profile_section(
     assert r.status_code == 201, r.text
     detail = (await client.get(f"/client-profiles/{r.json()['id']}", headers=headers)).json()
     sections = detail["sections"]
-    # Les 5 sections, l'ordre de la taxonomie, i18n fr — TOUJOURS servies.
+    # Les 4 sections, l'ordre de la taxonomie, i18n fr — TOUJOURS servies.
     assert [s["key"] for s in sections] == list(PROFILE_SECTIONS.keys())
     # EXACTEMENT une section par champ : union == univers, zéro doublon.
     served = [ref for s in sections for ref in s["references"]]
     completeness = detail["completeness"]
     assert sorted(served) == sorted(completeness["filled"] + completeness["missing"])
     assert len(served) == len(set(served))
+
+
+async def test_id_documents_merge_repoints_definitions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """Fusion id_documents → identity (parité société) — LA fonction de
+    migration sur données seedées : les défs de l'ancien monde
+    re-pointent identity (comptées), idempotence (re-run = 0), le rendu
+    les sert en identity (jamais en misc), et le toggle refuse
+    l'ancienne valeur (422 — la taxonomie est à 4)."""
+    from src.client_profiles.backfill import merge_person_id_documents_sections
+
+    headers = agent_headers(admin)
+    # Deux défs de l'ANCIEN monde (posées directement en DB, comme prod).
+    for key in ("visa_type", "tax_id"):
+        db_session.add(
+            CustomFieldDefinition(
+                agency_id=admin.agency_id,
+                key=key,
+                label=key,
+                field_type="text",
+                scope="person",
+                profile_section="id_documents",
+            )
+        )
+    await db_session.commit()
+
+    stats = await db_session.run_sync(
+        lambda sync_session: merge_person_id_documents_sections(sync_session.connection())
+    )
+    await db_session.commit()
+    assert stats == {"definitions_repointed": 2}
+    # IDEMPOTENCE : re-run = 0.
+    stats2 = await db_session.run_sync(
+        lambda sync_session: merge_person_id_documents_sections(sync_session.connection())
+    )
+    await db_session.commit()
+    assert stats2 == {"definitions_repointed": 0}
+
+    # Le rendu les sert en identity, APRÈS l'état civil (ordre catalogue).
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Fusion", "last_name": "Docs", "email": "fusion-docs@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    detail = (await client.get(f"/client-profiles/{r.json()['id']}", headers=headers)).json()
+    by_key = {s["key"]: s for s in detail["sections"]}
+    assert "id_documents" not in by_key
+    identity = by_key["identity"]["references"]
+    assert identity.index("visa_type") > identity.index("sex")
+    assert identity.index("tax_id") > identity.index("visa_type")  # l'ordre du catalogue
+    assert "visa_type" not in by_key["misc"]["references"]
+
+    # Le toggle agence : mécanique INCHANGÉE, l'ancienne valeur refusée.
+    definitions = (await client.get("/agencies/me/custom-fields", headers=headers)).json()
+    visa_def = next(d for d in definitions if d["key"] == "visa_type")
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{visa_def['id']}",
+        headers=headers,
+        json={"profile_section": "id_documents"},
+    )
+    assert r.status_code == 422
+    r = await client.patch(
+        f"/agencies/me/custom-fields/{visa_def['id']}",
+        headers=headers,
+        json={"profile_section": "situation"},
+    )
+    assert r.status_code == 200, r.text
 
 
 # --- MÉGA-LOT SOLDE CRM ---------------------------------------------------------------
