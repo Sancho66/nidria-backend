@@ -531,6 +531,84 @@ async def test_company_preview_real_file_hooks_widened_targets(
     assert counts["country"] > 300
 
 
+@pytest.mark.skipif(
+    not Path(
+        "/Users/alexandre/Desktop/FreelanceProject/nidria/nidria-frontend/.debug-import/Contacts-2026-08-03-16-14-51.xlsx"
+    ).exists(),
+    reason="fichier réel absent (poste local uniquement)",
+)
+async def test_street_number_pair_real_files(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Micro-lot couple, rejeu RÉEL : les deux fichiers Teamleader passent
+    par la charge SUGGÉRÉE (le couple convergent) — les adresses
+    s'assemblent AVEC leur numéro, comptes au rapport."""
+    import base64
+
+    headers = agent_headers(admin)
+    debug_dir = Path(
+        "/Users/alexandre/Desktop/FreelanceProject/nidria/nidria-frontend/.debug-import"
+    )
+
+    async def replay(entity: str, filename: str, street_base: str) -> dict[str, int]:
+        raw = (debug_dir / filename).read_bytes()
+        from src.imports.csv_reader import parse_upload
+
+        parsed = parse_upload(filename, raw)
+        r = await client.post(
+            f"/imports/{entity}/suggest-mapping",
+            headers=headers,
+            json={"headers": parsed.headers},
+        )
+        assert r.status_code == 200, r.text
+        mapping = r.json()["suggestions"]
+        assert mapping["Rue"] == f"{street_base}.street"
+        assert mapping["Numéro de la rue"] == f"{street_base}.street"
+        # le choix UI : fragments (le couple compris), pas le texte intégral
+        mapping.pop("adresse postale", None)
+        counts = {"street": 0, "with_number": 0}
+        page = 1
+        while True:
+            r = await client.post(
+                f"/imports/{entity}/preview",
+                headers=headers,
+                json={
+                    "file_b64": base64.b64encode(raw).decode(),
+                    "filename": filename,
+                    "mapping": mapping,
+                    "page": page,
+                    "page_size": 500,
+                },
+            )
+            assert r.status_code == 200, r.text
+            body = r.json()
+            for row in body["rows"]:
+                street = (row["person"].get(street_base) or {}).get("street")
+                if not street:
+                    continue
+                counts["street"] += 1
+                raw_row = parsed.rows[row["row_index"] - 1]
+                number = (raw_row.get("Numéro de la rue") or "").strip()
+                rue = (raw_row.get("Rue") or "").strip()
+                if number and rue:
+                    assert street == f"{number} {rue}"  # l'ordre fixe, prouvé
+                    counts["with_number"] += 1
+            if page * 500 >= body["total_rows"]:
+                return counts
+            page += 1
+
+    contacts = await replay(
+        "client-profiles", "Contacts-2026-08-03-16-14-51.xlsx", "residence_address"
+    )
+    companies = await replay("company-profiles", "Companies-2026-08-03-16-15-09.xlsx", "address")
+    print(f"\nRÉCAP COUPLE Contacts réel: {contacts} | Companies réel: {companies}")
+    assert contacts["with_number"] == 83
+    assert companies["with_number"] == 360
+
+
 CONTACT_HEADERS_42 = [
     "Teamleader ID",
     "Prénom",
@@ -1032,6 +1110,102 @@ async def test_address_composition_contract(
     assert detail["custom_fields"]["residence_address"]["city"] == "София"
 
 
+async def test_street_number_pair_contract(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Micro-lot couple — rue + numéro, l'exception déclarée : DEUX
+    colonnes vers <base>.street s'assemblent en ordre fixe « {numéro}
+    {rue} » (le numéro reconnu à son en-tête, pas à l'ordre du mapping),
+    une seule vide = l'autre passe seule ; la garde tient (le couple n'est
+    pas un collage libre) ; le suggéreur ne propose jamais le numéro seul ;
+    la charge suggérée passe le preview (la règle structurelle)."""
+    headers = agent_headers(admin)
+    csv_text = (
+        "Prénom,Nom,Adresse e-mail,Rue,Numéro de la rue,Ville\n"
+        "Иван,Петров,ivan.pair@example.com,Екзарх Йосиф,93,София\n"
+        "Sans,Numéro,sans-num@example.com,Rue de la Paix,,Paris\n"
+        "Sans,Rue,sans-rue@example.com,,12,Lyon\n"
+    )
+    # Le suggéreur : le couple converge vers le MÊME street.
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Prénom", "Nom", "Adresse e-mail", "Rue", "Numéro de la rue", "Ville"]},
+    )
+    assert r.status_code == 200, r.text
+    s = r.json()["suggestions"]
+    assert s["Rue"] == "residence_address.street"
+    assert s["Numéro de la rue"] == "residence_address.street"
+    # La charge suggérée passe le preview — la règle structurelle.
+    mapping = {**s, "Prénom": "first_name", "Nom": "last_name", "Adresse e-mail": "email"}
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": mapping},
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    # Ordre fixe « {numéro} {rue} » — le mapping déclare pourtant Rue avant.
+    assert rows[0]["person"]["residence_address"]["street"] == "93 Екзарх Йосиф"
+    assert rows[0]["issues"] == []
+    # Une seule vide = l'autre passe seule.
+    assert rows[1]["person"]["residence_address"]["street"] == "Rue de la Paix"
+    assert rows[2]["person"]["residence_address"]["street"] == "12"
+
+    # LA GARDE : deux colonnes vers un sous-champ HORS street → 422.
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": {**mapping, "Prénom": "residence_address.city"}},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "import.address_subfield_pair_exceeded"
+    # Trois colonnes vers street → 422 (l'exception est un COUPLE).
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={"csv_text": csv_text, "mapping": {**mapping, "Ville": "residence_address.street"}},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "import.address_subfield_pair_exceeded"
+
+    # Le numéro SEUL (pas de colonne rue) n'est jamais suggéré.
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Adresse e-mail", "Numéro de la rue", "Ville"]},
+    )
+    assert "Numéro de la rue" in r.json()["unmatched"]
+
+    # Miroir société : le couple converge vers address.street et s'assemble.
+    r = await client.post(
+        "/imports/company-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Nom de l'entreprise", "Rue", "Numéro de la rue"]},
+    )
+    assert r.status_code == 200, r.text
+    cs = r.json()["suggestions"]
+    assert cs["Rue"] == "address.street"
+    assert cs["Numéro de la rue"] == "address.street"
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={
+            "csv_text": ("Société,Rue,Numéro de la rue\nАкме ООД,Екзарх Йосиф,93\n"),
+            "mapping": {
+                "Société": "name",
+                "Rue": "address.street",
+                "Numéro de la rue": "address.street",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rows"][0]["person"]["address"]["street"] == "93 Екзарх Йосиф"
+
+
 async def test_suggest_offers_address_subfields(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1059,9 +1233,9 @@ async def test_suggest_offers_address_subfields(
         "tax_residence_country",
         "residence_address.country",
     ]
-    # L'inverse de l'anti-parsing tient : Numéro de la rue reste exclu
-    # (pas de concaténation multi-colonnes).
-    assert "Numéro de la rue" not in s
+    # LE COUPLE (l'exception déclarée) : le numéro rejoint le MÊME street
+    # que la rue — deux lignes convergentes, la grammaire du sous-groupe.
+    assert s["Numéro de la rue"] == "residence_address.street"
 
 
 async def test_audit_alias_pack_suggestions(

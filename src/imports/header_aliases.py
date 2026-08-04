@@ -26,6 +26,23 @@ def normalize_header(header: str) -> str:
     return " ".join(s.split())
 
 
+# LE COUPLE rue + numéro (l'exception déclarée à l'anti-concaténation) :
+# ces en-têtes désignent le NUMÉRO de rue — suggérés vers le MÊME
+# <base>.street que la colonne rue quand les deux existent, et reconnus à
+# l'assemblage pour l'ordre fixe « {numéro} {rue} ». Jamais suggérés
+# seuls (un numéro sans rue n'est pas une adresse).
+STREET_NUMBER_HEADERS: Final[frozenset[str]] = frozenset(
+    normalize_header(h)
+    for h in (
+        "Numéro de la rue",
+        "Numéro de rue",
+        "Numéro rue",
+        "Street number",
+        "House number",
+        "House no",
+    )
+)
+
 # --- PERSONNES ------------------------------------------------------------------------
 
 # En-têtes JAMAIS suggérés (faux amis et hors-cible volontaires).
@@ -33,7 +50,6 @@ PERSON_EXCLUDED: Final[frozenset[str]] = frozenset(
     normalize_header(h)
     for h in (
         "Teamleader ID",  # identifiant CRM source
-        "Numéro de la rue",  # pas de concaténation multi-colonnes (anti-magie)
         "Province",  # aucun sous-champ adresse correspondant
         "Opt-in courriers marketing",  # préférence marketing CRM
         "Fax",  # obsolète
@@ -225,7 +241,6 @@ COMPANY_EXCLUDED: Final[frozenset[str]] = frozenset(
     normalize_header(h)
     for h in (
         "Teamleader ID",
-        "Numéro de la rue",  # pas de concaténation multi-colonnes
         "Province",
         "Langue",  # pas de cible langue société
         "Adresse e-mail facturation",  # FAUX AMI de email (facturation)
@@ -384,9 +399,13 @@ def suggest_mapping(
     excluded: frozenset[str],
     extra_keys: dict[str, str] | None = None,
     ambiguous: dict[str, list[str]] | None = None,
+    street_pair_target: str | None = None,
 ) -> tuple[dict[str, str], dict[str, list[str]], list[str]]:
     """(suggestions {colonne: cible}, colonnes sans suggestion). Une cible
     n'est prise qu'une fois — la première colonne gagne, ordre du fichier.
+    SEULE exception : le couple rue + numéro (`street_pair_target`), deux
+    colonnes convergentes vers le même street — le numéro n'est suggéré
+    que si une colonne rue a pris la cible, jamais seul.
     `extra_keys` : alias dynamiques (clé normalisée → cible), typiquement
     les clés/labels des défs d'agence."""
     suggestions: dict[str, str] = {}
@@ -396,11 +415,15 @@ def suggest_mapping(
     dynamic = extra_keys or {}
     ambiguous_map = ambiguous or {}
     fallback_pending: list[tuple[str, str]] = []
+    pair_pending: list[str] = []
 
     for header in headers:
         n = normalize_header(header)
         if not n or n in excluded:
             unmatched.append(header)
+            continue
+        if street_pair_target and n in STREET_NUMBER_HEADERS:
+            pair_pending.append(header)
             continue
         if n in ambiguous_map:
             options = [t for t in ambiguous_map[n] if t in valid_targets and t not in taken]
@@ -429,6 +452,12 @@ def suggest_mapping(
         if target in valid_targets and target not in taken:
             suggestions[header] = target
             taken.add(target)
+        else:
+            unmatched.append(header)
+    # Le couple : le numéro rejoint le street déjà pris par la rue.
+    for header in pair_pending:
+        if street_pair_target in taken:
+            suggestions[header] = str(street_pair_target)
         else:
             unmatched.append(header)
     return suggestions, offered, unmatched

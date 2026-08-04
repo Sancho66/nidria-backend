@@ -189,6 +189,7 @@ async def suggest_client_profiles_mapping(
         excluded=PERSON_EXCLUDED,
         extra_keys=dynamic,
         ambiguous=PERSON_AMBIGUOUS,
+        street_pair_target="residence_address.street",
     )
     return SuggestMappingResponse(suggestions=suggestions, ambiguous=ambiguous, unmatched=unmatched)
 
@@ -221,6 +222,7 @@ async def suggest_company_profiles_mapping(
         aliases=COMPANY_ALIASES,
         fallback_aliases=COMPANY_FALLBACK_ALIASES,
         excluded=COMPANY_EXCLUDED,
+        street_pair_target="address.street",
     )
     return SuggestMappingResponse(suggestions=suggestions, ambiguous=ambiguous, unmatched=unmatched)
 

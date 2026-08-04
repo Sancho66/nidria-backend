@@ -31,6 +31,42 @@ from src.imports.csv_reader import parse_upload
 IDENTITY_TARGETS = ("first_name", "last_name", "email")
 
 
+def _resolve_street_pairs(
+    mapping: dict[str, str], dotted_targets: set[str]
+) -> dict[str, list[str]]:
+    """LE COUPLE rue + numéro — l'exception déclarée à l'anti-concaténation.
+    DEUX colonnes max vers un <base>.street, rien d'autre : hors street un
+    sous-champ = UNE colonne, au-delà de deux = 422 (l'exception est un
+    couple, pas une invitation au collage libre). L'assemblage suit l'ordre
+    fixe « {numéro} {rue} » (dominante FR/BE/BG des fichiers réels — pas de
+    logique par pays en V1) ; le numéro se reconnaît à son en-tête, sinon
+    l'ordre du mapping fait foi. Retourne {cible: [colonnes ordonnées]}."""
+    from src.imports.header_aliases import STREET_NUMBER_HEADERS, normalize_header
+
+    by_target: dict[str, list[str]] = {}
+    for column, target in mapping.items():
+        if target in dotted_targets:
+            by_target.setdefault(target, []).append(column)
+    pairs: dict[str, list[str]] = {}
+    for target, columns in by_target.items():
+        if len(columns) == 1:
+            continue
+        if not target.endswith(".street") or len(columns) > 2:
+            raise ValidationError(
+                f"{len(columns)} columns mapped to {target!r} — only the street "
+                "number + street pair may share a sub-field.",
+                code="import.address_subfield_pair_exceeded",
+                params={"target": target, "columns": columns},
+            )
+        first, second = columns
+        if normalize_header(second) in STREET_NUMBER_HEADERS and (
+            normalize_header(first) not in STREET_NUMBER_HEADERS
+        ):
+            columns = [second, first]
+        pairs[target] = columns
+    return pairs
+
+
 def _is_empty(value: Any) -> bool:
     return value in (None, "", [], {})
 
@@ -220,6 +256,7 @@ class ProfileImportManager:
                     code="import.address_mode_conflict",
                     params={"target": base},
                 )
+        street_pairs = _resolve_street_pairs(body.mapping, dotted_targets)
 
         # CRÉATION DEPUIS LA GRILLE : résolution AVANT la boucle — dédup
         # lier-pas-dupliquer (label OU clé déjà à l'agence → on LIE), sinon
@@ -264,6 +301,7 @@ class ProfileImportManager:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
         columns_by_target = {t: c for c, t in body.mapping.items()}
         columns_by_target.update({key: col for col, (key, _l, _k, _c) in creation_plan.items()})
+        columns_by_target.update({t: " + ".join(cols) for t, cols in street_pairs.items()})
 
         from src.cases.cases_schema import PersonUpdateRequest
         from src.core.enums import CustomFieldType
@@ -275,9 +313,17 @@ class ProfileImportManager:
             issues: list[RowIssue] = []
             values: dict[str, str] = {}
             for column, target in body.mapping.items():
+                if target in street_pairs:
+                    continue  # le couple s'assemble ci-dessous, ordonné
                 cell = (row.get(column) or "").strip()
                 if cell:
                     values[target] = cell
+            for target, pair_columns in street_pairs.items():
+                joined = " ".join(
+                    x for x in ((row.get(c) or "").strip() for c in pair_columns) if x
+                )
+                if joined:
+                    values[target] = joined
             creation_cells: dict[str, tuple[str, str, str]] = {}
             for column, (key, _label, kind, _to_create) in creation_plan.items():
                 cell = (row.get(column) or "").strip()
@@ -700,6 +746,7 @@ class CompanyImportManager:
                     code="import.address_mode_conflict",
                     params={"target": base},
                 )
+        street_pairs = _resolve_street_pairs(body.mapping, dotted_targets)
         unknown_columns = sorted(set(body.mapping) - set(parsed.headers))
         if unknown_columns:
             raise ValidationError(
@@ -734,6 +781,7 @@ class CompanyImportManager:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
         columns_by_target = {t: c for c, t in body.mapping.items()}
         columns_by_target.update({key: col for col, (key, _l, _k, _c) in creation_plan.items()})
+        columns_by_target.update({t: " + ".join(cols) for t, cols in street_pairs.items()})
 
         repo = CompanyProfilesRepository(self.db)
         verdicts: list[RowVerdict] = []
@@ -742,9 +790,17 @@ class CompanyImportManager:
             issues: list[RowIssue] = []
             values: dict[str, str] = {}
             for column, target in body.mapping.items():
+                if target in street_pairs:
+                    continue  # le couple s'assemble ci-dessous, ordonné
                 cell = (row.get(column) or "").strip()
                 if cell:
                     values[target] = cell
+            for target, pair_columns in street_pairs.items():
+                joined = " ".join(
+                    x for x in ((row.get(c) or "").strip() for c in pair_columns) if x
+                )
+                if joined:
+                    values[target] = joined
             for correction in corrections_by_row.get(index, ()):
                 if correction.target not in valid_targets:
                     issues.append(RowIssue(column="(correction)", code="unknown_target"))
