@@ -38,6 +38,27 @@ class CompanyProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class CompanyFieldLabel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Demande design A (03/08) : le LABEL d'une clé de sack société —
+    choisi à la création de champ depuis la grille d'import, porté au
+    niveau AGENCE (une vérité par clé, jamais une copie par société — le
+    sack garde des valeurs nues). Le kind de la naissance voyage avec :
+    les imports suivants coercent la clé comme à sa création."""
+
+    __tablename__ = "company_field_label"
+    __table_args__ = (UniqueConstraint("agency_id", "key", name="uq_company_field_label"),)
+
+    agency_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    # text | number | date | boolean — le kind choisi à la grille.
+    kind: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="text", server_default="text"
+    )
+
+
 class CompanyProfileRole(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "company_profile_role"
     __table_args__ = (

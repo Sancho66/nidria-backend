@@ -22612,6 +22612,13 @@
             "type": "array",
             "title": "Sections"
           },
+          "field_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Field Labels"
+          },
           "roles": {
             "items": {
               "$ref": "#/components/schemas/CompanyRoleResponse"

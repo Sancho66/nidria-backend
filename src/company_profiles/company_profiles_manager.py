@@ -106,6 +106,9 @@ class CompanyProfilesManager:
             source=company.source,
             tags=list(company.tags or []),
             sections=resolve_company_sections(dict(company.custom_fields or {}), lang),
+            field_labels={
+                row.key: row.label for row in await self.repo.field_labels(agent.agency_id)
+            },
             roles=[
                 CompanyRoleResponse(
                     id=role.id,

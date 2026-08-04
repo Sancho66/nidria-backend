@@ -306,3 +306,55 @@ async def test_company_directory_filters_sorts_and_cost(
         event.remove(engine, "before_cursor_execute", _count)
     # 5 = liste + count + compteurs rôles + compteurs dossiers + activité.
     assert counter["n"] <= 5, f"company directory ran {counter['n']} queries"
+
+
+async def test_legacy_profile_section_never_breaks_either_sheet(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Incident 04/08 (fausse piste, invariant gravé) — une section
+    HÉRITÉE en base (`id_documents`, morte à la fusion h8c2) ne fait
+    jamais tomber une fiche : la déf résiduelle retombe en Divers côté
+    personne, et la fiche société (dont la taxonomie ne lit AUCUNE déf)
+    sert ses 4 sections quoi qu'il arrive — clé libre du sack comprise."""
+    from shared.models.custom_field import CustomFieldDefinition
+
+    headers = agent_headers(admin)
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="vieux_papier",
+            label="Vieux papier",
+            field_type="text",
+            scope="person",
+            profile_section="id_documents",  # la section MORTE, telle quelle
+        )
+    )
+    await db_session.commit()
+
+    # Face PERSONNE : 200, la résiduelle tombe en Divers (jamais perdue).
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Legacy", "last_name": "Section", "email": "legacy-sec@example.com"},
+    )
+    assert r.status_code == 201, r.text
+    detail = (await client.get(f"/client-profiles/{r.json()['id']}", headers=headers)).json()
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "id_documents" not in by_key
+    assert "vieux_papier" in by_key["misc"]
+
+    # Face SOCIÉTÉ : 200, 4 sections, la clé libre du sack en Divers.
+    r = await client.post(
+        "/company-profiles",
+        headers=headers,
+        json={"name": "Legacy Section SA", "custom_fields": {"vieux_papier": "RC-1988"}},
+    )
+    assert r.status_code == 201, r.text
+    detail = (await client.get(f"/company-profiles/{r.json()['id']}", headers=headers)).json()
+    assert [s["key"] for s in detail["sections"]] == ["identity", "contact", "situation", "misc"]
+    assert "vieux_papier" in {s["key"]: s["references"] for s in detail["sections"]}["misc"]
+    assert detail["custom_fields"]["vieux_papier"] == "RC-1988"
+    assert detail["field_labels"] == {}  # aucune clé baptisée : dict vide, pas une absence

@@ -209,26 +209,35 @@ async def suggest_company_profiles_mapping(
         COMPANY_PRESET_PROFILE_SECTION,
         COMPANY_TARGET_ALIASES,
     )
+    from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
     from src.imports.header_aliases import (
         COMPANY_ALIASES,
         COMPANY_EXCLUDED,
         COMPANY_FALLBACK_ALIASES,
+        normalize_header,
         suggest_mapping,
     )
     from src.imports.value_normalizers import ADDRESS_SUBFIELDS
 
+    # Les clés à LABEL de l'agence (nées de la grille — demande design A) :
+    # une colonne déjà baptisée se re-suggère vers SA clé au ré-import.
+    label_rows = await CompanyProfilesRepository(db).field_labels(agent.agency_id)
     valid = (
         {"name", "tags"}
         | set(COMPANY_PRESET_PROFILE_SECTION)
         | set(COMPANY_TARGET_ALIASES)
         | {f"{b}.{sub}" for b in ("address", "headquarters_address") for sub in ADDRESS_SUBFIELDS}
+        | {row.key for row in label_rows}
     )
+    dynamic = {normalize_header(row.key): row.key for row in label_rows}
+    dynamic.update({normalize_header(row.label): row.key for row in label_rows})
     suggestions, ambiguous, unmatched = suggest_mapping(
         body.headers,
         valid,
         aliases=COMPANY_ALIASES,
         fallback_aliases=COMPANY_FALLBACK_ALIASES,
         excluded=COMPANY_EXCLUDED,
+        extra_keys=dynamic,
         street_pair_target="address.street",
     )
     return SuggestMappingResponse(suggestions=suggestions, ambiguous=ambiguous, unmatched=unmatched)

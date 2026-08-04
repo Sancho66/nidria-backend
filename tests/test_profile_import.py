@@ -1699,3 +1699,95 @@ async def test_company_theme_not_a_person_import_target(
     assert r.status_code == 200, r.text
     assert r.json()["suggestions"] == {"Adresse e-mail": "email"}
     assert "Forme juridique" in r.json()["unmatched"]
+
+
+async def test_company_sack_labels_survive_import_creation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Demande design A (03/08) — le label choisi à la création depuis la
+    grille SOCIÉTÉ ne se perd plus : gravé en table de labels d'AGENCE
+    (une vérité par clé, le kind de naissance voyage), servi sur la fiche
+    (field_labels), re-suggéré au ré-import, dédup lier-pas-dupliquer,
+    coercition par le kind de naissance en mapping direct. Le preview
+    n'écrit RIEN."""
+    headers = agent_headers(admin)
+    body = {
+        "csv_text": "Nom,Note du juriste\nLabelCo,42\n",
+        "mapping": {"Nom": "name"},
+        "create_fields": [
+            {"column": "Note du juriste", "label": "Note du juriste", "kind": "number"}
+        ],
+    }
+    # PREVIEW : zéro écriture — pas de label gravé.
+    r = await client.post("/imports/company-profiles/preview", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    n_labels = (
+        await db_session.execute(text("SELECT count(*) FROM company_field_label"))
+    ).scalar_one()
+    assert n_labels == 0
+
+    # IMPORT : le label naît au niveau AGENCE, kind de naissance gravé.
+    r = await client.post("/imports/company-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["fields_created"] == ["Note du juriste"]
+    row = (await db_session.execute(text("SELECT key, label, kind FROM company_field_label"))).one()
+    assert list(row) == ["note_du_juriste", "Note du juriste", "number"]
+    # La fiche société SERT le label (le front n'affiche plus la clé nue).
+    listing = (await client.get("/company-profiles?search=LabelCo", headers=headers)).json()
+    detail = (
+        await client.get(f"/company-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["field_labels"] == {"note_du_juriste": "Note du juriste"}
+    assert detail["custom_fields"]["note_du_juriste"] == 42
+
+    # RÉ-IMPORT : la colonne baptisée se RE-SUGGÈRE vers SA clé.
+    r = await client.post(
+        "/imports/company-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Note du juriste"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["suggestions"] == {"Note du juriste": "note_du_juriste"}
+
+    # DÉDUP : le même label re-créé LIE — rien ne naît deux fois, et le
+    # kind de NAISSANCE coerce (le payload dit text, la table dit number).
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={
+            "csv_text": "Nom,Note du juriste\nLabelCo Bis,17\n",
+            "mapping": {"Nom": "name"},
+            "create_fields": [
+                {"column": "Note du juriste", "label": "Note du juriste", "kind": "text"}
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["fields_created"] == []
+    n_labels = (
+        await db_session.execute(text("SELECT count(*) FROM company_field_label"))
+    ).scalar_one()
+    assert n_labels == 1
+    listing = (await client.get("/company-profiles?search=LabelCo Bis", headers=headers)).json()
+    detail = (
+        await client.get(f"/company-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["custom_fields"]["note_du_juriste"] == 17  # number, pas "17"
+
+    # MAPPING DIRECT vers la clé : coercition par le kind de naissance —
+    # l'illisible fait un TROU motivé, la ligne vit (règle absolue).
+    r = await client.post(
+        "/imports/company-profiles/preview",
+        headers=headers,
+        json={
+            "csv_text": "Nom,Note du juriste\nLabelCo Ter,pas-un-nombre\n",
+            "mapping": {"Nom": "name", "Note du juriste": "note_du_juriste"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    first = r.json()["rows"][0]
+    assert {"column": "Note du juriste", "code": "invalid_value"} in first["issues"]
+    assert "note_du_juriste" not in first["person"]

@@ -749,11 +749,17 @@ class CompanyImportManager:
 
         company_address_bases = {"address", "headquarters_address"}
         dotted_targets = {f"{b}.{sub}" for b in company_address_bases for sub in ADDRESS_SUBFIELDS}
+        # Les clés à LABEL de l'agence (nées de la grille — demande design
+        # A) sont des cibles directes : label et kind de naissance connus.
+        label_rows = await CompanyProfilesRepository(self.db).field_labels(agent.agency_id)
+        labels_by_key = {row.key: row for row in label_rows}
+        keys_by_label = {row.label.strip().lower(): row.key for row in label_rows}
         valid_targets = (
             {"name", "tags"}
             | set(COMPANY_PRESET_PROFILE_SECTION)
             | set(COMPANY_TARGET_ALIASES)
             | dotted_targets
+            | set(labels_by_key)
         )
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
@@ -801,6 +807,20 @@ class CompanyImportManager:
                     params={"column": spec.column},
                 )
             slug = slugify_field_label(spec.label)
+            # Dédup lier-pas-dupliquer : le LABEL déjà connu de l'agence
+            # (casse ignorée) OU sa clé → on LIE, le kind de NAISSANCE
+            # coerce (celui de la table de labels, pas celui du payload).
+            existing_key = keys_by_label.get(spec.label.strip().lower())
+            if existing_key is None and slug in labels_by_key:
+                existing_key = slug
+            if existing_key is not None:
+                creation_plan[spec.column] = (
+                    existing_key,
+                    spec.label,
+                    labels_by_key[existing_key].kind,
+                    False,
+                )
+                continue
             # Dédup : le slug retombe sur une cible connue → on LIE.
             creation_plan[spec.column] = (slug, spec.label, spec.kind, slug not in valid_targets)
         self._creation_plan = creation_plan
@@ -915,6 +935,30 @@ class CompanyImportManager:
                     )
                 except ValueError:
                     issues.append(RowIssue(column=column, code="invalid_value"))
+            # Clés à label mappées DIRECTEMENT : coercées par leur kind de
+            # naissance — échec = issue + trou, jamais 500 (règle absolue).
+            plan_keys = {key for key, _l, _kd, _c in creation_plan.values()}
+            for label_key, label_row in labels_by_key.items():
+                if label_key not in values or label_key in plan_keys:
+                    continue
+                try:
+                    values[label_key] = _coerce_one(
+                        _Def(
+                            agency_id=agent.agency_id,
+                            key=label_key,
+                            label=label_key,
+                            field_type=label_row.kind,
+                        ),
+                        values[label_key],
+                    )
+                except ValueError:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get(label_key, label_key),
+                            code="invalid_value",
+                        )
+                    )
+                    values.pop(label_key)
 
             address_values: dict[str, dict[str, str]] = {}
             for base in company_address_bases:
@@ -999,7 +1043,7 @@ class CompanyImportManager:
         )
 
     async def run_import(self, agent: Agent, body: CompanyImportRequest) -> CompanyImportReport:
-        from shared.models.company_profile import CompanyProfile
+        from shared.models.company_profile import CompanyFieldLabel, CompanyProfile
         from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 
         verdicts = await self._analyze(agent, body)
@@ -1008,6 +1052,17 @@ class CompanyImportManager:
             for _k, label, _kd, to_create in getattr(self, "_creation_plan", {}).values()
             if to_create
         ]
+        # Demande design A : le label (et le kind) de la naissance se
+        # GRAVE au niveau agence — une vérité par clé, jamais une copie
+        # par société ; le batch reste transactionnel (commit unique).
+        label_keys_born: set[str] = set()
+        for key, label, kind, to_create in getattr(self, "_creation_plan", {}).values():
+            if not to_create or key in label_keys_born:
+                continue
+            label_keys_born.add(key)
+            self.db.add(
+                CompanyFieldLabel(agency_id=agent.agency_id, key=key, label=label, kind=kind)
+            )
         repo = CompanyProfilesRepository(self.db)
         created: list[CompanyImportRowOutcome] = []
         linked: list[CompanyImportRowOutcome] = []

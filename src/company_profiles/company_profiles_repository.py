@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
-from shared.models.company_profile import CompanyProfile, CompanyProfileRole
+from shared.models.company_profile import CompanyFieldLabel, CompanyProfile, CompanyProfileRole
 from shared.models.expat_user import ExpatUser
 
 
@@ -55,6 +55,16 @@ class CompanyProfilesRepository:
             # (même arbitraire que le limit(1) du chemin unitaire).
             out.setdefault(name, company_id)
         return out
+
+    async def field_labels(self, agency_id: uuid.UUID) -> list["CompanyFieldLabel"]:
+        """Les labels d'agence des clés de sack société (demande design
+        A) — la vérité UNIQUE par (agence, clé), kind de naissance inclus."""
+        stmt = (
+            select(CompanyFieldLabel)
+            .where(CompanyFieldLabel.agency_id == agency_id)
+            .order_by(CompanyFieldLabel.key)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
 
     @staticmethod
     def _active_case_exists() -> Any:

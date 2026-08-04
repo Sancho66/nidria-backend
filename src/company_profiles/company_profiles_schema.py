@@ -73,6 +73,10 @@ class CompanyProfileResponse(BaseModel):
     source: str | None
     tags: list[str]
     sections: list[ProfileFieldSectionResponse]
+    # Labels d'agence des clés LIBRES du sack (demande design A) : le
+    # label choisi à la création depuis la grille d'import — les presets
+    # gardent leurs labels de catalogue côté front.
+    field_labels: dict[str, str] = Field(default_factory=dict)
     roles: list[CompanyRoleResponse]
     cases: list[CompanyCaseSummaryResponse]
     created_at: datetime
