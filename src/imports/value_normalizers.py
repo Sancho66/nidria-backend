@@ -234,3 +234,14 @@ def assemble_address(parts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
             continue
         out[sub] = value
     return out, failed
+
+
+def slugify_field_label(label: str) -> str:
+    """Label libre → clé de déf (la règle slug du référentiel :
+    ^[a-z][a-z0-9_]{0,49}$). « NUM IRINA » → num_irina."""
+    n = _norm(label)
+    slug = "".join(c if c.isalnum() else "_" for c in n)
+    slug = "_".join(p for p in slug.split("_") if p)
+    if not slug or not slug[0].isalpha():
+        slug = f"f_{slug}" if slug else "f_champ"
+    return slug[:50]

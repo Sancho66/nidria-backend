@@ -81,9 +81,17 @@ class CustomFieldsManager:
         stmt = select(Agency.default_language).where(Agency.id == agency_id)
         return (await self.db.execute(stmt)).scalar_one_or_none() or DEFAULT_LANG
 
-    async def create(
-        self, agent: Agent, payload: CustomFieldDefinitionCreate
+    async def build_definition(
+        self,
+        agent: Agent,
+        payload: CustomFieldDefinitionCreate,
+        *,
+        scope: str = "case",
+        profile_section: str = "misc",
     ) -> CustomFieldDefinition:
+        """Le cœur SANS COMMIT de `create` — réutilisé par la création
+        depuis la grille d'import (le batch reste transactionnel, un seul
+        commit en bout de course). Même validation, même i18n."""
         if await self.repo.get_by_key(agent.agency_id, payload.key) is not None:
             raise ConflictError(f"A custom field with key {payload.key!r} already exists.")
         agency_default = await self.agency_default(agent.agency_id)
@@ -98,7 +106,16 @@ class CustomFieldsManager:
             options=payload.options,
             required=payload.required,
             position=payload.position,
+            scope=scope,
+            profile_section=profile_section,
         )
+        definition.label_i18n = label_blob
+        return definition
+
+    async def create(
+        self, agent: Agent, payload: CustomFieldDefinitionCreate
+    ) -> CustomFieldDefinition:
+        definition = await self.build_definition(agent, payload)
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
             event_type="agency.custom_fields_set",
@@ -106,7 +123,6 @@ class CustomFieldsManager:
             actor_id=agent.id,
             details={"key": payload.key},
         )
-        definition.label_i18n = label_blob
         await self.db.commit()
         await self.db.refresh(definition)
         return definition

@@ -1292,3 +1292,101 @@ async def test_online_presence_presets_declared_on_the_fly(
     by_key = {s["key"]: s["references"] for s in detail["sections"]}
     assert "website" in by_key["contact"]
     assert "linkedin_url" in by_key["contact"]
+
+
+async def test_create_field_from_grid(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Lot grille — le champ naît de l'import (cœur sans commit du
+    picker) : scope person, section misc, kind qui coerce dès la
+    naissance (date illisible → trou motivé) ; le preview le PRÉDIT sans
+    RIEN écrire ; la dédup lie au second import — UN champ, pas deux."""
+    headers = agent_headers(admin)
+    body = {
+        "csv_text": (
+            "Prénom,Nom,Email,NUM IRINA,Fin contrat\n"
+            "Grille,Une,grille@example.com,IR-2231,2027-01-15\n"
+            "Grille,Deux,grille2@example.com,IR-8890,pas-une-date\n"
+        ),
+        "mapping": {"Prénom": "first_name", "Nom": "last_name", "Email": "email"},
+        "create_fields": [
+            {"column": "NUM IRINA", "label": "NUM IRINA", "kind": "text"},
+            {"column": "Fin contrat", "label": "End contrat Dom", "kind": "date"},
+        ],
+    }
+    # PREVIEW : prédiction sans écriture.
+    r = await client.post("/imports/client-profiles/preview", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    preview = r.json()
+    assert sorted(preview["fields_created"]) == ["End contrat Dom", "NUM IRINA"]
+    assert preview["rows"][0]["person"]["num_irina"] == "IR-2231"
+    assert str(preview["rows"][0]["person"]["end_contrat_dom"]).startswith("2027-01-15")
+    # kind date → l'illisible fait un TROU motivé, la ligne vit.
+    assert {"column": "Fin contrat", "code": "invalid_value"} in preview["rows"][1]["issues"]
+    n_defs = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM custom_field_definition "
+                "WHERE key IN ('num_irina', 'end_contrat_dom')"
+            )
+        )
+    ).scalar_one()
+    assert n_defs == 0  # le dry-run n'a RIEN créé
+
+    # IMPORT : la naissance — scope person, section misc, valeurs posées.
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["fields_created"]) == ["End contrat Dom", "NUM IRINA"]
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT key, scope, profile_section, field_type FROM custom_field_definition "
+                "WHERE key IN ('num_irina', 'end_contrat_dom') ORDER BY key"
+            )
+        )
+    ).all()
+    assert [list(r_) for r_ in rows] == [
+        ["end_contrat_dom", "person", "misc", "date"],
+        ["num_irina", "person", "misc", "text"],
+    ]
+    listing = (await client.get("/client-profiles?search=grille@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["custom_fields"]["num_irina"] == "IR-2231"
+
+    # DÉDUP : le second import LIE (même label → même champ), zéro né.
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["fields_created"] == []  # rien ne naît deux fois
+    n_defs = (
+        await db_session.execute(
+            text("SELECT count(*) FROM custom_field_definition WHERE key = 'num_irina'")
+        )
+    ).scalar_one()
+    assert n_defs == 1  # UN champ, pas deux
+
+    # SOCIÉTÉ : la clé de sack naît coercée, rangée en misc.
+    r = await client.post(
+        "/imports/company-profiles",
+        headers=headers,
+        json={
+            "csv_text": "Nom,Note interne\nGrilleCo,42\n",
+            "mapping": {"Nom": "name"},
+            "create_fields": [
+                {"column": "Note interne", "label": "Note interne", "kind": "number"}
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["fields_created"] == ["Note interne"]
+    listing = (await client.get("/company-profiles?search=GrilleCo", headers=headers)).json()
+    detail = (
+        await client.get(f"/company-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["custom_fields"]["note_interne"] == 42  # coercé number
+    by_key = {s["key"]: s["references"] for s in detail["sections"]}
+    assert "note_interne" in by_key["misc"]

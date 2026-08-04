@@ -25,6 +25,7 @@ from src.client_profiles.backfill import CIVIL_COLUMNS
 from src.client_profiles.client_profiles_manager import person_scope_definitions
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
 from src.core.exceptions import ValidationError
+from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.imports.csv_reader import parse_upload
 
 IDENTITY_TARGETS = ("first_name", "last_name", "email")
@@ -47,6 +48,19 @@ class ImportCorrection(BaseModel):
     value: str = Field(max_length=1000)
 
 
+class FieldCreationSpec(BaseModel):
+    """« Champ à créer » depuis la grille : la colonne, son label
+    (pré-rempli du nom de colonne au front), le kind SIMPLE. Le scope est
+    porté par l'ENDPOINT (import personnes → person, sociétés → sack) —
+    plus simple au contrat, nommé au rapport."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=200)
+    kind: Literal["text", "number", "date", "boolean"]
+
+
 class ProfileImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -57,6 +71,9 @@ class ProfileImportRequest(BaseModel):
     # + colonnes civiles + clés custom scope='person'.
     mapping: dict[str, str] = Field(min_length=1)
     corrections: list[ImportCorrection] = Field(default_factory=list)
+    # Création depuis la grille (lot grille) — dédup lier-pas-dupliquer
+    # sur label/clé existants ; la déf naît à l'IMPORT seulement.
+    create_fields: list[FieldCreationSpec] = Field(default_factory=list)
 
 
 class ProfileImportPreviewRequest(ProfileImportRequest):
@@ -93,6 +110,8 @@ class ProfileImportReport(BaseModel):
     ignored: list[ProfileImportRowOutcome]
     # Lot plafond : les lignes dont les tags ont été posés sur la fiche.
     tags_applied: int = 0
+    # Lot grille : les champs NÉS de cet import (labels).
+    fields_created: list[str] = Field(default_factory=list)
 
 
 class ImportPreviewSummary(BaseModel):
@@ -108,6 +127,9 @@ class ProfileImportPreviewResponse(BaseModel):
     rows: list[RowVerdict]
     page: int
     page_size: int
+    # Dry-run de la création : les labels qui NAÎTRAIENT à l'import (ceux
+    # dédupliqués vers un champ existant n'y figurent pas).
+    fields_created: list[str] = Field(default_factory=list)
 
 
 def _summarize(verdicts: list[RowVerdict]) -> ImportPreviewSummary:
@@ -199,10 +221,49 @@ class ProfileImportManager:
                     params={"target": base},
                 )
 
+        # CRÉATION DEPUIS LA GRILLE : résolution AVANT la boucle — dédup
+        # lier-pas-dupliquer (label OU clé déjà à l'agence → on LIE), sinon
+        # pseudo-déf virtuelle (kind choisi) ; la naissance n'arrive qu'à
+        # l'import (jamais ici).
+        from src.imports.value_normalizers import slugify_field_label
+
+        all_defs = await CustomFieldsRepository(self.db).list_for_agency(
+            agent.agency_id, include_archived=True
+        )
+        labels_index = {(d.label or "").strip().lower(): d for d in all_defs}
+        keys_index = {d.key: d for d in all_defs}
+        creation_plan: dict[str, tuple[str, str, str, bool]] = {}
+        # colonne → (clé cible, label, kind, à_créer)
+        for spec in body.create_fields:
+            if spec.column not in parsed.headers:
+                raise ValidationError(
+                    f"Column {spec.column!r} is absent from the file.",
+                    code="import.unknown_columns",
+                    params={"columns": [spec.column]},
+                )
+            if spec.column in body.mapping:
+                raise ValidationError(
+                    f"Column {spec.column!r} is both mapped and marked for creation.",
+                    code="import.create_field_conflict",
+                    params={"column": spec.column},
+                )
+            existing = labels_index.get(spec.label.strip().lower())
+            slug = slugify_field_label(spec.label)
+            if existing is None:
+                existing = keys_index.get(slug)
+            if existing is not None:
+                creation_plan[spec.column] = (existing.key, spec.label, spec.kind, False)
+                if existing.key not in defs_by_key:
+                    defs_by_key[existing.key] = existing  # coercition par la vraie déf
+            else:
+                creation_plan[spec.column] = (slug, spec.label, spec.kind, True)
+        self._creation_plan = creation_plan
+
         corrections_by_row: dict[int, list[ImportCorrection]] = {}
         for correction in body.corrections:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
         columns_by_target = {t: c for c, t in body.mapping.items()}
+        columns_by_target.update({key: col for col, (key, _l, _k, _c) in creation_plan.items()})
 
         from src.cases.cases_schema import PersonUpdateRequest
         from src.core.enums import CustomFieldType
@@ -217,6 +278,11 @@ class ProfileImportManager:
                 cell = (row.get(column) or "").strip()
                 if cell:
                     values[target] = cell
+            creation_cells: dict[str, tuple[str, str, str]] = {}
+            for column, (key, _label, kind, _to_create) in creation_plan.items():
+                cell = (row.get(column) or "").strip()
+                if cell:
+                    creation_cells[key] = (cell, kind, column)
             # CORRECTIONS : après parse, avant validation — même moulinette.
             for correction in corrections_by_row.get(index, ()):
                 if correction.target not in valid_targets:
@@ -279,6 +345,20 @@ class ProfileImportManager:
                     )
                 if assembled:
                     person[base] = assembled
+            # Champs à créer : la valeur coerce par le KIND choisi dès la
+            # naissance (suggérable = coerçable) — illisible → trou motivé.
+            for key, (cell, kind, column) in creation_cells.items():
+                definition = defs_by_key.get(key)
+                if definition is None:
+                    from shared.models.custom_field import CustomFieldDefinition
+
+                    definition = CustomFieldDefinition(
+                        agency_id=agent.agency_id, key=key, label=key, field_type=kind
+                    )
+                try:
+                    person[key] = _coerce_one(definition, cell)
+                except ValueError:
+                    issues.append(RowIssue(column=column, code="invalid_value"))
             custom_keys = (set(values) & (set(defs_by_key) | preset_person_keys)) - set(
                 CIVIL_COLUMNS
             )
@@ -370,6 +450,11 @@ class ProfileImportManager:
             rows=verdicts[start : start + body.page_size],
             page=body.page,
             page_size=body.page_size,
+            fields_created=[
+                label
+                for _key, label, _kind, to_create in getattr(self, "_creation_plan", {}).values()
+                if to_create
+            ],
         )
 
     # --- import réel : ÉCRIT ce que l'analyse a décidé --------------------
@@ -390,6 +475,26 @@ class ProfileImportManager:
         used_targets |= {t.split(".", 1)[0] for t in used_targets if "." in t}
         lang = await _CPRepo(self.db).agency_default_language(agent.agency_id)
         await materialize_preset_definitions(self.db, agent.agency_id, used_targets, lang)
+        # CRÉATION DEPUIS LA GRILLE : la déf naît par le cœur SANS COMMIT
+        # du picker (build_definition) — scope person, section misc
+        # (reclassable au toggle) ; le batch reste transactionnel.
+        fields_created: list[str] = []
+        plan = getattr(self, "_creation_plan", {})
+        if any(to_create for _k, _l, _kd, to_create in plan.values()):
+            from src.custom_fields.custom_fields_manager import CustomFieldsManager
+            from src.custom_fields.custom_fields_schema import CustomFieldDefinitionCreate
+
+            cf_manager = CustomFieldsManager(self.db)
+            for _column, (key, label, kind, to_create) in plan.items():
+                if not to_create:
+                    continue
+                await cf_manager.build_definition(
+                    agent,
+                    CustomFieldDefinitionCreate(key=key, label=label, field_type=kind),
+                    scope="person",
+                    profile_section="misc",
+                )
+                fields_created.append(label)
         created: list[ProfileImportRowOutcome] = []
         linked: list[ProfileImportRowOutcome] = []
         ignored: list[ProfileImportRowOutcome] = []
@@ -446,6 +551,7 @@ class ProfileImportManager:
             linked=linked,
             ignored=ignored,
             tags_applied=sum(1 for v in verdicts if v.status != "ignore" and v.person.get("tags")),
+            fields_created=fields_created,
         )
 
     @staticmethod
@@ -484,7 +590,7 @@ class CompanyImportRequest(BaseModel):
     """Import de fiches SOCIÉTÉ — endpoint séparé (même verdict que
     l'annuaire : cibles disjointes de l'import personnes). Cibles :
     `name` (dénomination, la clé de dédup, OBLIGATOIRE au mapping) + les
-    8 presets company de la taxonomie posée. Les clés libres restent au
+    presets company de la taxonomie posée. Les clés libres restent au
     PATCH (pas de référentiel société au MVP — écart nommé)."""
 
     model_config = ConfigDict(extra="forbid")
@@ -494,6 +600,10 @@ class CompanyImportRequest(BaseModel):
     filename: str | None = None
     mapping: dict[str, str] = Field(min_length=1)
     corrections: list[ImportCorrection] = Field(default_factory=list)
+    # Création depuis la grille — côté société le « champ » est une CLÉ DE
+    # SACK (pas de référentiel société au MVP, écart nommé) ; coercé par
+    # le kind, rangé en misc.
+    create_fields: list[FieldCreationSpec] = Field(default_factory=list)
 
 
 class CompanyImportPreviewRequest(CompanyImportRequest):
@@ -514,6 +624,7 @@ class CompanyImportReport(BaseModel):
     linked: list[CompanyImportRowOutcome]
     ignored: list[CompanyImportRowOutcome]
     tags_applied: int = 0
+    fields_created: list[str] = Field(default_factory=list)
 
 
 class CompanyImportPreviewResponse(BaseModel):
@@ -522,6 +633,7 @@ class CompanyImportPreviewResponse(BaseModel):
     rows: list[RowVerdict]
     page: int
     page_size: int
+    fields_created: list[str] = Field(default_factory=list)
 
 
 class CompanyImportManager:
@@ -579,10 +691,32 @@ class CompanyImportManager:
                 params={"columns": unknown_columns},
             )
 
+        from src.imports.value_normalizers import slugify_field_label
+
+        creation_plan: dict[str, tuple[str, str, str, bool]] = {}
+        for spec in body.create_fields:
+            if spec.column not in parsed.headers:
+                raise ValidationError(
+                    f"Column {spec.column!r} is absent from the file.",
+                    code="import.unknown_columns",
+                    params={"columns": [spec.column]},
+                )
+            if spec.column in body.mapping:
+                raise ValidationError(
+                    f"Column {spec.column!r} is both mapped and marked for creation.",
+                    code="import.create_field_conflict",
+                    params={"column": spec.column},
+                )
+            slug = slugify_field_label(spec.label)
+            # Dédup : le slug retombe sur une cible connue → on LIE.
+            creation_plan[spec.column] = (slug, spec.label, spec.kind, slug not in valid_targets)
+        self._creation_plan = creation_plan
+
         corrections_by_row: dict[int, list[ImportCorrection]] = {}
         for correction in body.corrections:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
         columns_by_target = {t: c for c, t in body.mapping.items()}
+        columns_by_target.update({key: col for col, (key, _l, _k, _c) in creation_plan.items()})
 
         repo = CompanyProfilesRepository(self.db)
         verdicts: list[RowVerdict] = []
@@ -645,7 +779,21 @@ class CompanyImportManager:
                             code="invalid_value",
                         )
                     )
+            from shared.models.custom_field import CustomFieldDefinition as _Def
+            from src.custom_fields.custom_fields_validation import _coerce_one
             from src.imports.value_normalizers import assemble_address
+
+            for column, (key, _label, kind, _to_create) in creation_plan.items():
+                cell = (row.get(column) or "").strip()
+                if not cell:
+                    continue
+                try:
+                    values[key] = _coerce_one(
+                        _Def(agency_id=agent.agency_id, key=key, label=key, field_type=kind),
+                        cell,
+                    )
+                except ValueError:
+                    issues.append(RowIssue(column=column, code="invalid_value"))
 
             address_values: dict[str, dict[str, str]] = {}
             for base in company_address_bases:
@@ -722,6 +870,11 @@ class CompanyImportManager:
             rows=verdicts[start : start + body.page_size],
             page=body.page,
             page_size=body.page_size,
+            fields_created=[
+                label
+                for _k, label, _kd, to_create in getattr(self, "_creation_plan", {}).values()
+                if to_create
+            ],
         )
 
     async def run_import(self, agent: Agent, body: CompanyImportRequest) -> CompanyImportReport:
@@ -729,6 +882,11 @@ class CompanyImportManager:
         from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 
         verdicts = await self._analyze(agent, body)
+        fields_created = [
+            label
+            for _k, label, _kd, to_create in getattr(self, "_creation_plan", {}).values()
+            if to_create
+        ]
         repo = CompanyProfilesRepository(self.db)
         created: list[CompanyImportRowOutcome] = []
         linked: list[CompanyImportRowOutcome] = []
@@ -776,17 +934,18 @@ class CompanyImportManager:
             linked=linked,
             ignored=ignored,
             tags_applied=sum(1 for v in verdicts if v.status != "ignore" and v.person.get("tags")),
+            fields_created=fields_created,
         )
 
-    @staticmethod
-    def _fill_gaps(company: Any, values: dict[str, Any]) -> None:
+    def _fill_gaps(self, company: Any, values: dict[str, Any]) -> None:
         from src.client_profiles.profile_sections import COMPANY_PRESET_PROFILE_SECTION
 
         if values.get("tags") and not company.tags:
             company.tags = values["tags"]
+        plan_keys = {k for k, _l, _kd, _c in getattr(self, "_creation_plan", {}).values()}
         sack = dict(company.custom_fields or {})
         changed = False
-        for key in COMPANY_PRESET_PROFILE_SECTION:
+        for key in set(COMPANY_PRESET_PROFILE_SECTION) | plan_keys:
             raw = values.get(key)
             if raw is not None and _is_empty(sack.get(key)):
                 sack[key] = raw
