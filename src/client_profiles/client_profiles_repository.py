@@ -19,6 +19,7 @@ from shared.models.client_profile_note import ClientProfileNote
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplate
 from src.core.enums import CaseStatus
+from src.imports.batching import IMPORT_READ_CHUNK
 
 
 class ClientProfilesRepository:
@@ -34,6 +35,29 @@ class ClientProfilesRepository:
             .where(ClientProfile.id == profile_id, ClientProfile.agency_id == agency_id)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def by_ids_for_agency(
+        self, agency_id: uuid.UUID, profile_ids: set[uuid.UUID]
+    ) -> dict[uuid.UUID, ClientProfile]:
+        """Le miroir GROUPÉ de `get_for_agency` pour l'import (anti N+1),
+        frère de `profile_ids_for_emails` : les fiches à LIER se chargent
+        par paquets d'ids au lieu d'un SELECT par ligne du fichier — 1543
+        allers-retours mesurés sur le fichier Teamleader réel, devenus 4.
+
+        Pas de `selectinload(expat_user)` ici, à la différence du chemin
+        unitaire : le fill-gap d'import n'écrit QUE des colonnes de la
+        fiche (cf. `_apply_values`), la relation n'est jamais lue — la
+        charger coûterait une requête par paquet pour rien."""
+        out: dict[uuid.UUID, ClientProfile] = {}
+        ids = list(profile_ids)
+        for start in range(0, len(ids), IMPORT_READ_CHUNK):
+            chunk = ids[start : start + IMPORT_READ_CHUNK]
+            stmt = select(ClientProfile).where(
+                ClientProfile.agency_id == agency_id, ClientProfile.id.in_(chunk)
+            )
+            for profile in (await self.db.execute(stmt)).scalars():
+                out[profile.id] = profile
+        return out
 
     async def get_by_expat(
         self, agency_id: uuid.UUID, expat_user_id: uuid.UUID

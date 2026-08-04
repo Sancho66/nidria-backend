@@ -11,6 +11,7 @@ from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
 from shared.models.company_profile import CompanyFieldLabel, CompanyProfile, CompanyProfileRole
 from shared.models.expat_user import ExpatUser
+from src.imports.batching import IMPORT_READ_CHUNK
 
 
 class CompanyProfilesRepository:
@@ -24,6 +25,23 @@ class CompanyProfilesRepository:
             CompanyProfile.id == company_id, CompanyProfile.agency_id == agency_id
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def by_ids_for_agency(
+        self, agency_id: uuid.UUID, company_ids: set[uuid.UUID]
+    ) -> dict[uuid.UUID, CompanyProfile]:
+        """Le miroir GROUPÉ de `get_for_agency` pour l'import (anti N+1),
+        symétrique exact de la face personne : les sociétés à LIER se
+        chargent par paquets d'ids, plus une par ligne du fichier."""
+        out: dict[uuid.UUID, CompanyProfile] = {}
+        ids = list(company_ids)
+        for start in range(0, len(ids), IMPORT_READ_CHUNK):
+            chunk = ids[start : start + IMPORT_READ_CHUNK]
+            stmt = select(CompanyProfile).where(
+                CompanyProfile.agency_id == agency_id, CompanyProfile.id.in_(chunk)
+            )
+            for company in (await self.db.execute(stmt)).scalars():
+                out[company.id] = company
+        return out
 
     async def id_for_name(self, agency_id: uuid.UUID, name: str) -> uuid.UUID | None:
         """La dédup-suggestion : l'homonyme exact (casse ignorée) de

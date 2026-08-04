@@ -28,6 +28,7 @@ from typing import Any, Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -36,6 +37,7 @@ from src.client_profiles.backfill import CIVIL_COLUMNS
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
 from src.core.exceptions import ValidationError
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
+from src.imports.batching import IMPORT_WRITE_CHUNK, chunked, insert_rows
 from src.imports.csv_reader import parse_upload
 
 # L'identité vient de `import_targets` (LA source) ; les appelants
@@ -686,6 +688,20 @@ class ProfileImportManager:
         ignored_by_row: dict[int, ProfileImportRowOutcome] = {}
         created_by_email: dict[str, uuid.UUID] = {}
         created_by_name: dict[tuple[str, str], uuid.UUID] = {}
+        # LECTURE GROUPÉE (lot batch) : les fiches à lier arrivent EN UN
+        # COUP, avant la boucle — le `get_for_agency` par ligne qui vivait
+        # ici coûtait 1543 allers-retours sur le fichier réel. La boucle
+        # qui suit ne parle plus à la base du tout : elle décide, elle
+        # construit, elle mute des objets déjà en mémoire.
+        existing_by_id = await self.repo.by_ids_for_agency(
+            agent.agency_id,
+            {v.profile_id for v in verdicts if v.status == "link" and v.profile_id is not None},
+        )
+        # Les fiches nées DANS ce batch : jamais en base au moment où une
+        # ligne suivante veut s'y lier, donc tenues ici par leur id (posé
+        # en Python, cf. plus bas) et non relues.
+        pending_by_id: dict[uuid.UUID, ClientProfile] = {}
+        to_insert: list[ClientProfile] = []
         for verdict in verdicts:
             email = verdict.person.get("email")
             name_key = _name_dedup_key(
@@ -699,16 +715,29 @@ class ProfileImportManager:
                 ignored_by_row[verdict.row_index] = outcome
                 continue
             if verdict.status == "create":
+                # L'ID EST POSÉ ICI, pas arraché à la base : c'est ce qui
+                # libère l'insert groupé. L'ancien `flush()` par ligne
+                # n'existait que pour connaître `profile.id` (le rapport
+                # le rend, et les lignes suivantes s'y lient) — un
+                # aller-retour par fiche pour une valeur que Python sait
+                # produire seul. Le modèle a le même `default=uuid4`.
                 profile = ClientProfile(
+                    id=uuid.uuid4(),
                     agency_id=agent.agency_id,
                     expat_user_id=None,
                     first_name=verdict.person["first_name"],
                     last_name=verdict.person["last_name"],
                     email=email,
+                    # Les NOT NULL à défaut applicatif, posés ICI : le
+                    # défaut ORM n'arrive qu'au flush, et l'insert groupé
+                    # n'en fait plus (cf. `insert_rows`).
+                    custom_fields={},
+                    tags=[],
+                    preferred_channels=[],
                 )
                 self._apply_values(profile, verdict.person)
-                self.db.add(profile)
-                await self.db.flush()
+                to_insert.append(profile)
+                pending_by_id[profile.id] = profile
                 if email:
                     created_by_email[email] = profile.id
                 elif name_key is not None:
@@ -735,7 +764,7 @@ class ProfileImportManager:
                     )
                 )
                 continue
-            existing = await self.repo.get_for_agency(agent.agency_id, profile_id)
+            existing = existing_by_id.get(profile_id) or pending_by_id.get(profile_id)
             assert existing is not None
             self._apply_values(existing, verdict.person, fill_gaps_only=True)
             linked.append(
@@ -760,11 +789,24 @@ class ProfileImportManager:
             payload = {k: v for k, v in verdict.person.items() if k not in IDENTITY_TARGETS}
             if not payload:
                 continue
-            sibling = await self.repo.get_for_agency(agent.agency_id, profile_id)
+            # La fiche sœur est TOUJOURS née dans ce batch (c'est la
+            # définition de `created_by_email`) : elle est en mémoire,
+            # elle ne se relit pas.
+            sibling = pending_by_id.get(profile_id)
             assert sibling is not None
             self._apply_values(sibling, payload, fill_gaps_only=True)
             ignored_by_row[verdict.row_index].profile_id = profile_id
             values_salvaged += 1
+
+        # ÉCRITURE GROUPÉE : les fiches partent par paquets d'INSERT —
+        # mais dans UNE SEULE transaction, fermée par le commit unique
+        # ci-dessous. Le paquet borne la requête (nombre de paramètres
+        # liés), pas l'atomicité : un import reste tout ou rien, jamais
+        # 1000 fiches écrites et un rapport jamais rendu. Ce commit
+        # emporte aussi les défs nées à la volée et les UPDATE de
+        # fill-gap accumulés au-dessus.
+        for chunk in chunked(to_insert, IMPORT_WRITE_CHUNK):
+            await self.db.execute(insert(ClientProfile).values(insert_rows(chunk)))
         await self.db.commit()
         return ProfileImportReport(
             total_rows=len(verdicts),
@@ -1209,6 +1251,15 @@ class CompanyImportManager:
         linked: list[CompanyImportRowOutcome] = []
         ignored: list[CompanyImportRowOutcome] = []
         created_by_name: dict[str, uuid.UUID] = {}
+        # LECTURE GROUPÉE (lot batch), symétrique de la face personne :
+        # les sociétés à lier arrivent en un coup, la boucle ne parle
+        # plus à la base.
+        existing_by_id = await repo.by_ids_for_agency(
+            agent.agency_id,
+            {v.profile_id for v in verdicts if v.status == "link" and v.profile_id is not None},
+        )
+        pending_by_id: dict[uuid.UUID, CompanyProfile] = {}
+        to_insert: list[CompanyProfile] = []
         for verdict in verdicts:
             name = verdict.person.get("name")
             key = name.strip().lower() if name else None
@@ -1218,10 +1269,18 @@ class CompanyImportManager:
                 )
                 continue
             if verdict.status == "create":
-                company = CompanyProfile(agency_id=agent.agency_id, name=name)
+                # Id posé en Python (même raison que la face personne) :
+                # le `flush()` par ligne ne servait qu'à le lire.
+                company = CompanyProfile(
+                    id=uuid.uuid4(),
+                    agency_id=agent.agency_id,
+                    name=name,
+                    custom_fields={},
+                    tags=[],
+                )
                 self._fill_gaps(company, verdict.person)
-                self.db.add(company)
-                await self.db.flush()
+                to_insert.append(company)
+                pending_by_id[company.id] = company
                 assert key is not None
                 created_by_name[key] = company.id
                 created.append(
@@ -1236,7 +1295,7 @@ class CompanyImportManager:
                     CompanyImportRowOutcome(row=verdict.row_index, name=name, reason="no_name")
                 )
                 continue
-            existing_company = await repo.get_for_agency(agent.agency_id, company_id)
+            existing_company = existing_by_id.get(company_id) or pending_by_id.get(company_id)
             assert existing_company is not None
             self._fill_gaps(existing_company, verdict.person)
             linked.append(
@@ -1244,6 +1303,12 @@ class CompanyImportManager:
                     row=verdict.row_index, name=name, company_profile_id=company_id
                 )
             )
+        # ÉCRITURE GROUPÉE : paquets d'INSERT, UNE transaction (même
+        # règle que la face personne — le paquet borne la requête, pas
+        # l'atomicité) ; ce commit emporte aussi les labels de clés nés
+        # plus haut et les UPDATE de fill-gap.
+        for chunk in chunked(to_insert, IMPORT_WRITE_CHUNK):
+            await self.db.execute(insert(CompanyProfile).values(insert_rows(chunk)))
         await self.db.commit()
         return CompanyImportReport(
             total_rows=len(verdicts),
