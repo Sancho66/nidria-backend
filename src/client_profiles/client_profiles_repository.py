@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Text, and_, cast, exists, func, or_, select
+from sqlalchemy import Text, and_, cast, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -83,6 +83,79 @@ class ClientProfilesRepository:
         )
         return func.coalesce(latest, ClientProfile.updated_at)
 
+    def filter_predicates(
+        self,
+        agency_id: uuid.UUID,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+        tags: list[str] | None = None,
+        client_space_activated: bool | None = None,
+        has_active_case: bool | None = None,
+    ) -> list[Any]:
+        """LES CRITÈRES DE L'ANNUAIRE, en un seul endroit.
+
+        Extraits de `list_page` pour que la SUPPRESSION PAR FILTRE vise
+        exactement ce que la liste montre : « tout ce que je vois » ==
+        « tout ce que je supprime ». Deux copies de ces prédicats, et
+        cette égalité deviendrait une promesse invérifiable — un critère
+        ajouté d'un côté ferait supprimer plus large que ce qui est à
+        l'écran, sans que rien ne le dise.
+
+        Rend une liste de prédicats à `.where(*)` : la requête appelante
+        garde la main sur ses jointures (l'OUTER join `ExpatUser` est
+        requis dès que `search` ou `client_space_activated` est posé).
+        """
+        predicates: list[Any] = [ClientProfile.agency_id == agency_id]
+        if search:
+            like = f"%{search}%"
+            predicates.append(
+                or_(
+                    func.coalesce(ExpatUser.first_name, ClientProfile.first_name).ilike(like),
+                    func.coalesce(ExpatUser.last_name, ClientProfile.last_name).ilike(like),
+                    func.coalesce(ExpatUser.email, ClientProfile.email).ilike(like),
+                )
+            )
+        if status is not None:
+            # La règle actée : dossier VIVANT → client (le filtre est la
+            # projection SQL exacte de derived_client_status).
+            alive = self._linked_case_exists(agency_id)
+            derived = alive if status == "client" else ~alive
+            # V1b : l'override PRIME — la dérivation ne joue que sans lui.
+            predicates.append(
+                or_(
+                    ClientProfile.status_override == status,
+                    and_(ClientProfile.status_override.is_(None), derived),
+                )
+            )
+        if tags:
+            # ANY des tags demandés (jsonb_exists_any == ?| avec un cast
+            # text[] explicite — asyncpg ne devine pas le type).
+            predicates.append(func.jsonb_exists_any(ClientProfile.tags, cast(tags, ARRAY(Text))))
+        if client_space_activated is not None:
+            predicates.append(
+                ExpatUser.activated_at.is_not(None)
+                if client_space_activated
+                else ExpatUser.activated_at.is_(None)
+            )
+        if has_active_case is not None:
+            active = self._linked_case_exists(agency_id, exclude_closed=True)
+            predicates.append(active if has_active_case else ~active)
+        return predicates
+
+    async def ids_matching_filter(self, agency_id: uuid.UUID, **filters: Any) -> list[uuid.UUID]:
+        """Les identifiants que le FILTRE désigne — mêmes prédicats que la
+        liste, sans pagination ni tri d'affichage. Ordre stable par
+        `created_at, id` : les paquets de suppression ne se recouvrent
+        pas et ne sautent personne."""
+        stmt = (
+            select(ClientProfile.id)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(*self.filter_predicates(agency_id, **filters))
+            .order_by(ClientProfile.created_at, ClientProfile.id)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def list_page(
         self,
         agency_id: uuid.UUID,
@@ -100,58 +173,26 @@ class ClientProfilesRepository:
         # OUTER join (F4) : une fiche non liée (création directe) vit dans
         # l'annuaire au même titre — identité cherchée/triée en coalesce
         # compte > colonnes propres de la fiche.
+        predicates = self.filter_predicates(
+            agency_id,
+            search=search,
+            status=status,
+            tags=tags,
+            client_space_activated=client_space_activated,
+            has_active_case=has_active_case,
+        )
         stmt = (
             select(ClientProfile)
             .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
             .options(selectinload(ClientProfile.expat_user))
-            .where(ClientProfile.agency_id == agency_id)
+            .where(*predicates)
         )
         count_stmt = (
             select(func.count())
             .select_from(ClientProfile)
             .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
-            .where(ClientProfile.agency_id == agency_id)
+            .where(*predicates)
         )
-        if search:
-            like = f"%{search}%"
-            predicate = or_(
-                func.coalesce(ExpatUser.first_name, ClientProfile.first_name).ilike(like),
-                func.coalesce(ExpatUser.last_name, ClientProfile.last_name).ilike(like),
-                func.coalesce(ExpatUser.email, ClientProfile.email).ilike(like),
-            )
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
-        if status is not None:
-            # La règle actée : dossier VIVANT → client (le filtre est la
-            # projection SQL exacte de derived_client_status).
-            alive = self._linked_case_exists(agency_id)
-            derived = alive if status == "client" else ~alive
-            # V1b : l'override PRIME — la dérivation ne joue que sans lui.
-            status_predicate = or_(
-                ClientProfile.status_override == status,
-                and_(ClientProfile.status_override.is_(None), derived),
-            )
-            stmt = stmt.where(status_predicate)
-            count_stmt = count_stmt.where(status_predicate)
-        if tags:
-            # ANY des tags demandés (jsonb_exists_any == ?| avec un cast
-            # text[] explicite — asyncpg ne devine pas le type).
-            predicate = func.jsonb_exists_any(ClientProfile.tags, cast(tags, ARRAY(Text)))
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
-        if client_space_activated is not None:
-            predicate = (
-                ExpatUser.activated_at.is_not(None)
-                if client_space_activated
-                else ExpatUser.activated_at.is_(None)
-            )
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
-        if has_active_case is not None:
-            active = self._linked_case_exists(agency_id, exclude_closed=True)
-            predicate = active if has_active_case else ~active
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
         name_order = (
             func.coalesce(ExpatUser.last_name, ClientProfile.last_name),
             func.coalesce(ExpatUser.first_name, ClientProfile.first_name),
@@ -315,6 +356,93 @@ class ClientProfilesRepository:
                 .all()
             )
         return len(case_ids)
+
+    async def ids_within_agency(
+        self, agency_id: uuid.UUID, profile_ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """Les identifiants demandés qui existent VRAIMENT dans l'agence.
+
+        La forme `ids` passe par la même porte que la forme `filter` : une
+        fiche d'une autre agence n'est pas une erreur bruyante, elle
+        n'existe simplement pas ici. Elle ne gonfle donc pas `matching`,
+        et le compte annoncé reste celui du geste réel."""
+        if not profile_ids:
+            return []
+        stmt = (
+            select(ClientProfile.id)
+            .where(ClientProfile.id.in_(profile_ids), ClientProfile.agency_id == agency_id)
+            .order_by(ClientProfile.created_at, ClientProfile.id)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def protected_profile_ids(
+        self, agency_id: uuid.UUID, profile_ids: list[uuid.UUID]
+    ) -> set[uuid.UUID]:
+        """LA MÊME PROTECTION QU'À L'UNITÉ, en ensembliste.
+
+        Une fiche qu'un dossier référence — vivant, clos OU supprimé,
+        l'historique est sacré — ne se supprime jamais. `protecting_case_count`
+        répond pour UNE fiche ; en masse, la poser mille fois serait mille
+        allers-retours. Ici, deux requêtes pour tout un paquet, et le même
+        OU : la liaison `case_person`, ou le compte principal du dossier.
+
+        Rend les fiches PROTÉGÉES — jamais les supprimables : on nomme ce
+        qui retient, et ce qui n'est pas retenu part.
+        """
+        if not profile_ids:
+            return set()
+        by_person = set(
+            (
+                await self.db.execute(
+                    select(CasePerson.client_profile_id).where(
+                        CasePerson.client_profile_id.in_(profile_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Le compte principal : la fiche est protégée si SON expat porte un
+        # dossier de l'agence (le `deleted_at` n'est PAS filtré — un dossier
+        # supprimé protège encore).
+        by_principal = set(
+            (
+                await self.db.execute(
+                    select(ClientProfile.id)
+                    .join(
+                        ClientCase,
+                        ClientCase.principal_expat_user_id == ClientProfile.expat_user_id,
+                    )
+                    .where(
+                        ClientProfile.id.in_(profile_ids),
+                        ClientProfile.agency_id == agency_id,
+                        ClientCase.agency_id == agency_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {pid for pid in by_person if pid is not None} | by_principal
+
+    async def delete_by_ids(self, agency_id: uuid.UUID, profile_ids: list[uuid.UUID]) -> int:
+        """Le paquet part en UNE instruction. Les notes, rôles société et
+        valeurs suivent par cascade FK ; `case_person.client_profile_id`
+        est SET NULL — sans objet ici, une fiche liée est protégée. Le
+        `agency_id` est re-posé : une suppression ne sort jamais de son
+        agence, même si l'appelant s'est trompé de liste."""
+        if not profile_ids:
+            return 0
+        result = await self.db.execute(
+            delete(ClientProfile).where(
+                ClientProfile.id.in_(profile_ids),
+                ClientProfile.agency_id == agency_id,
+            )
+        )
+        # `execute` est typé Result ; un DELETE rend en fait un
+        # CursorResult, seul porteur de `rowcount` — le compte RÉEL des
+        # lignes parties (jamais celui qu'on croyait viser).
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
     async def persons_linked_to_profile(self, profile_id: uuid.UUID) -> list[CasePerson]:
         stmt = select(CasePerson).where(CasePerson.client_profile_id == profile_id)

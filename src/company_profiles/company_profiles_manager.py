@@ -10,6 +10,7 @@ from shared.models.company_profile import CompanyProfile, CompanyProfileRole
 from src.client_profiles.client_profiles_schema import ProfileFieldSectionResponse
 from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 from src.company_profiles.company_profiles_schema import (
+    CompanyBulkDeleteRequest,
     CompanyCaseSummaryResponse,
     CompanyProfileCreateRequest,
     CompanyProfileListItemResponse,
@@ -19,6 +20,7 @@ from src.company_profiles.company_profiles_schema import (
     CompanyRoleCreateRequest,
     CompanyRoleResponse,
 )
+from src.core.bulk_delete import BulkDeleteReport, run_bulk_delete
 from src.core.exceptions import ConflictError, NotFoundError
 
 
@@ -214,6 +216,33 @@ class CompanyProfilesManager:
             )
         await self.db.delete(company)
         await self.db.commit()
+
+    async def bulk_delete(
+        self, agent: Agent, payload: CompanyBulkDeleteRequest
+    ) -> BulkDeleteReport:
+        """Le miroir strict de la face personne — mêmes deux formes, même
+        protection (tout dossier référençant la société la retient, même
+        supprimé), même agrégation au rapport, même trace."""
+        if payload.filter is not None:
+            criteria = payload.filter.model_dump(exclude_none=True)
+            candidate_ids = await self.repo.ids_matching_filter(agent.agency_id, **criteria)
+            selector: dict[str, Any] = {"mode": "filter", "filter": criteria}
+        else:
+            asked = list(dict.fromkeys(payload.ids or []))
+            candidate_ids = await self.repo.ids_within_agency(agent.agency_id, asked)
+            selector = {"mode": "ids", "count": len(asked)}
+
+        protected = await self.repo.protected_company_ids(agent.agency_id, candidate_ids)
+        return await run_bulk_delete(
+            self.db,
+            agent=agent,
+            entity="company_profile",
+            selector=selector,
+            candidate_ids=candidate_ids,
+            protected_ids=protected,
+            delete_batch=lambda batch: self.repo.delete_by_ids(agent.agency_id, batch),
+            dry_run=payload.dry_run,
+        )
 
     async def add_role(
         self, agent: Agent, company_id: uuid.UUID, payload: CompanyRoleCreateRequest

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.cases.cases_schema import _CivilStatusFields
 from src.core.email import NormalizedEmailStr
@@ -228,3 +228,55 @@ class NewCaseForProfileRequest(BaseModel):
     reference: str | None = Field(default=None, max_length=100)
     source: str | None = Field(default=None, max_length=100)
     tags: list[str] = Field(default_factory=list)
+
+
+# --- suppression de masse (lot suppression par filtre) -----------------------
+
+
+class ProfileListFilter(BaseModel):
+    """LES CRITÈRES DE L'ANNUAIRE — la MÊME déclaration que les paramètres
+    de `GET /client-profiles`.
+
+    C'est ce qui rend « tout ce que je vois » == « tout ce que je
+    supprime » : le front renvoie les filtres qu'il a à l'écran, tels
+    quels, et le back les applique par les mêmes prédicats SQL
+    (`ClientProfilesRepository.filter_predicates`, une seule copie).
+
+    Volontairement SANS `sort_by` / `page` : trier ou paginer ne change
+    pas QUI est visé, seulement l'ordre et la tranche montrée. Une
+    suppression par filtre vise l'ensemble, jamais la page courante.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    search: str | None = None
+    status: Literal["prospect", "client"] | None = None
+    tags: list[str] | None = None
+    client_space_activated: bool | None = None
+    has_active_case: bool | None = None
+
+
+class ProfileBulkDeleteRequest(BaseModel):
+    """DEUX FORMES, exclusives : une sélection à la main (`ids`, plafonnée
+    — au-delà on filtre) ou un critère (`filter`, sans plafond : c'est
+    tout son intérêt).
+
+    `filter: {}` est LÉGITIME et signifie « toutes les fiches de
+    l'agence » — c'est ce que montre une liste sans filtre. Il faut
+    l'écrire explicitement : l'absence des deux champs est refusée, on ne
+    supprime pas tout par omission.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[uuid.UUID] | None = Field(default=None, max_length=100)
+    filter: ProfileListFilter | None = None
+    #: Le compte AVANT le geste. Même chemin, même chiffres — seule la
+    #: dernière instruction change.
+    dry_run: bool = False
+
+    @model_validator(mode="after")
+    def one_selector_exactly(self) -> "ProfileBulkDeleteRequest":
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("Provide exactly one of `ids` or `filter`.")
+        return self

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.client_profiles.client_profiles_schema import ProfileFieldSectionResponse
 
@@ -100,3 +100,37 @@ class CompanyProfileListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# --- suppression de masse (lot suppression par filtre) -----------------------
+
+
+class CompanyListFilter(BaseModel):
+    """Les critères de l'annuaire SOCIÉTÉ — même déclaration que les
+    paramètres de `GET /company-profiles`, appliqués par les mêmes
+    prédicats (`CompanyProfilesRepository.filter_predicates`). Sans tri ni
+    pagination : un filtre vise l'ensemble, jamais la page courante."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    search: str | None = None
+    tags: list[str] | None = None
+    has_active_case: bool | None = None
+    has_people: bool | None = None
+
+
+class CompanyBulkDeleteRequest(BaseModel):
+    """Le miroir strict de la face personne : `ids` (plafonné) OU
+    `filter` (sans plafond), jamais les deux, jamais aucun."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[uuid.UUID] | None = Field(default=None, max_length=100)
+    filter: CompanyListFilter | None = None
+    dry_run: bool = False
+
+    @model_validator(mode="after")
+    def one_selector_exactly(self) -> "CompanyBulkDeleteRequest":
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("Provide exactly one of `ids` or `filter`.")
+        return self

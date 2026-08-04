@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ARRAY, Text, cast, exists, func, select
+from sqlalchemy import ARRAY, Text, cast, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.client_case import ClientCase
@@ -111,6 +111,87 @@ class CompanyProfilesRepository:
         )
         return func.coalesce(latest, CompanyProfile.updated_at)
 
+    def filter_predicates(
+        self,
+        agency_id: uuid.UUID,
+        *,
+        search: str | None = None,
+        tags: list[str] | None = None,
+        has_active_case: bool | None = None,
+        has_people: bool | None = None,
+    ) -> list[Any]:
+        """LES CRITÈRES DE L'ANNUAIRE SOCIÉTÉ, en un seul endroit — même
+        raison qu'en face personne : la suppression par filtre vise
+        exactement ce que la liste montre, et une seule copie des
+        prédicats rend cette égalité vraie plutôt que promise."""
+        predicates: list[Any] = [CompanyProfile.agency_id == agency_id]
+        if search:
+            predicates.append(CompanyProfile.name.ilike(f"%{search}%"))
+        if tags:
+            predicates.append(func.jsonb_exists_any(CompanyProfile.tags, cast(tags, ARRAY(Text))))
+        if has_active_case is not None:
+            active = self._active_case_exists()
+            predicates.append(active if has_active_case else ~active)
+        if has_people is not None:
+            peopled = self._has_people_exists()
+            predicates.append(peopled if has_people else ~peopled)
+        return predicates
+
+    async def ids_matching_filter(self, agency_id: uuid.UUID, **filters: Any) -> list[uuid.UUID]:
+        """Les identifiants que le FILTRE désigne, ordre stable
+        (`created_at, id`) pour que les paquets ne se recouvrent pas."""
+        stmt = (
+            select(CompanyProfile.id)
+            .where(*self.filter_predicates(agency_id, **filters))
+            .order_by(CompanyProfile.created_at, CompanyProfile.id)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def ids_within_agency(
+        self, agency_id: uuid.UUID, company_ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """Les identifiants demandés qui existent vraiment dans l'agence —
+        même porte que le filtre, pour que `matching` dise le geste réel."""
+        if not company_ids:
+            return []
+        stmt = (
+            select(CompanyProfile.id)
+            .where(CompanyProfile.id.in_(company_ids), CompanyProfile.agency_id == agency_id)
+            .order_by(CompanyProfile.created_at, CompanyProfile.id)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def protected_company_ids(
+        self, agency_id: uuid.UUID, company_ids: list[uuid.UUID]
+    ) -> set[uuid.UUID]:
+        """La MÊME protection qu'à l'unité, en ensembliste : tout dossier
+        référençant la société la retient (supprimés inclus)."""
+        if not company_ids:
+            return set()
+        rows = await self.db.execute(
+            select(ClientCase.company_profile_id).where(
+                ClientCase.company_profile_id.in_(company_ids),
+                ClientCase.agency_id == agency_id,
+            )
+        )
+        return {cid for cid in rows.scalars().all() if cid is not None}
+
+    async def delete_by_ids(self, agency_id: uuid.UUID, company_ids: list[uuid.UUID]) -> int:
+        """Le paquet part en UNE instruction ; les rôles se dissolvent par
+        cascade FK. `agency_id` re-posé : jamais au-delà de l'agence."""
+        if not company_ids:
+            return 0
+        result = await self.db.execute(
+            delete(CompanyProfile).where(
+                CompanyProfile.id.in_(company_ids),
+                CompanyProfile.agency_id == agency_id,
+            )
+        )
+        # `execute` est typé Result ; un DELETE rend en fait un
+        # CursorResult, seul porteur de `rowcount` — le compte RÉEL des
+        # lignes parties (jamais celui qu'on croyait viser).
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
     async def list_page(
         self,
         agency_id: uuid.UUID,
@@ -124,30 +205,15 @@ class CompanyProfilesRepository:
         page: int,
         page_size: int,
     ) -> tuple[list[CompanyProfile], int]:
-        stmt = select(CompanyProfile).where(CompanyProfile.agency_id == agency_id)
-        count_stmt = (
-            select(func.count())
-            .select_from(CompanyProfile)
-            .where(CompanyProfile.agency_id == agency_id)
+        predicates = self.filter_predicates(
+            agency_id,
+            search=search,
+            tags=tags,
+            has_active_case=has_active_case,
+            has_people=has_people,
         )
-        if search:
-            predicate: Any = CompanyProfile.name.ilike(f"%{search}%")
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
-        if tags:
-            predicate = func.jsonb_exists_any(CompanyProfile.tags, cast(tags, ARRAY(Text)))
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
-        if has_active_case is not None:
-            active = self._active_case_exists()
-            predicate = active if has_active_case else ~active
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
-        if has_people is not None:
-            peopled = self._has_people_exists()
-            predicate = peopled if has_people else ~peopled
-            stmt = stmt.where(predicate)
-            count_stmt = count_stmt.where(predicate)
+        stmt = select(CompanyProfile).where(*predicates)
+        count_stmt = select(func.count()).select_from(CompanyProfile).where(*predicates)
         sort_exprs = {
             "name": (CompanyProfile.name,),
             "created_at": (CompanyProfile.created_at,),

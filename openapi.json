@@ -6073,6 +6073,53 @@
         }
       }
     },
+    "/client-profiles/bulk-delete": {
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Bulk Delete Client Profiles",
+        "description": "Suppression de masse — par SÉLECTION (`ids`, ≤ 100) ou par CRITÈRE\n(`filter`, les paramètres exacts de la liste, sans plafond).\n\n`dry_run: true` rend les MÊMES chiffres sans rien écrire : le front\nannonce `deletable` avant le geste, et l'exécution l'honore — c'est\nle même chemin de sélection, seule la dernière instruction change.\n\nLa protection unitaire vaut en masse : une fiche qu'un dossier\nréférence (vivant, clos ou supprimé) n'est jamais supprimée. Elle ne\nvaut plus un 409 — illisible sur mille fiches — mais elle est\nAGRÉGÉE (`protected`) et les fiches retenues sont nommées\n(`protected_ids`, plafonné à 100). L'historique reste sacré.",
+        "operationId": "bulk_delete_client_profiles_client_profiles_bulk_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileBulkDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkDeleteReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/client-profiles/{profile_id}/notes": {
       "get": {
         "tags": [
@@ -6974,6 +7021,53 @@
             }
           }
         }
+      }
+    },
+    "/company-profiles/bulk-delete": {
+      "post": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Bulk Delete Company Profiles",
+        "description": "Le miroir société : `ids` (≤ 100) ou `filter` (les paramètres de la\nliste), `dry_run` pour annoncer avant d'agir, protection agrégée —\nune société qu'un dossier référence ne part jamais.",
+        "operationId": "bulk_delete_company_profiles_company_profiles_bulk_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyBulkDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkDeleteReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/company-profiles/{company_id}/roles": {
@@ -19132,6 +19226,54 @@
         ],
         "title": "BulkAddTagsRequest"
       },
+      "BulkDeleteReport": {
+        "properties": {
+          "entity": {
+            "type": "string",
+            "title": "Entity"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "matching": {
+            "type": "integer",
+            "title": "Matching"
+          },
+          "protected": {
+            "type": "integer",
+            "title": "Protected"
+          },
+          "deletable": {
+            "type": "integer",
+            "title": "Deletable"
+          },
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          },
+          "protected_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Protected Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity",
+          "dry_run",
+          "matching",
+          "protected",
+          "deletable",
+          "deleted",
+          "protected_ids"
+        ],
+        "title": "BulkDeleteReport",
+        "description": "LES CHIFFRES, dans l'ordre où on les lit.\n\n`matching` — ce que le critère désigne dans l'agence.\n`protected` — ce qu'un dossier retient (vivant, clos ou supprimé).\n`deletable` — `matching − protected` : LE chiffre à annoncer avant le\ngeste, et celui que l'exécution honore.\n`deleted` — ce qui est réellement parti (0 en dry-run).\n`dry_run` — pour qu'une réponse ne puisse jamais être prise pour\nl'autre en la relisant plus tard."
+      },
       "BulkDeleteRequest": {
         "properties": {
           "case_ids": {
@@ -22166,6 +22308,45 @@
         ],
         "title": "CommentUpdateRequest"
       },
+      "CompanyBulkDeleteRequest": {
+        "properties": {
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompanyListFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CompanyBulkDeleteRequest",
+        "description": "Le miroir strict de la face personne : `ids` (plafonné) OU\n`filter` (sans plafond), jamais les deux, jamais aucun."
+      },
       "CompanyCaseSummaryResponse": {
         "properties": {
           "id": {
@@ -22484,6 +22665,61 @@
           "row"
         ],
         "title": "CompanyImportRowOutcome"
+      },
+      "CompanyListFilter": {
+        "properties": {
+          "search": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "has_active_case": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Active Case"
+          },
+          "has_people": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has People"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CompanyListFilter",
+        "description": "Les critères de l'annuaire SOCIÉTÉ — même déclaration que les\nparamètres de `GET /company-profiles`, appliqués par les mêmes\nprédicats (`CompanyProfilesRepository.filter_predicates`). Sans tri ni\npagination : un filtre vise l'ensemble, jamais la page courante."
       },
       "CompanyProfileCreateRequest": {
         "properties": {
@@ -30631,6 +30867,45 @@
         ],
         "title": "ProfileActivityListResponse"
       },
+      "ProfileBulkDeleteRequest": {
+        "properties": {
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileListFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProfileBulkDeleteRequest",
+        "description": "DEUX FORMES, exclusives : une sélection à la main (`ids`, plafonnée\n— au-delà on filtre) ou un critère (`filter`, sans plafond : c'est\ntout son intérêt).\n\n`filter: {}` est LÉGITIME et signifie « toutes les fiches de\nl'agence » — c'est ce que montre une liste sans filtre. Il faut\nl'écrire explicitement : l'absence des deux champs est refusée, on ne\nsupprime pas tout par omission."
+      },
       "ProfileCaseSummaryResponse": {
         "properties": {
           "id": {
@@ -31096,6 +31371,76 @@
           "row"
         ],
         "title": "ProfileImportRowOutcome"
+      },
+      "ProfileListFilter": {
+        "properties": {
+          "search": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "prospect",
+                  "client"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "client_space_activated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Space Activated"
+          },
+          "has_active_case": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Active Case"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProfileListFilter",
+        "description": "LES CRITÈRES DE L'ANNUAIRE — la MÊME déclaration que les paramètres\nde `GET /client-profiles`.\n\nC'est ce qui rend « tout ce que je vois » == « tout ce que je\nsupprime » : le front renvoie les filtres qu'il a à l'écran, tels\nquels, et le back les applique par les mêmes prédicats SQL\n(`ClientProfilesRepository.filter_predicates`, une seule copie).\n\nVolontairement SANS `sort_by` / `page` : trier ou paginer ne change\npas QUI est visé, seulement l'ordre et la tranche montrée. Une\nsuppression par filtre vise l'ensemble, jamais la page courante."
       },
       "ProfileMergeRequest": {
         "properties": {

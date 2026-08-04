@@ -10,12 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from src.company_profiles.company_profiles_manager import CompanyProfilesManager
 from src.company_profiles.company_profiles_schema import (
+    CompanyBulkDeleteRequest,
     CompanyProfileCreateRequest,
     CompanyProfileListResponse,
     CompanyProfileResponse,
     CompanyProfileUpdateRequest,
     CompanyRoleCreateRequest,
 )
+from src.core.bulk_delete import BulkDeleteReport
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
@@ -32,6 +34,8 @@ BINDINGS = [
     RouteBinding("POST", "/company-profiles", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding("PATCH", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding("DELETE", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_EDIT),
+    # Même règle qu'en face personne : la masse demande `case.delete`.
+    RouteBinding("POST", "/company-profiles/bulk-delete", Audience.AGENT, Permission.CASE_DELETE),
     RouteBinding(
         "POST", "/company-profiles/{company_id}/roles", Audience.AGENT, Permission.CASE_EDIT
     ),
@@ -98,6 +102,16 @@ async def delete_company_profile(company_id: uuid.UUID, agent: AgentDep, db: DbD
     """Suppression unitaire — 409 company_profile.has_cases si un dossier
     la référence ; les rôles se dissolvent (cascade)."""
     await CompanyProfilesManager(db).delete_company(agent, company_id)
+
+
+@router.post("/company-profiles/bulk-delete", response_model=BulkDeleteReport)
+async def bulk_delete_company_profiles(
+    payload: CompanyBulkDeleteRequest, agent: AgentDep, db: DbDep
+) -> BulkDeleteReport:
+    """Le miroir société : `ids` (≤ 100) ou `filter` (les paramètres de la
+    liste), `dry_run` pour annoncer avant d'agir, protection agrégée —
+    une société qu'un dossier référence ne part jamais."""
+    return await CompanyProfilesManager(db).bulk_delete(agent, payload)
 
 
 @router.post(

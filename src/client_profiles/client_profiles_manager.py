@@ -28,11 +28,13 @@ from src.client_profiles.client_profiles_schema import (
     NewCaseForProfileRequest,
     ProfileActivityEntryResponse,
     ProfileActivityListResponse,
+    ProfileBulkDeleteRequest,
     ProfileCaseSummaryResponse,
     ProfileCompanyLinkResponse,
     ProfileCompletenessResponse,
     ProfileFieldSectionResponse,
 )
+from src.core.bulk_delete import BulkDeleteReport, run_bulk_delete
 from src.core.enums import CaseStatus
 from src.core.exceptions import (
     ConflictError,
@@ -621,6 +623,48 @@ class ClientProfilesManager:
             )
         await self.db.delete(profile)
         await self.db.commit()
+
+    async def bulk_delete(
+        self, agent: Agent, payload: ProfileBulkDeleteRequest
+    ) -> BulkDeleteReport:
+        """LA SUPPRESSION DE MASSE — deux formes, une seule règle.
+
+        `ids` : la sélection à la main, telle quelle. `filter` : les
+        critères de l'annuaire, appliqués par les MÊMES prédicats que la
+        liste (`filter_predicates`) — c'est ce qui fait que « tout ce que
+        je vois » est « tout ce que je supprime », sans dérive possible.
+
+        LA PROTECTION NE CHANGE PAS D'UN POUCE : une fiche qu'un dossier
+        référence — vivant, clos ou supprimé — n'est jamais supprimée.
+        À l'unité elle valait un 409 ; en masse le 409 par fiche serait
+        illisible, alors elle est AGRÉGÉE au rapport (« n supprimées,
+        n protégées ») et les fiches retenues sont nommées. L'historique
+        reste sacré, la forme du refus seule s'adapte au nombre.
+        """
+        if payload.filter is not None:
+            criteria = payload.filter.model_dump(exclude_none=True)
+            candidate_ids = await self.repo.ids_matching_filter(agent.agency_id, **criteria)
+            selector: dict[str, Any] = {"mode": "filter", "filter": criteria}
+        else:
+            # Les identifiants passent par la MÊME porte que le filtre :
+            # re-scopés à l'agence. Un id d'une autre agence n'est pas une
+            # erreur bruyante, il n'existe simplement pas ici — et il ne
+            # gonfle donc pas `matching`.
+            asked = list(dict.fromkeys(payload.ids or []))
+            candidate_ids = await self.repo.ids_within_agency(agent.agency_id, asked)
+            selector = {"mode": "ids", "count": len(asked)}
+
+        protected = await self.repo.protected_profile_ids(agent.agency_id, candidate_ids)
+        return await run_bulk_delete(
+            self.db,
+            agent=agent,
+            entity="client_profile",
+            selector=selector,
+            candidate_ids=candidate_ids,
+            protected_ids=protected,
+            delete_batch=lambda batch: self.repo.delete_by_ids(agent.agency_id, batch),
+            dry_run=payload.dry_run,
+        )
 
     # --- notes de fiche (miroir strict de case_note) ----------------------
 

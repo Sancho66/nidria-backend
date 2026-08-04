@@ -25,9 +25,11 @@ from src.client_profiles.client_profiles_schema import (
     FieldGestureRequest,
     NewCaseForProfileRequest,
     ProfileActivityListResponse,
+    ProfileBulkDeleteRequest,
     ProfileCompletenessResponse,
     ProfileMergeRequest,
 )
+from src.core.bulk_delete import BulkDeleteReport
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
@@ -71,6 +73,11 @@ BINDINGS = [
     ),
     RouteBinding("PATCH", "/client-profiles/{profile_id}", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding("DELETE", "/client-profiles/{profile_id}", Audience.AGENT, Permission.CASE_EDIT),
+    # LA MASSE DEMANDE PLUS QUE L'UNITÉ. Supprimer une fiche est un geste
+    # d'édition ; en supprimer mille par un critère est une décision d'un
+    # autre ordre — `case.delete`, la même que le bulk dossiers. Un agent
+    # qui peut nettoyer une fiche ne vide pas l'annuaire par héritage.
+    RouteBinding("POST", "/client-profiles/bulk-delete", Audience.AGENT, Permission.CASE_DELETE),
     RouteBinding(
         "POST", "/client-profiles/{profile_id}/merge", Audience.AGENT, Permission.CASE_EDIT
     ),
@@ -171,6 +178,26 @@ async def delete_client_profile(profile_id: uuid.UUID, agent: AgentDep, db: DbDe
     """Suppression unitaire — 409 profile.has_cases si un dossier la
     référence (vivant, clos ou supprimé : l'historique est sacré)."""
     await ClientProfilesManager(db).delete_profile(agent, profile_id)
+
+
+@router.post("/client-profiles/bulk-delete", response_model=BulkDeleteReport)
+async def bulk_delete_client_profiles(
+    payload: ProfileBulkDeleteRequest, agent: AgentDep, db: DbDep
+) -> BulkDeleteReport:
+    """Suppression de masse — par SÉLECTION (`ids`, ≤ 100) ou par CRITÈRE
+    (`filter`, les paramètres exacts de la liste, sans plafond).
+
+    `dry_run: true` rend les MÊMES chiffres sans rien écrire : le front
+    annonce `deletable` avant le geste, et l'exécution l'honore — c'est
+    le même chemin de sélection, seule la dernière instruction change.
+
+    La protection unitaire vaut en masse : une fiche qu'un dossier
+    référence (vivant, clos ou supprimé) n'est jamais supprimée. Elle ne
+    vaut plus un 409 — illisible sur mille fiches — mais elle est
+    AGRÉGÉE (`protected`) et les fiches retenues sont nommées
+    (`protected_ids`, plafonné à 100). L'historique reste sacré.
+    """
+    return await ClientProfilesManager(db).bulk_delete(agent, payload)
 
 
 @router.get("/client-profiles/{profile_id}/notes", response_model=list[CaseNoteResponse])

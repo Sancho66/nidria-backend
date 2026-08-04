@@ -6,6 +6,7 @@ from shared.models.ai_translation_job import AiTranslationJob, AiTranslationSour
 from shared.models.ai_usage import AgencyAiUsage
 from shared.models.auth_tokens import PasswordResetToken, RefreshToken
 from shared.models.base import Base
+from shared.models.bulk_deletion import BulkDeletionLog
 from shared.models.case_external_assignment import CaseExternalAssignment
 from shared.models.case_note import CaseNote
 from shared.models.case_person import CasePerson
@@ -67,6 +68,7 @@ __all__ = [
     "Agent",
     "AgentInvitation",
     "Base",
+    "BulkDeletionLog",
     "CaseExternalAssignment",
     "CaseInvitation",
     "CaseNote",
