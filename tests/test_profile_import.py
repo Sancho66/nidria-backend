@@ -448,7 +448,7 @@ async def test_company_import_widened_targets_and_typed_coercions(
     company_id = r.json()["created"][0]["company_profile_id"]
     detail = (await client.get(f"/company-profiles/{company_id}", headers=headers)).json()
     by_key = {s["key"]: s["references"] for s in detail["sections"]}
-    assert "vat_number" in by_key["id_documents"]
+    assert "vat_number" in by_key["identity"]  # fusion id_documents→identity
     assert "email" in by_key["contact"] and "country" in by_key["contact"]
     assert detail["custom_fields"]["vat_number"] == "BG123456789"
     # Compat PATCH : le sack reste libre, les cibles nommées passent telles
@@ -850,19 +850,15 @@ async def test_every_suggested_target_coerces_real_world_values(
     TYPE par colonne suggérée → ZÉRO invalid_value. Un suggéreur qui
     propose une cible incoerçable casse ce test."""
     headers = agent_headers(admin)
-    for key in ("preferred_language", "residence_address"):
-        db_session.add(
-            CustomFieldDefinition(
-                agency_id=admin.agency_id,
-                key=key,
-                label=key,
-                field_type="select" if key == "preferred_language" else "text",
-                options=["Français", "Anglais", "Espagnol", "Autre"]
-                if key == "preferred_language"
-                else None,
-                scope="person",
-            )
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="residence_address",
+            label="residence_address",
+            field_type="text",
+            scope="person",
         )
+    )
     await db_session.commit()
     r = await client.post(
         "/imports/client-profiles/suggest-mapping",
@@ -903,8 +899,8 @@ async def test_every_suggested_target_coerces_real_world_values(
     assert r.status_code == 200, r.text
     row = r.json()["rows"][0]
     assert row["issues"] == [], f"cibles incoerçables: {row['issues']}"
-    # La langue ISO est NORMALISÉE vers l'option canonique du select.
-    assert row["person"]["preferred_language"] == "Français"
+    # La langue ISO vise LA COLONNE, normalisée en CODE produit.
+    assert row["person"]["preferred_lang"] == "fr"
     assert row["person"]["sex"] == "M"
 
 
@@ -1113,7 +1109,7 @@ async def test_audit_alias_pack_suggestions(
     expected = {
         "Gender": "sex",
         "Date of Birth": "date_of_birth",
-        "Preferred Language": "preferred_language",
+        "Preferred Language": "preferred_lang",  # dédup : LA COLONNE
         "Company Name": "employer",
         "Work Email": "secondary_email",
         "Degree": "education_level",
@@ -1390,3 +1386,95 @@ async def test_create_field_from_grid(
     assert detail["custom_fields"]["note_interne"] == 42  # coercé number
     by_key = {s["key"]: s["references"] for s in detail["sections"]}
     assert "note_interne" in by_key["misc"]
+
+
+async def test_referential_dedup_migrates_the_three_cases(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Lot dédup — LA fonction de migration sur données seedées : les
+    valeurs housing_address migrent vers residence_address (conflit même
+    ligne → le survivant gagne, compté), les langues du preset montent
+    dans LA COLONNE (normalisées), les défs fusionnent, zéro orpheline."""
+    from src.imports.referential_dedup import dedup_referential
+
+    headers = agent_headers(admin)
+    # Seed : une fiche avec housing_address + preferred_language au sack,
+    # une avec CONFLIT (les deux adresses), les défs des deux presets.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Dédup", "last_name": "Un", "email": "dedup1@example.com"},
+    )
+    p1 = r.json()["id"]
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Dédup", "last_name": "Deux", "email": "dedup2@example.com"},
+    )
+    p2 = r.json()["id"]
+    await db_session.execute(
+        text(
+            "UPDATE client_profile SET custom_fields = "
+            '\'{"housing_address": {"street": "12 rue A"}, '
+            '"preferred_language": "Français"}\'::jsonb '
+            "WHERE id = :i"
+        ),
+        {"i": p1},
+    )
+    await db_session.execute(
+        text(
+            "UPDATE client_profile SET custom_fields = "
+            '\'{"housing_address": {"street": "perdante"}, '
+            '"residence_address": {"street": "survivante"}}\'::jsonb WHERE id = :i'
+        ),
+        {"i": p2},
+    )
+    for key in ("housing_address", "preferred_language"):
+        db_session.add(
+            CustomFieldDefinition(
+                agency_id=admin.agency_id, key=key, label=key, field_type="text", scope="person"
+            )
+        )
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="residence_address",
+            label="residence_address",
+            field_type="address",
+            scope="person",
+        )
+    )
+    await db_session.commit()
+
+    stats = await db_session.run_sync(lambda s_: dedup_referential(s_.connection()))
+    await db_session.commit()
+    assert stats["client_profile_address_values_moved"] == 1
+    assert stats["client_profile_address_conflicts_survivor_kept"] == 1
+    assert stats["language_values_moved_from_fiche_sack"] == 1
+    assert stats["address_defs_merged"] == 1  # housing meurt (residence existait)
+    assert stats["language_defs_deleted"] == 1
+
+    # Zéro orpheline : plus aucune clé morte, les valeurs au bon endroit.
+    detail = (await client.get(f"/client-profiles/{p1}", headers=headers)).json()
+    assert detail["custom_fields"]["residence_address"] == {"street": "12 rue A"}
+    assert "housing_address" not in detail["custom_fields"]
+    assert detail["preferred_lang"] == "fr"  # normalisée vers LA COLONNE
+    detail = (await client.get(f"/client-profiles/{p2}", headers=headers)).json()
+    assert detail["custom_fields"]["residence_address"] == {"street": "survivante"}
+    n = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM custom_field_definition "
+                "WHERE key IN ('housing_address', 'preferred_language')"
+            )
+        )
+    ).scalar_one()
+    assert n == 0
+    # IDEMPOTENT : rejouer = zéro mouvement.
+    stats2 = await db_session.run_sync(lambda s_: dedup_referential(s_.connection()))
+    await db_session.commit()
+    assert stats2["client_profile_address_values_moved"] == 0
+    assert stats2["language_values_moved_from_fiche_sack"] == 0

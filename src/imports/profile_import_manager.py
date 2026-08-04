@@ -189,7 +189,7 @@ class ProfileImportManager:
             | set(defs_by_key)
             | preset_person_keys
             | dotted_targets
-            | {"tags"}
+            | {"tags", "preferred_lang"}
         )
         bad_targets = sorted(set(body.mapping.values()) - valid_targets)
         if bad_targets:
@@ -301,6 +301,19 @@ class ProfileImportManager:
                     person[target] = values[target]
             if email:
                 person["email"] = email
+            if values.get("preferred_lang"):
+                from src.imports.value_normalizers import normalize_language_code
+
+                code = normalize_language_code(values["preferred_lang"])
+                if code is not None:
+                    person["preferred_lang"] = code
+                else:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get("preferred_lang", "preferred_lang"),
+                            code="invalid_value",
+                        )
+                    )
             if values.get("tags"):
                 person["tags"] = list(
                     dict.fromkeys(
@@ -569,6 +582,10 @@ class ProfileImportManager:
             if target == "tags":
                 if not (fill_gaps_only and profile.tags):
                     profile.tags = value
+                continue
+            if target == "preferred_lang":
+                if not (fill_gaps_only and profile.preferred_lang):
+                    profile.preferred_lang = value
                 continue
             if target in CIVIL_COLUMNS:
                 if fill_gaps_only and not _is_empty(getattr(profile, target, None)):

@@ -62,8 +62,12 @@ PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
     },
 }
 
-# F5 (fiches société) : la MÊME taxonomie, nommée dès maintenant.
-COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = PROFILE_SECTIONS
+# Fiches société : la taxonomie à QUATRE sections — id_documents
+# fusionne dans l'identité légale (un numéro officiel de société EST
+# son identité).
+COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = {
+    k: v for k, v in PROFILE_SECTIONS.items() if k != "id_documents"
+}
 
 # V2b — le plan de valeurs SOCIÉTÉ sur la taxonomie : les presets
 # company du catalogue → leur section de fiche société. Les clés libres
@@ -73,9 +77,9 @@ COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "company_name": "identity",
     "legal_form": "identity",
     "registration_date": "identity",
-    # numéros officiels (audit import : les cibles de tout export réel)
-    "company_registration_number": "id_documents",  # Siret/EIK
-    "vat_number": "id_documents",
+    # numéros officiels — dans l'IDENTITÉ LÉGALE (fusion id_documents)
+    "company_registration_number": "identity",  # Siret/EIK
+    "vat_number": "identity",
     # contact
     "headquarters_address": "contact",
     "legal_representative_name": "contact",
@@ -131,7 +135,6 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "whatsapp": "contact",
     "website": "contact",  # audit catalogue : présence en ligne (TL + HubSpot)
     "linkedin_url": "contact",  # audit catalogue : le seul réseau métier
-    "preferred_language": "contact",
     "preferred_contact_channel": "contact",
     # id_documents — les numéros et titres officiels de la personne
     "passport_expiry": "id_documents",
@@ -165,7 +168,6 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "contract_type": "situation",
     "activity_status": "situation",
     "contract_start_date": "situation",
-    "housing_address": "situation",
     "housing_status": "situation",
     "tax_residence_country": "situation",
     "origin_country_tax_filing": "situation",

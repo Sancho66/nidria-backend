@@ -89,8 +89,31 @@ _LANGUAGE_FORMS: Final[dict[str, frozenset[str]]] = {
     "it": frozenset(
         {"it", "ita", "italien", "italian", "italiano", "italienisch", "итальянский", "olasz"}
     ),
+    "hu": frozenset(
+        {
+            "hu",
+            "hun",
+            "hongrois",
+            "hungarian",
+            "hungaro",
+            "ungarisch",
+            "ungherese",
+            "венгерский",
+            "magyar",
+        }
+    ),
     "other": frozenset({"other", "autre", "otro", "outro", "altro", "andere", "другой", "egyeb"}),
 }
+
+
+def normalize_language_code(raw: str) -> str | None:
+    """'FR' / 'Français' / 'magyar'… → le CODE produit (fr/en/es/ru/pt/
+    it/hu) pour LA COLONNE preferred_lang — None si hors produit."""
+    n = _norm(raw)
+    identity = next((k for k, forms in _LANGUAGE_FORMS.items() if n in forms), None)
+    if identity in ("fr", "en", "es", "ru", "pt", "it", "hu"):
+        return identity
+    return None
 
 
 def normalize_language_value(raw: str, options: list[str] | None) -> str:

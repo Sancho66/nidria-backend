@@ -170,7 +170,7 @@ async def suggest_client_profiles_mapping(
         | {d.key for d in person_defs}
         | set(PRESET_PROFILE_SECTION)
         | {f"{b}.{sub}" for b in address_bases for sub in ADDRESS_SUBFIELDS}
-        | {"tags"}
+        | {"tags", "preferred_lang"}
     )
     dynamic = {normalize_header(d.key): d.key for d in person_defs}
     dynamic.update({normalize_header(d.label): d.key for d in person_defs if d.label})

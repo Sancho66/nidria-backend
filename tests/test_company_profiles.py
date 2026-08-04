@@ -40,8 +40,11 @@ async def test_company_crud_soft_dedup_and_sections(
     # Le plan de valeurs sur la taxonomie posée : les presets company
     # mappés (legal_form → identity), une clé libre → misc, 5 sections.
     by_key = {s["key"]: s["references"] for s in company["sections"]}
+    # L'invariant d'exhaustivité re-vérifié : QUATRE sections société
+    # (id_documents a fusionné dans l'identité légale).
+    assert [x["key"] for x in company["sections"]] == ["identity", "contact", "situation", "misc"]
     assert "legal_form" in by_key["identity"]
-    assert "company_registration_number" in by_key["id_documents"]
+    assert "company_registration_number" in by_key["identity"]  # 4 sections
     r = await client.patch(
         f"/company-profiles/{company_id}",
         headers=headers,

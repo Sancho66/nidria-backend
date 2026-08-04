@@ -143,11 +143,13 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "postal code": "residence_address.postal_code",
     "zip": "residence_address.postal_code",
     "zip code": "residence_address.postal_code",
+    # la LANGUE vise LA COLONNE fiche (dédoublonnage — le preset est
+    # mort : la colonne pilote notifications et hero, seule vérité)
+    "langue": "preferred_lang",
+    "language": "preferred_lang",
+    "langue preferee": "preferred_lang",
+    "preferred language": "preferred_lang",
     # défs person courantes (suggérées si la déf existe chez l'agence)
-    "langue": "preferred_language",
-    "language": "preferred_language",
-    "langue preferee": "preferred_language",
-    "preferred language": "preferred_language",
     "whatsapp": "whatsapp",
     # présence en ligne (audit catalogue : TL « Site web » + HubSpot)
     "site web": "website",
