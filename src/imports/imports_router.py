@@ -9,9 +9,9 @@ case_manager hold it by default, viewer/member do not.
 """
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,12 +19,13 @@ from shared.models.agent import Agent
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
+from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.imports.case_import_manager import CaseImportManager
 from src.imports.case_import_schema import CaseImportRequest, ImportPreview, ImportReport
 from src.imports.imports_manager import ImportsManager
-from src.imports.imports_schema import CrmDetailResponse, CrmListResponse
+from src.imports.imports_schema import CrmDetailResponse, CrmListResponse, ImportTargetsResponse
 from src.imports.mapping_manager import MappingManager
 from src.imports.mapping_schema import MappingListResponse, MappingResponse, MappingUpsertRequest
 from src.imports.profile_import_manager import (
@@ -44,6 +45,7 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 
 BINDINGS = [
     RouteBinding("GET", "/imports/crms", Audience.AGENT, Permission.IMPORT_MANAGE),
+    RouteBinding("GET", "/imports/targets", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("GET", "/imports/crms/{slug}", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/cases", Audience.AGENT, Permission.IMPORT_MANAGE),
     RouteBinding("POST", "/imports/client-profiles", Audience.AGENT, Permission.IMPORT_MANAGE),
@@ -87,6 +89,34 @@ async def list_crms() -> CrmListResponse:
 @router.get("/crms/{slug}", response_model=CrmDetailResponse)
 async def get_crm(slug: str) -> CrmDetailResponse:
     return ImportsManager().get_crm(slug)
+
+
+# Le menu de cibles se relit à chaque montage du wizard et ne bouge qu'au
+# rythme des champs déclarés d'une agence : une demi-minute de cache
+# PRIVÉ absorbe les allers-retours de l'écran sans qu'un champ créé à
+# l'instant ait le temps de manquer à l'appel.
+TARGETS_CACHE_CONTROL = "private, max-age=30"
+
+
+@router.get("/targets", response_model=ImportTargetsResponse)
+async def list_import_targets(
+    agent: AgentDep,
+    db: DbDep,
+    lang: RequestLang,
+    response: Response,
+    entity: Annotated[Literal["person", "company"], Query()] = "person",
+) -> ImportTargetsResponse:
+    """L'UNIVERS DES CIBLES d'import de l'agence, complet et affichable.
+
+    Servi depuis `import_targets` — LA source que l'import valide et que
+    la config enregistre. Le front ne tient donc plus de miroir : chaque
+    cible arrive avec son libellé ×7 (`label_i18n`, la mécanique du fix
+    traductions), son type, sa section de la taxonomie fiche, et ses
+    flags : obligatoire, sous-champ de quelle base, preset non déclaré
+    (« sera ajouté »), clé baptisée par l'agence.
+    """
+    response.headers["Cache-Control"] = TARGETS_CACHE_CONTROL
+    return await ImportsManager(db).targets(agent.agency_id, entity, lang)
 
 
 @router.post("/cases", response_model=ImportReport)

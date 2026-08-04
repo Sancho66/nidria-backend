@@ -11379,6 +11379,59 @@
         }
       }
     },
+    "/imports/targets": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "List Import Targets",
+        "description": "L'UNIVERS DES CIBLES d'import de l'agence, complet et affichable.\n\nServi depuis `import_targets` — LA source que l'import valide et que\nla config enregistre. Le front ne tient donc plus de miroir : chaque\ncible arrive avec son libellé ×7 (`label_i18n`, la mécanique du fix\ntraductions), son type, sa section de la taxonomie fiche, et ses\nflags : obligatoire, sous-champ de quelle base, preset non déclaré\n(« sera ajouté »), clé baptisée par l'agence.",
+        "operationId": "list_import_targets_imports_targets_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "person",
+                "company"
+              ],
+              "type": "string",
+              "default": "person",
+              "title": "Entity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportTargetsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/imports/cases": {
       "post": {
         "tags": [
@@ -26456,6 +26509,16 @@
             },
             "type": "object",
             "title": "Ignore Reasons"
+          },
+          "create_with_email": {
+            "type": "integer",
+            "title": "Create With Email",
+            "default": 0
+          },
+          "create_without_email": {
+            "type": "integer",
+            "title": "Create Without Email",
+            "default": 0
           }
         },
         "type": "object",
@@ -26629,6 +26692,139 @@
         ],
         "title": "ImportStepIgnored",
         "description": "One step rejected by validation (partial import) with the exact\nreason, front-renderable via the code catalog."
+      },
+      "ImportTarget": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "label_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Label I18N"
+          },
+          "field_type": {
+            "type": "string",
+            "title": "Field Type"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "address_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Base"
+          },
+          "address_subfield": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Subfield"
+          },
+          "will_create": {
+            "type": "boolean",
+            "title": "Will Create"
+          },
+          "agency_named": {
+            "type": "boolean",
+            "title": "Agency Named"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "label_i18n",
+          "field_type",
+          "section",
+          "required",
+          "address_base",
+          "address_subfield",
+          "will_create",
+          "agency_named"
+        ],
+        "title": "ImportTarget",
+        "description": "UNE cible d'import — exactement ce que le combobox doit afficher."
+      },
+      "ImportTargetSection": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "label_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Label I18N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "label_i18n"
+        ],
+        "title": "ImportTargetSection",
+        "description": "Une section de la taxonomie fiche — l'en-tête d'un groupe du menu."
+      },
+      "ImportTargetsResponse": {
+        "properties": {
+          "entity": {
+            "type": "string",
+            "title": "Entity"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/ImportTargetSection"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ImportTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity",
+          "sections",
+          "targets"
+        ],
+        "title": "ImportTargetsResponse",
+        "description": "L'UNIVERS COMPLET des cibles d'une agence, pour une entité.\n\nServi depuis la MÊME source que la validation d'import et que\nl'enregistrement de config (`import_targets`) : ce qui est offert ici\nest accepté là-bas, sans recopie possible entre les deux."
       },
       "ImportWarningItem": {
         "properties": {
@@ -30751,6 +30947,21 @@
             },
             "type": "array",
             "title": "Ignored"
+          },
+          "created_with_email": {
+            "type": "integer",
+            "title": "Created With Email",
+            "default": 0
+          },
+          "created_without_email": {
+            "type": "integer",
+            "title": "Created Without Email",
+            "default": 0
+          },
+          "values_salvaged": {
+            "type": "integer",
+            "title": "Values Salvaged",
+            "default": 0
           },
           "tags_applied": {
             "type": "integer",
