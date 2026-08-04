@@ -141,7 +141,10 @@ async def suggest_client_profiles_mapping(
     fuzzy prudent en dernier recours."""
     from src.client_profiles.backfill import CIVIL_COLUMNS
     from src.client_profiles.client_profiles_manager import person_scope_definitions
-    from src.client_profiles.profile_sections import PRESET_PROFILE_SECTION
+    from src.client_profiles.profile_sections import (
+        PERSON_SHEET_EXCLUDED_KEYS,
+        PRESET_PROFILE_SECTION,
+    )
     from src.imports.header_aliases import (
         PERSON_ALIASES,
         PERSON_AMBIGUOUS,
@@ -154,6 +157,10 @@ async def suggest_client_profiles_mapping(
     from src.journeys.field_catalog import FIELD_PRESETS
 
     person_defs = await person_scope_definitions(db, agent.agency_id)
+    # Univers société hors fiche personne (demande design A) : les clés
+    # écartées ne sont ni cible ni vocabulaire — même déclarées.
+    person_defs = [d for d in person_defs if d.key not in PERSON_SHEET_EXCLUDED_KEYS]
+    person_preset_keys = set(PRESET_PROFILE_SECTION) - PERSON_SHEET_EXCLUDED_KEYS
     # LOT PLAFOND : le catalogue ENTIER est cible (un preset non déclaré
     # se déclare à l'import) — le vocabulaire dynamique porte les clés et
     # TOUS les labels i18n des presets person + les défs de l'agence.
@@ -161,20 +168,20 @@ async def suggest_client_profiles_mapping(
 
     address_bases = {d.key for d in person_defs if d.field_type == "address"} | {
         k
-        for k in PRESET_PROFILE_SECTION
+        for k in person_preset_keys
         if FIELD_PRESETS.get(k) is not None and FIELD_PRESETS[k].field_type == "address"
     }
     valid = (
         set(IDENTITY_TARGETS)
         | set(CIVIL_COLUMNS)
         | {d.key for d in person_defs}
-        | set(PRESET_PROFILE_SECTION)
+        | person_preset_keys
         | {f"{b}.{sub}" for b in address_bases for sub in ADDRESS_SUBFIELDS}
         | {"tags", "preferred_lang"}
     )
     dynamic = {normalize_header(d.key): d.key for d in person_defs}
     dynamic.update({normalize_header(d.label): d.key for d in person_defs if d.label})
-    for key in PRESET_PROFILE_SECTION:
+    for key in person_preset_keys:
         preset = FIELD_PRESETS.get(key)
         if preset is None:
             continue

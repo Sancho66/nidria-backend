@@ -198,15 +198,20 @@ class ProfileImportManager:
         parsed = parse_upload(body.filename, content)
 
         person_defs = await person_scope_definitions(self.db, agent.agency_id)
-        defs_by_key = {d.key: d for d in person_defs}
         # LOT PLAFOND : les cibles = LE CATALOGUE ENTIER (presets person)
         # + les customs déclarés. Un preset non déclaré est coercé par sa
         # définition de catalogue (pseudo-déf) ; sa DÉCLARATION réelle
         # n'arrive qu'à l'import (jamais au preview — zéro écriture).
-        from src.client_profiles.profile_sections import PRESET_PROFILE_SECTION
+        # Univers société hors fiche personne (demande design A) : les
+        # clés écartées ne sont plus des cibles — même déclarées.
+        from src.client_profiles.profile_sections import (
+            PERSON_SHEET_EXCLUDED_KEYS,
+            PRESET_PROFILE_SECTION,
+        )
         from src.journeys.field_catalog import FIELD_PRESETS
 
-        preset_person_keys = set(PRESET_PROFILE_SECTION)
+        defs_by_key = {d.key: d for d in person_defs if d.key not in PERSON_SHEET_EXCLUDED_KEYS}
+        preset_person_keys = set(PRESET_PROFILE_SECTION) - PERSON_SHEET_EXCLUDED_KEYS
         # Composition d'adresse : les bases typées address acceptent le
         # mapping PAR SOUS-CHAMP (base.street|city|postal_code|country) EN
         # PLUS du texte intégral — les deux modes exclusifs par base.

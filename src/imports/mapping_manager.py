@@ -94,9 +94,12 @@ class MappingManager:
             # (identité + civils + custom scope='person'), le vocabulaire de
             # l'import-fiches.
             from src.client_profiles.backfill import CIVIL_COLUMNS
+            from src.client_profiles.profile_sections import PERSON_SHEET_EXCLUDED_KEYS
             from src.imports.profile_import_manager import IDENTITY_TARGETS
 
-            person_keys = {d.key for d in definitions if d.scope == "person"}
+            person_keys = {
+                d.key for d in definitions if d.scope == "person"
+            } - PERSON_SHEET_EXCLUDED_KEYS
             valid = set(IDENTITY_TARGETS) | set(CIVIL_COLUMNS) | person_keys
             bad = sorted(set(payload.mapping.values()) - valid)
             if bad:

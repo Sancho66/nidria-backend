@@ -91,6 +91,27 @@ COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
 # « suggérable = coerçable » — échec de cellule = issue + trou, jamais 500).
 COMPANY_NUMBER_TARGETS: Final[tuple[str, ...]] = ("employee_count", "share_capital")
 
+# Demande design A (03/08) : l'univers SOCIÉTÉ quitte la fiche PERSONNE.
+# Ces presets restent des champs de COLLECTE dossier (la section
+# « Création de société » des parcours — 33 déclarations en prod) et
+# vivent sur la fiche SOCIÉTÉ (COMPANY_PRESET_PROFILE_SECTION) ; la
+# fiche personne ne les sert plus : sections, complétude, divergences,
+# cibles et suggestions d'import personne. Constat prod 03/08 : chaque
+# valeur fiche de ces clés est le miroir exact d'une valeur dossier —
+# rien ne devient invisible qui ne soit déjà servi par la collecte.
+PERSON_SHEET_EXCLUDED_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "company_name",
+        "legal_form",
+        "share_capital",
+        "company_registration_number",
+        "registration_date",
+        "headquarters_address",
+        "legal_representative_name",
+        "partners_count",
+    }
+)
+
 # Alias d'import acceptés → clé canonique (compat : une seule vérité par
 # concept ; `registration_number` demandé = `company_registration_number`).
 COMPANY_TARGET_ALIASES: Final[dict[str, str]] = {
@@ -171,6 +192,8 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "children_count": "situation",
     "dependents": "situation",
     "matrimonial_regime": "situation",
+    # thème company : matérialisés scope person POUR LA COLLECTE dossier,
+    # mais ÉCARTÉS de la fiche personne (PERSON_SHEET_EXCLUDED_KEYS).
     "company_name": "situation",
     "legal_form": "situation",
     "share_capital": "situation",

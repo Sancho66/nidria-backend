@@ -77,6 +77,11 @@ PERSON_EXCLUDED: Final[frozenset[str]] = frozenset(
         "State/Region",
         "Number of employees",  # donnée SOCIÉTÉ enrichie sur la fiche personne
         "Annual revenue",
+        # demande design A (03/08) : l'univers société a quitté la fiche
+        # personne — le Siret d'un CONTACT suit la même règle que Number
+        # of employees (donnée société, l'import sociétés la porte).
+        "Numéro d'identification national (SIRET)",
+        "Siret",
     )
 )
 
@@ -198,8 +203,8 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "numero de tva du contact": "tax_id",  # la TVA d'un contact = son NIF
     "vat": "tax_id",
     "vat number": "tax_id",
-    "numero d identification national siret": "company_registration_number",
-    "siret": "company_registration_number",  # la société DU CLIENT (pack person)
+    # (re-verdict 03/08 : Siret contact = donnée société — l'univers
+    # société a quitté la fiche personne, l'alias part en exclusion)
     # fiche
     "tags": "tags",
     "etiquettes": "tags",

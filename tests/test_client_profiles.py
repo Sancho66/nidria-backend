@@ -1003,6 +1003,66 @@ async def test_every_person_field_has_exactly_one_profile_section(
     assert len(served) == len(set(served))
 
 
+async def test_company_theme_leaves_the_person_sheet(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Demande design A (03/08) — l'univers SOCIÉTÉ quitte la fiche
+    PERSONNE : une déf déclarée company_name (scope person, section
+    situation — l'état prod exact) n'est servie NI en sections NI en
+    complétude ; sa valeur de sack reste au payload (la collecte dossier
+    la sert toujours — rien de perdu) ; le PATCH la refuse en 422 nommé."""
+    headers = agent_headers(admin)
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="company_name",
+            label="Raison sociale",
+            field_type="text",
+            scope="person",
+            profile_section="situation",
+        )
+    )
+    await db_session.commit()
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={
+            "first_name": "Univers",
+            "last_name": "Societe",
+            "email": "univers-societe@example.com",
+        },
+    )
+    assert r.status_code == 201, r.text
+    profile_id = r.json()["id"]
+    # La valeur existe déjà au sack (l'état prod : héritée de la collecte).
+    await db_session.execute(
+        text(
+            "UPDATE client_profile SET custom_fields = "
+            "jsonb_build_object('company_name', 'Volkov Tech EOOD') WHERE id = CAST(:pid AS uuid)"
+        ),
+        {"pid": profile_id},
+    )
+    await db_session.commit()
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    served = [ref for s in detail["sections"] for ref in s["references"]]
+    assert "company_name" not in served
+    completeness = detail["completeness"]
+    assert "company_name" not in completeness["filled"] + completeness["missing"]
+    # Rien de perdu : la valeur reste au payload, la collecte la sert.
+    assert detail["custom_fields"]["company_name"] == "Volkov Tech EOOD"
+    # La fiche n'est plus une face d'ÉCRITURE pour ces clés.
+    r = await client.patch(
+        f"/client-profiles/{profile_id}",
+        headers=headers,
+        json={"custom_fields": {"company_name": "Autre SARL"}},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "profile.reference_not_person_scope"
+
+
 async def test_id_documents_merge_repoints_definitions(
     client: AsyncClient,
     db_session: AsyncSession,

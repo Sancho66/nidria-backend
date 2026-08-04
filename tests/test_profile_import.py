@@ -752,10 +752,8 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
         "Fonction": "profession",
         "Tags": "tags",
     }
-    # Lot plafond : TVA contact → tax_id, Siret → company_registration_number
-    # (presets du catalogue, déclarés à la volée à l'import).
+    # Lot plafond : TVA contact → tax_id (le NIF de la personne).
     expected_person["Numéro de TVA du contact"] = "tax_id"
-    expected_person["Numéro d'identification national (Siret)"] = "company_registration_number"
     # Audit catalogue : le NON de « Site web » est renversé — preset website.
     expected_person["Site web"] = "website"
     hit = {h: t for h, t in expected_person.items() if person.get(h) == t}
@@ -770,6 +768,11 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
     ]
     # Mobile silencieux (Téléphone direct présent).
     assert "Mobile" not in person
+    # Re-verdict 03/08 (demande design A) : le Siret d'un CONTACT est une
+    # donnée société — l'univers société a quitté la fiche personne, la
+    # colonne n'est plus suggérée (l'import sociétés la porte toujours).
+    assert "Numéro d'identification national (Siret)" not in person
+    assert "Numéro d'identification national (Siret)" not in r.json()["ambiguous"]
 
     r = await client.post(
         "/imports/company-profiles/suggest-mapping",
@@ -1652,3 +1655,47 @@ async def test_referential_dedup_migrates_the_three_cases(
     await db_session.commit()
     assert stats2["client_profile_address_values_moved"] == 0
     assert stats2["language_values_moved_from_fiche_sack"] == 0
+
+
+async def test_company_theme_not_a_person_import_target(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Demande design A (03/08) — l'univers société a quitté la fiche
+    personne : ses clés ne sont plus des cibles d'import PERSONNE (422
+    nommé, même DÉCLARÉES chez l'agence), et le suggéreur ne les propose
+    plus (jamais une combinaison que l'import rejette)."""
+    headers = agent_headers(admin)
+    db_session.add(
+        CustomFieldDefinition(
+            agency_id=admin.agency_id,
+            key="legal_form",
+            label="Forme juridique",
+            field_type="text",
+            scope="person",
+            profile_section="situation",
+        )
+    )
+    await db_session.commit()
+    r = await client.post(
+        "/imports/client-profiles/preview",
+        headers=headers,
+        json={
+            "csv_text": "Email,Forme\na@example.com,SARL\n",
+            "mapping": {"Email": "email", "Forme": "legal_form"},
+        },
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "import.unknown_targets"
+    # La déf déclarée « Forme juridique » reste muette côté personne —
+    # ni suggestion directe, ni vocabulaire dynamique.
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Forme juridique", "Adresse e-mail"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["suggestions"] == {"Adresse e-mail": "email"}
+    assert "Forme juridique" in r.json()["unmatched"]

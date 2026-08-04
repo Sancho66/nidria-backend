@@ -73,8 +73,14 @@ def completeness(
     profile: ClientProfile, person_defs: list[CustomFieldDefinition]
 ) -> ProfileCompletenessResponse:
     """F2.4 — la requête unique de la Phase 0 : les colonnes + le sac,
-    croisés aux définitions actives scope='person'."""
-    references = sorted(COLLECTABLE_BASE_FIELDS) + [d.key for d in person_defs]
+    croisés aux définitions actives scope='person'. L'univers société
+    (PERSON_SHEET_EXCLUDED_KEYS) ne compte ni en rempli ni en manquant :
+    la fiche ne le sert plus."""
+    from src.client_profiles.profile_sections import PERSON_SHEET_EXCLUDED_KEYS
+
+    references = sorted(COLLECTABLE_BASE_FIELDS) + [
+        d.key for d in person_defs if d.key not in PERSON_SHEET_EXCLUDED_KEYS
+    ]
     filled = [r for r in references if not _is_empty(profile_field_value(profile, r))]
     missing = [r for r in references if _is_empty(profile_field_value(profile, r))]
     return ProfileCompletenessResponse(filled=filled, missing=missing)
@@ -94,6 +100,7 @@ def resolve_field_sections(
     from src.client_profiles.profile_sections import (
         CIVIL_PROFILE_SECTION,
         IDENTITY_SECTION_ORDER,
+        PERSON_SHEET_EXCLUDED_KEYS,
         PROFILE_SECTIONS,
     )
 
@@ -101,6 +108,8 @@ def resolve_field_sections(
     for reference in sorted(COLLECTABLE_BASE_FIELDS):
         buckets[CIVIL_PROFILE_SECTION[reference]].append(reference)
     for definition in person_defs:
+        if definition.key in PERSON_SHEET_EXCLUDED_KEYS:
+            continue  # univers société : la collecte dossier le sert, pas la fiche
         section = getattr(definition, "profile_section", None) or "misc"
         buckets.get(section, buckets["misc"]).append(definition.key)
     rank = {key: index for index, key in enumerate(IDENTITY_SECTION_ORDER)}
@@ -121,9 +130,14 @@ def profile_divergences(
     """F2.2 — le verdict Phase 0 : la divergence est une comparaison
     directe fiche↔dossier à la lecture. Une référence diverge quand LES
     DEUX côtés portent une valeur ET qu'elles diffèrent (un côté vide =
-    promouvable/reprennable, pas une divergence)."""
+    promouvable/reprennable, pas une divergence). L'univers société ne
+    diverge jamais : la fiche n'est plus une face pour ces clés."""
+    from src.client_profiles.profile_sections import PERSON_SHEET_EXCLUDED_KEYS
+
     out: list[str] = []
-    for reference in sorted(COLLECTABLE_BASE_FIELDS) + person_custom_keys:
+    for reference in sorted(COLLECTABLE_BASE_FIELDS) + [
+        k for k in person_custom_keys if k not in PERSON_SHEET_EXCLUDED_KEYS
+    ]:
         case_value = (
             getattr(person, reference, None)
             if reference in COLLECTABLE_BASE_FIELDS
@@ -462,10 +476,13 @@ class ClientProfilesManager:
                 continue
             setattr(profile, field, value.value if hasattr(value, "value") else value)
         if payload.custom_fields:
+            from src.client_profiles.profile_sections import PERSON_SHEET_EXCLUDED_KEYS
+
             all_defs = await CustomFieldsRepository(self.db).list_for_agency(agent.agency_id)
             active = [d for d in all_defs if d.archived_at is None]
-            case_scope_keys = {d.key for d in active if d.scope != "person"}
-            offending = sorted(set(payload.custom_fields) & case_scope_keys)
+            # Univers société : plus une référence de fiche personne.
+            refused = {d.key for d in active if d.scope != "person"} | PERSON_SHEET_EXCLUDED_KEYS
+            offending = sorted(set(payload.custom_fields) & refused)
             if offending:
                 raise ValidationError(
                     f"{offending[0]!r} is not a person-scoped field.",
@@ -544,10 +561,13 @@ class ClientProfilesManager:
             profile.status_override = provided["status_override"]
             touched.append("status_override")
         if "custom_fields" in provided and payload.custom_fields is not None:
+            from src.client_profiles.profile_sections import PERSON_SHEET_EXCLUDED_KEYS
+
             all_defs = await CustomFieldsRepository(self.db).list_for_agency(agent.agency_id)
             active = [d for d in all_defs if d.archived_at is None]
-            case_scope_keys = {d.key for d in active if d.scope != "person"}
-            offending = sorted(set(payload.custom_fields) & case_scope_keys)
+            # Univers société : plus une référence de fiche personne.
+            refused = {d.key for d in active if d.scope != "person"} | PERSON_SHEET_EXCLUDED_KEYS
+            offending = sorted(set(payload.custom_fields) & refused)
             if offending:
                 raise ValidationError(
                     f"{offending[0]!r} is not a person-scoped field.",
