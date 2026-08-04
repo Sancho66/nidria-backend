@@ -15,6 +15,7 @@ Une cible n'est suggérée qu'UNE fois (la première colonne gagne)."""
 
 import difflib
 import unicodedata
+from collections.abc import Mapping
 from typing import Final
 
 
@@ -224,16 +225,20 @@ PERSON_AMBIGUOUS: Final[dict[str, list[str]]] = {
 }
 
 # Replis : suggérés SEULEMENT si la cible n'a pas déjà de colonne directe.
-PERSON_FALLBACK_ALIASES: Final[dict[str, str]] = {
-    "mobile": "phone",
-    "cell": "phone",
-    "cell phone": "phone",
-    "portable": "phone",
-    "gsm": "phone",
-    "mobile phone": "phone",
-    "mobile phone number": "phone",
-    "telephone portable": "phone",
-    "telephone mobile": "phone",
+# Une valeur TUPLE est une CHAÎNE de replis, essayée dans l'ordre — le
+# mobile a désormais un second cran (`secondary_phone`) au lieu du vide
+# quand une colonne Téléphone tient déjà `phone` (correctif import a :
+# 235 contacts sans numéro sur le fichier Teamleader réel).
+PERSON_FALLBACK_ALIASES: Final[dict[str, str | tuple[str, ...]]] = {
+    "mobile": ("phone", "secondary_phone"),
+    "cell": ("phone", "secondary_phone"),
+    "cell phone": ("phone", "secondary_phone"),
+    "portable": ("phone", "secondary_phone"),
+    "gsm": ("phone", "secondary_phone"),
+    "mobile phone": ("phone", "secondary_phone"),
+    "mobile phone number": ("phone", "secondary_phone"),
+    "telephone portable": ("phone", "secondary_phone"),
+    "telephone mobile": ("phone", "secondary_phone"),
     # civilité : REPLI — si une colonne Genre directe existe, elle gagne
     # (le normaliseur de valeurs traite M./Mme/Mr).
     "civilite": "sex",
@@ -400,7 +405,7 @@ def suggest_mapping(
     valid_targets: set[str],
     *,
     aliases: dict[str, str],
-    fallback_aliases: dict[str, str],
+    fallback_aliases: Mapping[str, str | tuple[str, ...]],
     excluded: frozenset[str],
     extra_keys: dict[str, str] | None = None,
     ambiguous: dict[str, list[str]] | None = None,
@@ -412,14 +417,16 @@ def suggest_mapping(
     colonnes convergentes vers le même street — le numéro n'est suggéré
     que si une colonne rue a pris la cible, jamais seul.
     `extra_keys` : alias dynamiques (clé normalisée → cible), typiquement
-    les clés/labels des défs d'agence."""
+    les clés/labels des défs d'agence.
+    Un repli peut être une CHAÎNE de cibles (tuple) : on descend les crans
+    jusqu'au premier libre — Mobile→phone, puis →secondary_phone."""
     suggestions: dict[str, str] = {}
     offered: dict[str, list[str]] = {}
     unmatched: list[str] = []
     taken: set[str] = set()
     dynamic = extra_keys or {}
     ambiguous_map = ambiguous or {}
-    fallback_pending: list[tuple[str, str]] = []
+    fallback_pending: list[tuple[str, tuple[str, ...]]] = []
     pair_pending: list[str] = []
 
     for header in headers:
@@ -439,7 +446,8 @@ def suggest_mapping(
             continue
         target = aliases.get(n) or dynamic.get(n)
         if target is None and n in fallback_aliases:
-            fallback_pending.append((header, fallback_aliases[n]))
+            chain = fallback_aliases[n]
+            fallback_pending.append((header, (chain,) if isinstance(chain, str) else chain))
             continue
         if target is None:
             # FUZZY prudent, dernier recours : proche d'un alias connu.
@@ -452,11 +460,14 @@ def suggest_mapping(
         else:
             unmatched.append(header)
 
-    # Replis : seulement si la cible est restée libre (Mobile→phone).
-    for header, target in fallback_pending:
-        if target in valid_targets and target not in taken:
-            suggestions[header] = target
-            taken.add(target)
+    # Replis : seulement si la cible est restée libre (Mobile→phone), et
+    # cran par cran quand le repli est une chaîne (→secondary_phone).
+    for header, chain in fallback_pending:
+        for target in chain:
+            if target in valid_targets and target not in taken:
+                suggestions[header] = target
+                taken.add(target)
+                break
         else:
             unmatched.append(header)
     # Le couple : le numéro rejoint le street déjà pris par la rue.
@@ -464,5 +475,36 @@ def suggest_mapping(
         if street_pair_target in taken:
             suggestions[header] = str(street_pair_target)
         else:
+            unmatched.append(header)
+
+    # LES DEUX MODES D'ADRESSE NE COHABITENT PAS — et c'est LE SUGGÉREUR
+    # qui tranche. L'import refuse une base mappée à la fois en texte
+    # intégral et par sous-champs (422 `import.address_mode_conflict`) ;
+    # proposer les deux, c'est proposer une charge qui ne passe pas — le
+    # cas EXACT des 42 en-têtes Teamleader (Rue/CP/Ville + « adresse
+    # postale »), où tout import de la suggestion brute échouait.
+    # LES MORCEAUX GAGNENT (plus fins que le texte collé) : la colonne
+    # texte repart en `unmatched`, sa cible redevient LIBRE — l'agence
+    # peut basculer sur le mode intégral à la main si elle préfère.
+    # Post-passe, donc indépendante de l'ordre des colonnes du fichier.
+    composed_bases = {t.split(".", 1)[0] for t in suggestions.values() if "." in t}
+    for header in [h for h, t in suggestions.items() if t in composed_bases]:
+        taken.discard(suggestions.pop(header))
+        unmatched.append(header)
+    # Même règle sur les cibles PROPOSÉES au choix (l'ambiguïté « Pays ») :
+    # une option qui heurterait le mode déjà suggéré n'est pas offerte —
+    # sinon l'agence assemble elle-même le 422 depuis notre propre menu.
+    address_bases = {t.split(".", 1)[0] for t in valid_targets if "." in t}
+    text_bases = {t for t in suggestions.values() if t in address_bases}
+    for header in list(offered):
+        options = [
+            t
+            for t in offered[header]
+            if not ("." in t and t.split(".", 1)[0] in text_bases) and t not in composed_bases
+        ]
+        if options:
+            offered[header] = options
+        else:
+            del offered[header]
             unmatched.append(header)
     return suggestions, offered, unmatched

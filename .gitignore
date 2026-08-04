@@ -39,3 +39,5 @@ htmlcov/
 # OS
 .DS_Store
 rapport.md
+# Règle rapport v2 : un fichier par session + les archives mensuelles.
+rapport-*.md

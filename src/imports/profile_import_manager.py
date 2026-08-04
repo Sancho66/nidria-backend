@@ -9,11 +9,22 @@ qu'elle a décidé. Même fichier → verdicts IDENTIQUES, prouvé par test.
 
 LA RÈGLE ABSOLUE (debug Teamleader 03/08) : une cellule mauvaise = trou
 laissé (issue rapportée), une ligne mauvaise = ignorée avec raison, le
-batch ne meurt JAMAIS sur une donnée utilisateur."""
+batch ne meurt JAMAIS sur une donnée utilisateur.
+
+L'EMAIL N'EST PAS OBLIGATOIRE (parité avec la création manuelle, où il
+l'est déjà) : une ligne SANS email mais AVEC identité est CRÉÉE — le
+motif `no_email` est mort. Sans nom NI email il ne reste rien à créer :
+`missing_identity`. La DÉDUP suit la même frontière — email présent, la
+clé d'email (base + intra-batch) ; email absent, l'identité normalisée
+DANS LE BATCH SEULEMENT, jamais contre la base (deux homonymes d'une
+agence peuvent être deux personnes réelles). Le filet est en aval : une
+fiche sans email refuse la création de démarche (422 profile.no_email)
+tant qu'un email n'est pas posé au PATCH."""
 
 import base64
+import unicodedata
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
@@ -32,23 +43,31 @@ from src.imports.csv_reader import parse_upload
 from src.imports.import_targets import IDENTITY_TARGETS
 
 
+class StreetPair(NamedTuple):
+    """Le couple assemblé : les colonnes DANS l'ordre « {numéro} {rue} »,
+    et celles reconnues comme portant le NUMÉRO (par leur en-tête)."""
+
+    columns: list[str]
+    number_columns: frozenset[str]
+
+
 def _resolve_street_pairs(
     mapping: dict[str, str], dotted_targets: set[str]
-) -> dict[str, list[str]]:
+) -> dict[str, StreetPair]:
     """LE COUPLE rue + numéro — l'exception déclarée à l'anti-concaténation.
     DEUX colonnes max vers un <base>.street, rien d'autre : hors street un
     sous-champ = UNE colonne, au-delà de deux = 422 (l'exception est un
     couple, pas une invitation au collage libre). L'assemblage suit l'ordre
     fixe « {numéro} {rue} » (dominante FR/BE/BG des fichiers réels — pas de
     logique par pays en V1) ; le numéro se reconnaît à son en-tête, sinon
-    l'ordre du mapping fait foi. Retourne {cible: [colonnes ordonnées]}."""
+    l'ordre du mapping fait foi."""
     from src.imports.header_aliases import STREET_NUMBER_HEADERS, normalize_header
 
     by_target: dict[str, list[str]] = {}
     for column, target in mapping.items():
         if target in dotted_targets:
             by_target.setdefault(target, []).append(column)
-    pairs: dict[str, list[str]] = {}
+    pairs: dict[str, StreetPair] = {}
     for target, columns in by_target.items():
         if len(columns) == 1:
             continue
@@ -64,12 +83,76 @@ def _resolve_street_pairs(
             normalize_header(first) not in STREET_NUMBER_HEADERS
         ):
             columns = [second, first]
-        pairs[target] = columns
+        pairs[target] = StreetPair(
+            columns=columns,
+            number_columns=frozenset(
+                c for c in columns if normalize_header(c) in STREET_NUMBER_HEADERS
+            ),
+        )
     return pairs
+
+
+def _assemble_street_pair(pair: StreetPair, row: dict[str, str]) -> tuple[str | None, bool]:
+    """Assemble « {numéro} {rue} » pour UNE ligne → (valeur, numéro orphelin).
+
+    LA GARDE LIGNE À LIGNE (correctif b) : la garde « jamais un numéro
+    seul » vivait au niveau COLONNE (le numéro n'est jamais suggéré sans
+    une colonne rue en face) — pas au niveau LIGNE. Une ligne où seul le
+    numéro était rempli produisait `street="11"`. Un numéro sans rue SUR LA
+    LIGNE est désormais un trou motivé (issue), jamais un street."""
+    cells = {c: (row.get(c) or "").strip() for c in pair.columns}
+    named = [c for c in pair.columns if c not in pair.number_columns]
+    if named and not any(cells[c] for c in named):
+        # Aucune colonne « nom de rue » remplie : le numéro seul ne fait
+        # pas une adresse — orphelin dès qu'il porte quelque chose.
+        return None, any(cells[c] for c in pair.number_columns)
+    joined = " ".join(cells[c] for c in pair.columns if cells[c])
+    return (joined or None), False
+
+
+def _name_dedup_key(first: str | None, last: str | None) -> tuple[str, str] | None:
+    """LA CLÉ DE DÉDUP SANS EMAIL : prénom + nom normalisés (accents ôtés,
+    casse et espaces indifférents). INTRA-BATCH SEULEMENT — jamais contre
+    la base : deux « Jean Martin » d'une agence peuvent être deux personnes
+    réelles, on ne fusionne pas des homonymes en silence. Dans un MÊME
+    fichier, deux lignes d'identité identique sans email sont la même
+    personne exportée deux fois."""
+
+    def norm(value: str | None) -> str:
+        s = unicodedata.normalize("NFKD", value or "")
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        return " ".join(s.lower().split())
+
+    first_n, last_n = norm(first), norm(last)
+    return (first_n, last_n) if first_n and last_n else None
 
 
 def _is_empty(value: Any) -> bool:
     return value in (None, "", [], {})
+
+
+def _merge_gap(existing: Any, incoming: Any) -> Any | None:
+    """LE FILL-GAP DESCEND AU SOUS-CHAMP → la valeur à poser, ou None si
+    rien ne change.
+
+    Une adresse est un OBJET `{street, city, postal_code, country}`.
+    Comparer l'objet ENTIER (« non vide, on ne touche pas ») laissait un
+    `{country: "FR"}` bloquer l'arrivée de la rue et de la ville : l'ordre
+    des passes d'import devenait signifiant, et personne ne peut deviner
+    que « le sous-champ le plus pauvre doit passer en dernier ».
+
+    Au sous-champ, la règle s'efface : chaque sous-champ VIDE se remplit,
+    chaque sous-champ REMPLI est protégé. Un scalaire déjà posé garde le
+    comportement d'avant — l'existant gagne."""
+    if _is_empty(existing):
+        return incoming
+    if not (isinstance(existing, dict) and isinstance(incoming, dict)):
+        return None
+    merged = dict(existing)
+    for sub, sub_value in incoming.items():
+        if _is_empty(merged.get(sub)) and not _is_empty(sub_value):
+            merged[sub] = sub_value
+    return merged if merged != existing else None
 
 
 class ImportCorrection(BaseModel):
@@ -145,6 +228,15 @@ class ProfileImportReport(BaseModel):
     created: list[ProfileImportRowOutcome]
     linked: list[ProfileImportRowOutcome]
     ignored: list[ProfileImportRowOutcome]
+    # VENTILATION DES CRÉÉES (lot email optionnel) : l'agence sait tout de
+    # suite combien de fiches ne pourront PAS recevoir d'espace client —
+    # sans email, « Nouvelle démarche » répond 422 profile.no_email tant
+    # qu'un email n'est pas posé au PATCH.
+    created_with_email: int = 0
+    created_without_email: int = 0
+    # Correctif c : lignes ignorées dont les VALEURS ont tout de même été
+    # reportées (fill-only) sur la fiche sœur créée par une autre ligne.
+    values_salvaged: int = 0
     # Lot plafond : les lignes dont les tags ont été posés sur la fiche.
     tags_applied: int = 0
     # Lot grille : les champs NÉS de cet import (labels).
@@ -156,6 +248,10 @@ class ImportPreviewSummary(BaseModel):
     link: int
     ignore: int
     ignore_reasons: dict[str, int]
+    # Le dry-run annonce la même ventilation que le rapport réel
+    # (preview == import, l'invariant structurel).
+    create_with_email: int = 0
+    create_without_email: int = 0
 
 
 class ProfileImportPreviewResponse(BaseModel):
@@ -174,11 +270,14 @@ def _summarize(verdicts: list[RowVerdict]) -> ImportPreviewSummary:
     for v in verdicts:
         if v.status == "ignore" and v.reason:
             reasons[v.reason] = reasons.get(v.reason, 0) + 1
+    creates = [v for v in verdicts if v.status == "create"]
     return ImportPreviewSummary(
-        create=sum(1 for v in verdicts if v.status == "create"),
+        create=len(creates),
         link=sum(1 for v in verdicts if v.status == "link"),
         ignore=sum(1 for v in verdicts if v.status == "ignore"),
         ignore_reasons=reasons,
+        create_with_email=sum(1 for v in creates if v.person.get("email")),
+        create_without_email=sum(1 for v in creates if not v.person.get("email")),
     )
 
 
@@ -285,7 +384,7 @@ class ProfileImportManager:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
         columns_by_target = {t: c for c, t in body.mapping.items()}
         columns_by_target.update({key: col for col, (key, _l, _k, _c) in creation_plan.items()})
-        columns_by_target.update({t: " + ".join(cols) for t, cols in street_pairs.items()})
+        columns_by_target.update({t: " + ".join(p.columns) for t, p in street_pairs.items()})
 
         from src.cases.cases_schema import PersonUpdateRequest
         from src.core.enums import CustomFieldType
@@ -317,6 +416,8 @@ class ProfileImportManager:
 
         verdicts: list[RowVerdict] = []
         seen_emails: dict[str, int] = {}
+        # Dédup des lignes SANS email — identité normalisée, batch seulement.
+        seen_names: dict[tuple[str, str], int] = {}
         for index, row in enumerate(parsed.rows, start=1):
             issues: list[RowIssue] = []
             values: dict[str, str] = {}
@@ -326,12 +427,17 @@ class ProfileImportManager:
                 cell = (row.get(column) or "").strip()
                 if cell:
                     values[target] = cell
-            for target, pair_columns in street_pairs.items():
-                joined = " ".join(
-                    x for x in ((row.get(c) or "").strip() for c in pair_columns) if x
-                )
+            for target, pair in street_pairs.items():
+                joined, orphan_number = _assemble_street_pair(pair, row)
                 if joined:
                     values[target] = joined
+                elif orphan_number:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get(target, target),
+                            code="street_number_orphan",
+                        )
+                    )
             creation_cells: dict[str, tuple[str, str, str]] = {}
             for column, (key, _label, kind, _to_create) in creation_plan.items():
                 cell = (row.get(column) or "").strip()
@@ -460,47 +566,57 @@ class ProfileImportManager:
                         RowIssue(column=columns_by_target.get(key, key), code="invalid_value")
                     )
 
-            if not email:
-                verdicts.append(
-                    RowVerdict(
-                        row_index=index,
-                        status="ignore",
-                        reason="no_email",
-                        person=person,
-                        issues=issues,
+            missing_identity = RowVerdict(
+                row_index=index,
+                status="ignore",
+                reason="missing_identity",
+                person=person,
+                issues=issues,
+            )
+            if email:
+                existing_id = existing_by_email.get(email)
+                if existing_id is not None:
+                    verdicts.append(
+                        RowVerdict(
+                            row_index=index,
+                            status="link",
+                            profile_id=existing_id,
+                            person=person,
+                            issues=issues,
+                        )
                     )
+                    continue
+                if email in seen_emails:
+                    # Dédup INTRA-BATCH : la 1re occurrence crée, celle-ci LIE.
+                    verdicts.append(
+                        RowVerdict(row_index=index, status="link", person=person, issues=issues)
+                    )
+                    continue
+                if not values.get("first_name") or not values.get("last_name"):
+                    verdicts.append(missing_identity)
+                    continue
+                seen_emails[email] = index
+                verdicts.append(
+                    RowVerdict(row_index=index, status="create", person=person, issues=issues)
                 )
                 continue
-            existing_id = existing_by_email.get(email)
-            if existing_id is not None:
-                verdicts.append(
-                    RowVerdict(
-                        row_index=index,
-                        status="link",
-                        profile_id=existing_id,
-                        person=person,
-                        issues=issues,
-                    )
-                )
+
+            # SANS EMAIL (parité avec la création manuelle, où l'email est
+            # déjà optionnel) : l'identité suffit à créer. Le motif
+            # `no_email` est MORT — sans nom NI email il ne reste rien,
+            # c'est `missing_identity` qui parle.
+            name_key = _name_dedup_key(values.get("first_name"), values.get("last_name"))
+            if name_key is None:
+                verdicts.append(missing_identity)
                 continue
-            if email in seen_emails:
-                # Dédup INTRA-BATCH : la 1re occurrence crée, celle-ci LIE.
+            if name_key in seen_names:
+                # Dédup par identité — DANS LE BATCH SEULEMENT. Jamais
+                # contre la base : on ne fusionne pas des homonymes.
                 verdicts.append(
                     RowVerdict(row_index=index, status="link", person=person, issues=issues)
                 )
                 continue
-            if not values.get("first_name") or not values.get("last_name"):
-                verdicts.append(
-                    RowVerdict(
-                        row_index=index,
-                        status="ignore",
-                        reason="missing_identity",
-                        person=person,
-                        issues=issues,
-                    )
-                )
-                continue
-            seen_emails[email] = index
+            seen_names[name_key] = index
             verdicts.append(
                 RowVerdict(row_index=index, status="create", person=person, issues=issues)
             )
@@ -567,15 +683,20 @@ class ProfileImportManager:
         created: list[ProfileImportRowOutcome] = []
         linked: list[ProfileImportRowOutcome] = []
         ignored: list[ProfileImportRowOutcome] = []
+        ignored_by_row: dict[int, ProfileImportRowOutcome] = {}
         created_by_email: dict[str, uuid.UUID] = {}
+        created_by_name: dict[tuple[str, str], uuid.UUID] = {}
         for verdict in verdicts:
             email = verdict.person.get("email")
+            name_key = _name_dedup_key(
+                verdict.person.get("first_name"), verdict.person.get("last_name")
+            )
             if verdict.status == "ignore":
-                ignored.append(
-                    ProfileImportRowOutcome(
-                        row=verdict.row_index, email=email, reason=verdict.reason
-                    )
+                outcome = ProfileImportRowOutcome(
+                    row=verdict.row_index, email=email, reason=verdict.reason
                 )
+                ignored.append(outcome)
+                ignored_by_row[verdict.row_index] = outcome
                 continue
             if verdict.status == "create":
                 profile = ClientProfile(
@@ -588,16 +709,23 @@ class ProfileImportManager:
                 self._apply_values(profile, verdict.person)
                 self.db.add(profile)
                 await self.db.flush()
-                assert email is not None
-                created_by_email[email] = profile.id
+                if email:
+                    created_by_email[email] = profile.id
+                elif name_key is not None:
+                    created_by_name[name_key] = profile.id
                 created.append(
                     ProfileImportRowOutcome(
                         row=verdict.row_index, email=email, profile_id=profile.id
                     )
                 )
                 continue
-            # link — en base, ou vers la fiche créée plus haut dans le batch.
-            profile_id = verdict.profile_id or (created_by_email.get(email) if email else None)
+            # link — en base, ou vers la fiche créée plus haut dans le batch
+            # (par email, ou par identité quand la ligne n'a pas d'email).
+            profile_id = verdict.profile_id or (
+                created_by_email.get(email)
+                if email
+                else (created_by_name.get(name_key) if name_key else None)
+            )
             if profile_id is None:
                 # La 1re occurrence de cet email a été ignorée (sans
                 # identité) : celle-ci n'a rien à lier — même raison.
@@ -613,12 +741,39 @@ class ProfileImportManager:
             linked.append(
                 ProfileImportRowOutcome(row=verdict.row_index, email=email, profile_id=profile_id)
             )
+
+        # LA DONNÉE DE LA LIGNE JETÉE (correctif c) : une ligne ignorée pour
+        # `missing_identity` dont l'email a produit une fiche PAR UNE AUTRE
+        # ligne emportait ses valeurs dans la tombe (2 téléphones perdus sur
+        # le fichier Teamleader réel). Elles se reportent désormais en
+        # FILL-ONLY — la donnée existe, l'identité vient d'ailleurs. La
+        # ligne reste `ignored` (elle n'a créé aucune fiche) mais son
+        # `profile_id` dit où sa donnée est allée.
+        values_salvaged = 0
+        for verdict in verdicts:
+            if verdict.status != "ignore" or verdict.reason != "missing_identity":
+                continue
+            email = verdict.person.get("email")
+            profile_id = created_by_email.get(email) if email else None
+            if profile_id is None:
+                continue
+            payload = {k: v for k, v in verdict.person.items() if k not in IDENTITY_TARGETS}
+            if not payload:
+                continue
+            sibling = await self.repo.get_for_agency(agent.agency_id, profile_id)
+            assert sibling is not None
+            self._apply_values(sibling, payload, fill_gaps_only=True)
+            ignored_by_row[verdict.row_index].profile_id = profile_id
+            values_salvaged += 1
         await self.db.commit()
         return ProfileImportReport(
             total_rows=len(verdicts),
             created=created,
             linked=linked,
             ignored=ignored,
+            created_with_email=sum(1 for c in created if c.email),
+            created_without_email=sum(1 for c in created if not c.email),
+            values_salvaged=values_salvaged,
             tags_applied=sum(1 for v in verdicts if v.status != "ignore" and v.person.get("tags")),
             fields_created=fields_created,
         )
@@ -629,7 +784,8 @@ class ProfileImportManager:
     ) -> None:
         """Pose les valeurs NORMALISÉES par l'analyse. `fill_gaps_only`
         (liaison) : l'existant gagne toujours — l'import ne comble que
-        les trous."""
+        les trous, et sur une adresse ce sont les trous SOUS-CHAMP par
+        SOUS-CHAMP (cf. `_merge_gap`)."""
         sack = dict(profile.custom_fields or {})
         changed = False
         for target, value in person.items():
@@ -647,9 +803,13 @@ class ProfileImportManager:
                 if fill_gaps_only and not _is_empty(getattr(profile, target, None)):
                     continue
                 setattr(profile, target, value)
-            else:
-                if fill_gaps_only and not _is_empty(sack.get(target)):
+            elif fill_gaps_only:
+                merged = _merge_gap(sack.get(target), value)
+                if merged is None:
                     continue
+                sack[target] = merged
+                changed = True
+            else:
                 sack[target] = value
                 changed = True
         if changed:
@@ -806,7 +966,7 @@ class CompanyImportManager:
             corrections_by_row.setdefault(correction.row_index, []).append(correction)
         columns_by_target = {t: c for c, t in body.mapping.items()}
         columns_by_target.update({key: col for col, (key, _l, _k, _c) in creation_plan.items()})
-        columns_by_target.update({t: " + ".join(cols) for t, cols in street_pairs.items()})
+        columns_by_target.update({t: " + ".join(p.columns) for t, p in street_pairs.items()})
 
         repo = CompanyProfilesRepository(self.db)
         # LE SYMÉTRIQUE du SELECT groupé fiches (anti N+1) : une pré-passe
@@ -839,12 +999,17 @@ class CompanyImportManager:
                 cell = (row.get(column) or "").strip()
                 if cell:
                     values[target] = cell
-            for target, pair_columns in street_pairs.items():
-                joined = " ".join(
-                    x for x in ((row.get(c) or "").strip() for c in pair_columns) if x
-                )
+            for target, pair in street_pairs.items():
+                joined, orphan_number = _assemble_street_pair(pair, row)
                 if joined:
                     values[target] = joined
+                elif orphan_number:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get(target, target),
+                            code="street_number_orphan",
+                        )
+                    )
             for correction in corrections_by_row.get(index, ()):
                 if correction.target not in valid_targets:
                     issues.append(RowIssue(column="(correction)", code="unknown_target"))
@@ -1099,8 +1264,15 @@ class CompanyImportManager:
         changed = False
         for key in set(COMPANY_PRESET_PROFILE_SECTION) | plan_keys:
             raw = values.get(key)
-            if raw is not None and _is_empty(sack.get(key)):
-                sack[key] = raw
-                changed = True
+            if raw is None:
+                continue
+            # Même règle que la face personne : au SOUS-CHAMP sur les
+            # adresses (`address`, `headquarters_address`), à l'objet
+            # ailleurs — l'ordre des passes cesse de compter.
+            merged = _merge_gap(sack.get(key), raw)
+            if merged is None:
+                continue
+            sack[key] = merged
+            changed = True
         if changed:
             company.custom_fields = sack

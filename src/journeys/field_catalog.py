@@ -261,6 +261,7 @@ SECTION_TYPES: dict[str, SectionType] = {
         },
         field_keys=(
             "phone",
+            "secondary_phone",
             "secondary_email",
             "whatsapp",
             "website",
@@ -1349,6 +1350,24 @@ FIELD_PRESETS: dict[str, CatalogFieldPreset] = {
             "pt": "País de emissão da carta",
             "it": "Paese di rilascio della patente",
             "hu": "Engedély kiállítási országa",
+        },
+        options=None,
+    ),
+    # LA MAISON DU MOBILE (correctif import a) : « Mobile »/« GSM »/« Cell »
+    # tombaient dans le vide dès qu'une colonne Téléphone tenait déjà
+    # `phone` — 235 contacts sans numéro sur le fichier Teamleader réel.
+    # Le repli a désormais un second cran plutôt qu'un trou.
+    "secondary_phone": CatalogFieldPreset(
+        key="secondary_phone",
+        field_type="text",
+        labels={
+            "fr": "Téléphone secondaire",
+            "en": "Secondary phone",
+            "es": "Teléfono secundario",
+            "ru": "Дополнительный телефон",
+            "pt": "Telefone secundário",
+            "it": "Telefono secondario",
+            "hu": "Másodlagos telefonszám",
         },
         options=None,
     ),

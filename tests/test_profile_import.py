@@ -33,7 +33,8 @@ async def test_profile_import_creates_links_ignores(
     make_expat_user: MakeExpatUser,
 ) -> None:
     """V4a — dédup email : LIER (fill-gap, jamais dupliquer) ; sans
-    email → ignorée ; sans identité → ignorée ; le rapport dit tout.
+    email mais AVEC identité → CRÉÉE (lot email optionnel) ; sans identité
+    → ignorée ; le rapport dit tout, ventilé avec/sans email.
     AUCUN parcours dans ce chemin (étape séparée optionnelle)."""
     headers = agent_headers(admin)
     db_session.add(
@@ -77,9 +78,13 @@ async def test_profile_import_creates_links_ignores(
     assert r.status_code == 200, r.text
     report = r.json()
     assert report["total_rows"] == 4
-    assert [c["email"] for c in report["created"]] == ["nouvelle@example.com"]
+    # « Sans Email » (identité complète, pas d'email) est CRÉÉE — plus
+    # jamais ignorée ; la ventilation le dit à l'agence.
+    assert [c["email"] for c in report["created"]] == ["nouvelle@example.com", None]
+    assert report["created_with_email"] == 1
+    assert report["created_without_email"] == 1
     assert [x["profile_id"] for x in report["linked"]] == [existing_id]
-    assert sorted(i["reason"] for i in report["ignored"]) == ["missing_identity", "no_email"]
+    assert [i["reason"] for i in report["ignored"]] == ["missing_identity"]
     # FILL-GAP sur la liée : nationalité comblée, custom person posé.
     detail = (await client.get(f"/client-profiles/{existing_id}", headers=headers)).json()
     assert detail["nationality"] == "BR"
@@ -264,9 +269,15 @@ async def test_bad_cells_never_kill_the_batch(
     assert r.status_code == 200, r.text  # JAMAIS un 500 sur de la donnée
     rep = r.json()
     assert rep["total_rows"] == 4
-    assert [c["email"] for c in rep["created"]] == ["kevin@example.com", "long@example.com"]
+    # « Sans Identité » porte en fait une identité complète (prénom+nom) :
+    # sans email, elle CRÉE désormais au lieu d'être ignorée.
+    assert [c["email"] for c in rep["created"]] == [
+        "kevin@example.com",
+        "long@example.com",
+        None,
+    ]
     assert len(rep["linked"]) == 1  # le doublon intra-batch LIE (casse ignorée)
-    assert [i["reason"] for i in rep["ignored"]] == ["no_email"]
+    assert rep["ignored"] == []
     # Les cellules mauvaises = TROUS, les bonnes ont tenu.
     listing = (await client.get("/client-profiles?search=kevin@", headers=headers)).json()
     detail = (
@@ -317,10 +328,12 @@ async def test_preview_and_import_render_identical_verdicts(
     # ZÉRO écriture au dry-run.
     n_before = (await db_session.execute(text("SELECT count(*) FROM client_profile"))).scalar_one()
     assert preview["summary"] == {
-        "create": 2,
+        "create": 3,  # « Sans Email » crée désormais (identité complète)
         "link": 2,
-        "ignore": 1,
-        "ignore_reasons": {"no_email": 1},
+        "ignore": 0,
+        "ignore_reasons": {},
+        "create_with_email": 2,
+        "create_without_email": 1,
     }
     statuses = {row["row_index"]: row["status"] for row in preview["rows"]}
     # La cellule mauvaise = ISSUE, la ligne vit (create).
@@ -334,7 +347,7 @@ async def test_preview_and_import_render_identical_verdicts(
     assert r.status_code == 200, r.text
     report = r.json()
     n_after = (await db_session.execute(text("SELECT count(*) FROM client_profile"))).scalar_one()
-    assert n_before == n_after - 2  # le preview n'avait RIEN écrit
+    assert n_before == n_after - 3  # le preview n'avait RIEN écrit
     # IDENTITÉ ligne à ligne : le rapport réel == les verdicts du preview.
     real_statuses: dict[int, str] = {}
     for outcome in report["created"]:
@@ -352,25 +365,30 @@ async def test_corrections_flow_through_the_same_mill(
     admin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    """Corrections — appliquées après parse, avant validation : l'email
-    vide corrigé fait passer la ligne d'ignore à create ; une correction
+    """Corrections — appliquées après parse, avant validation : l'identité
+    manquante corrigée fait passer la ligne d'ignore à create (et l'email
+    posé au passage la range dans les créées AVEC email) ; une correction
     invalide = motivée, jamais un 500."""
     headers = agent_headers(admin)
-    csv_text = "Prénom,Nom,Email,Genre\nCorrigée,Cliente,,unknown\n"
+    # Sans NOM ni email il ne reste rien : missing_identity (le motif
+    # no_email est mort — une identité complète suffit désormais à créer).
+    csv_text = "Prénom,Nom,Email,Genre\nCorrigée,,,unknown\n"
     mapping = {"Prénom": "first_name", "Nom": "last_name", "Email": "email", "Genre": "sex"}
-    # SANS correction : ignore no_email.
+    # SANS correction : ignore missing_identity.
     r = await client.post(
         "/imports/client-profiles/preview",
         headers=headers,
         json={"csv_text": csv_text, "mapping": mapping},
     )
     assert r.json()["rows"][0]["status"] == "ignore"
-    # AVEC corrections : email posé (ignore → create) + genre corrigé
+    assert r.json()["rows"][0]["reason"] == "missing_identity"
+    # AVEC corrections : nom + email posés (ignore → create) + genre corrigé
     # valide + une correction à cible inconnue (issue motivée, pas de 500).
     body = {
         "csv_text": csv_text,
         "mapping": mapping,
         "corrections": [
+            {"row_index": 1, "target": "last_name", "value": "Cliente"},
             {"row_index": 1, "target": "email", "value": "corrigee@example.com"},
             {"row_index": 1, "target": "sex", "value": "F"},
             {"row_index": 1, "target": "code_postal", "value": "75002"},
@@ -567,8 +585,12 @@ async def test_street_number_pair_real_files(
         mapping = r.json()["suggestions"]
         assert mapping["Rue"] == f"{street_base}.street"
         assert mapping["Numéro de la rue"] == f"{street_base}.street"
-        # le choix UI : fragments (le couple compris), pas le texte intégral
-        mapping.pop("adresse postale", None)
+        # LE SUGGÉREUR A DÉJÀ TRANCHÉ : les fragments gagnent, la colonne
+        # texte intégral n'est PAS suggérée (elle reste libre, l'agence
+        # peut basculer). Plus aucun arbitrage manuel avant le preview —
+        # avant le correctif, cette ligne faisait un `pop` sans quoi tout
+        # l'import partait en 422 `import.address_mode_conflict`.
+        assert "adresse postale" not in mapping
         counts = {"street": 0, "with_number": 0}
         page = 1
         while True:
@@ -770,8 +792,10 @@ async def test_suggest_mapping_hits_80_percent_of_mappable_headers(
         "tax_residence_country",
         "residence_address.country",
     ]
-    # Mobile silencieux (Téléphone direct présent).
-    assert "Mobile" not in person
+    # LA MAISON DU MOBILE (correctif a) : « Téléphone » tient `phone`, le
+    # repli descend d'un cran au lieu de se taire — 235 contacts du fichier
+    # réel n'avaient AUCUN numéro à cause de ce silence.
+    assert person["Mobile"] == "secondary_phone"
     # Re-verdict 03/08 (demande design A) : le Siret d'un CONTACT est une
     # donnée société — l'univers société a quitté la fiche personne, la
     # colonne n'est plus suggérée (l'import sociétés la porte toujours).
@@ -1158,9 +1182,18 @@ async def test_street_number_pair_contract(
     # Ordre fixe « {numéro} {rue} » — le mapping déclare pourtant Rue avant.
     assert rows[0]["person"]["residence_address"]["street"] == "93 Екзарх Йосиф"
     assert rows[0]["issues"] == []
-    # Une seule vide = l'autre passe seule.
+    # La RUE seule passe seule (une rue sans numéro reste une adresse).
     assert rows[1]["person"]["residence_address"]["street"] == "Rue de la Paix"
-    assert rows[2]["person"]["residence_address"]["street"] == "12"
+    assert rows[1]["issues"] == []
+    # LE NUMÉRO SEUL, LIGNE À LIGNE (correctif b) : la garde « jamais un
+    # numéro seul » ne vivait qu'au niveau COLONNE — une LIGNE sans nom de
+    # rue produisait street="12". C'est un trou motivé, plus un street ;
+    # le reste de l'adresse (la ville) vit.
+    assert "street" not in rows[2]["person"]["residence_address"]
+    assert rows[2]["person"]["residence_address"]["city"] == "Lyon"
+    assert rows[2]["issues"] == [
+        {"column": "Numéro de la rue + Rue", "code": "street_number_orphan"}
+    ]
 
     # LA GARDE : deux colonnes vers un sous-champ HORS street → 422.
     r = await client.post(
@@ -1220,8 +1253,10 @@ async def test_suggest_offers_address_subfields(
     agent_headers: AuthHeaders,
 ) -> None:
     """Lot composition — le suggéreur propose les sous-champs pour les
-    fragments, la 3e lecture de Pays entre dans l'ambiguë, et « adresse
-    postale » complète garde le texte intégral."""
+    fragments et la 3e lecture de Pays entre dans l'ambiguë. « adresse
+    postale » NE prend PAS le texte intégral : ses fragments existent, et
+    les deux modes d'une même base sont exclusifs à l'import — le
+    suggéreur tranche pour les morceaux (cf. la garantie structurelle)."""
     headers = agent_headers(admin)
     r = await client.post(
         "/imports/client-profiles/suggest-mapping",
@@ -1234,7 +1269,8 @@ async def test_suggest_offers_address_subfields(
     assert s["Rue"] == "residence_address.street"
     assert s["Ville"] == "residence_address.city"
     assert s["Code postal"] == "residence_address.postal_code"
-    assert s["adresse postale"] == "residence_address"  # texte intégral conservé
+    assert "adresse postale" not in s  # écartée : ses fragments gagnent
+    assert "adresse postale" in body["unmatched"]  # …mais laissée LIBRE
     assert body["ambiguous"]["Pays"] == [
         "nationality",
         "tax_residence_country",
@@ -1797,6 +1833,179 @@ async def test_company_sack_labels_survive_import_creation(
     assert "note_du_juriste" not in first["person"]
 
 
+# --- LOT EMAIL OPTIONNEL (parité avec la création manuelle) -------------------------------
+
+
+async def test_email_optional_creates_and_dedups_by_identity_within_the_batch(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """L'email n'est plus obligatoire : identité seule = fiche CRÉÉE.
+    La dédup suit la frontière — email présent, la clé d'email ; email
+    absent, l'identité normalisée DANS LE BATCH SEULEMENT, JAMAIS contre
+    la base (deux homonymes d'une agence peuvent être deux personnes).
+    Le rapport ventile « avec email · sans email »."""
+    headers = agent_headers(admin)
+    # Un HOMONYME déjà en base, sans email : l'import ne doit PAS le
+    # rejoindre — on ne fusionne pas des homonymes en silence.
+    r = await client.post(
+        "/client-profiles",
+        headers=headers,
+        json={"first_name": "Jean", "last_name": "Martin"},
+    )
+    assert r.status_code == 201, r.text
+    homonym_id = r.json()["id"]
+
+    csv_text = (
+        "Prénom,Nom,Email,Téléphone\n"
+        "Jean,Martin,,0601020304\n"  # homonyme de la base → CRÉE quand même
+        "JEAN,  martin ,,0700000000\n"  # même identité normalisée → LIE
+        "Gil,Dieu,,0611223344\n"  # identité seule → CRÉE
+        "Avec,Email,avec@example.com,\n"  # la clé d'email, inchangée
+        ",,,0699999999\n"  # ni nom ni email → il ne reste RIEN
+    )
+    mapping = {
+        "Prénom": "first_name",
+        "Nom": "last_name",
+        "Email": "email",
+        "Téléphone": "phone",
+    }
+    body = {"csv_text": csv_text, "mapping": mapping}
+
+    preview = (
+        await client.post("/imports/client-profiles/preview", headers=headers, json=body)
+    ).json()
+    assert preview["summary"] == {
+        "create": 3,
+        "link": 1,
+        "ignore": 1,
+        "ignore_reasons": {"missing_identity": 1},
+        "create_with_email": 1,
+        "create_without_email": 2,
+    }
+
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    report = r.json()
+    assert report["created_with_email"] == 1
+    assert report["created_without_email"] == 2
+    assert [c["email"] for c in report["created"]] == [None, None, "avec@example.com"]
+    # Le doublon d'identité a LIÉ la fiche née à la ligne 1 (pas dupliqué),
+    # et sûrement PAS l'homonyme de la base.
+    assert len(report["linked"]) == 1
+    linked_id = report["linked"][0]["profile_id"]
+    assert linked_id == report["created"][0]["profile_id"]
+    assert linked_id != homonym_id
+    assert [i["reason"] for i in report["ignored"]] == ["missing_identity"]
+
+    # L'homonyme de la base est resté INTOUCHÉ (pas de fusion silencieuse).
+    detail = (await client.get(f"/client-profiles/{homonym_id}", headers=headers)).json()
+    assert detail["phone"] is None
+    # Deux « Jean Martin » cohabitent : celui de la base, celui de l'import.
+    listing = (await client.get("/client-profiles?search=Martin", headers=headers)).json()
+    assert listing["total"] == 2
+    # Le fill-gap du doublon intra-batch a tenu : 1re valeur gardée.
+    imported = (await client.get(f"/client-profiles/{linked_id}", headers=headers)).json()
+    assert imported["phone"] == "0601020304"
+    assert not imported["email"]  # la fiche reste sans email (colonne NULL)
+    n_null = (
+        await db_session.execute(text("SELECT count(*) FROM client_profile WHERE email IS NULL"))
+    ).scalar_one()
+    assert n_null == 3  # l'homonyme de base + les 2 créées sans email
+
+
+async def test_values_of_the_dropped_row_reach_the_sibling_profile(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Correctif c — une ligne ignorée pour `missing_identity` dont
+    l'email crée une fiche PAR UNE AUTRE ligne n'emporte plus ses valeurs
+    dans la tombe (2 téléphones perdus sur le fichier Teamleader réel) :
+    report en FILL-ONLY, la ligne reste ignorée mais dit où c'est parti."""
+    headers = agent_headers(admin)
+    # Le cas réel `distri-24h@outlook.fr` : ligne 1 sans prénom MAIS avec
+    # le téléphone, ligne 2 complète et muette sur le numéro.
+    csv_text = (
+        "Prénom,Nom,Email,Téléphone,Fonction\n"
+        ",K,distri@example.com,+33 6 20 51 64 85,Gérant\n"
+        "Karim,Rekad,distri@example.com,,\n"
+    )
+    body = {
+        "csv_text": csv_text,
+        "mapping": {
+            "Prénom": "first_name",
+            "Nom": "last_name",
+            "Email": "email",
+            "Téléphone": "phone",
+            "Fonction": "profession",
+        },
+    }
+    r = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert r.status_code == 200, r.text
+    report = r.json()
+    assert [c["email"] for c in report["created"]] == ["distri@example.com"]
+    created_id = report["created"][0]["profile_id"]
+    # La ligne 1 reste IGNORÉE (elle n'a créé aucune fiche)…
+    assert [i["reason"] for i in report["ignored"]] == ["missing_identity"]
+    # …mais son `profile_id` dit où sa donnée est allée, et le rapport compte.
+    assert report["ignored"][0]["profile_id"] == created_id
+    assert report["values_salvaged"] == 1
+    detail = (await client.get(f"/client-profiles/{created_id}", headers=headers)).json()
+    assert detail["phone"] == "+33 6 20 51 64 85"  # sauvé de la ligne jetée
+    assert detail["profession"] == "Gérant"
+    assert detail["first_name"] == "Karim"  # l'identité vient de la ligne 2
+
+
+async def test_mobile_lands_in_secondary_phone_end_to_end(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Correctif a — le repli descend d'un cran : `Téléphone` tient
+    `phone`, `Mobile` prend `secondary_phone` au lieu de se taire. Le
+    preset entre ENTIER : suggéré, coercé, déclaré à la volée, posé."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Prénom", "Nom", "Adresse e-mail", "Téléphone", "Mobile"]},
+    )
+    assert r.status_code == 200, r.text
+    s = r.json()["suggestions"]
+    assert s["Téléphone"] == "phone"
+    assert s["Mobile"] == "secondary_phone"
+    # SANS colonne Téléphone, le 1er cran est libre : Mobile reprend `phone`.
+    r = await client.post(
+        "/imports/client-profiles/suggest-mapping",
+        headers=headers,
+        json={"headers": ["Prénom", "Nom", "Adresse e-mail", "Mobile"]},
+    )
+    assert r.json()["suggestions"]["Mobile"] == "phone"
+
+    # La charge suggérée passe l'import réel — la règle structurelle.
+    r = await client.post(
+        "/imports/client-profiles",
+        headers=headers,
+        json={
+            "csv_text": (
+                "Prénom,Nom,Adresse e-mail,Téléphone,Mobile\n"
+                "Deux,Numéros,deux@example.com,0102030405,+33 6 11 22 33 44\n"
+            ),
+            "mapping": {**s, "Prénom": "first_name", "Nom": "last_name"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    profile_id = r.json()["created"][0]["profile_id"]
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert detail["phone"] == "0102030405"
+    assert detail["custom_fields"]["secondary_phone"] == "+33 6 11 22 33 44"
+
+
 async def test_agency_config_accepts_the_whole_import_universe(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1956,3 +2165,208 @@ async def test_company_import_and_suggest_share_one_universe(
     assert r.status_code == 200, r.text
     suggested = set(r.json()["suggestions"].values())
     assert suggested <= universe, f"le suggéreur propose hors univers : {suggested - universe}"
+
+
+# --- LA GARANTIE STRUCTURELLE : le suggéreur ne propose jamais un 422 -----------------------
+
+
+async def test_suggested_charge_always_passes_the_preview(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA RÈGLE STRUCTURELLE, étendue : ce que suggest-mapping propose
+    DOIT passer le preview — pas seulement se coercer, PASSER, sans un
+    seul 422. Le contre-exemple qui a fait ce test : sur les 42 en-têtes
+    Teamleader réels, le suggéreur prenait `Rue`/`Code postal`/`Ville`
+    (sous-champs) ET `adresse postale` (texte intégral) de la MÊME base —
+    or l'import refuse les deux modes ensemble. Tout import de la
+    suggestion brute mourait en `import.address_mode_conflict`.
+
+    Le suggéreur tranche désormais lui-même : LES MORCEAUX GAGNENT, la
+    colonne texte repart libre. Vérifié sur les DEUX fichiers réels."""
+    headers = agent_headers(admin)
+
+    async def suggest_then_preview(entity: str, file_headers: list[str]) -> dict:
+        r = await client.post(
+            f"/imports/{entity}/suggest-mapping", headers=headers, json={"headers": file_headers}
+        )
+        assert r.status_code == 200, r.text
+        payload = r.json()
+        mapping = payload["suggestions"]
+        # Une ligne synthétique : seule la CHARGE compte ici, pas les valeurs.
+        csv_text = ",".join(file_headers) + "\n" + ",".join("x" for _ in file_headers) + "\n"
+        r = await client.post(
+            f"/imports/{entity}/preview",
+            headers=headers,
+            json={"csv_text": csv_text, "mapping": mapping},
+        )
+        # LE CŒUR : 200, jamais un 422 — la charge suggérée est importable
+        # TELLE QUELLE, sans arbitrage manuel de l'agence.
+        assert r.status_code == 200, f"{entity}: {r.text}"
+        return payload
+
+    person = await suggest_then_preview("client-profiles", CONTACT_HEADERS_42)
+    company = await suggest_then_preview("company-profiles", COMPANY_HEADERS_54)
+
+    # Le verdict d'arbitrage, nommé : les fragments gagnent…
+    assert person["suggestions"]["Rue"] == "residence_address.street"
+    assert person["suggestions"]["Code postal"] == "residence_address.postal_code"
+    assert person["suggestions"]["Ville"] == "residence_address.city"
+    # …et la colonne texte intégral n'est PAS suggérée — mais reste LIBRE
+    # (l'agence peut basculer sur le mode intégral à la main).
+    assert "adresse postale" not in person["suggestions"]
+    assert "adresse postale" in person["unmatched"]
+    # L'ambiguïté « Pays » garde son option d'adresse : le mode en jeu est
+    # celui des sous-champs, `.country` est cohérent avec lui.
+    assert "residence_address.country" in person["ambiguous"]["Pays"]
+    # Côté société le fichier réel n'a pas de colonne texte intégral :
+    # rien à arbitrer, les fragments passent comme avant.
+    assert company["suggestions"]["Rue"] == "address.street"
+    assert "address" not in company["suggestions"].values()
+
+
+async def test_suggester_arbitrates_whatever_the_column_order(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """L'arbitrage est une POST-PASSE, pas un effet de l'ordre du fichier :
+    que la colonne texte intégral arrive avant ou après ses fragments, ce
+    sont les fragments qui gagnent. Et une base SANS fragment garde son
+    mode texte — on n'a pas tué le mode intégral, on l'a désambiguïsé."""
+    headers = agent_headers(admin)
+
+    async def suggest(file_headers: list[str]) -> dict:
+        r = await client.post(
+            "/imports/client-profiles/suggest-mapping",
+            headers=headers,
+            json={"headers": file_headers},
+        )
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    # Le texte intégral EN PREMIER — il perd quand même.
+    first = await suggest(["Prénom", "Nom", "Adresse e-mail", "Adresse", "Rue", "Ville"])
+    assert first["suggestions"]["Rue"] == "residence_address.street"
+    assert first["suggestions"]["Ville"] == "residence_address.city"
+    assert "Adresse" not in first["suggestions"]
+    assert "Adresse" in first["unmatched"]
+
+    # Le texte intégral EN DERNIER — même verdict.
+    last = await suggest(["Prénom", "Nom", "Adresse e-mail", "Rue", "Ville", "Adresse"])
+    assert last["suggestions"]["Rue"] == "residence_address.street"
+    assert "Adresse" not in last["suggestions"]
+
+    # SEUL, sans aucun fragment : le mode texte intégral vit toujours.
+    alone = await suggest(["Prénom", "Nom", "Adresse e-mail", "Adresse"])
+    assert alone["suggestions"]["Adresse"] == "residence_address"
+
+
+# --- LE FILL-GAP GRANULAIRE SUR LES ADRESSES ----------------------------------------------
+
+
+async def test_address_fill_gap_is_per_subfield_whatever_the_pass_order(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LE FILL-GAP DESCEND AU SOUS-CHAMP. Avant, il comparait l'OBJET :
+    une adresse ne portant que `{country}` était « non vide », donc elle
+    bloquait l'arrivée de la rue, de la ville et du code postal — l'ordre
+    des passes d'import devenait signifiant (constat du ré-import Nico :
+    1234 objets « pays seul » tuaient la passe texte intégral).
+
+    Désormais chaque sous-champ VIDE se remplit, chaque sous-champ REMPLI
+    est protégé — et l'ordre des passes n'a plus d'importance."""
+    headers = agent_headers(admin)
+    csv = "Prénom,Nom,Email,Rue,Ville,CP,Pays,Adresse\n"
+    row = "Ordre,Passes,ordre@example.com,{rue},{ville},{cp},{pays},{adr}\n"
+    base_mapping = {"Prénom": "first_name", "Nom": "last_name", "Email": "email"}
+
+    # colonne → (cible, clé de la cellule)
+    cols = {
+        "Rue": ("residence_address.street", "rue"),
+        "Ville": ("residence_address.city", "ville"),
+        "CP": ("residence_address.postal_code", "cp"),
+        "Pays": ("residence_address.country", "pays"),
+    }
+
+    async def run(**cells: str) -> dict:
+        filled = {k: cells.get(k, "") for k in ("rue", "ville", "cp", "pays", "adr")}
+        # Seules les colonnes PORTEUSES sont mappées (une base ne se mappe
+        # pas en texte intégral ET en sous-champs — l'exclusivité tient).
+        mapping = dict(base_mapping)
+        if filled["adr"]:
+            mapping["Adresse"] = "residence_address"
+        else:
+            mapping |= {col: target for col, (target, key) in cols.items() if filled[key]}
+        r = await client.post(
+            "/imports/client-profiles",
+            headers=headers,
+            json={"csv_text": csv + row.format(**filled), "mapping": mapping},
+        )
+        assert r.status_code == 200, r.text
+        listing = (await client.get("/client-profiles?search=ordre@", headers=headers)).json()
+        detail = (
+            await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+        ).json()
+        return detail["custom_fields"].get("residence_address", {})
+
+    # PASSE 1 — le sous-champ le plus PAUVRE en premier (le pire cas).
+    after_country = await run(pays="FR")
+    assert after_country == {"country": "FR"}
+    # PASSE 2 — le texte intégral arrive APRÈS : il n'est plus bloqué.
+    after_text = await run(adr="12 rue des Lilas - 75011 Paris - France")
+    assert after_text["country"] == "FR"  # l'existant est intact…
+    assert after_text["street"] == "12 rue des Lilas - 75011 Paris - France"  # trou comblé
+    # PASSE 3 — un sous-champ DÉJÀ POSÉ n'est JAMAIS écrasé, les autres
+    # trous se comblent dans le même geste.
+    after_more = await run(rue="99 avenue Ignorée", ville="Paris", cp="75011", pays="BE")
+    assert after_more["street"] == "12 rue des Lilas - 75011 Paris - France"  # protégé
+    assert after_more["country"] == "FR"  # protégé
+    assert after_more["city"] == "Paris"  # trou comblé
+    assert after_more["postal_code"] == "75011"  # trou comblé
+
+
+async def test_scalar_fill_gap_still_wins_for_the_existing_value(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """La granularité ne concerne QUE les objets : sur un scalaire, la
+    règle d'avant tient mot pour mot — l'existant gagne, l'import ne
+    comble que le vide."""
+    headers = agent_headers(admin)
+    mapping = {
+        "Prénom": "first_name",
+        "Nom": "last_name",
+        "Email": "email",
+        "Tel": "phone",
+        "Site": "website",
+    }
+    first = (
+        "Prénom,Nom,Email,Tel,Site\nScalaire,Test,scal@example.com,0101010101,https://a.example\n"
+    )
+    r = await client.post(
+        "/imports/client-profiles", headers=headers, json={"csv_text": first, "mapping": mapping}
+    )
+    assert r.status_code == 200, r.text
+    second = (
+        "Prénom,Nom,Email,Tel,Site\nScalaire,Test,scal@example.com,0202020202,https://b.example\n"
+    )
+    r = await client.post(
+        "/imports/client-profiles", headers=headers, json={"csv_text": second, "mapping": mapping}
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["linked"]) == 1  # lié, pas dupliqué
+    listing = (await client.get("/client-profiles?search=scal@", headers=headers)).json()
+    detail = (
+        await client.get(f"/client-profiles/{listing['items'][0]['id']}", headers=headers)
+    ).json()
+    assert detail["phone"] == "0101010101"  # colonne civile : l'existant gagne
+    assert detail["custom_fields"]["website"] == "https://a.example"  # sack scalaire : idem

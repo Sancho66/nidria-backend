@@ -179,6 +179,7 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "tax_id": "identity",
     # contact
     "residence_address": "contact",
+    "secondary_phone": "contact",  # la maison du Mobile (correctif import a)
     "secondary_email": "contact",
     "whatsapp": "contact",
     "website": "contact",  # audit catalogue : présence en ligne (TL + HubSpot)
