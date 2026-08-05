@@ -37,7 +37,11 @@ from shared.models.custom_field import CustomFieldDefinition
 IDENTITY_TARGETS: tuple[str, ...] = ("first_name", "last_name", "email")
 # Cibles STRUCTURELLES personne : `tags` (split ,/; dédupliqué) et la
 # COLONNE langue (le preset preferred_language est mort au dédoublonnage).
-PERSON_STRUCTURAL_TARGETS: frozenset[str] = frozenset({"tags", "preferred_lang"})
+# `status_override` (lot statut) : STRUCTURELLE comme les deux autres —
+# c'est une colonne de la fiche, pas un champ du référentiel. NULL = la
+# dérivation joue (prospect sans dossier vivant, client dès qu'il y en a
+# un) ; posée, elle prime.
+PERSON_STRUCTURAL_TARGETS: frozenset[str] = frozenset({"tags", "preferred_lang", "status_override"})
 # Côté société : la dénomination (clé de dédup) et les étiquettes.
 COMPANY_STRUCTURAL_TARGETS: frozenset[str] = frozenset({"name", "tags"})
 # Les deux bases adresse de la fiche société (pas de référentiel société
@@ -254,6 +258,7 @@ async def person_target_catalog(
         CIVIL_FIELD_TYPES,
         CIVIL_LABELS,
         IDENTITY_LABELS,
+        STATUS_LABEL,
         TAGS_LABEL,
     )
     from src.journeys.field_catalog import FIELD_PRESETS
@@ -349,6 +354,17 @@ async def person_target_catalog(
             label=TAGS_LABEL["fr"],
             label_i18n=dict(TAGS_LABEL),
             field_type="tags",
+            section="misc",
+        )
+    )
+    emit(
+        ImportTargetSpec(
+            key="status_override",
+            label=STATUS_LABEL["fr"],
+            label_i18n=dict(STATUS_LABEL),
+            # `select` : la colonne n'accepte que deux valeurs, et la
+            # grille doit le montrer comme tel — pas comme du texte libre.
+            field_type="select",
             section="misc",
         )
     )

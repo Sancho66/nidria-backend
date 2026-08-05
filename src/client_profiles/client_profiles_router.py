@@ -26,6 +26,8 @@ from src.client_profiles.client_profiles_schema import (
     NewCaseForProfileRequest,
     ProfileActivityListResponse,
     ProfileBulkDeleteRequest,
+    ProfileBulkResetStatusReport,
+    ProfileBulkResetStatusRequest,
     ProfileCompletenessResponse,
     ProfileMergeRequest,
 )
@@ -78,6 +80,13 @@ BINDINGS = [
     # autre ordre — `case.delete`, la même que le bulk dossiers. Un agent
     # qui peut nettoyer une fiche ne vide pas l'annuaire par héritage.
     RouteBinding("POST", "/client-profiles/bulk-delete", Audience.AGENT, Permission.CASE_DELETE),
+    # « Réinitialiser le statut » : une ÉDITION de masse, pas une
+    # suppression — rien ne disparaît, des fiches reprennent leur
+    # dérivation. Le gate est donc `case.edit`, celui du PATCH unitaire
+    # qui pose déjà `status_override`, et non `case.delete`.
+    RouteBinding(
+        "POST", "/client-profiles/bulk-reset-status", Audience.AGENT, Permission.CASE_EDIT
+    ),
     RouteBinding(
         "POST", "/client-profiles/{profile_id}/merge", Audience.AGENT, Permission.CASE_EDIT
     ),
@@ -198,6 +207,24 @@ async def bulk_delete_client_profiles(
     (`protected_ids`, plafonné à 100). L'historique reste sacré.
     """
     return await ClientProfilesManager(db).bulk_delete(agent, payload)
+
+
+@router.post("/client-profiles/bulk-reset-status", response_model=ProfileBulkResetStatusReport)
+async def bulk_reset_client_profile_status(
+    payload: ProfileBulkResetStatusRequest, agent: AgentDep, db: DbDep
+) -> ProfileBulkResetStatusReport:
+    """Réinitialiser le statut — LE RATTRAPAGE d'un import mal réglé.
+
+    Même grammaire que la suppression de masse (`ids` ≤ 100 ou `filter`
+    sans plafond, `dry_run` qui rend les mêmes chiffres sans rien écrire).
+
+    Le geste EFFACE le statut forcé ; il ne pose pas l'autre. Les fiches
+    repassent en dérivation — prospect sans dossier vivant, client dès
+    qu'il y en a un. `with_override` dit combien changeront vraiment :
+    une fiche déjà en dérivation n'est pas comptée, elle n'a rien à
+    reprendre.
+    """
+    return await ClientProfilesManager(db).bulk_reset_status(agent, payload)
 
 
 @router.get("/client-profiles/{profile_id}/notes", response_model=list[CaseNoteResponse])

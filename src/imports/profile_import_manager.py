@@ -196,6 +196,12 @@ class ProfileImportRequest(BaseModel):
     # Création depuis la grille (lot grille) — dédup lier-pas-dupliquer
     # sur label/clé existants ; la déf naît à l'IMPORT seulement.
     create_fields: list[FieldCreationSpec] = Field(default_factory=list)
+    # LE STATUT VOULU pour les fiches CRÉÉES (lot statut). Absent = rien
+    # n'est posé, la dérivation joue comme avant (prospect sans dossier
+    # vivant). Il ne touche JAMAIS une fiche liée : une fiche existante
+    # garde son statut, lier ne requalifie pas — et il cède devant la
+    # colonne quand le fichier en porte une.
+    default_status: Literal["prospect", "client"] | None = None
 
 
 class ProfileImportPreviewRequest(ProfileImportRequest):
@@ -239,6 +245,10 @@ class ProfileImportReport(BaseModel):
     # Correctif c : lignes ignorées dont les VALEURS ont tout de même été
     # reportées (fill-only) sur la fiche sœur créée par une autre ligne.
     values_salvaged: int = 0
+    # LE STATUT POSÉ (lot statut), ventilé sur les fiches CRÉÉES : « 1593
+    # créées dont 1593 en client ». Les créées sans override n'y figurent
+    # pas — elles n'ont pas de statut posé, elles ont une dérivation.
+    created_by_status: dict[str, int] = Field(default_factory=dict)
     # Lot plafond : les lignes dont les tags ont été posés sur la fiche.
     tags_applied: int = 0
     # Lot grille : les champs NÉS de cet import (labels).
@@ -476,6 +486,22 @@ class ProfileImportManager:
                             code="invalid_value",
                         )
                     )
+            # LE STATUT (lot statut) — par COLONNE ici ; le défaut global
+            # de la requête ne s'applique qu'aux lignes muettes (plus bas,
+            # à l'écriture). Illisible = trou motivé, la ligne vit.
+            if values.get("status_override"):
+                from src.imports.value_normalizers import normalize_status_value
+
+                status = normalize_status_value(values["status_override"])
+                if status is not None:
+                    person["status_override"] = status
+                else:
+                    issues.append(
+                        RowIssue(
+                            column=columns_by_target.get("status_override", "status_override"),
+                            code="invalid_value",
+                        )
+                    )
             if values.get("tags"):
                 person["tags"] = list(
                     dict.fromkeys(
@@ -622,6 +648,16 @@ class ProfileImportManager:
             verdicts.append(
                 RowVerdict(row_index=index, status="create", person=person, issues=issues)
             )
+
+        # LE DÉFAUT GLOBAL, posé ICI et nulle part ailleurs : dans
+        # l'ANALYSE, donc l'aperçu montre exactement ce que l'import
+        # écrira (la garantie du projet — une seule fonction décide).
+        # Sur les seules lignes qui CRÉENT, et seulement si la ligne n'a
+        # rien dit : lier ne requalifie pas, une colonne prime.
+        if body.default_status is not None:
+            for verdict in verdicts:
+                if verdict.status == "create" and not verdict.person.get("status_override"):
+                    verdict.person["status_override"] = body.default_status
         return verdicts
 
     # --- dry-run (ZÉRO écriture) ------------------------------------------
@@ -808,11 +844,18 @@ class ProfileImportManager:
         for chunk in chunked(to_insert, IMPORT_WRITE_CHUNK):
             await self.db.execute(insert(ClientProfile).values(insert_rows(chunk)))
         await self.db.commit()
+        created_by_status: dict[str, int] = {}
+        for profile in to_insert:
+            if profile.status_override:
+                created_by_status[profile.status_override] = (
+                    created_by_status.get(profile.status_override, 0) + 1
+                )
         return ProfileImportReport(
             total_rows=len(verdicts),
             created=created,
             linked=linked,
             ignored=ignored,
+            created_by_status=created_by_status,
             created_with_email=sum(1 for c in created if c.email),
             created_without_email=sum(1 for c in created if not c.email),
             values_salvaged=values_salvaged,
@@ -840,6 +883,15 @@ class ProfileImportManager:
             if target == "preferred_lang":
                 if not (fill_gaps_only and profile.preferred_lang):
                     profile.preferred_lang = value
+                continue
+            if target == "status_override":
+                # LIER NE REQUALIFIE PAS (lot statut) : une fiche qui existe
+                # déjà garde son statut, quoi que dise le fichier. Sans ce
+                # `continue`, la colonne l'aurait écrasé — et sans la branche
+                # entière, `status_override` serait tombé dans le sack, où
+                # personne ne l'aurait jamais lu.
+                if not fill_gaps_only:
+                    profile.status_override = value
                 continue
             if target in CIVIL_COLUMNS:
                 if fill_gaps_only and not _is_empty(getattr(profile, target, None)):

@@ -211,6 +211,15 @@ PERSON_ALIASES: Final[dict[str, str]] = {
     "etiquettes": "tags",
     "labels": "tags",
     "label": "tags",  # le label Pipedrive = un tag
+    # STATUT (lot statut) : seulement les en-têtes qui ne parlent que de
+    # ça. « Type » ou « Catégorie » restent dehors — ils désignent tout
+    # et n'importe quoi selon le CRM, et se tromper ici requalifie des
+    # milliers de fiches en silence.
+    "statut": "status_override",
+    "status": "status_override",
+    "statut client": "status_override",
+    "customer status": "status_override",
+    "client status": "status_override",
 }
 
 # AMBIGUÏTÉ OFFERTE, jamais devinée : ces en-têtes proposent PLUSIEURS

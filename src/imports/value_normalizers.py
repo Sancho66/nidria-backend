@@ -201,6 +201,63 @@ def normalize_marital_value(raw: str) -> str:
     return _MARITAL_FORMS.get(_norm(raw), raw)
 
 
+# LE STATUT À L'IMPORT (lot statut) — l'export d'un CRM dit « Client »,
+# « customer », « actif », « 1 » ; le produit ne connaît que deux valeurs.
+# Les formes couvertes sont celles des exports réels + le booléen des
+# colonnes « est client ». Tout le reste est ILLISIBLE et le reste : la
+# règle absolue de l'import tient (cellule mauvaise = trou motivé, la
+# ligne vit) — deviner « actif = client » sur un mot inconnu poserait un
+# statut faux sur des milliers de fiches, sans que personne le voie.
+_STATUS_FORMS: Final[dict[str, frozenset[str]]] = {
+    "client": frozenset(
+        {
+            "client",
+            "cliente",
+            "clients",
+            "customer",
+            "customers",
+            "actif",
+            "active",
+            "activo",
+            "ativo",
+            "attivo",
+            "1",
+            "true",
+            "vrai",
+            "oui",
+            "yes",
+            "si",
+            "da",
+        }
+    ),
+    "prospect": frozenset(
+        {
+            "prospect",
+            "prospects",
+            "prospecto",
+            "lead",
+            "leads",
+            "inactif",
+            "inactive",
+            "potentiel",
+            "potential",
+            "0",
+            "false",
+            "faux",
+            "non",
+            "no",
+        }
+    ),
+}
+
+
+def normalize_status_value(raw: str) -> str | None:
+    """'Client' / 'customer' / 'actif' / '1' → "client" ; 'prospect' /
+    'lead' / '0' → "prospect" ; illisible → None (trou motivé)."""
+    n = _norm(raw)
+    return next((status for status, forms in _STATUS_FORMS.items() if n in forms), None)
+
+
 def normalize_import_value(target: str, raw: str, options: list[str] | None = None) -> str:
     """Le point d'entrée UNIQUE de l'import : la valeur brute d'une cible
     connue passe sa table ; cible sans table → valeur inchangée."""

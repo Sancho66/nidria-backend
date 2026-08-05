@@ -29,6 +29,8 @@ from src.client_profiles.client_profiles_schema import (
     ProfileActivityEntryResponse,
     ProfileActivityListResponse,
     ProfileBulkDeleteRequest,
+    ProfileBulkResetStatusReport,
+    ProfileBulkResetStatusRequest,
     ProfileCaseSummaryResponse,
     ProfileCompanyLinkResponse,
     ProfileCompletenessResponse,
@@ -623,6 +625,51 @@ class ClientProfilesManager:
             )
         await self.db.delete(profile)
         await self.db.commit()
+
+    async def bulk_reset_status(
+        self, agent: Agent, payload: "ProfileBulkResetStatusRequest"
+    ) -> "ProfileBulkResetStatusReport":
+        """LE RATTRAPAGE — rendre des fiches à leur dérivation.
+
+        Même sélection que la suppression de masse (mêmes prédicats que la
+        liste : ce que je vois est ce que je change), même dry-run qui
+        emprunte le MÊME chemin — seule la dernière instruction change.
+
+        Deux comptes, parce qu'ils ne disent pas la même chose : `matching`
+        est ce que le critère désigne, `with_override` ce que le geste
+        changera VRAIMENT. Une fiche déjà en dérivation n'est pas
+        réinitialisée, elle l'était déjà — l'annoncer gonflerait le geste.
+
+        Par paquets, une transaction par paquet : un filtre peut viser des
+        milliers de lignes, et ce qui est acquis l'est pour de bon.
+        """
+        from src.core.bulk_delete import BATCH_SIZE
+
+        if payload.filter is not None:
+            criteria = payload.filter.model_dump(exclude_none=True)
+            candidate_ids = await self.repo.ids_matching_filter(agent.agency_id, **criteria)
+        else:
+            asked = list(dict.fromkeys(payload.ids or []))
+            candidate_ids = await self.repo.ids_within_agency(agent.agency_id, asked)
+        to_reset = await self.repo.ids_with_status_override(agent.agency_id, candidate_ids)
+        if payload.dry_run:
+            return ProfileBulkResetStatusReport(
+                dry_run=True,
+                matching=len(candidate_ids),
+                with_override=len(to_reset),
+                reset=0,
+            )
+        done = 0
+        for start in range(0, len(to_reset), BATCH_SIZE):
+            batch = to_reset[start : start + BATCH_SIZE]
+            done += await self.repo.reset_status_by_ids(agent.agency_id, batch)
+            await self.db.commit()
+        return ProfileBulkResetStatusReport(
+            dry_run=False,
+            matching=len(candidate_ids),
+            with_override=len(to_reset),
+            reset=done,
+        )
 
     async def bulk_delete(
         self, agent: Agent, payload: ProfileBulkDeleteRequest

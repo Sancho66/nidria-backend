@@ -280,3 +280,42 @@ class ProfileBulkDeleteRequest(BaseModel):
         if (self.ids is None) == (self.filter is None):
             raise ValueError("Provide exactly one of `ids` or `filter`.")
         return self
+
+
+class ProfileBulkResetStatusRequest(BaseModel):
+    """« Réinitialiser le statut » — LE RATTRAPAGE d'un import mal réglé.
+
+    Même grammaire que la suppression de masse (une sélection `ids` OU un
+    critère `filter`, jamais les deux ; `filter: {}` = toute l'agence, à
+    écrire explicitement ; `dry_run` pour annoncer avant d'agir). La
+    raison d'être est simple : un `default_status` posé de travers sur un
+    fichier de 1600 lignes ne se rattrape pas fiche par fiche.
+
+    Le geste EFFACE l'override — il ne pose pas l'autre statut. La fiche
+    repasse en dérivation (prospect sans dossier vivant, client dès qu'il
+    y en a un), c'est-à-dire à l'état où elle serait sans intervention.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[uuid.UUID] | None = Field(default=None, max_length=100)
+    filter: ProfileListFilter | None = None
+    dry_run: bool = False
+
+    @model_validator(mode="after")
+    def one_selector_exactly(self) -> "ProfileBulkResetStatusRequest":
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("Provide exactly one of `ids` or `filter`.")
+        return self
+
+
+class ProfileBulkResetStatusReport(BaseModel):
+    """`matching` — ce que le critère désigne. `with_override` — celles qui
+    portent VRAIMENT un statut forcé, donc le nombre que le geste changera :
+    c'est LE chiffre à annoncer. `reset` — ce qui a réellement repris la
+    dérivation (0 en dry-run)."""
+
+    dry_run: bool
+    matching: int
+    with_override: int
+    reset: int

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Text, and_, cast, delete, exists, func, or_, select
+from sqlalchemy import Text, and_, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -448,6 +448,39 @@ class ClientProfilesRepository:
             .all()
         )
         return {pid for pid in by_person if pid is not None} | by_principal
+
+    async def ids_with_status_override(
+        self, agency_id: uuid.UUID, profile_ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """Parmi les fiches désignées, celles qui portent VRAIMENT un
+        statut forcé. Le rapport promet un nombre de fiches CHANGÉES : une
+        fiche déjà en dérivation n'est pas « réinitialisée », elle l'était
+        déjà, et la compter serait mentir sur l'ampleur du geste."""
+        if not profile_ids:
+            return []
+        stmt = select(ClientProfile.id).where(
+            ClientProfile.id.in_(profile_ids),
+            ClientProfile.agency_id == agency_id,
+            ClientProfile.status_override.isnot(None),
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def reset_status_by_ids(self, agency_id: uuid.UUID, profile_ids: list[uuid.UUID]) -> int:
+        """Le paquet repasse en dérivation en UNE instruction. `agency_id`
+        re-posé : un geste de masse ne sort jamais de son agence."""
+        if not profile_ids:
+            return 0
+        result = await self.db.execute(
+            update(ClientProfile)
+            .where(
+                ClientProfile.id.in_(profile_ids),
+                ClientProfile.agency_id == agency_id,
+            )
+            .values(status_override=None)
+        )
+        # Même lecture que `delete_by_ids` : le compte RÉEL vient du
+        # CursorResult, seul porteur de `rowcount`.
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
     async def delete_by_ids(self, agency_id: uuid.UUID, profile_ids: list[uuid.UUID]) -> int:
         """Le paquet part en UNE instruction. Les notes, rôles société et

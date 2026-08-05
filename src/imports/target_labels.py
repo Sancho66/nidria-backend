@@ -189,6 +189,20 @@ TAGS_LABEL: Final[dict[str, str]] = {
     "hu": "Címkék",
 }
 
+# `status_override` (lot statut) : ni civil ni preset — la colonne de
+# statut de la fiche. Le libellé dit « Statut (prospect / client) » : sans
+# les deux valeurs entre parenthèses, personne ne devine ce qu'on attend
+# dans la colonne, et le mapping se fait à l'aveugle.
+STATUS_LABEL: Final[dict[str, str]] = {
+    "fr": "Statut (prospect / client)",
+    "en": "Status (prospect / client)",
+    "es": "Estado (prospecto / cliente)",
+    "ru": "Статус (потенциальный / клиент)",
+    "pt": "Estado (potencial / cliente)",
+    "it": "Stato (potenziale / cliente)",
+    "hu": "Státusz (érdeklődő / ügyfél)",
+}
+
 # Les 4 morceaux d'une adresse, dans l'ordre de lecture d'une enveloppe.
 ADDRESS_SUBFIELD_LABELS: Final[dict[str, dict[str, str]]] = {
     "street": {

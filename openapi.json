@@ -6179,6 +6179,53 @@
         ]
       }
     },
+    "/client-profiles/bulk-reset-status": {
+      "post": {
+        "tags": [
+          "client-profiles"
+        ],
+        "summary": "Bulk Reset Client Profile Status",
+        "description": "Réinitialiser le statut — LE RATTRAPAGE d'un import mal réglé.\n\nMême grammaire que la suppression de masse (`ids` ≤ 100 ou `filter`\nsans plafond, `dry_run` qui rend les mêmes chiffres sans rien écrire).\n\nLe geste EFFACE le statut forcé ; il ne pose pas l'autre. Les fiches\nrepassent en dérivation — prospect sans dossier vivant, client dès\nqu'il y en a un. `with_override` dit combien changeront vraiment :\nune fiche déjà en dérivation n'est pas comptée, elle n'a rien à\nreprendre.",
+        "operationId": "bulk_reset_client_profile_status_client_profiles_bulk_reset_status_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileBulkResetStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileBulkResetStatusReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/client-profiles/{profile_id}/notes": {
       "get": {
         "tags": [
@@ -31024,6 +31071,74 @@
         "title": "ProfileBulkDeleteRequest",
         "description": "DEUX FORMES, exclusives : une sélection à la main (`ids`, plafonnée\n— au-delà on filtre) ou un critère (`filter`, sans plafond : c'est\ntout son intérêt).\n\n`filter: {}` est LÉGITIME et signifie « toutes les fiches de\nl'agence » — c'est ce que montre une liste sans filtre. Il faut\nl'écrire explicitement : l'absence des deux champs est refusée, on ne\nsupprime pas tout par omission."
       },
+      "ProfileBulkResetStatusReport": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "matching": {
+            "type": "integer",
+            "title": "Matching"
+          },
+          "with_override": {
+            "type": "integer",
+            "title": "With Override"
+          },
+          "reset": {
+            "type": "integer",
+            "title": "Reset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dry_run",
+          "matching",
+          "with_override",
+          "reset"
+        ],
+        "title": "ProfileBulkResetStatusReport",
+        "description": "`matching` — ce que le critère désigne. `with_override` — celles qui\nportent VRAIMENT un statut forcé, donc le nombre que le geste changera :\nc'est LE chiffre à annoncer. `reset` — ce qui a réellement repris la\ndérivation (0 en dry-run)."
+      },
+      "ProfileBulkResetStatusRequest": {
+        "properties": {
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileListFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProfileBulkResetStatusRequest",
+        "description": "« Réinitialiser le statut » — LE RATTRAPAGE d'un import mal réglé.\n\nMême grammaire que la suppression de masse (une sélection `ids` OU un\ncritère `filter`, jamais les deux ; `filter: {}` = toute l'agence, à\nécrire explicitement ; `dry_run` pour annoncer avant d'agir). La\nraison d'être est simple : un `default_status` posé de travers sur un\nfichier de 1600 lignes ne se rattrape pas fiche par fiche.\n\nLe geste EFFACE l'override — il ne pose pas l'autre statut. La fiche\nrepasse en dérivation (prospect sans dossier vivant, client dès qu'il\ny en a un), c'est-à-dire à l'état où elle serait sans intervention."
+      },
       "ProfileCaseSummaryResponse": {
         "properties": {
           "id": {
@@ -31251,6 +31366,21 @@
             "type": "array",
             "title": "Create Fields"
           },
+          "default_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "prospect",
+                  "client"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Status"
+          },
           "page": {
             "type": "integer",
             "minimum": 1.0,
@@ -31356,6 +31486,13 @@
             "title": "Values Salvaged",
             "default": 0
           },
+          "created_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Created By Status"
+          },
           "tags_applied": {
             "type": "integer",
             "title": "Tags Applied",
@@ -31434,6 +31571,21 @@
             },
             "type": "array",
             "title": "Create Fields"
+          },
+          "default_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "prospect",
+                  "client"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Status"
           }
         },
         "additionalProperties": false,
