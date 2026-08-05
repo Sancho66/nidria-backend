@@ -25,6 +25,8 @@ from src.agencies.agencies_schema import (
     DirectoryContactListItem,
     DirectoryContactResponse,
     ExternalInvitationCreateRequest,
+    LifetimeAccessRequest,
+    LifetimeAccessResponse,
     MemberDeactivationResponse,
     OnboardingResponse,
     RoleResponse,
@@ -70,6 +72,15 @@ BINDINGS = [
     RouteBinding(
         "POST",
         "/agencies/{agency_id}/signature-credits/grant",
+        Audience.AGENT,
+        Permission.AGENCY_CREATE,
+    ),
+    # Accès à vie (offert / repris) : même famille, même gate plateforme —
+    # c'est une décision de la plateforme sur un client, jamais un réglage
+    # que l'agence puisse s'offrir elle-même.
+    RouteBinding(
+        "PATCH",
+        "/agencies/{agency_id}/lifetime-access",
         Audience.AGENT,
         Permission.AGENCY_CREATE,
     ),
@@ -311,6 +322,21 @@ async def extend_agency_trial(
     — jamais le passé). Agence convertie → 422 trial.already_converted."""
     trial_ends_at = await AgenciesManager(db).extend_trial(agent, agency_id, payload.extend_days)
     return TrialResponse(trial_ends_at=trial_ends_at)
+
+
+@router.patch("/{agency_id}/lifetime-access", response_model=LifetimeAccessResponse)
+async def set_agency_lifetime_access(
+    agency_id: uuid.UUID, payload: LifetimeAccessRequest, agent: AgentDep, db: DbDep
+) -> LifetimeAccessResponse:
+    """Superadmin : l'accès à VIE, offert (`lifetime_access: true` — le
+    calendrier d'essai s'efface) ou REPRIS (`false` + `trial_days`, une
+    nouvelle échéance). Refus nommé si un abonnement Paddle vit encore
+    (`lifetime.paddle_subscription_active`) : offrir l'app à quelqu'un que
+    Paddle débite serait un bug de facturation, pas un cadeau."""
+    lifetime, trial_ends_at = await AgenciesManager(db).set_lifetime_access(
+        agent, agency_id, lifetime=payload.lifetime_access, trial_days=payload.trial_days
+    )
+    return LifetimeAccessResponse(lifetime_access=lifetime, trial_ends_at=trial_ends_at)
 
 
 @router.post("/{agency_id}/signature-credits/grant", response_model=SignatureCreditGrantResponse)

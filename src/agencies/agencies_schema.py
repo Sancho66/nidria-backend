@@ -194,6 +194,30 @@ class TrialResponse(BaseModel):
     trial_ends_at: datetime
 
 
+class LifetimeAccessRequest(BaseModel):
+    """PATCH /agencies/{id}/lifetime-access (superadmin) — offrir l'accès
+    à vie, ou le reprendre.
+
+    Reprendre EXIGE une nouvelle durée d'essai : l'ancienne échéance n'est
+    pas « restaurée », elle appartenait à un calendrier volontairement
+    fermé, et la rendre telle quelle ressusciterait souvent une date déjà
+    passée (blocage immédiat, sans que personne l'ait décidé). Des jours,
+    pas une date — même raison qu'à la prolongation : un timestamptz saisi
+    en UI porte le piège du fuseau."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lifetime_access: bool
+    trial_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class LifetimeAccessResponse(BaseModel):
+    lifetime_access: bool
+    # NULL quand l'accès est à vie : c'est l'absence d'échéance qui éteint
+    # relances, bannière et blocage — le front la lit telle quelle.
+    trial_ends_at: datetime | None
+
+
 class SignatureCreditGrantRequest(BaseModel):
     """POST /agencies/{id}/signature-credits/grant (superadmin) — crédits
     OFFERTS. Borne constatée : 1..1000 (le plus grand pack vendu est 100 ;

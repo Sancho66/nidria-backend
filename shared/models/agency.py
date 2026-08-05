@@ -99,6 +99,20 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # outside billing entirely (409 billing.internal_agency, never blocked,
     # never nurtured) and badged "Interne" in Eric's admin table.
     is_internal: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # ACCÈS À VIE (geste superadmin) : un CLIENT à qui la plateforme offre
+    # l'app sans échéance. À ne pas confondre avec `is_internal` juste
+    # au-dessus — celle-là est une agence MAISON (hors facturation, badgée
+    # « Interne », jamais un client) ; celle-ci reste un client à part
+    # entière, avec son plan, ses crédits et ses statistiques : elle n'a
+    # simplement plus de calendrier d'essai.
+    #
+    # Le drapeau et `trial_ends_at = NULL` sont posés ENSEMBLE par le même
+    # geste. Le NULL fait déjà tout le travail (aucune relance, aucune
+    # bannière, aucun blocage — tous les lecteurs traitent déjà l'absence
+    # d'échéance) ; le drapeau, lui, dit POURQUOI il n'y a plus de date —
+    # sans lui, un cadeau serait indistinguable de l'anomalie « unknown »
+    # que la table superadmin existe justement pour signaler.
+    lifetime_access: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Paddle (Merchant of Record, self-serve). billing_mode drives WHO writes
     # the subscription state: "manual" (default — the superadmin's PATCH, the

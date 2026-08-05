@@ -21,11 +21,21 @@ from src.usage.usage_manager import classify_usage_state
 
 
 def _status(
-    trial_ends_at: datetime | None, converted_at: datetime | None, now: datetime
+    trial_ends_at: datetime | None,
+    converted_at: datetime | None,
+    now: datetime,
+    *,
+    lifetime_access: bool = False,
 ) -> tuple[str, int | None]:
-    """active (converted, tested FIRST — it beats an unexpired trial) |
-    trial (+ days remaining) | expired | unknown (neither set: a legacy /
-    out-of-wizard anomaly, surfaced as-is, NEVER folded into expired)."""
+    """lifetime (accès offert, testé EN PREMIER — c'est un état d'accès, il
+    prime sur toute dérivation de calendrier) | active (converted) | trial
+    (+ days remaining) | expired | unknown (neither set: a legacy /
+    out-of-wizard anomaly, surfaced as-is, NEVER folded into expired).
+
+    Sans le drapeau, une agence à vie tomberait précisément dans `unknown`
+    — le seau des anomalies. Le cadeau serait rangé avec les accidents."""
+    if lifetime_access:
+        return "lifetime", None
     if converted_at is not None:
         return "active", None
     if trial_ends_at is not None:
@@ -74,7 +84,9 @@ class AdminManager:
         )
 
     def _row(self, r: Row[Any], now: datetime, adoption: dict[str, Any]) -> AdminAgencyRow:
-        status, days = _status(r.trial_ends_at, r.converted_at, now)
+        status, days = _status(
+            r.trial_ends_at, r.converted_at, now, lifetime_access=r.lifetime_access
+        )
         milestones = adoption["milestones"]
         # SAME derivation as GET /agencies/me/onboarding — journey_at resolves
         # to the milestone or the first non-demo template.
@@ -90,6 +102,7 @@ class AdminManager:
             seats_limit=SEATS_MAX_BY_PLAN.get(r.plan or "", TRIAL_SEAT_LIMIT),
             is_founding=r.is_founding,
             is_internal=r.is_internal,
+            lifetime_access=r.lifetime_access,
             billing_mode=r.billing_mode,
             billing_status=r.billing_status,
             status=status,

@@ -3200,6 +3200,65 @@
         }
       }
     },
+    "/agencies/{agency_id}/lifetime-access": {
+      "patch": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Set Agency Lifetime Access",
+        "description": "Superadmin : l'accès à VIE, offert (`lifetime_access: true` — le\ncalendrier d'essai s'efface) ou REPRIS (`false` + `trial_days`, une\nnouvelle échéance). Refus nommé si un abonnement Paddle vit encore\n(`lifetime.paddle_subscription_active`) : offrir l'app à quelqu'un que\nPaddle débite serait un bug de facturation, pas un cadeau.",
+        "operationId": "set_agency_lifetime_access_agencies__agency_id__lifetime_access_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifetimeAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifetimeAccessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/{agency_id}/signature-credits/grant": {
       "post": {
         "tags": [
@@ -17815,6 +17874,10 @@
             "type": "boolean",
             "title": "Is Internal"
           },
+          "lifetime_access": {
+            "type": "boolean",
+            "title": "Lifetime Access"
+          },
           "billing_mode": {
             "type": "string",
             "title": "Billing Mode"
@@ -17920,6 +17983,7 @@
           "seats_limit",
           "is_founding",
           "is_internal",
+          "lifetime_access",
           "billing_mode",
           "billing_status",
           "status",
@@ -17934,7 +17998,7 @@
           "last_login_at"
         ],
         "title": "AdminAgencyRow",
-        "description": "One agency row of the superadmin \"Gérer les agences\" table.\n\n`status` is DERIVED from the model (no status/suspended column):\nactive (converted_at set, tested FIRST — it beats an unexpired trial),\ntrial (unconverted + future trial_ends_at, with trial_days_remaining),\nexpired (unconverted + past trial_ends_at), unknown (neither set — an\nout-of-wizard/legacy anomaly the table exists to surface, never folded\ninto expired). `seats_used` = INTERNAL members (seat consumers);\n`members_count` = ALL agents — the front derives externals by\nsubtraction. `cases_count` = live non-demo cases."
+        "description": "One agency row of the superadmin \"Gérer les agences\" table.\n\n`status` is DERIVED from the model (no status/suspended column):\nlifetime (accès à vie offert, tested FIRST — an access state beats any\ncalendar derivation; without it the gift would land in `unknown`),\nactive (converted_at set — it beats an unexpired trial),\ntrial (unconverted + future trial_ends_at, with trial_days_remaining),\nexpired (unconverted + past trial_ends_at), unknown (neither set — an\nout-of-wizard/legacy anomaly the table exists to surface, never folded\ninto expired). `seats_used` = INTERNAL members (seat consumers);\n`members_count` = ALL agents — the front derives externals by\nsubtraction. `cases_count` = live non-demo cases."
       },
       "AgencyCreateRequest": {
         "properties": {
@@ -28102,6 +28166,60 @@
         ],
         "title": "LangTranslationCounts",
         "description": "Per-language field counts: `empty` variants to fill, `stale` AI\nvariants whose source drifted (human work never counts here)."
+      },
+      "LifetimeAccessRequest": {
+        "properties": {
+          "lifetime_access": {
+            "type": "boolean",
+            "title": "Lifetime Access"
+          },
+          "trial_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lifetime_access"
+        ],
+        "title": "LifetimeAccessRequest",
+        "description": "PATCH /agencies/{id}/lifetime-access (superadmin) — offrir l'accès\nà vie, ou le reprendre.\n\nReprendre EXIGE une nouvelle durée d'essai : l'ancienne échéance n'est\npas « restaurée », elle appartenait à un calendrier volontairement\nfermé, et la rendre telle quelle ressusciterait souvent une date déjà\npassée (blocage immédiat, sans que personne l'ait décidé). Des jours,\npas une date — même raison qu'à la prolongation : un timestamptz saisi\nen UI porte le piège du fuseau."
+      },
+      "LifetimeAccessResponse": {
+        "properties": {
+          "lifetime_access": {
+            "type": "boolean",
+            "title": "Lifetime Access"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lifetime_access",
+          "trial_ends_at"
+        ],
+        "title": "LifetimeAccessResponse"
       },
       "ListableEntity": {
         "type": "string",

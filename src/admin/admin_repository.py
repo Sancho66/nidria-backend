@@ -147,6 +147,7 @@ class AdminRepository:
             Agency.plan,
             Agency.is_founding,
             Agency.is_internal,
+            Agency.lifetime_access,
             Agency.billing_mode,
             Agency.billing_status,
             Agency.trial_ends_at,

@@ -26,6 +26,13 @@ def blocking_reason(agency: Agency, *, now: datetime) -> str | None:
     (banner wording) alongside the 403 code billing.subscription_required."""
     if agency.is_internal:
         return None  # internal agency (lifetime): structurally never blocked
+    if agency.lifetime_access:
+        # Accès à vie OFFERT (geste superadmin) : le calendrier d'essai a
+        # été effacé par le même geste, donc la branche ci-dessous rendrait
+        # déjà None. Le drapeau est testé quand même, et EN TÊTE : il est LA
+        # vérité, l'absence de date n'en est que la conséquence. Si une date
+        # revenait un jour par un autre chemin, le cadeau tiendrait.
+        return None
     if agency.converted_at is None:
         # No conversion: the trial calendar decides. No calendar at all
         # (platform/demo agencies) = no deadline, never blocked.

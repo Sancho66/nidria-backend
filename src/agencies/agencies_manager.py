@@ -576,6 +576,16 @@ class AgenciesManager:
                 "A converted agency has no trial to extend.",
                 code="trial.already_converted",
             )
+        if agency.lifetime_access:
+            # Une agence à vie n'a plus d'échéance À PROLONGER : lui en poser
+            # une ici laisserait le drapeau debout et une date derrière —
+            # les deux vérités en désaccord. Le retour en essai est un geste
+            # nommé (set_lifetime_access(False, trial_days)), pas un effet
+            # de bord de la prolongation.
+            raise ValidationError(
+                "A lifetime-access agency has no trial to extend.",
+                code="trial.lifetime_access",
+            )
         now = datetime.now(UTC)
         anchor_dt = (
             agency.trial_ends_at if agency.trial_ends_at and agency.trial_ends_at > now else now
@@ -585,6 +595,72 @@ class AgenciesManager:
         await self.db.refresh(agency)
         assert agency.trial_ends_at is not None
         return agency.trial_ends_at
+
+    async def set_lifetime_access(
+        self, superadmin: Agent, agency_id: uuid.UUID, *, lifetime: bool, trial_days: int | None
+    ) -> tuple[bool, datetime | None]:
+        """L'accès à vie, offert et REPRENABLE (lot accès à vie).
+
+        Offrir : le drapeau se pose ET l'échéance s'efface, dans le même
+        geste — c'est le NULL qui éteint concrètement relances, bannière et
+        blocage ; le drapeau dit pourquoi. Reprendre : le drapeau tombe et
+        une NOUVELLE échéance se pose (jours à saisir, comptés de
+        maintenant) — l'ancienne date n'est pas « restaurée », elle
+        appartenait à un calendrier qu'on a volontairement fermé.
+
+        Refus nommé quand l'agence est facturée par Paddle et que
+        l'abonnement vit encore : offrir l'app à quelqu'un que Paddle
+        continue de débiter n'est pas un cadeau, c'est un bug de
+        facturation. Résilier chez Paddle d'abord, offrir ensuite.
+
+        Le geste est TRACÉ (usage_event), comme les crédits offerts.
+        """
+        agency = await self.repo.get_agency(agency_id)
+        if agency is None:
+            raise NotFoundError("Agency not found.")
+        if (
+            lifetime
+            and agency.billing_mode == "paddle"
+            and agency.billing_status
+            in {
+                "active",
+                "past_due",
+            }
+        ):
+            raise ValidationError(
+                "Cancel the Paddle subscription before granting lifetime access.",
+                code="lifetime.paddle_subscription_active",
+                params={"billing_status": agency.billing_status},
+            )
+        if not lifetime and (trial_days is None or trial_days < 1):
+            raise ValidationError(
+                "Revoking lifetime access requires a new trial length in days.",
+                code="lifetime.trial_days_required",
+            )
+        previous_trial_ends_at = agency.trial_ends_at
+        agency.lifetime_access = lifetime
+        if lifetime:
+            agency.trial_ends_at = None
+        else:
+            assert trial_days is not None
+            agency.trial_ends_at = datetime.now(UTC) + timedelta(days=trial_days)
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.lifetime_granted" if lifetime else "agency.lifetime_revoked",
+            actor_type=ActorType.AGENT,
+            actor_id=superadmin.id,
+            details={
+                "previous_trial_ends_at": (
+                    previous_trial_ends_at.isoformat() if previous_trial_ends_at else None
+                ),
+                "trial_ends_at": (
+                    agency.trial_ends_at.isoformat() if agency.trial_ends_at else None
+                ),
+            },
+        )
+        await self.db.commit()
+        await self.db.refresh(agency)
+        return agency.lifetime_access, agency.trial_ends_at
 
     async def grant_signature_credits(
         self, superadmin: Agent, agency_id: uuid.UUID, credits: int, note: str | None

@@ -10,7 +10,9 @@ class AdminAgencyRow(BaseModel):
     """One agency row of the superadmin "Gérer les agences" table.
 
     `status` is DERIVED from the model (no status/suspended column):
-    active (converted_at set, tested FIRST — it beats an unexpired trial),
+    lifetime (accès à vie offert, tested FIRST — an access state beats any
+    calendar derivation; without it the gift would land in `unknown`),
+    active (converted_at set — it beats an unexpired trial),
     trial (unconverted + future trial_ends_at, with trial_days_remaining),
     expired (unconverted + past trial_ends_at), unknown (neither set — an
     out-of-wizard/legacy anomaly the table exists to surface, never folded
@@ -28,6 +30,11 @@ class AdminAgencyRow(BaseModel):
     is_founding: bool
     # Badge "Interne" (agence maison, hors facturation) — jamais un client.
     is_internal: bool
+    # Accès à vie OFFERT à un client (lot accès à vie) : distinct d'interne
+    # — l'agence reste un client, elle n'a simplement plus d'échéance. Servi
+    # à part du `status` pour que la modale d'appui sache quel geste
+    # proposer (offrir / reprendre) sans ré-interpréter le libellé.
+    lifetime_access: bool
     # Paddle lot: who writes the subscription (manual | paddle) and the
     # payment health (active | past_due | canceled, NULL pre-checkout) —
     # past_due invisible alerts nobody, hence the ?billing_status= filter.

@@ -124,6 +124,18 @@ class BillingManager:
                 "This agency is internal; billing does not apply.",
                 code="billing.internal_agency",
             )
+        # Accès à vie : le mur vaut AUSSI ici, et pour une raison d'argent —
+        # l'écran ne propose plus de s'abonner, mais un checkout préparé plus
+        # tôt, un lien gardé ouvert ou un appel direct encaisserait un paiement
+        # que l'agence ne doit pas. Le refus est au serveur, pas à l'écran.
+        lifetime = await self.db.execute(
+            select(Agency.lifetime_access).where(Agency.id == agent.agency_id)
+        )
+        if lifetime.scalar_one_or_none():
+            raise ConflictError(
+                "This agency has lifetime access; billing does not apply.",
+                code="billing.lifetime_access",
+            )
         # Offer kill switch — before any Paddle call: a closed offer
         # ("cable mais ferme") refuses at the door.
         if not settings.billing_checkout_enabled:
@@ -646,6 +658,17 @@ class BillingManager:
             raise ConflictError(
                 "This agency is internal; billing does not apply.",
                 code="billing.internal_agency",
+            )
+        if agency.lifetime_access:
+            # Accès à VIE offert (lot accès à vie) : son propre code, distinct
+            # d'`internal_agency` — celle-ci est une agence MAISON, celle-là un
+            # client à qui la plateforme a offert l'app. Sans ce code, l'agence
+            # tombait sur la branche « pas encore converti » ci-dessous, c'est-à-dire
+            # l'écran de CONVERSION : on proposait de s'abonner à quelqu'un qui n'a
+            # plus rien à payer.
+            raise ConflictError(
+                "This agency has lifetime access; billing does not apply.",
+                code="billing.lifetime_access",
             )
         if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
             if agency.converted_at is not None:
