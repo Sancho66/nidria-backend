@@ -206,11 +206,30 @@ class Settings(BaseSettings):
     # Barème « temps gagné » (lot 31/07) — EN CONFIG, jamais en dur :
     # minutes créditées par geste automatisé, ajustables sans release
     # (KPI_TIME_SAVED_MINUTES={"signature_completed": 45, ...} fusionne).
+    # Chaque valeur doit tenir DEVANT UN DIRIGEANT, minute par minute —
+    # c'est le critère, pas la générosité. L'ordre suit le parcours de
+    # travail (créer, avancer, collecter, relancer, signer, clore, importer).
     kpi_time_saved_minutes: dict[str, int] = {
-        "auto_reminder_sent": 5,
-        "client_document_collected": 10,
-        "signature_completed": 30,
+        # Le dossier monté depuis un parcours : la checklist n'est pas
+        # réécrite, les étapes ni les délais non plus.
         "case_created_from_template": 20,
+        # Une étape franchie : le point d'avancement qu'on ne fait pas au
+        # téléphone, et le statut du dossier qui suit tout seul.
+        "step_completed": 5,
+        # Une pièce arrivée par le portail : ni relance, ni pièce jointe à
+        # ranger, ni scan à renommer.
+        "client_document_collected": 8,
+        # Une relance AUTOMATIQUE : le suivi qu'aucun agent n'a eu à
+        # penser, à rédiger, ni à recaler dans son agenda.
+        "auto_reminder_sent": 10,
+        # Une signature aboutie : impression, rendez-vous, scan, archivage.
+        # La plus grosse valeur du barème, et la plus facile à défendre.
+        "signature_completed": 25,
+        # Un dossier clos : la vérification finale et le classement.
+        "case_closed": 10,
+        # Une fiche importée : la saisie manuelle qui n'a pas eu lieu.
+        # Deux minutes, volontairement modeste — c'est le volume qui parle.
+        "profile_imported": 2,
     }
 
     @field_validator("paddle_webhook_url", mode="before")

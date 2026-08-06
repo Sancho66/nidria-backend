@@ -74,6 +74,10 @@ class TimeSavedResponse(BaseModel):
 
     period: TimeSavedBlockResponse
     all_time: TimeSavedBlockResponse
+    # Le MOIS civil en cours : la maille d'un dirigeant. La semaine parle
+    # à l'agent, le mois parle au comité — et c'est lui qui porte
+    # l'équivalent temps plein et la projection annuelle côté écran.
+    month: TimeSavedBlockResponse
     clients_period: TimeSavedBlockResponse
     clients_all_time: TimeSavedBlockResponse
 

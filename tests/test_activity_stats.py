@@ -290,28 +290,38 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     # Aujourd'hui : 1 auto envoyée (la manuelle envoyée EXCLUE), 1 doc
     # client, 1 signature, 1 dossier à modèle.
     assert by_kind["auto_reminder_sent"]["count"] == 1
-    assert by_kind["auto_reminder_sent"]["minutes_total"] == 5
+    assert by_kind["auto_reminder_sent"]["minutes_total"] == 10
     assert by_kind["client_document_collected"] == {
         "kind": "client_document_collected",
         "count": 1,
-        "minutes_each": 10,
-        "minutes_total": 10,
+        "minutes_each": 8,
+        "minutes_total": 8,
     }
-    assert by_kind["signature_completed"]["minutes_total"] == 30
+    assert by_kind["signature_completed"]["minutes_total"] == 25
     assert by_kind["case_created_from_template"]["minutes_total"] == 20
-    assert ts["period"]["total_minutes"] == 5 + 10 + 30 + 20
-    # Le CUMUL compte AUSSI les vieux (2 autos, 2 docs, 2 signatures).
+    # Les trois gestes ajoutés par l'élargissement du barème : les étapes
+    # du jour (admin, l'autre agent, ET l'auto — une étape que le système
+    # ferme est du temps que personne n'a passé), la clôture du jour,
+    # aucune fiche importée dans ce scénario.
+    assert by_kind["step_completed"]["count"] == 3
+    assert by_kind["step_completed"]["minutes_total"] == 15
+    assert by_kind["case_closed"]["minutes_total"] == 10
+    assert by_kind["profile_imported"]["count"] == 0
+    assert ts["period"]["total_minutes"] == 10 + 8 + 25 + 20 + 15 + 10
+    # Le CUMUL compte AUSSI les vieux (2 autos, 3 docs, 2 signatures,
+    # 6 étapes dont la vieille et celle de la semaine passée).
     all_by_kind = {i["kind"]: i for i in ts["all_time"]["items"]}
     assert all_by_kind["auto_reminder_sent"]["count"] == 2
     assert all_by_kind["client_document_collected"]["count"] == 3  # + celui de la semaine passée
     assert all_by_kind["signature_completed"]["count"] == 2
-    assert ts["all_time"]["total_minutes"] == 10 + 30 + 60 + 20
+    assert all_by_kind["step_completed"]["count"] == 6
+    assert ts["all_time"]["total_minutes"] == 20 + 24 + 50 + 20 + 30 + 10
     # « Pour vos clients » : signatures + collecte SEULEMENT.
     assert {i["kind"] for i in ts["clients_period"]["items"]} == {
         "signature_completed",
         "client_document_collected",
     }
-    assert ts["clients_all_time"]["total_minutes"] == 60 + 30
+    assert ts["clients_all_time"]["total_minutes"] == 3 * 8 + 2 * 25
 
     # --- Tendance (lot 31/07) ----------------------------------------------
     # today : pas de tendance (la tendance d'un jour n'existe pas).
@@ -342,8 +352,12 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     assert prev_block["me"]["steps_completed"] == 1 + prev_extra
     assert prev_block["agency"]["documents_validated"] == 1 + prev_extra
     assert prev_block["agency"]["manual_reminders"] == 0 + prev_extra
-    assert prev_block["time_saved_minutes"] == 10  # le doc client de lundi-3j
-    assert prev_block["clients_time_saved_minutes"] == 10
+    # Le doc client de lundi-3j (8) ET l'étape franchie ce jour-là (5) —
+    # l'élargissement du barème fait entrer la seconde. « Pour vos
+    # clients », lui, ne retient que la pièce : une étape est un geste
+    # d'agence.
+    assert prev_block["time_saved_minutes"] == 8 + 5
+    assert prev_block["clients_time_saved_minutes"] == 8
     assert prev_block["until"].startswith(monday.date().isoformat())
 
 
@@ -372,7 +386,10 @@ async def test_two_queries_flat(
     make_expat_user: MakeExpatUser,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Le témoin : DEUX requêtes, quel que soit le volume."""
+    """LE TÉMOIN QUI COMPTE : un nombre de requêtes CONSTANT, quel que
+    soit le volume. Il monte quand le barème s'élargit (une source = une
+    requête), jamais quand l'agence grossit — c'est cette seconde
+    propriété qu'il garde."""
     from src.activity.activity_manager import activity_stats
 
     monkeypatch.setenv("KPI_ENABLED", "true")
@@ -392,6 +409,8 @@ async def test_two_queries_flat(
     finally:
         event.remove(engine, "before_cursor_execute", _count)
         get_settings.cache_clear()
-    # 2 (KPI gestes) + 4 (temps gagné : une par table source, période et
-    # cumul dans le MÊME select via FILTER) — constant quel que soit le volume.
-    assert counter["n"] == 6
+    # 2 (KPI gestes) + 7 (temps gagné : UNE par geste du barème ; période,
+    # mois et cumul sortent du MÊME select, repliés en Python). Le barème
+    # est passé de 4 à 7 gestes, donc 6 → 9. Le volume, lui, n'y change
+    # toujours rien : c'est ce que ce test garde.
+    assert counter["n"] == 9

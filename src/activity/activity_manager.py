@@ -85,7 +85,7 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
     au modèle — le jour où il existe, seules les bornes changent)."""
     from datetime import UTC, datetime, timedelta
 
-    from sqlalchemy import String, cast, func, select
+    from sqlalchemy import Integer, String, cast, func, select
     from sqlalchemy.dialects.postgresql import UUID as PgUUID
 
     from shared.models.activity import ActivityLog
@@ -94,6 +94,7 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
     from shared.models.document import Document
     from shared.models.reminder import Reminder
     from shared.models.signature import SignatureRequest
+    from shared.models.usage import UsageEvent
     from src.activity.activity_schema import (
         ActivityStatsResponse,
         DailyPointResponse,
@@ -115,12 +116,20 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
     is_week = period == "week"
     prev_since = monday - timedelta(days=7)
     window_start = prev_since if is_week else since
+    # LA MAILLE QUI PARLE : « 20 min cette semaine » n'impressionne
+    # personne, « 14 h ce mois » se discute en comité de direction. Le mois
+    # CIVIL en cours (pas 30 jours glissants) — c'est la maille dont un
+    # dirigeant dispose déjà pour tout le reste.
+    month_start = midnight.replace(day=1)
 
     def in_cur(day: datetime) -> bool:
         return day >= since
 
     def in_prev(day: datetime) -> bool:
         return prev_since <= day < monday
+
+    def in_month(day: datetime) -> bool:
+        return day >= month_start
 
     # Requête 1 — étapes franchies par JOUR (l'auto exclue), fenêtre 2 sem.
     me_filter = CaseStepProgress.completed_by_agent_id == agent.id
@@ -253,6 +262,70 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
             .group_by(case_day)
         )
     ).all()
+    # Étapes franchies — TOUT l'historique (la requête 1 est fenêtrée sur
+    # deux semaines pour le bandeau ; le temps gagné, lui, cumule depuis
+    # toujours).
+    #
+    # L'AUTO-COMPLÉTION COMPTE — arbitrage Alexandre du 06/08, pris en
+    # connaissance de l'adjacence : une étape à validateur `none` se ferme
+    # seule quand ses exigences sont remplies, donc un dépôt de pièce peut
+    # valoir 8 (la pièce) + 5 (l'étape). Ce ne sont pas deux comptes du
+    # même geste mais DEUX EFFETS DISTINCTS : la pièce est arrivée sans
+    # relance, et l'étape a avancé sans que personne ne vérifie ni ne
+    # clique. Ne pas « corriger » ceci sans le redemander.
+    done_day = func.date_trunc("day", CaseStepProgress.completed_at).label("day")
+    steps_done_rows = (
+        await db.execute(
+            select(done_day, func.count().label("n"))
+            .select_from(CaseStepProgress)
+            .join(ClientCase, ClientCase.id == CaseStepProgress.case_id)
+            .where(
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+                CaseStepProgress.completed_at.is_not(None),
+            )
+            .group_by(done_day)
+        )
+    ).all()
+    # Dossiers clos — l'ÉVÉNEMENT daté (le log), pas l'état courant : un
+    # dossier rouvert puis reclos a bien coûté deux vérifications.
+    closed_day = func.date_trunc("day", ActivityLog.created_at).label("day")
+    closed_rows = (
+        await db.execute(
+            select(closed_day, func.count().label("n"))
+            .select_from(ActivityLog)
+            .join(ClientCase, ClientCase.id == ActivityLog.case_id)
+            .where(
+                ClientCase.agency_id == agent.agency_id,
+                ClientCase.deleted_at.is_(None),
+                ActivityLog.action_type == "case.status_changed",
+                ActivityLog.details["new"].astext == "closed",
+            )
+            .group_by(closed_day)
+        )
+    ).all()
+    # Fiches importées — la SEULE source sans marqueur en base : une fiche
+    # née d'un import ne se distingue d'aucune autre (rien ne le note, et
+    # `source` appartient au métier de l'agence). On compte donc
+    # l'ÉVÉNEMENT d'import, émis depuis ce lot : l'historique de ce geste
+    # démarre au déploiement, contrairement aux six autres.
+    imp_day = func.date_trunc("day", UsageEvent.created_at).label("day")
+    imported_rows = (
+        await db.execute(
+            select(
+                imp_day,
+                func.coalesce(
+                    func.sum(cast(UsageEvent.details["created"].astext, Integer)), 0
+                ).label("n"),
+            )
+            .select_from(UsageEvent)
+            .where(
+                UsageEvent.agency_id == agent.agency_id,
+                UsageEvent.event_type == "agency.profiles_imported",
+            )
+            .group_by(imp_day)
+        )
+    ).all()
 
     # --- plis Python -------------------------------------------------------
     def fold_pairs(
@@ -278,31 +351,39 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
         log_rows, ("val_a", "val_m", "clo_a", "clo_m", "rem_a", "rem_m")
     )
 
-    def fold_source(rows: Any) -> tuple[int, int, int, dict[Any, int]]:
-        all_time = period_n = prev_n = 0
+    def fold_source(rows: Any) -> tuple[int, int, int, int, dict[Any, int]]:
+        all_time = period_n = prev_n = month_n = 0
         daily: dict[Any, int] = {}
         for row in rows:
             n = int(row.n)
             all_time += n
+            # Le mois est une maille À PART : il chevauche la période
+            # courante ET la précédente (une semaine à cheval sur deux
+            # mois), d'où un test indépendant, jamais un `elif`.
+            if in_month(row.day):
+                month_n += n
             if in_cur(row.day):
                 period_n += n
                 daily[row.day.date()] = daily.get(row.day.date(), 0) + n
             elif in_prev(row.day):
                 prev_n += n
-        return all_time, period_n, prev_n, daily
+        return all_time, period_n, prev_n, month_n, daily
 
     folded = {
-        "auto_reminder_sent": fold_source(auto_rows),
-        "client_document_collected": fold_source(collected_rows),
-        "signature_completed": fold_source(signed_rows),
         "case_created_from_template": fold_source(templated_rows),
+        "step_completed": fold_source(steps_done_rows),
+        "client_document_collected": fold_source(collected_rows),
+        "auto_reminder_sent": fold_source(auto_rows),
+        "signature_completed": fold_source(signed_rows),
+        "case_closed": fold_source(closed_rows),
+        "profile_imported": fold_source(imported_rows),
     }
-    # (all_time, period, prev) en ints purs + le par-jour à part — mypy et
-    # lecteur y gagnent le même contrat.
-    source_counts: dict[str, tuple[int, int, int]] = {
-        k: (v[0], v[1], v[2]) for k, v in folded.items()
+    # (all_time, period, prev, month) en ints purs + le par-jour à part —
+    # mypy et lecteur y gagnent le même contrat.
+    source_counts: dict[str, tuple[int, int, int, int]] = {
+        k: (v[0], v[1], v[2], v[3]) for k, v in folded.items()
     }
-    source_daily: dict[str, dict[Any, int]] = {k: v[3] for k, v in folded.items()}
+    source_daily: dict[str, dict[Any, int]] = {k: v[4] for k, v in folded.items()}
     scale = get_settings().kpi_time_saved_minutes
     client_kinds = ("signature_completed", "client_document_collected")
     all_kinds = tuple(source_counts)
@@ -324,6 +405,7 @@ async def activity_stats(db: AsyncSession, agent: Agent, period: str) -> Activit
     time_saved = TimeSavedResponse(
         period=ts_block(all_kinds, 1),
         all_time=ts_block(all_kinds, 0),
+        month=ts_block(all_kinds, 3),
         clients_period=ts_block(client_kinds, 1),
         clients_all_time=ts_block(client_kinds, 0),
     )

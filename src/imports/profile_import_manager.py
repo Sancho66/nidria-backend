@@ -35,6 +35,7 @@ from shared.models.agent import Agent
 from shared.models.client_profile import ClientProfile
 from src.client_profiles.backfill import CIVIL_COLUMNS
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
+from src.core.enums import ActorType
 from src.core.exceptions import ValidationError
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.imports.batching import IMPORT_WRITE_CHUNK, chunked, insert_rows
@@ -43,6 +44,7 @@ from src.imports.csv_reader import parse_upload
 # L'identité vient de `import_targets` (LA source) ; les appelants
 # historiques l'importent encore d'ici, le nom reste donc visible.
 from src.imports.import_targets import IDENTITY_TARGETS
+from src.usage.usage_manager import UsageManager
 
 
 class StreetPair(NamedTuple):
@@ -843,6 +845,20 @@ class ProfileImportManager:
         # fill-gap accumulés au-dessus.
         for chunk in chunked(to_insert, IMPORT_WRITE_CHUNK):
             await self.db.execute(insert(ClientProfile).values(insert_rows(chunk)))
+        # L'ÉVÉNEMENT D'IMPORT (KPI temps gagné) : une fiche née d'un
+        # import ne se distingue d'aucune autre en base — rien ne le note,
+        # et `source` appartient au métier de l'agence, pas à notre
+        # comptabilité. On date donc le GESTE, pas la ligne. Émis dans la
+        # transaction de l'import : pas d'import réussi sans sa trace, pas
+        # de trace sans import.
+        if to_insert:
+            await UsageManager(self.db).emit(
+                agency_id=agent.agency_id,
+                event_type="agency.profiles_imported",
+                actor_type=ActorType.AGENT,
+                actor_id=agent.id,
+                details={"created": len(to_insert)},
+            )
         await self.db.commit()
         created_by_status: dict[str, int] = {}
         for profile in to_insert:
