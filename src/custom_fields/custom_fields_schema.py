@@ -63,6 +63,71 @@ class CustomFieldDefinitionCreate(BaseModel):
         return self
 
 
+class CustomFieldBulkRequest(BaseModel):
+    """LES GESTES DE MASSE sur les définitions — par LISTE D'IDS, jamais
+    par filtre : l'agence traite ce qu'elle a sélectionné à l'écran, donc
+    ce qu'elle voit (même principe que la suppression de masse des fiches,
+    où le filtre est le geste ; ici la sélection l'est).
+
+    `dry_run` rend le MÊME rapport sans rien écrire : c'est ce qui permet
+    à l'écran d'annoncer AVANT plutôt que d'expliquer après. Une seule
+    évaluation sert les deux (cf. `_evaluate`) — le compte annoncé et le
+    geste appliqué ne peuvent pas diverger."""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    action: Literal["archive", "scope", "section"]
+    # Cible du geste, selon l'action (validé ci-dessous).
+    scope: Literal["person", "case"] | None = None
+    profile_section: Literal["identity", "contact", "situation", "misc"] | None = None
+    dry_run: bool = False
+    # LE FRANCHISSEMENT EXPLICITE de la protection « utilisé dans un
+    # parcours » (archivage seul). Faux par défaut : le geste ne peut donc
+    # jamais retirer EN SILENCE un champ qu'un parcours collecte. Vrai =
+    # l'agence a vu les champs NOMMÉS et redemande. Même mot, même sens
+    # que le `force` de l'archivage à l'unité.
+    force: bool = False
+
+    @model_validator(mode="after")
+    def _check_target(self) -> "CustomFieldBulkRequest":
+        if self.action == "scope" and self.scope is None:
+            raise ValueError("`scope` is required for the 'scope' action.")
+        if self.action == "section" and self.profile_section is None:
+            raise ValueError("`profile_section` is required for the 'section' action.")
+        if self.action == "archive" and (self.scope or self.profile_section):
+            raise ValueError("The 'archive' action takes no target.")
+        return self
+
+
+class CustomFieldBulkRefusal(BaseModel):
+    """Un refus NOMMÉ : l'écran doit pouvoir dire « Adresse fiscale »,
+    pas « 3 champs refusés »."""
+
+    id: uuid.UUID
+    # Nuls pour un id inconnu — on ne fabrique pas un nom qu'on n'a pas.
+    key: str | None = None
+    label: str | None = None
+    reason: Literal["not_found", "used_in_journey"]
+    # Les parcours concernés, par leur nom (vide si `not_found`).
+    templates: list[str] = Field(default_factory=list)
+
+
+class CustomFieldBulkReport(BaseModel):
+    """Le rapport agrégé, identique en dry-run et en réel (seul `applied`
+    reste à 0 en dry-run)."""
+
+    dry_run: bool
+    requested: int  # ids reçus, dédupliqués
+    eligible: int  # ce que le geste touche (ou toucherait)
+    applied: int  # effectivement modifiées — 0 en dry-run
+    unchanged: int  # déjà dans l'état demandé : ni traitées, ni refusées
+    refused: int
+    # Les conséquences à annoncer AVANT, pas à expliquer après.
+    with_values: int  # champs éligibles portant au moins une valeur saisie
+    values_count: int  # valeurs saisies concernées (fiches + sociétés + dossiers)
+    in_journey: int  # champs éligibles collectés/exigés par un parcours
+    refusals: list[CustomFieldBulkRefusal] = Field(default_factory=list)
+
+
 class CustomFieldDefinitionUpdate(BaseModel):
     """`key` and `field_type` are IMMUTABLE — deliberately absent.
     `scope` est le TOGGLE de reclassification (annuaire, sections) : les

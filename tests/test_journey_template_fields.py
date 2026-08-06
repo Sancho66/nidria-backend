@@ -292,7 +292,13 @@ async def test_field_custom_archived_after_attachment_stays_flagged(
     tf_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
     """Added while active, then the definition is archived: the field row
-    stays in the list, flagged is_archived=true (mirrors requirements)."""
+    stays in the list, flagged is_archived=true (mirrors requirements).
+
+    L'ARCHIVAGE PASSE PAR `force` DEPUIS LE LOT DE MASSE : un champ qu'un
+    parcours collecte ne part plus en silence (409 nommant les parcours).
+    Ce que ce test prouve est INCHANGÉ — la ligne survit, drapeau levé —
+    mais l'état de départ s'obtient désormais par un geste explicite,
+    puisque c'est précisément la situation que la protection vise."""
     headers = agent_headers(admin)
     cf = (
         await tf_client.post(
@@ -305,7 +311,10 @@ async def test_field_custom_archived_after_attachment_stays_flagged(
     field = await _add_field(tf_client, headers, tid, kind="custom_field", reference="temp_visa")
     assert field["is_archived"] is False
 
-    await tf_client.post(f"/agencies/me/custom-fields/{cf['id']}/archive", headers=headers)
+    archived = await tf_client.post(
+        f"/agencies/me/custom-fields/{cf['id']}/archive?force=true", headers=headers
+    )
+    assert archived.status_code == 200, archived.text
 
     listed = (await tf_client.get(f"/journeys/{tid}/fields", headers=headers)).json()
     assert len(listed) == 1  # the row stays

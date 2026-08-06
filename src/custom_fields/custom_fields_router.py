@@ -12,6 +12,8 @@ from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_schema import (
+    CustomFieldBulkReport,
+    CustomFieldBulkRequest,
     CustomFieldDefinitionCreate,
     CustomFieldDefinitionResponse,
     CustomFieldDefinitionUpdate,
@@ -39,6 +41,11 @@ BINDINGS = [
         "/agencies/me/custom-fields/{field_id}/unarchive",
         Audience.AGENT,
         Permission.FIELD_MANAGE,
+    ),
+    # Les gestes de masse : même gate que les gestes à l'unité — traiter
+    # 24 champs d'un coup n'est pas un droit de plus, c'est le même droit.
+    RouteBinding(
+        "POST", "/agencies/me/custom-fields/bulk", Audience.AGENT, Permission.FIELD_MANAGE
     ),
 ]
 
@@ -83,12 +90,27 @@ async def update_custom_field(
     return CustomFieldDefinitionResponse.model_validate(definition)
 
 
+@router.post("/bulk", response_model=CustomFieldBulkReport)
+async def bulk_custom_fields(
+    body: CustomFieldBulkRequest, agent: AgentDep, db: DbDep
+) -> CustomFieldBulkReport:
+    """Archiver / reclasser / ranger une SÉLECTION, en une transaction.
+    `dry_run=true` rend le même rapport sans écrire : c'est ce qui permet
+    d'annoncer les conséquences avant le geste."""
+    return await CustomFieldsManager(db).bulk(agent, body)
+
+
 @router.post("/{field_id}/archive", response_model=CustomFieldDefinitionResponse)
 async def archive_custom_field(
-    field_id: uuid.UUID, agent: AgentDep, db: DbDep
+    field_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    force: Annotated[bool, Query()] = False,
 ) -> CustomFieldDefinitionResponse:
-    """Soft archive (the only removal). Saved values are kept."""
-    definition = await CustomFieldsManager(db).archive(agent, field_id)
+    """Soft archive (the only removal). Saved values are kept. Refusé
+    (409) si un parcours collecte ou exige le champ — `force=true` le
+    franchit explicitement."""
+    definition = await CustomFieldsManager(db).archive(agent, field_id, force=force)
     return CustomFieldDefinitionResponse.model_validate(definition)
 
 

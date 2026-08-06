@@ -7441,13 +7441,60 @@
         }
       }
     },
+    "/agencies/me/custom-fields/bulk": {
+      "post": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Bulk Custom Fields",
+        "description": "Archiver / reclasser / ranger une SÉLECTION, en une transaction.\n`dry_run=true` rend le même rapport sans écrire : c'est ce qui permet\nd'annoncer les conséquences avant le geste.",
+        "operationId": "bulk_custom_fields_agencies_me_custom_fields_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomFieldBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldBulkReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me/custom-fields/{field_id}/archive": {
       "post": {
         "tags": [
           "custom-fields"
         ],
         "summary": "Archive Custom Field",
-        "description": "Soft archive (the only removal). Saved values are kept.",
+        "description": "Soft archive (the only removal). Saved values are kept. Refusé\n(409) si un parcours collecte ou exige le champ — `force=true` le\nfranchit explicitement.",
         "operationId": "archive_custom_field_agencies_me_custom_fields__field_id__archive_post",
         "security": [
           {
@@ -7463,6 +7510,16 @@
               "type": "string",
               "format": "uuid",
               "title": "Field Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
             }
           }
         ],
@@ -23814,6 +23871,192 @@
         ],
         "title": "CurrencyTotals",
         "description": "The three totals FOR ONE currency — planned, real, écart — each computed\nat read, never materialized, NEVER summed across currencies (no rate).\n\n`planned_paid_in_other_currency` disambiguates the honest-but-misleading case:\na line PLANNED in this currency but PAID in another adds to `planned_total`\nyet NOT to `real_total` here, so the entry can read \"planned 120, real 0\" as\nif unpaid. This counter (lines planned here, actually paid, in another\ncurrency) lets the front annotate — \"1 line paid in another currency\" —\ninstead of the front re-scanning every line to notice (it cannot otherwise)."
+      },
+      "CustomFieldBulkRefusal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "used_in_journey"
+            ],
+            "title": "Reason"
+          },
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Templates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reason"
+        ],
+        "title": "CustomFieldBulkRefusal",
+        "description": "Un refus NOMMÉ : l'écran doit pouvoir dire « Adresse fiscale »,\npas « 3 champs refusés »."
+      },
+      "CustomFieldBulkReport": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "requested": {
+            "type": "integer",
+            "title": "Requested"
+          },
+          "eligible": {
+            "type": "integer",
+            "title": "Eligible"
+          },
+          "applied": {
+            "type": "integer",
+            "title": "Applied"
+          },
+          "unchanged": {
+            "type": "integer",
+            "title": "Unchanged"
+          },
+          "refused": {
+            "type": "integer",
+            "title": "Refused"
+          },
+          "with_values": {
+            "type": "integer",
+            "title": "With Values"
+          },
+          "values_count": {
+            "type": "integer",
+            "title": "Values Count"
+          },
+          "in_journey": {
+            "type": "integer",
+            "title": "In Journey"
+          },
+          "refusals": {
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldBulkRefusal"
+            },
+            "type": "array",
+            "title": "Refusals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dry_run",
+          "requested",
+          "eligible",
+          "applied",
+          "unchanged",
+          "refused",
+          "with_values",
+          "values_count",
+          "in_journey"
+        ],
+        "title": "CustomFieldBulkReport",
+        "description": "Le rapport agrégé, identique en dry-run et en réel (seul `applied`\nreste à 0 en dry-run)."
+      },
+      "CustomFieldBulkRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Ids"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "archive",
+              "scope",
+              "section"
+            ],
+            "title": "Action"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "person",
+                  "case"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "profile_section": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "identity",
+                  "contact",
+                  "situation",
+                  "misc"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Section"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids",
+          "action"
+        ],
+        "title": "CustomFieldBulkRequest",
+        "description": "LES GESTES DE MASSE sur les définitions — par LISTE D'IDS, jamais\npar filtre : l'agence traite ce qu'elle a sélectionné à l'écran, donc\nce qu'elle voit (même principe que la suppression de masse des fiches,\noù le filtre est le geste ; ici la sélection l'est).\n\n`dry_run` rend le MÊME rapport sans rien écrire : c'est ce qui permet\nà l'écran d'annoncer AVANT plutôt que d'expliquer après. Une seule\névaluation sert les deux (cf. `_evaluate`) — le compte annoncé et le\ngeste appliqué ne peuvent pas diverger."
       },
       "CustomFieldDefinitionCreate": {
         "properties": {

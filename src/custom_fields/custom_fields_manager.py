@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -12,6 +12,9 @@ from src.core.exceptions import ConflictError, NotFoundError
 from src.core.i18n import DEFAULT_LANG, apply_i18n_write
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_schema import (
+    CustomFieldBulkRefusal,
+    CustomFieldBulkReport,
+    CustomFieldBulkRequest,
     CustomFieldDefinitionCreate,
     CustomFieldDefinitionUpdate,
 )
@@ -164,17 +167,139 @@ class CustomFieldsManager:
         await self.db.refresh(definition)
         return definition
 
-    async def archive(self, agent: Agent, field_id: uuid.UUID) -> CustomFieldDefinition:
+    async def archive(
+        self, agent: Agent, field_id: uuid.UUID, *, force: bool = False
+    ) -> CustomFieldDefinition:
         """Soft archive — the only form of removal. Saved values are
-        kept (the JSONB is independent); the field leaves the form."""
+        kept (the JSONB is independent); the field leaves the form.
+
+        LA PROTECTION PARCOURS (posée ici, elle n'existait pas) : un champ
+        qu'un parcours collecte ou exige ne part pas en silence — 409 qui
+        NOMME les parcours. `force=True` la franchit, en connaissance de
+        cause. Ce n'est pas un mur : le reste du système tolère un champ
+        archivé attaché (il reste listé, drapeau `is_archived`), et 175 des
+        254 définitions actives de la base de dev sont dans ce cas — un
+        refus sans issue rendrait l'archivage impraticable."""
         definition = await self.repo.get_in_agency(agent.agency_id, field_id)
         if definition is None:
             raise NotFoundError("Custom field not found.")
         if definition.archived_at is None:
+            if not force:
+                usage = await self.repo.journey_usage(agent.agency_id, {definition.key})
+                if definition.key in usage:
+                    raise ConflictError(
+                        f"Custom field {definition.key!r} is used by a journey template.",
+                        code="custom_field.used_in_journey",
+                        params={"label": definition.label, "templates": usage[definition.key]},
+                    )
             definition.archived_at = datetime.now(UTC)
             await self.db.commit()
             await self.db.refresh(definition)
         return definition
+
+    async def bulk(self, agent: Agent, payload: CustomFieldBulkRequest) -> CustomFieldBulkReport:
+        """LES TROIS GESTES DE MASSE — archiver, reclasser, ranger — sur
+        une SÉLECTION d'ids, en une transaction et un rapport.
+
+        UNE SEULE évaluation sert le dry-run et le geste : le compte
+        annoncé à l'écran et ce qui est appliqué ne peuvent pas diverger
+        (même principe que l'aperçu d'import, où `_analyze` décide seul).
+        `dry_run` s'arrête juste avant l'écriture, tout le reste est
+        identique — refus compris."""
+        ids = set(payload.ids)
+        found = await self.repo.by_ids_in_agency(agent.agency_id, ids)
+        by_id = {d.id: d for d in found}
+        # Un id inconnu (ou d'une autre agence) est un refus, pas un silence.
+        refusals = [
+            CustomFieldBulkRefusal(id=missing, reason="not_found")
+            for missing in sorted(ids - by_id.keys(), key=str)
+        ]
+        keys = {d.key for d in found}
+        usage = await self.repo.journey_usage(agent.agency_id, keys)
+        values = await self.repo.value_counts(agent.agency_id, keys)
+
+        eligible: list[CustomFieldDefinition] = []
+        unchanged = 0
+        for definition in found:
+            if payload.action == "archive":
+                if definition.archived_at is not None:
+                    unchanged += 1
+                    continue
+                if definition.key in usage and not payload.force:
+                    refusals.append(
+                        CustomFieldBulkRefusal(
+                            id=definition.id,
+                            key=definition.key,
+                            label=definition.label,
+                            reason="used_in_journey",
+                            templates=usage[definition.key],
+                        )
+                    )
+                    continue
+            elif (
+                payload.action == "scope"
+                and definition.scope == payload.scope
+                or (
+                    payload.action == "section"
+                    and definition.profile_section == payload.profile_section
+                )
+            ):
+                unchanged += 1
+                continue
+            eligible.append(definition)
+
+        # Les conséquences se comptent sur les ÉLIGIBLES : annoncer des
+        # valeurs concernées par un champ qu'on refuse serait un mensonge.
+        report = CustomFieldBulkReport(
+            dry_run=payload.dry_run,
+            requested=len(ids),
+            eligible=len(eligible),
+            applied=0,
+            unchanged=unchanged,
+            refused=len(refusals),
+            with_values=sum(1 for d in eligible if values.get(d.key)),
+            values_count=sum(values.get(d.key, 0) for d in eligible),
+            in_journey=sum(1 for d in eligible if d.key in usage),
+            refusals=refusals,
+        )
+        if payload.dry_run or not eligible:
+            return report
+
+        if payload.action == "archive":
+            changes: dict[str, object] = {"archived_at": datetime.now(UTC)}
+        elif payload.action == "scope":
+            changes = {"scope": payload.scope}
+        else:
+            changes = {"profile_section": payload.profile_section}
+        # UN seul UPDATE pour toute la sélection (leçon du lot d'import :
+        # une écriture par ligne coûte une requête par ligne).
+        await self.db.execute(
+            update(CustomFieldDefinition)
+            .where(CustomFieldDefinition.id.in_([d.id for d in eligible]))
+            .values(**changes)
+            .execution_options(synchronize_session=False)
+        )
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="agency.custom_fields_set",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={
+                "bulk": payload.action,
+                "count": len(eligible),
+                "keys": sorted(d.key for d in eligible),
+                **({"scope": payload.scope} if payload.action == "scope" else {}),
+                **(
+                    {"profile_section": payload.profile_section}
+                    if payload.action == "section"
+                    else {}
+                ),
+                **({"forced": True} if payload.force and payload.action == "archive" else {}),
+            },
+        )
+        await self.db.commit()
+        report.applied = len(eligible)
+        return report
 
     async def unarchive(self, agent: Agent, field_id: uuid.UUID) -> CustomFieldDefinition:
         """Symmetric to archive: clears archived_at. The field reappears
