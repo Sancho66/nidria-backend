@@ -40,6 +40,16 @@ class CustomFieldDefinitionCreate(BaseModel):
     options: list[str] | None = None
     required: bool = False
     position: int = 0
+    # LA PORTÉE, ENFIN CHOISIE (constat champs invisibles). Elle manquait
+    # à ce contrat : l'API ne l'acceptait pas, le défaut `case` de
+    # `build_definition` s'appliquait donc TOUJOURS, et un champ créé
+    # depuis les réglages ne pouvait structurellement jamais apparaître
+    # sur une fiche client. Le front l'envoie désormais explicitement.
+    #
+    # Absent = `case`, le comportement d'avant : ce lot ouvre le choix, il
+    # ne déplace pas le défaut (un appelant existant qui se tait garde ce
+    # qu'il avait).
+    scope: Literal["person", "case"] | None = None
 
     @model_validator(mode="after")
     def _check_options(self) -> "CustomFieldDefinitionCreate":

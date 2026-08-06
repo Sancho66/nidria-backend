@@ -23868,6 +23868,21 @@
             "type": "integer",
             "title": "Position",
             "default": 0
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "person",
+                  "case"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
           }
         },
         "type": "object",

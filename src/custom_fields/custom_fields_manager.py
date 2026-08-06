@@ -115,7 +115,10 @@ class CustomFieldsManager:
     async def create(
         self, agent: Agent, payload: CustomFieldDefinitionCreate
     ) -> CustomFieldDefinition:
-        definition = await self.build_definition(agent, payload)
+        # La portée voulue, ou le défaut historique si l'appelant se tait.
+        definition = await self.build_definition(
+            agent, payload, scope=payload.scope or "case"
+        )
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
             event_type="agency.custom_fields_set",
