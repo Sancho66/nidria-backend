@@ -2,7 +2,15 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -152,3 +160,42 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     @property
     def has_cover(self) -> bool:
         return self.cover_path is not None
+
+
+class AgencyProfileSection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """LA SECTION DE FICHE, devenue une donnée d'agence (lot du 07/08).
+
+    Les 4 sections (identity / contact / situation / misc) vivaient dans
+    `PROFILE_SECTIONS`, en dur. Elles vivent désormais en base, par agence
+    ET PAR SURFACE (`person` | `company`) : les deux faces servent la même
+    taxonomie par défaut, mais rien n'oblige une agence à les faire
+    évoluer ensemble.
+
+    `key` NE CHANGE JAMAIS après création : c'est elle que portent
+    `custom_field_definition.profile_section` et
+    `company_field_definition.profile_section`. Renommer une section
+    touche son LIBELLÉ, jamais sa clé — sans quoi tous ses champs
+    tomberaient en « Divers » d'un coup.
+
+    `label_i18n` VIDE = « je n'ai pas renommé » : le libellé se résout
+    alors depuis le catalogue produit (`PROFILE_SECTIONS`), qui porte les
+    7 langues et suit les corrections de traduction. Graver les libellés à
+    la migration aurait figé 8 agences × 4 sections × 7 langues sur l'état
+    du jour — elles ne suivraient plus jamais une correction.
+    """
+
+    __tablename__ = "agency_profile_section"
+    __table_args__ = (
+        UniqueConstraint("agency_id", "surface", "key", name="uq_agency_profile_section"),
+    )
+
+    agency_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # 'person' | 'company' — la face dont cette section est une section.
+    surface: Mapped[str] = mapped_column(String(10), nullable=False)
+    key: Mapped[str] = mapped_column(String(50), nullable=False)
+    label_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    position: Mapped[int] = mapped_column(default=0, nullable=False, server_default=text("0"))

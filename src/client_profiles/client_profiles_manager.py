@@ -7,7 +7,7 @@ sont des péages explicites tracés ; toute requête est scopée agence
 (non-révélation cross-agence, patron prefill-source)."""
 
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,9 @@ from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_validation import visible_values
 from src.progress.requirements_eval import COLLECTABLE_BASE_FIELDS, profile_field_value
 
+if TYPE_CHECKING:
+    from shared.models.agency import AgencyProfileSection
+
 
 def _is_empty(value: Any) -> bool:
     return value in (None, "", [], {})
@@ -91,40 +94,54 @@ def completeness(
 
 
 def resolve_field_sections(
-    person_defs: list[CustomFieldDefinition], lang: str
+    sections: list["AgencyProfileSection"],
+    person_defs: list[CustomFieldDefinition],
+    lang: str,
 ) -> "list[ProfileFieldSectionResponse]":
-    """Lot taxonomie — la fiche sert SES sections (PROFILE_SECTIONS,
-    i18n ×7), le picker de collecte garde les siennes : deux univers
-    assumés. Le contrat est l'EXHAUSTIVITÉ (prouvée par test) : tout
-    champ person a exactement UNE section — les colonnes civiles par le
-    mapping code, les définitions custom par leur colonne (défaut
-    'misc'). Les 4 sections sont TOUJOURS servies, vides incluses
-    (fusion id_documents → identity : l'état civil d'abord, les
-    documents ensuite — l'ordre du catalogue)."""
+    """La fiche sert LES SECTIONS DE SON AGENCE (lot du 07/08) — elles
+    venaient de `PROFILE_SECTIONS`, en dur ; elles viennent de la base,
+    avec leur ordre et leur libellé. Le picker de collecte garde les
+    siennes : deux univers assumés.
+
+    Le contrat ne bouge pas, et c'est ce qui rend le lot sûr : toute
+    section de l'agence est servie, vide incluse, et tout champ person a
+    exactement UNE section — les colonnes civiles par le mapping code
+    (non déplaçables, backlog D5), les définitions par leur colonne. Une
+    section DISPARUE (supprimée pendant qu'un écran était ouvert) fait
+    retomber ses champs en « Divers » plutôt que de les faire
+    disparaître : le repli existe pour ça.
+    """
+    from src.agencies.profile_sections_manager import MISC, catalog_label_i18n, section_name
     from src.client_profiles.profile_sections import (
         CIVIL_PROFILE_SECTION,
         IDENTITY_SECTION_ORDER,
         PERSON_SHEET_EXCLUDED_KEYS,
-        PROFILE_SECTIONS,
     )
 
-    buckets: dict[str, list[str]] = {key: [] for key in PROFILE_SECTIONS}
+    buckets: dict[str, list[str]] = {section.key: [] for section in sections}
+    buckets.setdefault(MISC, [])  # le berceau existe toujours, même supprimé en base
     for reference in sorted(COLLECTABLE_BASE_FIELDS):
-        buckets[CIVIL_PROFILE_SECTION[reference]].append(reference)
+        civil_section = CIVIL_PROFILE_SECTION[reference]
+        buckets.setdefault(civil_section, []).append(reference)
     for definition in person_defs:
         if definition.key in PERSON_SHEET_EXCLUDED_KEYS:
             continue  # univers société : la collecte dossier le sert, pas la fiche
-        section = getattr(definition, "profile_section", None) or "misc"
-        buckets.get(section, buckets["misc"]).append(definition.key)
+        section = getattr(definition, "profile_section", None) or MISC
+        buckets.get(section, buckets[MISC]).append(definition.key)
     rank = {key: index for index, key in enumerate(IDENTITY_SECTION_ORDER)}
-    buckets["identity"].sort(key=lambda key: rank.get(key, len(rank)))  # tri stable
+    if "identity" in buckets:
+        buckets["identity"].sort(key=lambda key: rank.get(key, len(rank)))  # tri stable
     return [
         ProfileFieldSectionResponse(
-            key=section_key,
-            name=labels.get(lang) or labels["fr"],
-            references=buckets[section_key],
+            key=section.key,
+            name=section_name(section, lang, lang),
+            # D7 : le blob ×7 voyage à côté du résolu — l'écran choisit.
+            # Le repli catalogue vaut ici aussi : une section non renommée
+            # sert les 7 langues du produit, pas un libellé gelé.
+            name_i18n=section.label_i18n or catalog_label_i18n(section.key),
+            references=buckets.get(section.key, []),
         )
-        for section_key, labels in PROFILE_SECTIONS.items()
+        for section in sections
     ]
 
 
@@ -373,6 +390,13 @@ class ClientProfilesManager:
             else {}
         )
         agency_lang = await self.repo.agency_default_language(agent.agency_id)
+        # Les sections de l'agence, matérialisées si la surface n'a jamais
+        # été ouverte (une agence née après la migration). Lecture qui
+        # peut ÉCRIRE, comme la matérialisation des champs société : le
+        # commit vit dans l'appelant, qui en a déjà un.
+        from src.agencies.profile_sections_manager import list_sections
+
+        agency_sections = await list_sections(self.db, agent.agency_id, "person")
         current_steps: dict[uuid.UUID, str | None] = {}
         for case_id, (step, _index, _total) in step_rows.items():
             current_steps[case_id] = (
@@ -433,7 +457,7 @@ class ClientProfilesManager:
                 )
             ],
             completeness=completeness(profile, person_defs),
-            sections=resolve_field_sections(person_defs, agency_lang),
+            sections=resolve_field_sections(agency_sections, person_defs, agency_lang),
             created_at=profile.created_at,
             updated_at=profile.updated_at,
         )

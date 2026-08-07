@@ -744,6 +744,14 @@ async def test_profile_sections_follow_fiche_taxonomy(
     # Le custom d'agence naît en Divers, reclassable par le toggle élargi.
     assert by_key["misc"]["references"] == ["champ_maison"]
     assert by_key["misc"]["name"] == "Divers"  # i18n langue d'agence (fr)
+    # D7 — LE NOM BRUT ×7 VOYAGE À CÔTÉ DU RÉSOLU. Le `name` reste ce
+    # qu'il était (langue d'AGENCE) : ce lot ajoute, il ne déplace pas.
+    # `name_i18n` permet à l'écran de résoudre dans la langue du VISITEUR
+    # sans retraduire depuis sa propre table de clés — table qui n'aura
+    # plus de réponse le jour où une agence créera sa section (lot 2).
+    assert by_key["misc"]["name_i18n"]["fr"] == "Divers"
+    assert by_key["misc"]["name_i18n"]["hu"], "les 7 langues, comme label_i18n"
+    assert set(by_key["identity"]["name_i18n"]) == {"fr", "en", "es", "ru", "pt", "it", "hu"}
 
 
 async def test_scope_toggle_reclassifies_definition(

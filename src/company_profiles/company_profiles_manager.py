@@ -5,9 +5,16 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import AgencyProfileSection
 from shared.models.agent import Agent
-from shared.models.company_profile import CompanyProfile, CompanyProfileRole
+from shared.models.company_profile import (
+    CompanyFieldDefinition,
+    CompanyProfile,
+    CompanyProfileRole,
+)
+from src.agencies.profile_sections_manager import list_sections
 from src.client_profiles.client_profiles_schema import ProfileFieldSectionResponse
+from src.company_profiles.company_catalog import materialize_company_definitions
 from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 from src.company_profiles.company_profiles_schema import (
     CompanyBulkDeleteRequest,
@@ -24,7 +31,7 @@ from src.company_profiles.company_profiles_schema import (
 )
 from src.core.bulk_delete import BulkDeleteReport, run_bulk_delete
 from src.core.exceptions import ConflictError, NotFoundError
-from src.custom_fields.custom_fields_manager import CustomFieldsManager
+from src.core.i18n import resolve_i18n
 
 
 def _is_empty(value: Any) -> bool:
@@ -32,29 +39,51 @@ def _is_empty(value: Any) -> bool:
 
 
 def resolve_company_sections(
-    custom_fields: dict[str, Any], lang: str
+    sections: list["AgencyProfileSection"],
+    definitions: list[CompanyFieldDefinition],
+    custom_fields: dict[str, Any],
+    lang: str,
 ) -> list[ProfileFieldSectionResponse]:
-    """Le plan de valeurs société sur la taxonomie posée (V2b) : les
-    presets company mappés, les clés libres en 'misc'. Les 5 sections
-    TOUJOURS servies — même contrat que la fiche personne."""
-    from src.client_profiles.profile_sections import (
-        COMPANY_PRESET_PROFILE_SECTION,
-        COMPANY_PROFILE_SECTIONS,
-    )
+    """Le plan de valeurs société — LU DANS LES DÉFINITIONS (lot du
+    07/08), plus dans le plan figé du code.
 
-    buckets: dict[str, list[str]] = {key: [] for key in COMPANY_PROFILE_SECTIONS}
-    for preset, section in COMPANY_PRESET_PROFILE_SECTION.items():
-        buckets[section].append(preset)
+    Ce que ça change, et c'est tout l'objet du lot : `profile_section`
+    était ignorée, donc reclasser un champ société ne pouvait rien
+    produire ; l'écran avait raison de couper le geste. La section servie
+    est désormais celle de la définition, l'ordre celui de sa `position`,
+    et une définition ARCHIVÉE quitte la fiche — sa valeur reste dans le
+    sac (règle des clés orphelines, identique à la face personne).
+
+    Les 4 sections sont TOUJOURS servies, même vides — même contrat que
+    la fiche personne. Une clé du sac sans définition (le temps d'un
+    aller-retour, ou une valeur écrite pendant que l'écran est ouvert)
+    retombe en 'misc' : elle se montre, elle ne disparaît jamais.
+    """
+    from src.agencies.profile_sections_manager import MISC, catalog_label_i18n, section_name
+
+    buckets: dict[str, list[str]] = {section.key: [] for section in sections}
+    buckets.setdefault(MISC, [])  # le berceau, même si la base ne le porte plus
+    declared: set[str] = set()
+    for definition in sorted(definitions, key=lambda d: (d.position, d.key)):
+        declared.add(definition.key)
+        if definition.archived_at is not None:
+            continue
+        section = definition.profile_section
+        buckets[section if section in buckets else MISC].append(definition.key)
     for key in custom_fields:
-        if key not in COMPANY_PRESET_PROFILE_SECTION:
-            buckets["misc"].append(key)
+        if key not in declared:
+            buckets[MISC].append(key)
     return [
         ProfileFieldSectionResponse(
-            key=section_key,
-            name=labels.get(lang) or labels["fr"],
-            references=buckets[section_key],
+            key=section.key,
+            name=section_name(section, lang, lang),
+            # D7 : même contrat des deux côtés — la face société a ses
+            # PROPRES sections d'agence (surface `company`), mais elle sert
+            # les mêmes 7 langues et le même repli catalogue.
+            name_i18n=section.label_i18n or catalog_label_i18n(section.key),
+            references=buckets.get(section.key, []),
         )
-        for section_key, labels in COMPANY_PROFILE_SECTIONS.items()
+        for section in sections
     ]
 
 
@@ -104,15 +133,34 @@ class CompanyProfilesManager:
         lang = await self._agency_lang(agent.agency_id)
         roles = await self.repo.roles_with_identity([company.id])
         cases = await self.repo.cases_for_company(company.id)
+        sack = dict(company.custom_fields or {})
+        # MATÉRIALISATION PARESSEUSE (le pattern personne) : ouvrir une
+        # fiche déclare les 17 presets, et les clés de CETTE société qui
+        # n'ont pas encore de définition. On ne balaie pas les sacs de
+        # toute l'agence ici — l'écran des Réglages le fait, lui, sur une
+        # passe qu'il paie déjà ; la fiche ne déclare que ce qu'elle
+        # montre, sur des clés qu'elle a déjà en main (zéro requête de
+        # plus).
+        definitions = await materialize_company_definitions(
+            self.db, agent.agency_id, sack_keys=frozenset(sack)
+        )
+        agency_sections = await list_sections(self.db, agent.agency_id, "company")
+        await self.db.commit()
         return CompanyProfileResponse(
             id=company.id,
             name=company.name,
-            custom_fields=dict(company.custom_fields or {}),
+            custom_fields=sack,
             source=company.source,
             tags=list(company.tags or []),
-            sections=resolve_company_sections(dict(company.custom_fields or {}), lang),
+            sections=resolve_company_sections(agency_sections, definitions, sack, lang),
+            # Le libellé SERVI de chaque clé vivante. Avant le lot, cette
+            # carte ne portait que les clés baptisées par l'agence : la
+            # distinction « personnalisé / d'origine » n'existe plus, une
+            # définition matérialisée naît AVEC son libellé de catalogue.
             field_labels={
-                row.key: row.label for row in await self.repo.field_labels(agent.agency_id)
+                row.key: resolve_i18n(row.label_i18n, lang, lang, row.label) or row.label
+                for row in definitions
+                if row.archived_at is None
             },
             roles=[
                 CompanyRoleResponse(
@@ -289,26 +337,36 @@ class CompanyProfilesManager:
     async def rename_field(
         self, agent: Agent, key: str, payload: "CompanyFieldLabelUpdate", lang: str
     ) -> "CompanyFieldLabelResponse":
-        """LE SEUL GESTE de l'univers société : renommer une clé.
+        """Renommer une clé société — le geste par la CLÉ (le front le
+        tient déjà ainsi), désormais posé sur la DÉFINITION.
 
-        Ses champs n'ont pas de définition — ni archivage, ni typage, ni
-        déplacement (constat du 07/08). Sans ce geste, l'onglet Société
-        serait en lecture seule intégrale.
+        Ce que le lot change : la ligne n'est plus une surcharge de
+        libellé qu'on crée et supprime, c'est la définition du champ. La
+        renommer touche `label` (+ `label_i18n` remis à plat : un libellé
+        choisi par l'agence n'a pas de traduction, et en inventer une
+        serait pire que son absence) ; sa section, sa position, son type
+        et son archivage ne bougent pas.
 
-        La clé doit APPARTENIR à l'univers de l'agence : un preset
-        société, ou une clé réellement présente dans le sac d'une de ses
-        sociétés. Sinon 404 — on ne laisse pas semer des libellés sur des
-        clés inventées, qui n'apparaîtraient jamais nulle part.
+        La clé doit APPARTENIR à l'univers de l'agence : une définition
+        (donc un preset matérialisé, ou une clé baptisée), ou une clé
+        réellement présente dans le sac d'une de ses sociétés — auquel
+        cas la matérialisation la déclare au passage. Sinon 404 : on ne
+        sème pas de libellés sur des clés inventées.
 
-        `label = null` retire la personnalisation (la ligne est supprimée,
-        pas vidée) : la clé retrouve son libellé d'origine."""
-        from sqlalchemy import delete, select, text
+        `label = null` REND LE LIBELLÉ D'ORIGINE (catalogue pour un
+        preset, clé lisible sinon) au lieu de supprimer la ligne — la
+        supprimer emporterait section, position et archivage avec elle.
+        """
+        from sqlalchemy import text
 
-        from shared.models.company_profile import CompanyFieldLabel
-        from src.client_profiles.profile_sections import COMPANY_PRESET_PROFILE_SECTION
-        from src.custom_fields.field_universe import _label
+        from src.company_profiles.company_catalog import (
+            company_preset_keys,
+            company_preset_spec,
+            humanize,
+            materialize_company_definitions,
+        )
 
-        known = key in COMPANY_PRESET_PROFILE_SECTION
+        known = key in company_preset_keys()
         if not known:
             rows = await self.db.execute(
                 text(
@@ -318,37 +376,23 @@ class CompanyProfilesManager:
                 {"agency_id": agent.agency_id, "key": key},
             )
             known = rows.first() is not None
-        if not known:
+        definitions = await materialize_company_definitions(
+            self.db, agent.agency_id, sack_keys=frozenset({key} if known else set())
+        )
+        existing = next((d for d in definitions if d.key == key), None)
+        if existing is None:
             raise NotFoundError(
                 f"Unknown company field {key!r}.", code="company_profile.field_not_found"
             )
 
-        existing = (
-            await self.db.execute(
-                select(CompanyFieldLabel).where(
-                    CompanyFieldLabel.agency_id == agent.agency_id,
-                    CompanyFieldLabel.key == key,
-                )
-            )
-        ).scalar_one_or_none()
-
         if payload.label is None:
-            if existing is not None:
-                await self.db.execute(
-                    delete(CompanyFieldLabel).where(CompanyFieldLabel.id == existing.id)
-                )
-                await self.db.commit()
-            agency_default = await CustomFieldsManager(self.db).agency_default(agent.agency_id)
-            return CompanyFieldLabelResponse(
-                key=key, label=_label(key, lang, agency_default), customized=False
-            )
+            _type, _section, labels = company_preset_spec(key)
+            existing.label_i18n = dict(labels)
+            existing.label = labels.get(lang) or labels.get("fr") or humanize(key)
+            await self.db.commit()
+            return CompanyFieldLabelResponse(key=key, label=existing.label, customized=False)
 
-        if existing is None:
-            # `kind` reste au défaut 'text' : renommer ne retype rien —
-            # le kind de la naissance (posé à l'import) est une autre
-            # vérité, et ce geste n'y touche pas.
-            self.db.add(CompanyFieldLabel(agency_id=agent.agency_id, key=key, label=payload.label))
-        else:
-            existing.label = payload.label
+        existing.label = payload.label
+        existing.label_i18n = {}
         await self.db.commit()
         return CompanyFieldLabelResponse(key=key, label=payload.label, customized=True)

@@ -40,7 +40,23 @@ class ProfileFieldSectionResponse(BaseModel):
     null) ferme la liste s'il reste des clés hors catalogue."""
 
     key: str | None
+    # Le nom RÉSOLU en langue d'agence — le repli, et ce qu'attendent les
+    # appelants d'avant. Il reste servi : ce lot ajoute, il ne déplace pas.
     name: str | None
+    # Le nom BRUT ×7 (demande D7), même forme que `label_i18n` sur les
+    # champs et pour la même raison : le nom d'une section se résout dans
+    # la langue du VISITEUR, pas dans celle de l'agence. Servir le seul
+    # résolu obligeait l'écran à retraduire les clés qu'il connaît et à
+    # retomber sur le servi pour les autres — un repli qui MENTIRA dès
+    # qu'une agence créera sa propre section (lot 2), puisqu'il n'y aura
+    # plus de table côté écran où la retrouver.
+    #
+    # PAS DE DÉFAUT : un producteur qui se tairait servirait `{}` en
+    # silence, et l'écran retomberait sur le nom d'agence sans que rien ne
+    # le signale — exactement le motif de l'arbitrage `scope` du 07/08.
+    # Vide est une réponse LÉGITIME (le panier « Sans catégorie », qui n'a
+    # pas de nom du tout), donc elle doit être ÉCRITE, pas déduite.
+    name_i18n: dict[str, str]
     references: list[str]
 
 

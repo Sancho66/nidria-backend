@@ -6,9 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.company_profile import CompanyFieldDefinition
 from shared.models.custom_field import CustomFieldDefinition
+from src.agencies.profile_sections_manager import assert_section_exists
+from src.company_profiles.company_catalog import (
+    company_definition_by_id,
+    company_definitions_by_ids,
+    company_value_counts,
+)
 from src.core.enums import ActorType
-from src.core.exceptions import ConflictError, NotFoundError
+from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.i18n import DEFAULT_LANG, apply_i18n_write
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_schema import (
@@ -105,6 +112,10 @@ class CustomFieldsManager:
         client. Une clé du catalogue se classe par
         `catalog_classification` ; un champ voulu par l'agence porte le
         choix qu'elle a fait à l'écran."""
+        # `key` n'est optionnelle au contrat QUE pour la face société, où
+        # elle est dérivée (`_create_company`) — sur ce chemin le
+        # validateur du schéma l'a déjà exigée.
+        assert payload.key is not None
         if await self.repo.get_by_key(agent.agency_id, payload.key) is not None:
             raise ConflictError(f"A custom field with key {payload.key!r} already exists.")
         agency_default = await self.agency_default(agent.agency_id)
@@ -127,9 +138,20 @@ class CustomFieldsManager:
 
     async def create(
         self, agent: Agent, payload: CustomFieldDefinitionCreate
-    ) -> CustomFieldDefinition:
+    ) -> "CustomFieldDefinition | CompanyFieldDefinition":
+        # LA FACE SOCIÉTÉ PASSE PAR LA MÊME PORTE (D9) — comme le PATCH,
+        # l'archivage et la masse. Le dispatch se fait sur la portée
+        # DEMANDÉE, seule information disponible avant qu'une ligne existe
+        # (les trois autres gestes, eux, dispatchent sur l'id trouvé).
+        if payload.scope == "company":
+            return await self._create_company(agent, payload)
+        section = payload.profile_section or "misc"
+        if payload.profile_section is not None:
+            await assert_section_exists(self.db, agent.agency_id, "person", section)
         # La portée voulue, ou le défaut historique si l'appelant se tait.
-        definition = await self.build_definition(agent, payload, scope=payload.scope or "case")
+        definition = await self.build_definition(
+            agent, payload, scope=payload.scope or "case", profile_section=section
+        )
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
             event_type="agency.custom_fields_set",
@@ -141,11 +163,142 @@ class CustomFieldsManager:
         await self.db.refresh(definition)
         return definition
 
+    async def _create_company(
+        self, agent: Agent, payload: CustomFieldDefinitionCreate
+    ) -> "CompanyFieldDefinition":
+        """CRÉER un champ de fiche SOCIÉTÉ (D9) — le geste qui manquait à
+        cette face : ses champs ne naissaient que du catalogue (les 17
+        presets matérialisés) ou d'une colonne baptisée à la grille
+        d'import. Une agence qui voulait « Numéro de greffe » n'avait que
+        le détour d'un fichier.
+
+        LA CLÉ EST DÉRIVÉE, JAMAIS REÇUE, par la MÊME moulinette que la
+        grille d'import (`slugify_field_label`) : les deux chemins qui
+        peuplent cette table fabriquent donc la même clé pour le même
+        libellé — « Numéro de greffe » saisi ici et importé demain se
+        retrouvent, au lieu de coexister en double.
+
+        DEUX COLLISIONS, DEUX REFUS DISTINCTS, parce que l'issue diffère :
+        - un PRESET du catalogue (409 `company_field.key_reserved`) : la
+          clé appartient au produit, elle est déjà dans l'univers de
+          l'agence (ou y entrera à la première ouverture d'écran) — le
+          recours est de renommer ce champ-là, pas d'en créer un second ;
+        - une clé DÉJÀ PRISE par l'agence (409 `company_field.key_exists`,
+          avec l'id et le libellé de la définition en place, et son état
+          d'archivage) : le recours est de la renommer ou de la
+          ressusciter. Un champ archivé compte comme pris — la contrainte
+          `(agency_id, key)` couvre les archivés, et créer par-dessus
+          adopterait ses valeurs en silence.
+
+        On MATÉRIALISE avant de comparer (les 17 presets + les clés de
+        sack de toute l'agence) : sans ça, une agence qui n'a jamais
+        ouvert un écran société aurait zéro définition en base, donc zéro
+        collision détectée, et le nouveau champ naîtrait sur une clé déjà
+        porteuse de valeurs. C'est aussi ce qui rend la position vraie —
+        voir plus bas. Le refus, lui, n'écrit rien : la transaction n'est
+        jamais committée sur ce chemin.
+        """
+        from shared.models.company_profile import CompanyFieldDefinition
+        from src.company_profiles.company_catalog import (
+            company_preset_keys,
+            company_preset_spec,
+            company_sack_keys,
+            humanize,
+            materialize_company_definitions,
+        )
+        from src.imports.value_normalizers import slugify_field_label
+
+        # Les attributs que cette face NE PORTE PAS — mêmes refus, même
+        # code que le PATCH (`_update_company`) : `options`/`required`
+        # n'existent pas sur `company_field_definition`, et `key` est
+        # dérivée. Accepter pour ne rien en faire serait un mensonge.
+        for unsupported in ("key", "options", "required"):
+            if getattr(payload, unsupported):
+                raise ValidationError(
+                    f"`{unsupported}` does not apply to a company field.",
+                    code="company_field.unsupported_attribute",
+                    params={"attribute": unsupported},
+                )
+        if payload.profile_section is None:
+            # SANS DÉFAUT, à la différence de la face personne : « Divers »
+            # posé en silence ferait naître le champ ailleurs que là où
+            # l'agence l'a déposé (le motif exact de l'arbitrage `scope`).
+            raise ValidationError(
+                "`profile_section` is required for a company field.",
+                code="company_field.section_required",
+            )
+        await assert_section_exists(self.db, agent.agency_id, "company", payload.profile_section)
+
+        key = slugify_field_label(payload.label)
+        if key in company_preset_keys():
+            _type, _section, labels = company_preset_spec(key)
+            raise ConflictError(
+                f"The key {key!r} derived from this label is a company preset.",
+                code="company_field.key_reserved",
+                params={"key": key, "label": labels.get("fr") or humanize(key)},
+            )
+        definitions = await materialize_company_definitions(
+            self.db,
+            agent.agency_id,
+            sack_keys=await company_sack_keys(self.db, agent.agency_id),
+        )
+        taken = next((d for d in definitions if d.key == key), None)
+        if taken is not None:
+            raise ConflictError(
+                f"A company field with key {key!r} already exists in this agency.",
+                code="company_field.key_exists",
+                params={
+                    "key": key,
+                    "label": taken.label,
+                    "field_id": str(taken.id),
+                    "archived": taken.archived_at is not None,
+                },
+            )
+        agency_default = await self.agency_default(agent.agency_id)
+        # MÊME MÉCANIQUE i18n QUE LA FACE PERSONNE, puisque c'est la même
+        # porte : le libellé seul s'ancre dans la langue de l'agence, un
+        # `label_i18n` explicite est honoré tel quel. C'est ce que le PATCH
+        # société fait déjà — la création ne pouvait pas dire l'inverse.
+        label_scalar, label_blob = apply_i18n_write(
+            payload.label_i18n, payload.label, agency_default, None, {}
+        )
+        # EN FIN DE SECTION, obtenu par la fin de la suite GLOBALE : la
+        # position est une suite d'agence, pas un rang dans la section
+        # (contrat `FieldUniverseEntry.position`). `max + 1` place donc le
+        # champ après tout ce qui existe, donc dernier de SA section —
+        # quelle qu'elle soit, et sans départager une égalité par la clé.
+        definition = CompanyFieldDefinition(
+            agency_id=agent.agency_id,
+            key=key,
+            label=label_scalar or payload.label,
+            label_i18n=label_blob,
+            field_type=payload.field_type.value,
+            profile_section=payload.profile_section,
+            position=max((d.position for d in definitions), default=-1) + 1,
+        )
+        self.db.add(definition)
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="agency.custom_fields_set",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            # `surface` distingue les deux faces dans le même événement :
+            # le jalon « champs perso configurés » vaut pour les deux, le
+            # détail dit laquelle.
+            details={"key": key, "surface": "company"},
+        )
+        await self.db.commit()
+        await self.db.refresh(definition)
+        return definition
+
     async def update(
         self, agent: Agent, field_id: uuid.UUID, payload: CustomFieldDefinitionUpdate
-    ) -> CustomFieldDefinition:
+    ) -> "CustomFieldDefinition | CompanyFieldDefinition":
         definition = await self.repo.get_in_agency(agent.agency_id, field_id)
         if definition is None:
+            company = await company_definition_by_id(self.db, agent.agency_id, field_id)
+            if company is not None:
+                return await self._update_company(agent, company, payload)
             raise NotFoundError("Custom field not found.")
         provided = payload.model_dump(exclude_unset=True)
         # key and field_type are immutable (not in the update schema).
@@ -163,6 +316,14 @@ class CustomFieldsManager:
         if "scope" in provided and provided["scope"] is not None:
             definition.scope = provided["scope"]
         if "profile_section" in provided and provided["profile_section"] is not None:
+            # VALIDATION PAR TENANT (remplace le `Literal` gravé) : la
+            # section doit exister chez CETTE agence, sur la surface de ce
+            # champ. Les champs de dossier partagent la taxonomie de la
+            # face personne — deux univers de CHAMPS, une seule taxonomie
+            # de sections, celle que la fiche montre.
+            await assert_section_exists(
+                self.db, agent.agency_id, "person", provided["profile_section"]
+            )
             definition.profile_section = provided["profile_section"]
         if "required" in provided and provided["required"] is not None:
             definition.required = provided["required"]
@@ -177,9 +338,56 @@ class CustomFieldsManager:
         await self.db.refresh(definition)
         return definition
 
+    async def _update_company(
+        self,
+        agent: Agent,
+        definition: "CompanyFieldDefinition",
+        payload: CustomFieldDefinitionUpdate,
+    ) -> "CompanyFieldDefinition":
+        """Le PATCH d'une définition SOCIÉTÉ — même route, même contrat,
+        moins deux champs qui n'ont pas de sens de ce côté :
+
+        - `scope` : une définition société EST sa face. La proposer
+          reviendrait à offrir de déménager un champ de la fiche société
+          vers la fiche personne, où sa clé est peut-être déjà prise par
+          une autre définition. Refus explicite, pas un silence.
+        - `options` / `required` : la fiche société n'a ni liste de choix
+          ni champ obligatoire au contrat (l'univers les sert à `null`) —
+          accepter la valeur pour ne rien en faire serait un mensonge.
+        """
+        provided = payload.model_dump(exclude_unset=True)
+        for unsupported in ("scope", "options", "required"):
+            if provided.get(unsupported) is not None:
+                raise ValidationError(
+                    f"`{unsupported}` does not apply to a company field.",
+                    code="company_field.unsupported_attribute",
+                    params={"attribute": unsupported, "key": definition.key},
+                )
+        if "label" in provided or "label_i18n" in provided:
+            agency_default = await self.agency_default(agent.agency_id)
+            scalar, blob = apply_i18n_write(
+                payload.label_i18n if "label_i18n" in provided else None,
+                payload.label if "label" in provided else None,
+                agency_default,
+                definition.label,
+                definition.label_i18n,
+            )
+            definition.label = scalar or definition.label
+            definition.label_i18n = blob
+        if provided.get("profile_section") is not None:
+            await assert_section_exists(
+                self.db, agent.agency_id, "company", provided["profile_section"]
+            )
+            definition.profile_section = provided["profile_section"]
+        if provided.get("position") is not None:
+            definition.position = provided["position"]
+        await self.db.commit()
+        await self.db.refresh(definition)
+        return definition
+
     async def archive(
         self, agent: Agent, field_id: uuid.UUID, *, force: bool = False
-    ) -> CustomFieldDefinition:
+    ) -> "CustomFieldDefinition | CompanyFieldDefinition":
         """Soft archive — the only form of removal. Saved values are
         kept (the JSONB is independent); the field leaves the form.
 
@@ -192,6 +400,14 @@ class CustomFieldsManager:
         refus sans issue rendrait l'archivage impraticable."""
         definition = await self.repo.get_in_agency(agent.agency_id, field_id)
         if definition is None:
+            company = await company_definition_by_id(self.db, agent.agency_id, field_id)
+            if company is not None:
+                # Pas de garde parcours de ce côté : voir company_value_counts.
+                if company.archived_at is None:
+                    company.archived_at = datetime.now(UTC)
+                    await self.db.commit()
+                    await self.db.refresh(company)
+                return company
             raise NotFoundError("Custom field not found.")
         if definition.archived_at is None:
             if not force:
@@ -219,10 +435,30 @@ class CustomFieldsManager:
         ids = set(payload.ids)
         found = await self.repo.by_ids_in_agency(agent.agency_id, ids)
         by_id = {d.id: d for d in found}
+        # LES DEUX FACES DANS UNE SÉLECTION : l'écran travaille une surface
+        # à la fois, mais le contrat ne l'impose pas — un id qui n'est pas
+        # une définition personne/dossier peut être une définition SOCIÉTÉ.
+        # On le résout avant de crier « inconnu ».
+        company_rows = await company_definitions_by_ids(
+            self.db, agent.agency_id, ids - by_id.keys()
+        )
+        company_by_id = {row.id: row for row in company_rows}
+        if payload.action == "section" and payload.profile_section is not None:
+            # LA VALIDATION PAR TENANT, posée AVANT le dry-run : annoncer
+            # un reclassement vers une section qui n'existe pas serait pire
+            # que le refuser — l'écran afficherait un compte, puis
+            # échouerait au geste réel. Vérifiée sur les surfaces
+            # RÉELLEMENT visées : une sélection de champs société n'a pas à
+            # exiger que la clé existe aussi côté personne.
+            for surface, present in (("person", bool(found)), ("company", bool(company_rows))):
+                if present:
+                    await assert_section_exists(
+                        self.db, agent.agency_id, surface, payload.profile_section
+                    )
         # Un id inconnu (ou d'une autre agence) est un refus, pas un silence.
         refusals = [
             CustomFieldBulkRefusal(id=missing, reason="not_found")
-            for missing in sorted(ids - by_id.keys(), key=str)
+            for missing in sorted(ids - by_id.keys() - company_by_id.keys(), key=str)
         ]
         keys = {d.key for d in found}
         usage = await self.repo.journey_usage(agent.agency_id, keys)
@@ -258,21 +494,65 @@ class CustomFieldsManager:
                 continue
             eligible.append(definition)
 
+        # La face SOCIÉTÉ de la sélection, évaluée sur les mêmes règles.
+        company_eligible: list[CompanyFieldDefinition] = []
+        for row in company_rows:
+            if payload.action == "scope":
+                # Une définition société n'a pas de portée à changer : sa
+                # face EST sa portée (cf. _update_company).
+                refusals.append(
+                    CustomFieldBulkRefusal(
+                        id=row.id, key=row.key, label=row.label, reason="not_found"
+                    )
+                )
+                continue
+            if payload.action == "archive" and row.archived_at is not None:
+                unchanged += 1
+                continue
+            if payload.action == "section" and row.profile_section == payload.profile_section:
+                unchanged += 1
+                continue
+            company_eligible.append(row)
+        company_values = await company_value_counts(
+            self.db, agent.agency_id, {row.key for row in company_eligible}
+        )
+
         # Les conséquences se comptent sur les ÉLIGIBLES : annoncer des
         # valeurs concernées par un champ qu'on refuse serait un mensonge.
         report = CustomFieldBulkReport(
             dry_run=payload.dry_run,
             requested=len(ids),
-            eligible=len(eligible),
+            eligible=len(eligible) + len(company_eligible),
             applied=0,
             unchanged=unchanged,
             refused=len(refusals),
-            with_values=sum(1 for d in eligible if values.get(d.key)),
-            values_count=sum(values.get(d.key, 0) for d in eligible),
+            with_values=sum(1 for d in eligible if values.get(d.key))
+            + sum(1 for r in company_eligible if company_values.get(r.key)),
+            values_count=sum(values.get(d.key, 0) for d in eligible)
+            + sum(company_values.get(r.key, 0) for r in company_eligible),
+            # `in_journey` reste la mesure de la face personne/dossier :
+            # un parcours ne collecte pas de champ société.
             in_journey=sum(1 for d in eligible if d.key in usage),
             refusals=refusals,
         )
-        if payload.dry_run or not eligible:
+        if payload.dry_run or not (eligible or company_eligible):
+            return report
+
+        if company_eligible:
+            company_changes: dict[str, object] = (
+                {"archived_at": datetime.now(UTC)}
+                if payload.action == "archive"
+                else {"profile_section": payload.profile_section}
+            )
+            await self.db.execute(
+                update(CompanyFieldDefinition)
+                .where(CompanyFieldDefinition.id.in_([r.id for r in company_eligible]))
+                .values(**company_changes)
+                .execution_options(synchronize_session=False)
+            )
+        if not eligible:
+            await self.db.commit()
+            report.applied = len(company_eligible)
             return report
 
         if payload.action == "archive":
@@ -308,10 +588,12 @@ class CustomFieldsManager:
             },
         )
         await self.db.commit()
-        report.applied = len(eligible)
+        report.applied = len(eligible) + len(company_eligible)
         return report
 
-    async def unarchive(self, agent: Agent, field_id: uuid.UUID) -> CustomFieldDefinition:
+    async def unarchive(
+        self, agent: Agent, field_id: uuid.UUID
+    ) -> "CustomFieldDefinition | CompanyFieldDefinition":
         """Symmetric to archive: clears archived_at. The field reappears
         in forms and its previously-orphaned JSONB values become exposed
         and validable again — the (agency_id, key) UNIQUE covers archived
@@ -319,7 +601,14 @@ class CustomFieldsManager:
         if already active."""
         definition = await self.repo.get_in_agency(agent.agency_id, field_id)
         if definition is None:
-            raise NotFoundError("Custom field not found.")
+            company = await company_definition_by_id(self.db, agent.agency_id, field_id)
+            if company is None:
+                raise NotFoundError("Custom field not found.")
+            if company.archived_at is not None:
+                company.archived_at = None
+                await self.db.commit()
+                await self.db.refresh(company)
+            return company
         if definition.archived_at is not None:
             definition.archived_at = None
             await self.db.commit()

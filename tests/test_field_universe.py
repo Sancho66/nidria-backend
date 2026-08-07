@@ -24,7 +24,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
-from shared.models.company_profile import CompanyFieldLabel, CompanyProfile
+from shared.models.company_profile import CompanyFieldDefinition, CompanyProfile
 from shared.models.journey import JourneyTemplate, JourneyTemplateField
 from shared.models.rbac import Role
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -137,17 +137,35 @@ async def test_nothing_becomes_invisible_the_company_surface_carries_the_eight(
 async def test_the_company_surface_serves_presets_that_no_one_can_archive(
     client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """Les 17 presets société n'ont AUCUNE définition : le contrat le dit
-    (`native`, `definition_id` nul, `renamable`) au lieu de laisser
-    l'écran proposer un archivage qui n'existe pas."""
-    body = (await client.get(f"{URL}?surface=company", headers=agent_headers(admin))).json()
+    """LES 17 PRESETS SOCIÉTÉ SE MATÉRIALISENT À L'OUVERTURE (lot du
+    07/08) : ouvrir l'écran les DÉCLARE, et le contrat le dit —
+    `declared`, un `definition_id` qui rend les gestes adressables, un
+    type et une position. C'est ce qui rend l'archivage, le déplacement
+    et la sélection VRAIS au lieu de les annoncer.
+
+    Idempotence : rouvrir l'écran ne crée pas une seconde fois."""
+    headers = agent_headers(admin)
+    body = (await client.get(f"{URL}?surface=company", headers=headers)).json()
     assert body["surface"] == "company"
     fields = _flat(body)
     assert len(fields) >= 17
     preset = fields["legal_form"]
-    assert preset["state"] == "native"
-    assert preset["definition_id"] is None
+    assert preset["state"] == "declared"
+    assert preset["definition_id"] is not None
+    assert preset["field_type"] == "text"
     assert preset["renamable"] is True
+    # Le type vient du catalogue SOCIÉTÉ, qui surcharge volontairement le
+    # catalogue commun : `country` est un pays, pas du texte.
+    assert fields["country"]["field_type"] == "country"
+    assert fields["registration_date"]["field_type"] == "date"
+    assert fields["share_capital"]["field_type"] == "number"
+    # La section servie est celle du plan de valeurs société.
+    assert preset["section"] == "identity"
+
+    again = _flat((await client.get(f"{URL}?surface=company", headers=headers)).json())
+    assert {k: v["definition_id"] for k, v in again.items()} == {
+        k: v["definition_id"] for k, v in fields.items()
+    }
 
 
 async def test_a_company_sack_key_appears_with_its_agency_label(
@@ -157,8 +175,9 @@ async def test_a_company_sack_key_appears_with_its_agency_label(
     agent_headers: AuthHeaders,
 ) -> None:
     """Une clé libre n'existe que parce qu'une valeur a été saisie. Elle
-    apparaît, avec le libellé que l'agence lui a donné — c'est la seule
-    personnalisation possible de cet univers."""
+    apparaît, avec le libellé que l'agence lui a donné — et depuis le lot
+    du 07/08 elle est DÉCLARÉE comme les presets, en `text` : le type
+    d'une clé de sack ne se devine jamais de sa valeur."""
     db_session.add(
         CompanyProfile(
             agency_id=admin.agency_id,
@@ -167,16 +186,20 @@ async def test_a_company_sack_key_appears_with_its_agency_label(
         )
     )
     db_session.add(
-        CompanyFieldLabel(agency_id=admin.agency_id, key="numero_greffe", label="Numéro de greffe")
+        CompanyFieldDefinition(
+            agency_id=admin.agency_id, key="numero_greffe", label="Numéro de greffe"
+        )
     )
     await db_session.commit()
 
     fields = _flat(
         (await client.get(f"{URL}?surface=company", headers=agent_headers(admin))).json()
     )
-    assert fields["numero_greffe"]["state"] == "sack_only"
+    assert fields["numero_greffe"]["state"] == "declared"
     assert fields["numero_greffe"]["label"] == "Numéro de greffe"
     assert fields["numero_greffe"]["renamable"] is True
+    assert fields["numero_greffe"]["field_type"] == "text"
+    assert fields["numero_greffe"]["section"] == "misc"
 
 
 # --- surface dossier ------------------------------------------------------------------
@@ -257,6 +280,13 @@ async def test_the_case_surface_costs_the_same_with_two_journeys_or_forty(
 
     from src.custom_fields.field_universe import field_universe
 
+    # PREMIÈRE PASSE HORS COMPTAGE : elle MATÉRIALISE les sections de
+    # l'agence (lot sections configurables) — un SELECT + un INSERT qui
+    # n'arrivent qu'une fois dans la vie d'une surface. Le témoin porte
+    # sur l'état STABLE, qui est celui que paient tous les appels
+    # suivants ; le compter une fois mesurerait l'amorçage, pas le coût.
+    await field_universe(db_session, admin, "case", "fr")
+
     engine = db_session.get_bind()
     counter = {"n": 0}
 
@@ -271,9 +301,11 @@ async def test_the_case_surface_costs_the_same_with_two_journeys_or_forty(
 
     entries = [f for s in result.sections for f in s.fields if f.reference == "ref_client"]
     assert entries[0].used_in_journeys == 40
-    # langue d'agence + définitions + l'agrégat : trois requêtes, et le
-    # nombre de parcours n'y change rien.
-    assert counter["n"] == 3, counter
+    # langue d'agence + définitions + l'agrégat + les sections de
+    # l'agence : QUATRE requêtes, et le nombre de parcours n'y change
+    # rien — c'est ça, l'invariant. La quatrième est arrivée avec les
+    # sections configurables : une lecture bornée, jamais une par section.
+    assert counter["n"] == 4, counter
 
 
 # --- le contrat et son gate -----------------------------------------------------------
@@ -485,9 +517,13 @@ async def test_only_declared_entries_carry_a_position(
         CompanyProfile(agency_id=admin.agency_id, name="ACME2", custom_fields={"cle_libre": "x"})
     )
     await db_session.commit()
+    # SURFACE SOCIÉTÉ : depuis le lot du 07/08, tout y est déclaré — donc
+    # tout y porte une position, c'est justement ce qui rend le
+    # déplacement possible.
     company = _flat((await client.get(f"{URL}?surface=company", headers=headers)).json())
-    assert company["cle_libre"]["position"] is None  # sack_only
-    assert company["legal_form"]["position"] is None  # preset société
+    assert company["cle_libre"]["position"] is not None
+    assert company["cle_libre"]["definition_id"] is not None
+    assert company["legal_form"]["position"] is not None  # preset MATÉRIALISÉ
 
 
 async def test_the_served_order_is_the_screen_order_not_the_position_order(
