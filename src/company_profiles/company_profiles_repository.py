@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
-from shared.models.company_profile import CompanyFieldLabel, CompanyProfile, CompanyProfileRole
+from shared.models.company_profile import (
+    CompanyFieldDefinition,
+    CompanyProfile,
+    CompanyProfileRole,
+)
 from shared.models.expat_user import ExpatUser
 from src.imports.batching import IMPORT_READ_CHUNK
 
@@ -74,13 +78,15 @@ class CompanyProfilesRepository:
             out.setdefault(name, company_id)
         return out
 
-    async def field_labels(self, agency_id: uuid.UUID) -> list["CompanyFieldLabel"]:
-        """Les labels d'agence des clés de sack société (demande design
-        A) — la vérité UNIQUE par (agence, clé), kind de naissance inclus."""
+    async def field_definitions(self, agency_id: uuid.UUID) -> list["CompanyFieldDefinition"]:
+        """Les définitions de champs société de l'agence — la vérité
+        UNIQUE par (agence, clé) : libellé ×7, type, section, position,
+        archivage. Rend les ARCHIVÉES aussi ; c'est l'appelant qui
+        filtre (l'univers des Réglages les montre, la fiche non)."""
         stmt = (
-            select(CompanyFieldLabel)
-            .where(CompanyFieldLabel.agency_id == agency_id)
-            .order_by(CompanyFieldLabel.key)
+            select(CompanyFieldDefinition)
+            .where(CompanyFieldDefinition.agency_id == agency_id)
+            .order_by(CompanyFieldDefinition.position, CompanyFieldDefinition.key)
         )
         return list((await self.db.execute(stmt)).scalars().all())
 

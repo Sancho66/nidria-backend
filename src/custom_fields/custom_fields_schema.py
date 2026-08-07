@@ -33,7 +33,13 @@ class CustomFieldDefinitionResponse(BaseModel):
 
 
 class CustomFieldDefinitionCreate(BaseModel):
-    key: str = Field(pattern=_KEY_PATTERN)
+    # REQUISE, SAUF POUR UN CHAMP SOCIÉTÉ où elle est DÉRIVÉE du libellé
+    # côté serveur (slugify, la moulinette de la grille d'import — cf.
+    # `_create_company`) : l'écran société ne montre aucune clé, il n'a
+    # donc rien à en faire saisir, et deux fabriques de clés pour la même
+    # table auraient divergé au premier caractère accentué. L'envoyer
+    # quand même sur `scope='company'` est refusé, pas ignoré.
+    key: str | None = Field(default=None, pattern=_KEY_PATTERN)
     label: str = Field(min_length=1, max_length=200)
     label_i18n: dict[str, str] | None = None
     field_type: CustomFieldType
@@ -49,10 +55,39 @@ class CustomFieldDefinitionCreate(BaseModel):
     # Absent = `case`, le comportement d'avant : ce lot ouvre le choix, il
     # ne déplace pas le défaut (un appelant existant qui se tait garde ce
     # qu'il avait).
-    scope: Literal["person", "case"] | None = None
+    #
+    # `company` EST UNE PORTÉE COMME LES AUTRES (D9) : créer un champ de
+    # fiche société passe par CETTE route, celle que le PATCH, l'archivage
+    # et la masse servent déjà pour les deux faces. Une porte dédiée
+    # aurait fait diverger deux fois le même geste — et le front aurait
+    # appris une seconde route pour un contrat à 3 champs près.
+    #
+    # Ce que `company` change, et rien d'autre : la clé est DÉRIVÉE (voir
+    # `key`), la section est REQUISE (elle n'a pas de berceau implicite de
+    # ce côté), et `options`/`required` n'existent pas sur cette face —
+    # `_create_company` refuse nommément plutôt que d'accepter sans rien
+    # en faire.
+    scope: Literal["person", "case", "company"] | None = None
+    # La SECTION de naissance. Absente = « Divers », le berceau — c'était
+    # déjà le comportement, il devient dicible : créer un champ
+    # directement dans « Coordonnées » ne demande plus un second appel.
+    # REQUISE sur `scope='company'` (arbitrage D9) : un repli silencieux
+    # ferait naître le champ ailleurs que là où l'agence l'a déposé.
+    profile_section: str | None = Field(default=None, min_length=1, max_length=50)
 
     @model_validator(mode="after")
     def _check_options(self) -> "CustomFieldDefinitionCreate":
+        if self.scope == "company":
+            if self.field_type in _SELECT_TYPES:
+                # STRUCTUREL, pas une restriction d'humeur :
+                # `company_field_definition` n'a pas de colonne `options`
+                # (l'univers société la sert à `null`, le PATCH la refuse).
+                # Une liste de choix y naîtrait sans choix.
+                raise ValueError(
+                    "A company field cannot be a choice list — the company sheet has no `options`."
+                )
+        elif self.key is None:
+            raise ValueError("`key` is required (it is derived from the label only for `company`).")
         if self.field_type in _SELECT_TYPES:
             if not self.options:
                 raise ValueError(f"{self.field_type} requires a non-empty `options` list.")
@@ -166,7 +201,9 @@ class CustomFieldBulkRequest(BaseModel):
     action: Literal["archive", "scope", "section"]
     # Cible du geste, selon l'action (validé ci-dessous).
     scope: Literal["person", "case"] | None = None
-    profile_section: Literal["identity", "contact", "situation", "misc"] | None = None
+    # Même bascule que le PATCH à l'unité : la clé se valide contre les
+    # sections de l'agence, pas contre une liste gravée au contrat.
+    profile_section: str | None = Field(default=None, min_length=1, max_length=50)
     dry_run: bool = False
     # LE FRANCHISSEMENT EXPLICITE de la protection « utilisé dans un
     # parcours » (archivage seul). Faux par défaut : le geste ne peut donc
@@ -224,9 +261,16 @@ class CustomFieldDefinitionUpdate(BaseModel):
 
     scope: Literal["person", "case"] | None = None
     # Taxonomie fiche : reclasser la section de la définition (toggle
-    # élargi — même PATCH, même gate). 4 valeurs depuis la fusion
-    # id_documents → identity (parité personne/société).
-    profile_section: Literal["identity", "contact", "situation", "misc"] | None = None
+    # élargi — même PATCH, même gate).
+    #
+    # PLUS DE `Literal` ICI (lot sections configurables du 07/08) : les 4
+    # clés y étaient gravées, donc une section créée par une agence était
+    # refusée en 422 PAR SON PROPRE BACK. La validation devient une
+    # VÉRIFICATION PAR TENANT — la clé doit exister dans les sections de
+    # CETTE agence, sur la surface de CE champ (`profile_section.unknown`,
+    # qui NOMME les sections disponibles). Une clé inventée reste refusée ;
+    # une clé légitime passe enfin.
+    profile_section: str | None = Field(default=None, min_length=1, max_length=50)
     label: str | None = Field(default=None, min_length=1, max_length=200)
     label_i18n: dict[str, str] | None = None
     options: list[str] | None = None

@@ -5,6 +5,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from shared.models.company_profile import CompanyFieldDefinition
+from shared.models.custom_field import CustomFieldDefinition
+from src.company_profiles.company_catalog import (
+    company_definition_response,
+    materialize_company_definitions,
+)
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.i18n import RequestLang, resolve_i18n
@@ -61,15 +67,57 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 AgentDep = Annotated[Agent, Depends(get_current_agent)]
 
 
+def _definition_response(
+    definition: CustomFieldDefinition | CompanyFieldDefinition,
+) -> CustomFieldDefinitionResponse:
+    """Les trois gestes (PATCH, archive, unarchive) adressent une
+    définition par son id, sans savoir de quelle face elle vient — c'est
+    ce qui permet aux capacités société d'exister sans que l'écran
+    apprenne une seconde route. Le mapper rend les deux dans LE contrat
+    des définitions."""
+    if isinstance(definition, CompanyFieldDefinition):
+        return company_definition_response(definition)
+    return CustomFieldDefinitionResponse.model_validate(definition)
+
+
 @router.get("", response_model=list[CustomFieldDefinitionResponse])
 async def list_custom_fields(
     agent: AgentDep,
     db: DbDep,
     lang: RequestLang,
     include_archived: Annotated[bool, Query()] = False,
+    surface: Annotated[Surface | None, Query()] = None,
 ) -> list[CustomFieldDefinitionResponse]:
+    """`surface` CHOISIT LA FACE, et c'est ce qui répare un mensonge
+    ancien : la fiche société résolvait ses références contre cette
+    liste, qui ne contient que des définitions personne/dossier — d'où
+    les 9 clés (`company_name`, `legal_form`…) déclarées côté PERSONNE
+    qui pilotaient l'affichage de la fiche SOCIÉTÉ.
+
+    `surface=company` sert les définitions société (`scope` rendu à
+    `"company"`), `person`/`case` filtrent la portée, et l'ABSENCE garde
+    le comportement d'avant (personne + dossier) — un appelant existant
+    qui se tait garde ce qu'il avait."""
     mgr = CustomFieldsManager(db)
+    if surface == "company":
+        # MATÉRIALISE, comme l'univers et la fiche : demander les
+        # définitions société d'une agence qui n'a encore rien ouvert doit
+        # rendre son univers, pas une liste vide. Sans ça, le tout premier
+        # chargement d'écran dépendrait de l'ORDRE des deux appels du
+        # front — une course invisible qui se résout « au rechargement ».
+        rows = await materialize_company_definitions(db, agent.agency_id)
+        await db.commit()
+        agency_default = await mgr.agency_default(agent.agency_id)
+        return [
+            company_definition_response(row).model_copy(
+                update={"label": resolve_i18n(row.label_i18n, lang, agency_default, row.label)}
+            )
+            for row in sorted(rows, key=lambda r: (r.position, r.key))
+            if include_archived or row.archived_at is None
+        ]
     definitions = await mgr.list_definitions(agent, include_archived=include_archived)
+    if surface is not None:
+        definitions = [d for d in definitions if d.scope == surface]
     agency_default = await mgr.agency_default(agent.agency_id)
     # i18n: resolve the LABEL for the display language (the `key` stays raw).
     return [
@@ -84,8 +132,19 @@ async def list_custom_fields(
 async def create_custom_field(
     body: CustomFieldDefinitionCreate, agent: AgentDep, db: DbDep
 ) -> CustomFieldDefinitionResponse:
+    """`scope='company'` crée un champ de FICHE SOCIÉTÉ (D9) — même route,
+    même contrat de sortie que les deux autres portées, parce que c'est le
+    même geste. Ce que cette face change, et rien d'autre : la `key` est
+    DÉRIVÉE du libellé (l'envoyer est refusé), la `profile_section` est
+    requise, et `options`/`required` n'y existent pas.
+
+    Collision avec un preset du catalogue → 409
+    `company_field.key_reserved` ; avec une clé déjà prise par l'agence
+    (archivée comprise) → 409 `company_field.key_exists`, qui NOMME la
+    définition en place pour que l'écran propose de la renommer ou de la
+    ressusciter."""
     definition = await CustomFieldsManager(db).create(agent, body)
-    return CustomFieldDefinitionResponse.model_validate(definition)
+    return _definition_response(definition)
 
 
 @router.patch("/{field_id}", response_model=CustomFieldDefinitionResponse)
@@ -95,7 +154,7 @@ async def update_custom_field(
     """key and field_type are immutable — archive + recreate to change
     a type."""
     definition = await CustomFieldsManager(db).update(agent, field_id, body)
-    return CustomFieldDefinitionResponse.model_validate(definition)
+    return _definition_response(definition)
 
 
 @universe_router.get("/agencies/me/field-universe", response_model=FieldUniverseResponse)
@@ -132,7 +191,7 @@ async def archive_custom_field(
     (409) si un parcours collecte ou exige le champ — `force=true` le
     franchit explicitement."""
     definition = await CustomFieldsManager(db).archive(agent, field_id, force=force)
-    return CustomFieldDefinitionResponse.model_validate(definition)
+    return _definition_response(definition)
 
 
 @router.post("/{field_id}/unarchive", response_model=CustomFieldDefinitionResponse)
@@ -142,4 +201,4 @@ async def unarchive_custom_field(
     """Resurrect an archived field — it reappears in forms and its kept
     JSONB values become exposed/validable again. Idempotent."""
     definition = await CustomFieldsManager(db).unarchive(agent, field_id)
-    return CustomFieldDefinitionResponse.model_validate(definition)
+    return _definition_response(definition)

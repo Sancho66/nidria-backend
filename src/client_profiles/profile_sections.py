@@ -62,6 +62,28 @@ COMPANY_PROFILE_SECTIONS: Final[dict[str, dict[str, str]]] = PROFILE_SECTIONS
 # V2b — le plan de valeurs SOCIÉTÉ sur la taxonomie : les presets
 # company du catalogue → leur section de fiche société. Les clés libres
 # d'agence tombent en 'misc'.
+#
+# CES 17 PRESETS SONT IMPOSÉS À TOUTE AGENCE, ET C'EST UN CHOIX DE
+# PRODUIT — pas un raccourci d'implémentation (D11, demandé et REFUSÉ le
+# 07/08). Aucune agence ne choisit sa liste de départ : ouvrir un écran
+# société les MATÉRIALISE tous (`materialize_company_definitions`).
+#
+# Pourquoi le refus tient :
+# 1. L'ÉCHAPPATOIRE EXISTE DÉJÀ, et elle est meilleure. Depuis le lot du
+#    07/08, un preset société est une définition comme une autre :
+#    l'agence qui n'en veut pas l'ARCHIVE (il quitte la fiche, sa valeur
+#    reste) ou le renomme. « Imposé à la naissance » ≠ « subi » — un
+#    opt-in à la création rendrait la même liberté plus tard et plus mal.
+# 2. UN UNIVERS DE DÉPART VIDE N'AIDE PERSONNE. Ces 17 clés sont celles
+#    que les imports CRM (TL, HubSpot, Pipedrive) et les parcours
+#    « Création de société » servent déjà ; les faire choisir avant
+#    d'avoir vu une fiche, c'est demander une décision sans information.
+# 3. LE COÛT SERAIT RÉEL : une liste par agence, c'est une 3ᵉ vérité
+#    entre le catalogue, la matérialisation et l'import — chacune devant
+#    savoir qu'une clé « connue du produit » peut ne pas exister ici.
+#
+# Ne rouvrir qu'avec une raison NEUVE (un preset qui gênerait vraiment
+# une agence, archivage compris), pas parce que la liste paraît longue.
 COMPANY_PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     # identité légale
     "company_name": "identity",

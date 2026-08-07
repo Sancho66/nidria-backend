@@ -357,4 +357,11 @@ async def test_legacy_profile_section_never_breaks_either_sheet(
     assert [s["key"] for s in detail["sections"]] == ["identity", "contact", "situation", "misc"]
     assert "vieux_papier" in {s["key"]: s["references"] for s in detail["sections"]}["misc"]
     assert detail["custom_fields"]["vieux_papier"] == "RC-1988"
-    assert detail["field_labels"] == {}  # aucune clé baptisée : dict vide, pas une absence
+    # `field_labels` PORTE DÉSORMAIS TOUTES LES CLÉS VIVANTES (lot du
+    # 07/08) : la matérialisation déclare les 17 presets AVEC leur libellé
+    # de catalogue, donc la distinction « baptisée par l'agence / d'origine »
+    # n'existe plus — il n'y a plus qu'un libellé servi par clé.
+    labels = detail["field_labels"]
+    assert labels["company_name"] == "Raison sociale"
+    assert labels["vieux_papier"] == "Vieux papier"  # clé de sack, humanisée
+    assert set(labels) >= {s for sec in detail["sections"] for s in sec["references"]}

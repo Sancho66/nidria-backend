@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.company_profile import CompanyFieldLabel
+from shared.models.company_profile import CompanyFieldDefinition
 from shared.models.custom_field import CustomFieldDefinition
 
 # L'identité de la fiche personne : les 3 colonnes du contrat person.
@@ -63,7 +63,7 @@ class PersonTargets:
 
 @dataclass(frozen=True)
 class CompanyTargets:
-    labels_by_key: dict[str, CompanyFieldLabel] = field(default_factory=dict)
+    labels_by_key: dict[str, CompanyFieldDefinition] = field(default_factory=dict)
     keys_by_label: dict[str, str] = field(default_factory=dict)
     address_bases: set[str] = field(default_factory=set)
     dotted: set[str] = field(default_factory=set)
@@ -125,7 +125,7 @@ async def company_targets(db: AsyncSession, agency_id: uuid.UUID) -> CompanyTarg
     from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
     from src.imports.value_normalizers import ADDRESS_SUBFIELDS
 
-    label_rows = await CompanyProfilesRepository(db).field_labels(agency_id)
+    label_rows = await CompanyProfilesRepository(db).field_definitions(agency_id)
     labels_by_key = {row.key: row for row in label_rows}
     keys_by_label = {row.label.strip().lower(): row.key for row in label_rows}
     dotted = {f"{base}.{sub}" for base in COMPANY_ADDRESS_BASES for sub in ADDRESS_SUBFIELDS}
@@ -396,13 +396,8 @@ async def company_target_catalog(
         COMPANY_PRESET_PROFILE_SECTION,
         COMPANY_PROFILE_SECTIONS,
     )
-    from src.imports.target_labels import (
-        COMPANY_EXTRA_FIELD_TYPES,
-        COMPANY_EXTRA_LABELS,
-        COMPANY_NAME_LABEL,
-        TAGS_LABEL,
-    )
-    from src.journeys.field_catalog import FIELD_PRESETS
+    from src.company_profiles.company_catalog import company_preset_spec
+    from src.imports.target_labels import COMPANY_NAME_LABEL, TAGS_LABEL
 
     targets = await company_targets(db, agency_id)
     buckets: dict[str, list[ImportTargetSpec]] = {key: [] for key in COMPANY_PROFILE_SECTIONS}
@@ -427,10 +422,10 @@ async def company_target_catalog(
     )
 
     # 2. Le plan de valeurs company, dans son ordre de déclaration.
-    for key, section in COMPANY_PRESET_PROFILE_SECTION.items():
-        preset = FIELD_PRESETS.get(key)
-        label_i18n = COMPANY_EXTRA_LABELS.get(key) or (dict(preset.labels) if preset else {})
-        field_type = COMPANY_EXTRA_FIELD_TYPES.get(key) or (preset.field_type if preset else "text")
+    for key in COMPANY_PRESET_PROFILE_SECTION:
+        # La résolution (type, section, libellé ×7) vit dans le catalogue
+        # société — elle était recopiée ici, elle y est désormais LUE.
+        field_type, section, label_i18n = company_preset_spec(key)
         emit(
             ImportTargetSpec(
                 key=key,
@@ -458,7 +453,7 @@ async def company_target_catalog(
                 key=key,
                 label=row.label,
                 label_i18n={},
-                field_type=row.kind,
+                field_type=row.field_type,
                 section="misc",
                 agency_named=True,
             )

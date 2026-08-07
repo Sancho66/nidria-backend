@@ -24,7 +24,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
-from shared.models.company_profile import CompanyFieldLabel
+from shared.models.company_profile import CompanyFieldDefinition
 from shared.models.custom_field import CustomFieldDefinition
 from shared.models.rbac import Role
 from src.core.i18n import SUPPORTED_LANGUAGES
@@ -271,11 +271,11 @@ async def test_company_flags_name_named_keys_and_address_bases(
     les clés baptisées portent leur label ET leur kind de naissance, et
     les deux bases adresse ouvrent leurs morceaux."""
     db_session.add(
-        CompanyFieldLabel(
+        CompanyFieldDefinition(
             agency_id=admin.agency_id,
             key="chiffre_affaires",
             label="Chiffre d'affaires",
-            kind="number",
+            field_type="number",
         )
     )
     await db_session.commit()

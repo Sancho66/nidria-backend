@@ -1063,7 +1063,7 @@ class CompanyImportManager:
                 creation_plan[spec.column] = (
                     existing_key,
                     spec.label,
-                    labels_by_key[existing_key].kind,
+                    labels_by_key[existing_key].field_type,
                     False,
                 )
                 continue
@@ -1198,7 +1198,7 @@ class CompanyImportManager:
                             agency_id=agent.agency_id,
                             key=label_key,
                             label=label_key,
-                            field_type=label_row.kind,
+                            field_type=label_row.field_type,
                         ),
                         values[label_key],
                     )
@@ -1294,7 +1294,8 @@ class CompanyImportManager:
         )
 
     async def run_import(self, agent: Agent, body: CompanyImportRequest) -> CompanyImportReport:
-        from shared.models.company_profile import CompanyFieldLabel, CompanyProfile
+        from shared.models.company_profile import CompanyFieldDefinition, CompanyProfile
+        from src.company_profiles.company_catalog import materialize_company_definitions
         from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 
         verdicts = await self._analyze(agent, body)
@@ -1303,17 +1304,35 @@ class CompanyImportManager:
             for _k, label, _kd, to_create in getattr(self, "_creation_plan", {}).values()
             if to_create
         ]
-        # Demande design A : le label (et le kind) de la naissance se
-        # GRAVE au niveau agence — une vérité par clé, jamais une copie
-        # par société ; le batch reste transactionnel (commit unique).
-        label_keys_born: set[str] = set()
+        # Demande design A, devenue le lot définitions (07/08) : la clé
+        # baptisée à la grille naît DÉFINITION — label + type de la
+        # naissance, section 'misc', comme toute clé libre. Une vérité par
+        # clé au niveau agence, jamais une copie par société ; le batch
+        # reste transactionnel (commit unique).
+        #
+        # Les 17 presets se matérialisent au passage : un import est une
+        # ouverture d'écran comme une autre, et les cibles qu'il propose
+        # doivent exister en définitions pour que l'annuaire les range.
+        existing_defs = {
+            d.key for d in await materialize_company_definitions(self.db, agent.agency_id)
+        }
+        next_position = len(existing_defs)
         for key, label, kind, to_create in getattr(self, "_creation_plan", {}).values():
-            if not to_create or key in label_keys_born:
+            if not to_create or key in existing_defs:
                 continue
-            label_keys_born.add(key)
+            existing_defs.add(key)
             self.db.add(
-                CompanyFieldLabel(agency_id=agent.agency_id, key=key, label=label, kind=kind)
+                CompanyFieldDefinition(
+                    agency_id=agent.agency_id,
+                    key=key,
+                    label=label,
+                    label_i18n={},
+                    field_type=kind,
+                    profile_section="misc",
+                    position=next_position,
+                )
             )
+            next_position += 1
         repo = CompanyProfilesRepository(self.db)
         created: list[CompanyImportRowOutcome] = []
         linked: list[CompanyImportRowOutcome] = []

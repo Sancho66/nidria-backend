@@ -1765,7 +1765,7 @@ async def test_company_sack_labels_survive_import_creation(
     r = await client.post("/imports/company-profiles/preview", headers=headers, json=body)
     assert r.status_code == 200, r.text
     n_labels = (
-        await db_session.execute(text("SELECT count(*) FROM company_field_label"))
+        await db_session.execute(text("SELECT count(*) FROM company_field_definition"))
     ).scalar_one()
     assert n_labels == 0
 
@@ -1773,14 +1773,22 @@ async def test_company_sack_labels_survive_import_creation(
     r = await client.post("/imports/company-profiles", headers=headers, json=body)
     assert r.status_code == 200, r.text
     assert r.json()["fields_created"] == ["Note du juriste"]
-    row = (await db_session.execute(text("SELECT key, label, kind FROM company_field_label"))).one()
+    row = (
+        await db_session.execute(
+            text("SELECT key, label, field_type FROM company_field_definition WHERE key = :k"),
+            {"k": "note_du_juriste"},
+        )
+    ).one()
     assert list(row) == ["note_du_juriste", "Note du juriste", "number"]
     # La fiche société SERT le label (le front n'affiche plus la clé nue).
     listing = (await client.get("/company-profiles?search=LabelCo", headers=headers)).json()
     detail = (
         await client.get(f"/company-profiles/{listing['items'][0]['id']}", headers=headers)
     ).json()
-    assert detail["field_labels"] == {"note_du_juriste": "Note du juriste"}
+    # `field_labels` porte TOUTES les clés vivantes depuis le lot du 07/08
+    # (les 17 presets se matérialisent avec leur libellé de catalogue) : ce
+    # qui compte ici est que la clé BAPTISÉE à la grille garde son nom.
+    assert detail["field_labels"]["note_du_juriste"] == "Note du juriste"
     assert detail["custom_fields"]["note_du_juriste"] == 42
 
     # RÉ-IMPORT : la colonne baptisée se RE-SUGGÈRE vers SA clé.
@@ -1807,8 +1815,16 @@ async def test_company_sack_labels_survive_import_creation(
     )
     assert r.status_code == 200, r.text
     assert r.json()["fields_created"] == []
+    # LA DÉDUP SE COMPTE SUR LA CLÉ, pas sur la table : depuis le lot du
+    # 07/08 l'import matérialise aussi les 17 presets société (il en offre
+    # les cibles, elles doivent exister en définitions). Compter toute la
+    # table mesurerait la matérialisation, pas ce qui est en jeu ici — que
+    # la clé BAPTISÉE ne naisse pas une seconde fois.
     n_labels = (
-        await db_session.execute(text("SELECT count(*) FROM company_field_label"))
+        await db_session.execute(
+            text("SELECT count(*) FROM company_field_definition WHERE key = :k"),
+            {"k": "note_du_juriste"},
+        )
     ).scalar_one()
     assert n_labels == 1
     listing = (await client.get("/company-profiles?search=LabelCo Bis", headers=headers)).json()
