@@ -7286,6 +7286,64 @@
         }
       }
     },
+    "/agencies/me/company-field-labels/{key}": {
+      "patch": {
+        "tags": [
+          "company-profiles"
+        ],
+        "summary": "Rename Company Field",
+        "description": "Renommer une clé de l'univers société — le SEUL geste qu'il\nautorise (ses champs n'ont pas de définition : ni archivage, ni\ntypage). `label: null` retire la personnalisation et rend à la clé son\nlibellé d'origine.",
+        "operationId": "rename_company_field_agencies_me_company_field_labels__key__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyFieldLabelUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyFieldLabelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/custom-fields": {
       "get": {
         "tags": [
@@ -7579,6 +7637,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/me/field-universe": {
+      "get": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Get Field Universe",
+        "description": "L'univers AFFICHÉ d'un écran, pas le stockage : les sections dans\nl'ordre de l'écran, et chaque champ avec son état (ce qu'on peut en\nfaire) plutôt qu'une déduction laissée au front.",
+        "operationId": "get_field_universe_agencies_me_field_universe_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "surface",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "person",
+                "company",
+                "case"
+              ],
+              "type": "string",
+              "default": "person",
+              "title": "Surface"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldUniverseResponse"
                 }
               }
             }
@@ -22552,6 +22664,48 @@
         ],
         "title": "CompanyCaseSummaryResponse"
       },
+      "CompanyFieldLabelResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "customized": {
+            "type": "boolean",
+            "title": "Customized"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "customized"
+        ],
+        "title": "CompanyFieldLabelResponse"
+      },
+      "CompanyFieldLabelUpdate": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "CompanyFieldLabelUpdate",
+        "description": "RENOMMER une clé de l'univers société — le SEUL geste que cet\nunivers autorise (rien n'y est archivable ni typable : ses champs\nn'ont pas de définition, cf. `field_universe`).\n\n`label = null` RETIRE la personnalisation : la clé retrouve son\nlibellé d'origine (catalogue ou clé nue). Sans ça, une agence qui\ns'est trompée n'aurait aucun moyen de revenir en arrière."
+      },
       "CompanyImportPreviewRequest": {
         "properties": {
           "csv_text": {
@@ -26814,6 +26968,150 @@
         ],
         "title": "FieldGestureRequest",
         "description": "Les gestes-péages du croisement (F2.3) : une référence de champ de\nportée personne (colonne civile ou clé custom scope='person')."
+      },
+      "FieldUniverseEntry": {
+        "properties": {
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "field_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Type"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "declared",
+              "native",
+              "catalog_undeclared",
+              "sack_only"
+            ],
+            "title": "State"
+          },
+          "definition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition Id"
+          },
+          "required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required"
+          },
+          "used_in_journeys": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used In Journeys"
+          },
+          "renamable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renamable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reference",
+          "label",
+          "section",
+          "state"
+        ],
+        "title": "FieldUniverseEntry",
+        "description": "UN champ tel que l'ÉCRAN le montre, avec ce qu'on peut en faire.\n\n`state` est le cœur du contrat — il évite au front de déduire des\ndroits d'une absence :\n- `declared` : une `custom_field_definition` existe → éditable,\n  archivable, déplaçable (`definition_id` la désigne) ;\n- `native` : servi par le produit lui-même (les 10 colonnes civiles\n  de la fiche personne, les 17 presets société) → s'affiche, ne\n  s'archive JAMAIS ;\n- `catalog_undeclared` : le catalogue le connaît, l'agence ne l'a pas\n  déclaré → l'écran peut proposer de l'ajouter ;\n- `sack_only` : découvert dans les valeurs d'une société, sans preset\n  ni définition → renommable, rien d'autre."
+      },
+      "FieldUniverseResponse": {
+        "properties": {
+          "surface": {
+            "type": "string",
+            "enum": [
+              "person",
+              "company",
+              "case"
+            ],
+            "title": "Surface"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/FieldUniverseSection"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "surface",
+          "sections"
+        ],
+        "title": "FieldUniverseResponse",
+        "description": "Les sections DANS L'ORDRE DE L'ÉCRAN — le front ne recompose rien,\nil rend ce qu'il reçoit."
+      },
+      "FieldUniverseSection": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldUniverseEntry"
+            },
+            "type": "array",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "fields"
+        ],
+        "title": "FieldUniverseSection"
       },
       "ForgotPasswordRequest": {
         "properties": {

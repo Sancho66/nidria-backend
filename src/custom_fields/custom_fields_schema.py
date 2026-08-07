@@ -63,6 +63,53 @@ class CustomFieldDefinitionCreate(BaseModel):
         return self
 
 
+class FieldUniverseEntry(BaseModel):
+    """UN champ tel que l'ÉCRAN le montre, avec ce qu'on peut en faire.
+
+    `state` est le cœur du contrat — il évite au front de déduire des
+    droits d'une absence :
+    - `declared` : une `custom_field_definition` existe → éditable,
+      archivable, déplaçable (`definition_id` la désigne) ;
+    - `native` : servi par le produit lui-même (les 10 colonnes civiles
+      de la fiche personne, les 17 presets société) → s'affiche, ne
+      s'archive JAMAIS ;
+    - `catalog_undeclared` : le catalogue le connaît, l'agence ne l'a pas
+      déclaré → l'écran peut proposer de l'ajouter ;
+    - `sack_only` : découvert dans les valeurs d'une société, sans preset
+      ni définition → renommable, rien d'autre.
+    """
+
+    reference: str
+    label: str
+    # Nul dès que le champ n'est pas une définition : un preset non
+    # déclaré n'a pas encore de type, une colonne civile n'en expose pas.
+    field_type: str | None = None
+    section: str
+    state: Literal["declared", "native", "catalog_undeclared", "sack_only"]
+    definition_id: uuid.UUID | None = None
+    required: bool | None = None
+    # Surface `case` uniquement : le même champ sert couramment 90
+    # parcours — une entrée, un compte, jamais 90 lignes.
+    used_in_journeys: int | None = None
+    # Surface `company` : le libellé se personnalise (company_field_label)
+    # alors que rien d'autre ne se touche.
+    renamable: bool | None = None
+
+
+class FieldUniverseSection(BaseModel):
+    key: str
+    name: str
+    fields: list[FieldUniverseEntry]
+
+
+class FieldUniverseResponse(BaseModel):
+    """Les sections DANS L'ORDRE DE L'ÉCRAN — le front ne recompose rien,
+    il rend ce qu'il reçoit."""
+
+    surface: Literal["person", "company", "case"]
+    sections: list[FieldUniverseSection]
+
+
 class CustomFieldBulkRequest(BaseModel):
     """LES GESTES DE MASSE sur les définitions — par LISTE D'IDS, jamais
     par filtre : l'agence traite ce qu'elle a sélectionné à l'écran, donc

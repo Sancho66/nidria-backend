@@ -12,6 +12,8 @@ from src.company_profiles.company_profiles_repository import CompanyProfilesRepo
 from src.company_profiles.company_profiles_schema import (
     CompanyBulkDeleteRequest,
     CompanyCaseSummaryResponse,
+    CompanyFieldLabelResponse,
+    CompanyFieldLabelUpdate,
     CompanyProfileCreateRequest,
     CompanyProfileListItemResponse,
     CompanyProfileListResponse,
@@ -22,6 +24,7 @@ from src.company_profiles.company_profiles_schema import (
 )
 from src.core.bulk_delete import BulkDeleteReport, run_bulk_delete
 from src.core.exceptions import ConflictError, NotFoundError
+from src.custom_fields.custom_fields_manager import CustomFieldsManager
 
 
 def _is_empty(value: Any) -> bool:
@@ -282,3 +285,70 @@ class CompanyProfilesManager:
             raise NotFoundError("Role not found.", code="company_profile.role_not_found")
         await self.db.delete(role)
         await self.db.commit()
+
+    async def rename_field(
+        self, agent: Agent, key: str, payload: "CompanyFieldLabelUpdate", lang: str
+    ) -> "CompanyFieldLabelResponse":
+        """LE SEUL GESTE de l'univers société : renommer une clé.
+
+        Ses champs n'ont pas de définition — ni archivage, ni typage, ni
+        déplacement (constat du 07/08). Sans ce geste, l'onglet Société
+        serait en lecture seule intégrale.
+
+        La clé doit APPARTENIR à l'univers de l'agence : un preset
+        société, ou une clé réellement présente dans le sac d'une de ses
+        sociétés. Sinon 404 — on ne laisse pas semer des libellés sur des
+        clés inventées, qui n'apparaîtraient jamais nulle part.
+
+        `label = null` retire la personnalisation (la ligne est supprimée,
+        pas vidée) : la clé retrouve son libellé d'origine."""
+        from sqlalchemy import delete, select, text
+
+        from shared.models.company_profile import CompanyFieldLabel
+        from src.client_profiles.profile_sections import COMPANY_PRESET_PROFILE_SECTION
+        from src.custom_fields.field_universe import _label
+
+        known = key in COMPANY_PRESET_PROFILE_SECTION
+        if not known:
+            rows = await self.db.execute(
+                text(
+                    "SELECT 1 FROM company_profile c WHERE c.agency_id = :agency_id"
+                    " AND c.custom_fields ? :key LIMIT 1"
+                ),
+                {"agency_id": agent.agency_id, "key": key},
+            )
+            known = rows.first() is not None
+        if not known:
+            raise NotFoundError(
+                f"Unknown company field {key!r}.", code="company_profile.field_not_found"
+            )
+
+        existing = (
+            await self.db.execute(
+                select(CompanyFieldLabel).where(
+                    CompanyFieldLabel.agency_id == agent.agency_id,
+                    CompanyFieldLabel.key == key,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if payload.label is None:
+            if existing is not None:
+                await self.db.execute(
+                    delete(CompanyFieldLabel).where(CompanyFieldLabel.id == existing.id)
+                )
+                await self.db.commit()
+            agency_default = await CustomFieldsManager(self.db).agency_default(agent.agency_id)
+            return CompanyFieldLabelResponse(
+                key=key, label=_label(key, lang, agency_default), customized=False
+            )
+
+        if existing is None:
+            # `kind` reste au défaut 'text' : renommer ne retype rien —
+            # le kind de la naissance (posé à l'import) est une autre
+            # vérité, et ce geste n'y touche pas.
+            self.db.add(CompanyFieldLabel(agency_id=agent.agency_id, key=key, label=payload.label))
+        else:
+            existing.label = payload.label
+        await self.db.commit()
+        return CompanyFieldLabelResponse(key=key, label=payload.label, customized=True)

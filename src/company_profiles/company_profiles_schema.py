@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.client_profiles.client_profiles_schema import ProfileFieldSectionResponse
 
@@ -134,3 +134,31 @@ class CompanyBulkDeleteRequest(BaseModel):
         if (self.ids is None) == (self.filter is None):
             raise ValueError("Provide exactly one of `ids` or `filter`.")
         return self
+
+
+class CompanyFieldLabelUpdate(BaseModel):
+    """RENOMMER une clé de l'univers société — le SEUL geste que cet
+    univers autorise (rien n'y est archivable ni typable : ses champs
+    n'ont pas de définition, cf. `field_universe`).
+
+    `label = null` RETIRE la personnalisation : la clé retrouve son
+    libellé d'origine (catalogue ou clé nue). Sans ça, une agence qui
+    s'est trompée n'aurait aucun moyen de revenir en arrière."""
+
+    label: str | None = Field(default=None, max_length=200)
+
+    @field_validator("label")
+    @classmethod
+    def _no_blank(cls, v: str | None) -> str | None:
+        # Une chaîne d'espaces n'est pas un libellé ; `null` est le geste
+        # explicite de retour au défaut, « » ne l'est pas.
+        if v is not None and not v.strip():
+            raise ValueError("`label` must not be blank (use null to reset).")
+        return v.strip() if v else None
+
+
+class CompanyFieldLabelResponse(BaseModel):
+    key: str
+    label: str
+    # Vrai = l'agence a posé ce libellé ; faux = c'est le défaut servi.
+    customized: bool

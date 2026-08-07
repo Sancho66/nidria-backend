@@ -17,9 +17,14 @@ from src.custom_fields.custom_fields_schema import (
     CustomFieldDefinitionCreate,
     CustomFieldDefinitionResponse,
     CustomFieldDefinitionUpdate,
+    FieldUniverseResponse,
 )
+from src.custom_fields.field_universe import Surface, field_universe
 
 router = APIRouter(prefix="/agencies/me/custom-fields", tags=["custom-fields"])
+# L'univers affiché ne vit pas sous le préfixe des définitions : il ne
+# parle pas de définitions, il parle d'écrans.
+universe_router = APIRouter(tags=["custom-fields"])
 
 # Read = case.view (every agent rendering the person form needs the
 # definitions); mutations = field.manage (admin config). Same
@@ -47,6 +52,9 @@ BINDINGS = [
     RouteBinding(
         "POST", "/agencies/me/custom-fields/bulk", Audience.AGENT, Permission.FIELD_MANAGE
     ),
+    # L'univers affiché est une LECTURE, comme la liste des définitions :
+    # même `case.view` (tout agent qui rend un formulaire en a besoin).
+    RouteBinding("GET", "/agencies/me/field-universe", Audience.AGENT, Permission.CASE_VIEW),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -88,6 +96,19 @@ async def update_custom_field(
     a type."""
     definition = await CustomFieldsManager(db).update(agent, field_id, body)
     return CustomFieldDefinitionResponse.model_validate(definition)
+
+
+@universe_router.get("/agencies/me/field-universe", response_model=FieldUniverseResponse)
+async def get_field_universe(
+    agent: AgentDep,
+    db: DbDep,
+    lang: RequestLang,
+    surface: Annotated[Surface, Query()] = "person",
+) -> FieldUniverseResponse:
+    """L'univers AFFICHÉ d'un écran, pas le stockage : les sections dans
+    l'ordre de l'écran, et chaque champ avec son état (ce qu'on peut en
+    faire) plutôt qu'une déduction laissée au front."""
+    return await field_universe(db, agent, surface, lang)
 
 
 @router.post("/bulk", response_model=CustomFieldBulkReport)

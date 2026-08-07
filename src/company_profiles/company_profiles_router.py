@@ -11,6 +11,8 @@ from shared.models.agent import Agent
 from src.company_profiles.company_profiles_manager import CompanyProfilesManager
 from src.company_profiles.company_profiles_schema import (
     CompanyBulkDeleteRequest,
+    CompanyFieldLabelResponse,
+    CompanyFieldLabelUpdate,
     CompanyProfileCreateRequest,
     CompanyProfileListResponse,
     CompanyProfileResponse,
@@ -20,6 +22,7 @@ from src.company_profiles.company_profiles_schema import (
 from src.core.bulk_delete import BulkDeleteReport
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.i18n import RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 
@@ -30,6 +33,14 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 
 BINDINGS = [
     RouteBinding("GET", "/company-profiles", Audience.AGENT, Permission.CASE_VIEW),
+    # Renommer une clé société est un geste de CONFIGURATION, pas une
+    # édition de donnée : même `field.manage` que les définitions.
+    RouteBinding(
+        "PATCH",
+        "/agencies/me/company-field-labels/{key}",
+        Audience.AGENT,
+        Permission.FIELD_MANAGE,
+    ),
     RouteBinding("GET", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_VIEW),
     RouteBinding("POST", "/company-profiles", Audience.AGENT, Permission.CASE_EDIT),
     RouteBinding("PATCH", "/company-profiles/{company_id}", Audience.AGENT, Permission.CASE_EDIT),
@@ -132,3 +143,18 @@ async def remove_company_role(
     company_id: uuid.UUID, role_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> None:
     await CompanyProfilesManager(db).remove_role(agent, company_id, role_id)
+
+
+@router.patch("/agencies/me/company-field-labels/{key}", response_model=CompanyFieldLabelResponse)
+async def rename_company_field(
+    key: str,
+    payload: CompanyFieldLabelUpdate,
+    agent: AgentDep,
+    db: DbDep,
+    lang: RequestLang,
+) -> CompanyFieldLabelResponse:
+    """Renommer une clé de l'univers société — le SEUL geste qu'il
+    autorise (ses champs n'ont pas de définition : ni archivage, ni
+    typage). `label: null` retire la personnalisation et rend à la clé son
+    libellé d'origine."""
+    return await CompanyProfilesManager(db).rename_field(agent, key, payload, lang)
