@@ -59,8 +59,13 @@ class CustomFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     profile_section: Mapped[str] = mapped_column(
         String(20), nullable=False, default="misc", server_default="misc"
     )
-    required: Mapped[bool] = mapped_column(default=False, nullable=False)
-    position: Mapped[int] = mapped_column(default=0, nullable=False)
+    # server_default posés au lot D15 (r8b4d0f6a2c8) : le défaut Python
+    # seul laissait base et modèle diverger — la garde modèle↔migration
+    # exige que les deux disent la même chose.
+    required: Mapped[bool] = mapped_column(
+        default=False, nullable=False, server_default=text("false")
+    )
+    position: Mapped[int] = mapped_column(default=0, nullable=False, server_default=text("0"))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     def is_active(self) -> bool:
