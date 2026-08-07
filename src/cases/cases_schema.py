@@ -349,6 +349,13 @@ class CustomFieldDefinitionInline(BaseModel):
     options: list[str] | None
     required: bool
     position: int
+    # PORTÉE servie (la colonne existe depuis le chantier fiches F1, elle
+    # n'était simplement pas au contrat) : 'person' = stable chez la
+    # personne à travers ses dossiers, 'case' = propre à la mission. La
+    # fiche dossier en a besoin pour trancher ce qu'elle affiche où —
+    # sans elle, le front ne peut pas distinguer les deux familles dans
+    # une liste qui les mélange. Zéro migration.
+    scope: str
 
 
 class CaseBillingInfo(BaseModel):

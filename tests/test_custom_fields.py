@@ -552,3 +552,33 @@ async def test_unarchive_gate_field_manage(
         f"/agencies/me/custom-fields/{field['id']}/unarchive", headers=agent_headers(member)
     )
     assert denied.status_code == 403
+
+
+async def test_case_detail_serves_the_scope_of_each_definition(
+    cf_client: AsyncClient,
+    admin: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """`scope` AU CONTRAT (micro-lot) : la colonne existait depuis le
+    chantier fiches F1, elle n'était pas servie. Sans elle, la fiche
+    dossier reçoit une liste qui MÉLANGE les deux familles sans pouvoir
+    les distinguer — 'person' (stable chez la personne à travers ses
+    dossiers) et 'case' (propre à la mission). Zéro migration."""
+    headers = agent_headers(admin)
+    # Un personnalisé d'agence naît 'case' (le défaut du modèle)…
+    await _define(cf_client, headers, key="mission_ref", label="Réf mission", position=1)
+    # …et un preset du catalogue matérialisé en scope 'person'.
+    promoted = await _define(cf_client, headers, key="whatsapp", label="WhatsApp", position=2)
+    r = await cf_client.patch(
+        f"/agencies/me/custom-fields/{promoted['id']}", headers=headers, json={"scope": "person"}
+    )
+    assert r.status_code == 200, r.text
+
+    case = await make_client_case(agency_id=admin.agency_id)
+    detail = (await cf_client.get(f"/cases/{case.id}", headers=headers)).json()
+    by_key = {d["key"]: d for d in detail["custom_field_definitions"]}
+    assert by_key["mission_ref"]["scope"] == "case"
+    assert by_key["whatsapp"]["scope"] == "person"
+    # Le champ est SERVI sur chaque définition, sans exception.
+    assert all("scope" in d for d in detail["custom_field_definitions"])

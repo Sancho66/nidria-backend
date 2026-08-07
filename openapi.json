@@ -3918,6 +3918,208 @@
         }
       }
     },
+    "/agencies/me/profile-sections": {
+      "get": {
+        "tags": [
+          "profile-sections"
+        ],
+        "summary": "List Profile Sections",
+        "description": "Les sections d'une surface, dans l'ordre de l'écran. Matérialise\nles 4 d'origine si l'agence n'a jamais ouvert cette surface.",
+        "operationId": "list_profile_sections_agencies_me_profile_sections_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "surface",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "person",
+                "company",
+                "case"
+              ],
+              "type": "string",
+              "default": "person",
+              "title": "Surface"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProfileSectionResponse"
+                  },
+                  "title": "Response List Profile Sections Agencies Me Profile Sections Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "profile-sections"
+        ],
+        "summary": "Create Profile Section",
+        "description": "Créer une section. La CLÉ est posée ici et ne changera plus : ce\nsont les définitions de champs qui la portent.",
+        "operationId": "create_profile_section_agencies_me_profile_sections_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileSectionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/me/profile-sections/{section_id}": {
+      "patch": {
+        "tags": [
+          "profile-sections"
+        ],
+        "summary": "Update Profile Section",
+        "description": "Renommer et/ou déplacer. `label_i18n = {}` REND le libellé\nd'origine (le repli catalogue reprend la main) sans toucher aux champs\nque la section porte. « Divers » ne se renomme jamais.",
+        "operationId": "update_profile_section_agencies_me_profile_sections__section_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileSectionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "profile-sections"
+        ],
+        "summary": "Delete Profile Section",
+        "description": "Supprimer une section VIDE. Refus nommé (422) si elle porte des\nchamps ou des colonnes civiles — « déplacez d'abord ses champs ».\n« Divers » ne se supprime jamais.",
+        "operationId": "delete_profile_section_agencies_me_profile_sections__section_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/public/agencies/{slug}/logo": {
       "get": {
         "tags": [
@@ -7350,6 +7552,7 @@
           "custom-fields"
         ],
         "summary": "List Custom Fields",
+        "description": "`surface` CHOISIT LA FACE, et c'est ce qui répare un mensonge\nancien : la fiche société résolvait ses références contre cette\nliste, qui ne contient que des définitions personne/dossier — d'où\nles 9 clés (`company_name`, `legal_form`…) déclarées côté PERSONNE\nqui pilotaient l'affichage de la fiche SOCIÉTÉ.\n\n`surface=company` sert les définitions société (`scope` rendu à\n`\"company\"`), `person`/`case` filtrent la portée, et l'ABSENCE garde\nle comportement d'avant (personne + dossier) — un appelant existant\nqui se tait garde ce qu'il avait.",
         "operationId": "list_custom_fields_agencies_me_custom_fields_get",
         "security": [
           {
@@ -7365,6 +7568,27 @@
               "type": "boolean",
               "default": false,
               "title": "Include Archived"
+            }
+          },
+          {
+            "name": "surface",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "person",
+                    "company",
+                    "case"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Surface"
             }
           }
         ],
@@ -7400,6 +7624,7 @@
           "custom-fields"
         ],
         "summary": "Create Custom Field",
+        "description": "`scope='company'` crée un champ de FICHE SOCIÉTÉ (D9) — même route,\nmême contrat de sortie que les deux autres portées, parce que c'est le\nmême geste. Ce que cette face change, et rien d'autre : la `key` est\nDÉRIVÉE du libellé (l'envoyer est refusé), la `profile_section` est\nrequise, et `options`/`required` n'y existent pas.\n\nCollision avec un preset du catalogue → 409\n`company_field.key_reserved` ; avec une clé déjà prise par l'agence\n(archivée comprise) → 409 `company_field.key_exists`, qui NOMME la\ndéfinition en place pour que l'écran propose de la renommer ou de la\nressusciter.",
         "operationId": "create_custom_field_agencies_me_custom_fields_post",
         "security": [
           {
@@ -24180,12 +24405,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "identity",
-                  "contact",
-                  "situation",
-                  "misc"
-                ]
+                "maxLength": 50,
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -24215,8 +24436,15 @@
       "CustomFieldDefinitionCreate": {
         "properties": {
           "key": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]{0,49}$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,49}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Key"
           },
           "label": {
@@ -24272,7 +24500,8 @@
                 "type": "string",
                 "enum": [
                   "person",
-                  "case"
+                  "case",
+                  "company"
                 ]
               },
               {
@@ -24280,11 +24509,23 @@
               }
             ],
             "title": "Scope"
+          },
+          "profile_section": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Section"
           }
         },
         "type": "object",
         "required": [
-          "key",
           "label",
           "field_type"
         ],
@@ -24330,6 +24571,10 @@
           "position": {
             "type": "integer",
             "title": "Position"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
           }
         },
         "type": "object",
@@ -24340,7 +24585,8 @@
           "field_type",
           "options",
           "required",
-          "position"
+          "position",
+          "scope"
         ],
         "title": "CustomFieldDefinitionInline",
         "description": "Active custom-field definitions, embedded in the case detail so\nthe frontend renders the person form in one fetch (no second call /\nno cross-case cache staleness)."
@@ -24451,12 +24697,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "identity",
-                  "contact",
-                  "situation",
-                  "misc"
-                ]
+                "maxLength": 50,
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -31869,6 +32111,13 @@
             ],
             "title": "Name"
           },
+          "name_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Name I18N"
+          },
           "references": {
             "items": {
               "type": "string"
@@ -31881,6 +32130,7 @@
         "required": [
           "key",
           "name",
+          "name_i18n",
           "references"
         ],
         "title": "ProfileFieldSectionResponse",
@@ -32333,6 +32583,133 @@
           "has_avatar"
         ],
         "title": "ProfileResponse"
+      },
+      "ProfileSectionCreateRequest": {
+        "properties": {
+          "surface": {
+            "type": "string",
+            "enum": [
+              "person",
+              "company"
+            ],
+            "title": "Surface"
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,49}$",
+            "title": "Key"
+          },
+          "label_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Label I18N"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "surface",
+          "key",
+          "label_i18n"
+        ],
+        "title": "ProfileSectionCreateRequest"
+      },
+      "ProfileSectionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "surface": {
+            "type": "string",
+            "title": "Surface"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "name_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Name I18N"
+          },
+          "customized": {
+            "type": "boolean",
+            "title": "Customized"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "deletable": {
+            "type": "boolean",
+            "title": "Deletable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "surface",
+          "name",
+          "name_i18n",
+          "customized",
+          "position",
+          "deletable"
+        ],
+        "title": "ProfileSectionResponse"
+      },
+      "ProfileSectionUpdateRequest": {
+        "properties": {
+          "label_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label I18N"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "title": "ProfileSectionUpdateRequest",
+        "description": "`key` et `surface` sont ABSENTS, délibérément : la clé est portée\npar les définitions de champs (la changer les ferait toutes tomber en\n« Divers »), et déménager une section d'une face à l'autre laisserait\nses champs derrière elle."
       },
       "ProfileUpdateRequest": {
         "properties": {
