@@ -146,6 +146,16 @@ IDENTITY_SECTION_ORDER: Final[tuple[str, ...]] = (
 
 # Les 10 colonnes civiles natives → leur section fiche (mapping code :
 # ce ne sont pas des lignes custom_field_definition).
+#
+# BACKLOG D5 — surcharge par agence de cette table. `Final` est un choix,
+# pas un oubli : une colonne civile n'a pas de définition, donc pas de
+# `profile_section` à éditer ; la rendre configurable demande une table
+# d'override par agence, lue partout où cette constante l'est
+# aujourd'hui (fiche, univers affiché, complétude, collecte).
+# CONDITION D'OUVERTURE : une agence demande EXPLICITEMENT de déplacer
+# une colonne civile dans une autre section. Tant que personne ne l'a
+# demandé, l'infobulle de l'écran explique pourquoi c'est fixe — c'est
+# moins cher qu'une table d'override que personne n'utilise.
 CIVIL_PROFILE_SECTION: Final[dict[str, str]] = {
     "date_of_birth": "identity",
     "nationality": "identity",

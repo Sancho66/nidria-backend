@@ -26990,6 +26990,15 @@
             ],
             "title": "Field Type"
           },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "catalog",
+              "agency"
+            ],
+            "title": "Origin",
+            "default": "agency"
+          },
           "section": {
             "type": "string",
             "title": "Section"
@@ -27026,6 +27035,18 @@
               }
             ],
             "title": "Required"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position",
+            "description": "Position de la définition — sert au GESTE de déplacement, jamais au tri (l'ordre servi dans chaque section est déjà celui de l'écran). Nulle pour `native`, `catalog_undeclared` et `sack_only` : rien à déplacer. Suite GLOBALE à l'agence, pas un rang dans la section — deux entrées voisines peuvent porter 3 et 47. DÉPÔT ENTRE DEUX ENTRÉES SANS POSITION : la définition déplacée prend la position de la première entrée `declared` qui SUIT dans l'ordre servi ; s'il n'y en a aucune, max + 1. Les voisines sans position sont ignorées, elles n'occupent aucun rang. Persistance par PATCH /agencies/me/custom-fields/{field_id} {position}."
           },
           "used_in_journeys": {
             "anyOf": [

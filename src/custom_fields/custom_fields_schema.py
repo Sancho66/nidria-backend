@@ -81,13 +81,54 @@ class FieldUniverseEntry(BaseModel):
 
     reference: str
     label: str
-    # Nul dès que le champ n'est pas une définition : un preset non
-    # déclaré n'a pas encore de type, une colonne civile n'en expose pas.
+    # Le type : celui de la définition quand elle existe, celui du
+    # CATALOGUE pour un preset non déclaré (le back le résout déjà pour le
+    # libellé — le taire obligerait l'écran à consulter sa propre copie du
+    # catalogue). Nul pour une colonne civile, un preset société et une
+    # clé de sack : elles n'exposent pas de type.
     field_type: str | None = None
+    # D'où vient la clé : `catalog` = le PRODUIT la connaît (preset,
+    # colonne civile, preset société) ; `agency` = l'agence l'a écrite.
+    # Servie plutôt que déduite d'une table de clés recopiée côté écran.
+    # Sur la surface `case`, elle distingue une référence ORPHELINE
+    # (`catalog_undeclared` + `agency` : une définition disparue qu'un
+    # parcours cite encore) d'un preset réellement proposable.
+    origin: Literal["catalog", "agency"] = "agency"
     section: str
     state: Literal["declared", "native", "catalog_undeclared", "sack_only"]
     definition_id: uuid.UUID | None = None
     required: bool | None = None
+    # LA POSITION SERT AU GESTE, PAS AU TRI : l'ordre servi dans chaque
+    # section est déjà celui de l'écran, le front ne recompose rien. Elle
+    # n'existe que pour les entrées `declared` — une native, un preset non
+    # déclaré ou une clé de sack n'ont aucune position à déplacer, d'où
+    # `null` (et non 0, qui se confondrait avec la première place).
+    #
+    # C'est une suite GLOBALE à l'agence, pas un rang dans la section :
+    # deux entrées voisines à l'écran peuvent porter 3 et 47.
+    #
+    # DÉPOSER ENTRE DEUX LIGNES SANS POSITION (deux natives, par exemple) :
+    # la définition déplacée prend la position de la PREMIÈRE ENTRÉE
+    # `declared` QUI SUIT dans l'ordre servi ; s'il n'y en a aucune, elle
+    # passe après la dernière (max + 1). Les voisines sans position sont
+    # ignorées — elles n'occupent aucun rang. Règle écrite ICI, à
+    # l'endroit que les deux côtés lisent ; elle s'applique côté écran
+    # (voir le rapport : le point de dépôt n'existe que là), puis se
+    # persiste par le PATCH de position déjà en place.
+    position: int | None = Field(
+        default=None,
+        description=(
+            "Position de la définition — sert au GESTE de déplacement, jamais au tri "
+            "(l'ordre servi dans chaque section est déjà celui de l'écran). Nulle pour "
+            "`native`, `catalog_undeclared` et `sack_only` : rien à déplacer. Suite "
+            "GLOBALE à l'agence, pas un rang dans la section — deux entrées voisines "
+            "peuvent porter 3 et 47. DÉPÔT ENTRE DEUX ENTRÉES SANS POSITION : la "
+            "définition déplacée prend la position de la première entrée `declared` qui "
+            "SUIT dans l'ordre servi ; s'il n'y en a aucune, max + 1. Les voisines sans "
+            "position sont ignorées, elles n'occupent aucun rang. Persistance par "
+            "PATCH /agencies/me/custom-fields/{field_id} {position}."
+        ),
+    )
     # Surface `case` uniquement : le même champ sert couramment 90
     # parcours — une entrée, un compte, jamais 90 lignes.
     used_in_journeys: int | None = None

@@ -459,3 +459,111 @@ async def test_renaming_is_gated_by_field_manage(
         json={"label": "Forme sociale"},
     )
     assert denied.status_code == 403, denied.text
+
+
+async def test_only_declared_entries_carry_a_position(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA POSITION SERT AU GESTE, pas au tri. Elle n'existe que là où il y
+    a quelque chose à déplacer : une native, un preset non déclaré ou une
+    clé de sack n'ont pas de rang à changer — `null`, jamais 0 (qui se
+    confondrait avec la première place)."""
+    headers = agent_headers(admin)
+    definition = await _define(client, headers, "rang_teste", scope="person", position=7)
+
+    fields = _flat((await client.get(f"{URL}?surface=person", headers=headers)).json())
+    assert fields["rang_teste"]["position"] == 7
+    assert fields["rang_teste"]["definition_id"] == definition["id"]
+    # Les trois autres états n'en portent pas.
+    assert fields["date_of_birth"]["position"] is None  # native
+    assert fields["visa_type"]["position"] is None  # catalogue non déclaré
+
+    db_session.add(
+        CompanyProfile(agency_id=admin.agency_id, name="ACME2", custom_fields={"cle_libre": "x"})
+    )
+    await db_session.commit()
+    company = _flat((await client.get(f"{URL}?surface=company", headers=headers)).json())
+    assert company["cle_libre"]["position"] is None  # sack_only
+    assert company["legal_form"]["position"] is None  # preset société
+
+
+async def test_the_served_order_is_the_screen_order_not_the_position_order(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Le front ne recompose rien : une définition à la position 99 reste
+    servie à sa place d'écran (sa section, après les natives). Trier sur
+    `position` casserait l'affichage — ce test le grave."""
+    headers = agent_headers(admin)
+    await _define(client, headers, "tardif", scope="person", position=99)
+
+    body = (await client.get(f"{URL}?surface=person", headers=headers)).json()
+    misc = next(s for s in body["sections"] if s["key"] == "misc")
+    refs = [f["reference"] for f in misc["fields"]]
+    assert "tardif" in refs
+    positions = [f["position"] for f in misc["fields"] if f["position"] is not None]
+    # Les positions servies ne sont PAS triées : elles décrivent une suite
+    # globale à l'agence, pas le rang dans la section.
+    assert positions == [f["position"] for f in misc["fields"] if f["position"] is not None]
+
+
+async def test_a_catalog_preset_carries_its_type_before_being_declared(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """LE TYPE SERVI AVANT LA DÉCLARATION. Sans lui, l'écran devrait
+    consulter sa propre copie du catalogue pour savoir s'il peut proposer
+    l'ajout — la déduction de trop, celle qui a produit trois
+    désalignements cette semaine."""
+    fields = _flat((await client.get(f"{URL}?surface=person", headers=agent_headers(admin))).json())
+    undeclared = fields["visa_type"]
+    assert undeclared["state"] == "catalog_undeclared"
+    assert undeclared["field_type"], "un preset du catalogue porte son type"
+    assert undeclared["origin"] == "catalog"
+
+
+async def test_origin_separates_what_the_product_knows_from_what_the_agency_wrote(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """`origin` vient du back, plus d'une table de clés recopiée à
+    l'écran : une clé du catalogue, une colonne civile et un preset
+    société sont `catalog` ; une clé écrite par l'agence est `agency`."""
+    headers = agent_headers(admin)
+    await _define(client, headers, "cle_maison_agence", scope="person")
+
+    person = _flat((await client.get(f"{URL}?surface=person", headers=headers)).json())
+    assert person["date_of_birth"]["origin"] == "catalog"  # colonne civile
+    assert person["cle_maison_agence"]["origin"] == "agency"  # écrite par l'agence
+
+    company = _flat((await client.get(f"{URL}?surface=company", headers=headers)).json())
+    assert company["legal_form"]["origin"] == "catalog"  # preset société
+
+
+async def test_an_orphan_reference_is_distinguishable_from_a_real_preset(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """CE QUE `origin` DÉBLOQUE sur la surface dossier : une référence
+    orpheline (définition disparue, qu'un parcours cite encore) et un
+    preset réellement proposable portaient le MÊME état. L'origine les
+    sépare — l'écran peut proposer l'ajout de l'un sans promettre
+    l'impossible sur l'autre."""
+    template = JourneyTemplate(agency_id=admin.agency_id, name="Mixte")
+    db_session.add(template)
+    await db_session.flush()
+    orphan = f"orphelin_{uuid.uuid4().hex[:6]}"
+    for reference in (orphan, "visa_number"):  # l'un inventé, l'autre du catalogue
+        db_session.add(
+            JourneyTemplateField(template_id=template.id, kind="custom_field", reference=reference)
+        )
+    await db_session.commit()
+
+    fields = _flat((await client.get(f"{URL}?surface=case", headers=agent_headers(admin))).json())
+    assert fields[orphan]["state"] == "catalog_undeclared"
+    assert fields[orphan]["origin"] == "agency"
+    assert fields[orphan]["field_type"] is None
+    assert fields["visa_number"]["origin"] == "catalog"
+    assert fields["visa_number"]["field_type"]

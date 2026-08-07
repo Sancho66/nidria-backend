@@ -73,6 +73,37 @@ def _label(key: str, lang: str, agency_default: str) -> str:
     return key
 
 
+def _preset_type(key: str) -> str | None:
+    """Le TYPE d'une clé du catalogue — servi même quand l'agence ne l'a
+    pas déclarée. Sans lui, l'écran devrait consulter sa propre copie du
+    catalogue pour savoir s'il peut proposer l'ajout : une déduction de
+    plus, et c'est ce motif-là qui a produit trois désalignements cette
+    semaine. Nul pour une clé hors catalogue (elle n'a pas encore de
+    type — c'est la création qui le pose)."""
+    from src.journeys.field_catalog import FIELD_PRESETS
+
+    preset = FIELD_PRESETS.get(key)
+    return preset.field_type if preset is not None else None
+
+
+def _origin(key: str) -> str:
+    """`catalog` = le PRODUIT connaît cette clé (preset du catalogue,
+    colonne civile, preset société) ; `agency` = elle a été écrite par
+    l'agence. Le front le déduisait de sa propre table de clés — même
+    motif, même risque de dérive : la vérité vient d'ici.
+
+    Sur la surface `case`, c'est ce qui distingue une référence
+    ORPHELINE (`catalog_undeclared` + `agency` : une définition archivée
+    ou supprimée qu'un parcours cite encore) d'un preset réellement
+    proposable (`catalog_undeclared` + `catalog`)."""
+    from src.client_profiles.profile_sections import COMPANY_PRESET_PROFILE_SECTION
+    from src.imports.target_labels import CIVIL_LABELS, IDENTITY_LABELS
+    from src.journeys.field_catalog import FIELD_PRESETS
+
+    known = key in FIELD_PRESETS or key in COMPANY_PRESET_PROFILE_SECTION
+    return "catalog" if known or key in CIVIL_LABELS or key in IDENTITY_LABELS else "agency"
+
+
 async def field_universe(
     db: AsyncSession, agent: Agent, surface: Surface, lang: str
 ) -> FieldUniverseResponse:
@@ -103,6 +134,8 @@ async def field_universe(
             state="declared",
             definition_id=definition.id,
             required=definition.required,
+            position=definition.position,
+            origin=_origin(key),
         )
 
     buckets: dict[str, list[FieldUniverseEntry]] = {}
@@ -121,6 +154,7 @@ async def field_universe(
                     field_type=None,
                     section=CIVIL_PROFILE_SECTION[key],
                     state="native",
+                    origin=_origin(key),
                 )
             )
         # 2. Les définitions de l'agence. L'UNIVERS SOCIÉTÉ EST ÉCARTÉ :
@@ -142,9 +176,10 @@ async def field_universe(
                 FieldUniverseEntry(
                     reference=key,
                     label=_label(key, lang, agency_default),
-                    field_type=None,
+                    field_type=_preset_type(key),
                     section=section,
                     state="catalog_undeclared",
+                    origin=_origin(key),
                 )
             )
         rank = {key: index for index, key in enumerate(IDENTITY_SECTION_ORDER)}
@@ -165,6 +200,7 @@ async def field_universe(
                     section=section,
                     state="native",
                     renamable=True,
+                    origin=_origin(key),
                 )
             )
         # 2. Les clés trouvées dans les sacks : elles n'existent que parce
@@ -181,6 +217,7 @@ async def field_universe(
                     section="misc",
                     state="sack_only",
                     renamable=True,
+                    origin=_origin(key),
                 )
             )
         buckets["misc"].sort(key=lambda e: e.label.lower())
@@ -206,6 +243,7 @@ async def field_universe(
                     section=section,
                     state="native",
                     used_in_journeys=int(n),
+                    origin=_origin(reference),
                 )
             elif declared_here is not None:
                 section = declared_here.profile_section or "misc"
@@ -220,10 +258,11 @@ async def field_universe(
                 entry = FieldUniverseEntry(
                     reference=reference,
                     label=_label(reference, lang, agency_default),
-                    field_type=None,
+                    field_type=_preset_type(reference),
                     section=section,
                     state="catalog_undeclared",
                     used_in_journeys=int(n),
+                    origin=_origin(reference),
                 )
             buckets[entry.section].append(entry)
         for key in buckets:
