@@ -7724,6 +7724,57 @@
         }
       }
     },
+    "/agencies/me/custom-fields/order": {
+      "put": {
+        "tags": [
+          "custom-fields"
+        ],
+        "summary": "Reorder Custom Fields",
+        "description": "D12 — la liste ordonnée des definition_id, réécrite en une\ntransaction (renumérotation 1..N, unicité garantie). L'ensemble doit\nêtre EXACT : absent, étranger ou doublon → 422 nommé, ordre intact.\nRend la liste dans l'ordre gravé — ce que l'écran affiche ensuite EST\nce que la base a écrit.",
+        "operationId": "reorder_custom_fields_agencies_me_custom_fields_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomFieldOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CustomFieldDefinitionResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Reorder Custom Fields Agencies Me Custom Fields Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me/custom-fields/bulk": {
       "post": {
         "tags": [
@@ -24773,6 +24824,25 @@
         "type": "object",
         "title": "CustomFieldDefinitionUpdate",
         "description": "`key` and `field_type` are IMMUTABLE — deliberately absent.\n`scope` est le TOGGLE de reclassification (annuaire, sections) : les\nvaleurs ne bougent JAMAIS (elles vivent dans les sacs JSONB) — seule\nla surface change (fiche/complétude/prefill pour 'person')."
+      },
+      "CustomFieldOrderRequest": {
+        "properties": {
+          "field_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Field Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_ids"
+        ],
+        "title": "CustomFieldOrderRequest",
+        "description": "D12 — l'ordre RÉÉCRIT EN ENTIER, jamais rapiécé.\n\n`field_ids` (le mot du précédent produit, `PUT /journeys/{id}/fields/\norder` — le front l'envoie déjà) : la liste ordonnée de TOUTES les\ndéfinitions actives de l'agence (table personne, scopes person ET\ncase confondus — la position est une suite GLOBALE d'agence, pas un\nrang par surface). Renumérotée 1..N en une transaction.\n\nL'ensemble doit être EXACT — un id absent, étranger ou en double est\nun 422 qui NOMME les fautifs, jamais une réécriture partielle qui\nrecréerait des trous. Les entrées sans position (colonnes natives,\npresets non déclarés) n'ont rien à ordonner : hors ensemble. Les\nARCHIVÉES non plus (l'écran ne les montre pas) : elles sont repoussées\nAPRÈS N dans la même transaction — l'unicité des positions tient, et\nune ressuscitée réapparaît en fin de liste plutôt qu'à un rang\npérimé."
       },
       "CustomFieldType": {
         "type": "string",

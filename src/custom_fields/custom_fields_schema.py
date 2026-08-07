@@ -98,6 +98,27 @@ class CustomFieldDefinitionCreate(BaseModel):
         return self
 
 
+class CustomFieldOrderRequest(BaseModel):
+    """D12 — l'ordre RÉÉCRIT EN ENTIER, jamais rapiécé.
+
+    `field_ids` (le mot du précédent produit, `PUT /journeys/{id}/fields/
+    order` — le front l'envoie déjà) : la liste ordonnée de TOUTES les
+    définitions actives de l'agence (table personne, scopes person ET
+    case confondus — la position est une suite GLOBALE d'agence, pas un
+    rang par surface). Renumérotée 1..N en une transaction.
+
+    L'ensemble doit être EXACT — un id absent, étranger ou en double est
+    un 422 qui NOMME les fautifs, jamais une réécriture partielle qui
+    recréerait des trous. Les entrées sans position (colonnes natives,
+    presets non déclarés) n'ont rien à ordonner : hors ensemble. Les
+    ARCHIVÉES non plus (l'écran ne les montre pas) : elles sont repoussées
+    APRÈS N dans la même transaction — l'unicité des positions tient, et
+    une ressuscitée réapparaît en fin de liste plutôt qu'à un rang
+    périmé."""
+
+    field_ids: list[uuid.UUID] = Field(min_length=1)
+
+
 class FieldUniverseEntry(BaseModel):
     """UN champ tel que l'ÉCRAN le montre, avec ce qu'on peut en faire.
 

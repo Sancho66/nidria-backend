@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select, update
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -590,6 +591,72 @@ class CustomFieldsManager:
         await self.db.commit()
         report.applied = len(eligible) + len(company_eligible)
         return report
+
+    async def reorder(self, agent: Agent, field_ids: list[uuid.UUID]) -> None:
+        """D12 — réécrire L'ORDRE ENTIER des définitions actives (1..N),
+        en une transaction. Modèle : reorder_steps, avec trois écarts
+        voulus — trois 422 DISTINCTS qui nomment les ids (le modèle n'a
+        qu'un mismatch muet), la validation AVANT toute écriture (un 422
+        laisse l'ordre intact), et pas de renumérotation en deux phases :
+        l'unicité vient de la réécriture totale, pas d'un décalage.
+
+        Un id étranger reçoit le même mot qu'un inconnu (`order_unknown`)
+        — l'existence d'une définition d'une autre agence n'est jamais
+        confirmée, même en creux (patron prefill-source)."""
+        seen: set[uuid.UUID] = set()
+        duplicated: set[uuid.UUID] = set()
+        for field_id in field_ids:
+            (duplicated if field_id in seen else seen).add(field_id)
+        duplicates = sorted(str(i) for i in duplicated)
+        if duplicates:
+            raise ValidationError(
+                "field_ids contains duplicates.",
+                code="custom_field.order_duplicate",
+                params={"duplicates": duplicates},
+            )
+        active = await self.repo.list_for_agency(agent.agency_id, include_archived=False)
+        expected = {d.id for d in active}
+        unknown = sorted(str(i) for i in seen - expected)
+        if unknown:
+            raise ValidationError(
+                "field_ids contains ids that are not active definitions of this agency.",
+                code="custom_field.order_unknown",
+                params={"unknown": unknown},
+            )
+        missing = sorted(str(i) for i in expected - seen)
+        if missing:
+            raise ValidationError(
+                "field_ids must contain every active definition of the agency.",
+                code="custom_field.order_missing",
+                params={"missing": missing},
+            )
+        # UN UPDATE, positions 1..N par ORDINALITY — le garde IS DISTINCT
+        # rend le REJEU inerte (rejouer la même liste ne touche aucune
+        # ligne, updated_at compris).
+        await self.db.execute(
+            sa_text(
+                "UPDATE custom_field_definition AS d SET position = v.ord"
+                " FROM (SELECT t.id, t.ord FROM unnest(CAST(:ids AS uuid[]))"
+                " WITH ORDINALITY AS t(id, ord)) AS v"
+                " WHERE d.id = v.id AND d.agency_id = :agency_id"
+                " AND d.position IS DISTINCT FROM v.ord"
+            ),
+            {"ids": field_ids, "agency_id": agent.agency_id},
+        )
+        # Les ARCHIVÉES passent APRÈS N, dans leur ordre servi : l'unicité
+        # des positions tient dans TOUTE la table, et une ressuscitée
+        # réapparaît en fin de liste plutôt qu'à un rang périmé.
+        await self.db.execute(
+            sa_text(
+                "UPDATE custom_field_definition AS d SET position = :n + s.rn"
+                " FROM (SELECT id, row_number() OVER (ORDER BY position, created_at, id)"
+                " AS rn FROM custom_field_definition"
+                " WHERE agency_id = :agency_id AND archived_at IS NOT NULL) AS s"
+                " WHERE d.id = s.id AND d.position IS DISTINCT FROM :n + s.rn"
+            ),
+            {"n": len(field_ids), "agency_id": agent.agency_id},
+        )
+        await self.db.commit()
 
     async def unarchive(
         self, agent: Agent, field_id: uuid.UUID

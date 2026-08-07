@@ -23,6 +23,7 @@ from src.custom_fields.custom_fields_schema import (
     CustomFieldDefinitionCreate,
     CustomFieldDefinitionResponse,
     CustomFieldDefinitionUpdate,
+    CustomFieldOrderRequest,
     FieldUniverseResponse,
 )
 from src.custom_fields.field_universe import Surface, field_universe
@@ -57,6 +58,11 @@ BINDINGS = [
     # 24 champs d'un coup n'est pas un droit de plus, c'est le même droit.
     RouteBinding(
         "POST", "/agencies/me/custom-fields/bulk", Audience.AGENT, Permission.FIELD_MANAGE
+    ),
+    # D12 — réécrire l'ordre entier : même gate que le PATCH de position
+    # qu'il remplace à l'échelle de la liste.
+    RouteBinding(
+        "PUT", "/agencies/me/custom-fields/order", Audience.AGENT, Permission.FIELD_MANAGE
     ),
     # L'univers affiché est une LECTURE, comme la liste des définitions :
     # même `case.view` (tout agent qui rend un formulaire en a besoin).
@@ -168,6 +174,27 @@ async def get_field_universe(
     l'ordre de l'écran, et chaque champ avec son état (ce qu'on peut en
     faire) plutôt qu'une déduction laissée au front."""
     return await field_universe(db, agent, surface, lang)
+
+
+@router.put("/order", response_model=list[CustomFieldDefinitionResponse])
+async def reorder_custom_fields(
+    body: CustomFieldOrderRequest, agent: AgentDep, db: DbDep, lang: RequestLang
+) -> list[CustomFieldDefinitionResponse]:
+    """D12 — la liste ordonnée des definition_id, réécrite en une
+    transaction (renumérotation 1..N, unicité garantie). L'ensemble doit
+    être EXACT : absent, étranger ou doublon → 422 nommé, ordre intact.
+    Rend la liste dans l'ordre gravé — ce que l'écran affiche ensuite EST
+    ce que la base a écrit."""
+    manager = CustomFieldsManager(db)
+    await manager.reorder(agent, body.field_ids)
+    definitions = await manager.list_definitions(agent)
+    agency_default = await manager.agency_default(agent.agency_id)
+    return [
+        CustomFieldDefinitionResponse.model_validate(d).model_copy(
+            update={"label": resolve_i18n(d.label_i18n, lang, agency_default, d.label)}
+        )
+        for d in definitions
+    ]
 
 
 @router.post("/bulk", response_model=CustomFieldBulkReport)

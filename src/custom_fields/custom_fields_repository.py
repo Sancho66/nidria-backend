@@ -52,7 +52,15 @@ class CustomFieldsRepository:
         stmt = select(CustomFieldDefinition).where(CustomFieldDefinition.agency_id == agency_id)
         if not include_archived:
             stmt = stmt.where(CustomFieldDefinition.archived_at.is_(None))
-        stmt = stmt.order_by(CustomFieldDefinition.position, CustomFieldDefinition.created_at)
+        # TIE-BREAKER STABLE (D12) : 4 entrées sur 12 partageaient position
+        # ET created_at à la microseconde en dev — l'ordre changeait tout
+        # seul entre deux lectures. `id` en dernier ressort : deux lectures
+        # ne peuvent plus rendre deux ordres.
+        stmt = stmt.order_by(
+            CustomFieldDefinition.position,
+            CustomFieldDefinition.created_at,
+            CustomFieldDefinition.id,
+        )
         return list((await self.db.execute(stmt)).scalars())
 
     async def get_in_agency(
