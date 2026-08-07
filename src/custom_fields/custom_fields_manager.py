@@ -33,7 +33,7 @@ async def materialize_preset_definitions(
     'case'/'misc' depuis la migration f2d6 — bug latent des deux
     appelants). Retourne les clés créées."""
     from shared.models.custom_field import CustomFieldDefinition
-    from src.client_profiles.profile_sections import PRESET_PROFILE_SECTION
+    from src.client_profiles.profile_sections import catalog_classification
     from src.custom_fields.custom_fields_repository import CustomFieldsRepository
     from src.journeys.field_catalog import FIELD_PRESETS
 
@@ -50,6 +50,7 @@ async def materialize_preset_definitions(
         options = None
         if preset.options is not None:
             options = preset.options.get(lang) or preset.options["fr"]
+        scope, section = catalog_classification(key)
         db.add(
             CustomFieldDefinition(
                 agency_id=agency_id,
@@ -58,8 +59,8 @@ async def materialize_preset_definitions(
                 label_i18n=dict(preset.labels),
                 field_type=preset.field_type,
                 options=options,
-                scope="person" if key in PRESET_PROFILE_SECTION else "case",
-                profile_section=PRESET_PROFILE_SECTION.get(key, "misc"),
+                scope=scope,
+                profile_section=section,
             )
         )
         created.append(key)
@@ -89,12 +90,21 @@ class CustomFieldsManager:
         agent: Agent,
         payload: CustomFieldDefinitionCreate,
         *,
-        scope: str = "case",
+        scope: str,
         profile_section: str = "misc",
     ) -> CustomFieldDefinition:
         """Le cœur SANS COMMIT de `create` — réutilisé par la création
         depuis la grille d'import (le batch reste transactionnel, un seul
-        commit en bout de course). Même validation, même i18n."""
+        commit en bout de course). Même validation, même i18n.
+
+        `scope` N'A PLUS DE DÉFAUT (arbitrage du 07/08). Trois trous en
+        trois semaines venaient tous du même motif : un appelant oubliait
+        l'argument, le défaut « mission » s'appliquait en silence, et
+        personne ne le voyait avant qu'une agence se plaigne de champs
+        invisibles. Un paramètre sans défaut fait échouer la PASSE, pas le
+        client. Une clé du catalogue se classe par
+        `catalog_classification` ; un champ voulu par l'agence porte le
+        choix qu'elle a fait à l'écran."""
         if await self.repo.get_by_key(agent.agency_id, payload.key) is not None:
             raise ConflictError(f"A custom field with key {payload.key!r} already exists.")
         agency_default = await self.agency_default(agent.agency_id)

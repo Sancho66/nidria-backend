@@ -44,9 +44,15 @@ class CustomFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # stable chez la personne à travers ses dossiers (apparaît sur la
     # fiche, promouvable) ; 'case' = propre à la mission (défaut — les
     # personnalisés d'agence naissent 'case', reclassables).
-    scope: Mapped[str] = mapped_column(
-        String(10), nullable=False, default="case", server_default="case"
-    )
+    # AUCUN DÉFAUT, ni Python ni serveur (arbitrage du 07/08) : c'est le
+    # défaut silencieux qui a produit trois régressions en trois semaines
+    # (le seed du dossier démo, l'import de parcours, le script de seed
+    # créaient leurs définitions sans portée et tombaient sur « mission »
+    # sans que rien ne le dise). Sans défaut, un appelant qui oublie
+    # l'argument ÉCHOUE à l'insert — bruyamment, dans la première passe de
+    # tests, au lieu de se découvrir six semaines plus tard par une agence
+    # qui ne voit pas ses champs.
+    scope: Mapped[str] = mapped_column(String(10), nullable=False)
     # Taxonomie FICHE (lot taxonomie) : la section de la définition sur la
     # fiche client — 'misc' par défaut pour les custom d'agence,
     # reclassable par le toggle. Voir src/client_profiles/profile_sections.

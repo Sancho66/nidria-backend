@@ -59,6 +59,7 @@ from shared.models import (  # noqa: E402
     Role,
     StepPrerequisite,
 )
+from src.client_profiles.profile_sections import catalog_classification  # noqa: E402
 from src.core.config import get_settings  # noqa: E402
 from src.core.database import async_session_maker  # noqa: E402
 from src.core.rbac.baseline import (  # noqa: E402
@@ -218,8 +219,15 @@ async def get_or_create_custom_field(
         )
     ).scalar_one_or_none()
     if existing is None:
+        scope, section = catalog_classification(key)
         existing = CustomFieldDefinition(
-            agency_id=agency.id, key=key, label=label, field_type=field_type, options=options
+            agency_id=agency.id,
+            key=key,
+            label=label,
+            field_type=field_type,
+            options=options,
+            scope=scope,
+            profile_section=section,
         )
         db.add(existing)
         await db.flush()

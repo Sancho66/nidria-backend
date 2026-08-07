@@ -51,6 +51,7 @@ from shared.models.journey import (
 )
 from shared.models.step_comment import StepComment
 from shared.models.step_requirement import StepRequirement
+from src.client_profiles.profile_sections import catalog_classification
 from src.core import storage
 from src.core.email import demo_expat_email
 from src.core.enums import ActorType, CaseStatus, DocValidationStatus, StepStatus
@@ -381,6 +382,13 @@ async def _materialize_field_definitions(
         options = None
         if preset.options is not None:
             options = preset.options.get(lang) or preset.options["fr"]
+        # LA CLASSIFICATION DU CATALOGUE, qui manquait ici : ces
+        # définitions naissaient sur les défauts de colonne ('case' /
+        # 'misc'), donc invisibles sur les fiches clients — y compris pour
+        # des clés que le catalogue classe « personne ». Toute agence
+        # créée depuis le 04/08 en a hérité (constat du 06/08, agence
+        # QuinnAshford : 22 définitions, toutes en 'case'/'misc').
+        scope, section = catalog_classification(key)
         db.add(
             CustomFieldDefinition(
                 agency_id=agency.id,
@@ -389,6 +397,8 @@ async def _materialize_field_definitions(
                 label_i18n=dict(preset.labels),
                 field_type=preset.field_type,
                 options=options,
+                scope=scope,
+                profile_section=section,
             )
         )
 

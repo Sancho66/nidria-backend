@@ -232,3 +232,21 @@ PRESET_PROFILE_SECTION: Final[dict[str, str]] = {
     "held_products": "situation",
     "esg_preference": "situation",
 }
+
+
+def catalog_classification(key: str) -> tuple[str, str]:
+    """(scope, profile_section) d'une clé — LA règle, écrite UNE fois.
+
+    Présente dans `PRESET_PROFILE_SECTION` = trait de personne, rangé dans
+    sa section ; absente (clé faite-main ou preset de mission) = propre au
+    dossier, section « divers ».
+
+    Elle existait en trois exemplaires recopiés, et deux appelants sur
+    cinq l'avaient oubliée : `demo_case_seed` et l'import de parcours
+    créaient leurs définitions sur les défauts de colonne, donc en
+    « mission »/« divers » même pour des clés que le catalogue classe
+    « personne ». Constat du 06/08, agence QuinnAshford. Tout appelant
+    qui matérialise un preset passe désormais par ici.
+    """
+    section = PRESET_PROFILE_SECTION.get(key)
+    return ("person", section) if section is not None else ("case", "misc")

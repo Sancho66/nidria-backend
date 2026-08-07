@@ -61,6 +61,7 @@ from shared.models.journey import (
     StepPrerequisite,
 )
 from shared.models.step_requirement import StepRequirement
+from src.client_profiles.profile_sections import catalog_classification
 from src.core.enums import (
     ActorType,
     CustomFieldType,
@@ -788,6 +789,10 @@ class JourneyImportManager:
             self.db.add(template)
 
         for key, parsed in defs_plan.items():
+            # Même règle que partout : une clé du catalogue prend sa
+            # classification, une clé inventée par l'import reste
+            # 'case'/'misc' (comportement inchangé pour elle).
+            scope, section = catalog_classification(key)
             self.db.add(
                 CustomFieldDefinition(
                     agency_id=agent.agency_id,
@@ -798,6 +803,8 @@ class JourneyImportManager:
                     options=parsed.options,
                     required=parsed.required,
                     position=defs_position,
+                    scope=scope,
+                    profile_section=section,
                 )
             )
             defs_position += 1
