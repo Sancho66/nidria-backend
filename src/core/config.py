@@ -125,11 +125,12 @@ class Settings(BaseSettings):
     # Paddle (Merchant of Record, self-serve billing). Optional so the app
     # boots without them (billing_mode="manual" everywhere works Paddle-less);
     # the billing endpoints error explicitly at first use if missing.
-    # paddle_env drives the API base URL; the LIVE account does not exist yet
-    # (KYB in progress) — everything is built against sandbox.
-    # Offer kill switch, INDEPENDENT of the Paddle env: prod will run
-    # PADDLE_ENV=live from KYB on, but the offer opens only when Eric
-    # validates (legal docs, tested invoices). Default FALSE — closed by
+    # paddle_env drives the API base URL; prod runs PADDLE_ENV=live with
+    # real subscriptions on it (confirmé Alexandre 08/08/2026 — the old
+    # "KYB in progress" note was stale); dev stays on sandbox.
+    # Offer kill switch, INDEPENDENT of the Paddle env: the offer opens
+    # only when Eric validates (legal docs, tested invoices). Default
+    # FALSE — closed by
     # default, opened explicitly, never the reverse. Gates the checkout
     # ENTRANCE only: an already-converted agency keeps full management,
     # and webhooks stay live (a living subscription keeps living).
