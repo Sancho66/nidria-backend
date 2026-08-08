@@ -1103,14 +1103,17 @@ class AgenciesManager:
     async def set_member_seat_type(
         self, agent: Agent, agent_id: uuid.UUID, seat_type: str
     ) -> Agent:
-        """The traced admin gesture (arbitrage 07/08): flip a member
-        between manager (mirror-billed) and reader (purchased pool).
-        Self-change refused, same rule as the role. manager→reader
-        requires a read-only role (change the role FIRST — its own
-        gesture, with its own anti-lockout) and a free pool seat on an
-        active subscription; reader→manager is always open, the mirror
-        bills it. The flip moves the member between the two Paddle
-        quantities: one re-sync after commit."""
+        """The traced admin gesture (arbitrage 07/08, verrou 08/08): flip
+        a member between manager (mirror-billed) and reader (purchased
+        pool). Self-change refused, same rule as the role.
+
+        THE SEAT CAPS THE ROLE — the flip does BOTH gestures at once:
+        manager→reader FORCES the system viewer role (said in the
+        response and in the trace; an admin must never survive the flip
+        in a reader seat), reader→manager frees the role choice (the
+        member stays viewer until the role door changes it). The flip
+        moves the member between the two Paddle quantities: one re-sync
+        after commit."""
         if agent_id == agent.id:
             raise ForbiddenError("You cannot modify your own seat type.")
         from src.roles.roles_repository import RolesRepository
@@ -1124,10 +1127,35 @@ class AgenciesManager:
         if target.seat_type == seat_type:
             return target  # idempotent no-op — nothing traced, nothing pushed
         agency = await self.get_my_agency(agent)
+        role_forced = False
         if seat_type == SeatType.READER.value:
-            from src.core.seats import assert_reader_role_read_only
+            from src.core.seats import READER_ROLE_NAME
 
-            assert_reader_role_read_only({p.key for p in target.role.permissions})
+            viewer = await self.repo.get_system_role(READER_ROLE_NAME)
+            assert viewer is not None  # seeded system role, always present
+            # Copy-on-write masking holds here too: an agency whose clone
+            # masks the system viewer cannot force-assign the original
+            # (an agent must never wear a role the listing hides). V1:
+            # no reader seats under a viewer clone — delete the clone
+            # (its wearers return to the system role) or stay manager.
+            clone = await roles_repo.get_clone_of(agent.agency_id, viewer.id)
+            if clone is not None:
+                raise ConflictError(
+                    "The viewer system role is masked by this agency's clone; "
+                    "delete the clone before creating reader seats.",
+                    code="seat.viewer_masked_by_clone",
+                    params={"clone_id": str(clone.id)},
+                )
+            # Anti-lockout belt (unreachable today: the actor holds
+            # agent.manage and cannot flip themselves — kept like the
+            # deactivation guard, capability-simulated at viewer's set).
+            from src.core.rbac.permissions import Permission as _Permission
+            from src.roles.roles_manager import RolesManager
+
+            await RolesManager(self.db)._assert_agency_keeps_manager(
+                agent.agency_id,
+                reassigned_agent=(target.id, {_Permission.CASE_VIEW.value}),
+            )
             if target.deactivated_at is None:
                 usage = await self.seat_usage(agency)
                 if usage.max is None and usage.reader.free <= 0:
@@ -1139,14 +1167,21 @@ class AgenciesManager:
                             "used": usage.reader.used,
                         },
                     )
+            role_forced = target.role_id != viewer.id
+            target.role_id = viewer.id
         previous = target.seat_type
         target.seat_type = seat_type
+        details = {"member_id": str(target.id), "from": previous, "to": seat_type}
+        if role_forced:
+            from src.core.seats import READER_ROLE_NAME as viewer_name
+
+            details["role_forced_to"] = viewer_name
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
             event_type="member.seat_type_changed",
             actor_type=ActorType.AGENT,
             actor_id=agent.id,
-            details={"member_id": str(target.id), "from": previous, "to": seat_type},
+            details=details,
         )
         self._log_member_event(agent, target, "agent.seat_type_changed")
         await self.db.commit()
@@ -1309,18 +1344,15 @@ class AgenciesManager:
                     params={"members": usage.members, "max": usage.max, "plan": agency.plan},
                 )
             if seat_type == SeatType.READER.value:
-                # READER GATES (lot lecteur). Role coherence first: a reader
-                # seat wears a read-only role — by CAPABILITY, never by
-                # role name (clones). Then the pool: on an ACTIVE
-                # subscription (max is None) the reader must land on a
-                # PURCHASED free seat; in trial the 3-seat TOTAL above is
-                # the only gate (no purchase possible, none needed).
-                from src.core.seats import assert_reader_role_read_only
-                from src.roles.roles_repository import RolesRepository
+                # READER GATES (lot lecteur, verrou 08/08). The seat caps
+                # the role: a reader invitation carries THE system viewer,
+                # nothing else (not a custom role, not a clone). Then the
+                # pool: on an ACTIVE subscription (max is None) the reader
+                # must land on a PURCHASED free seat; in trial the 3-seat
+                # TOTAL above is the only gate.
+                from src.core.seats import assert_reader_role_locked
 
-                role_full = await RolesRepository(self.db).get_role_with_permissions(role_id)
-                assert role_full is not None  # existence validated above
-                assert_reader_role_read_only({p.key for p in role_full.permissions})
+                assert_reader_role_locked(role)
                 if usage.max is None and usage.reader.free <= 0:
                     raise ConflictError(
                         "No free reader seat: buy reader seats first, then invite.",
@@ -1535,22 +1567,19 @@ class AgenciesManager:
             if invitation.seat_type == SeatType.READER.value:
                 # Reader re-checks at ACCEPTANCE (same doctrine as the
                 # member total): the pool may have filled since the
-                # invite, and the role may have GAINED write permissions
-                # (a custom role edit — clones never rebind invitations).
+                # invite. The role lock re-check is identity-stable (the
+                # invitation's role row cannot become another role), kept
+                # as a belt against legacy rows.
                 if usage.max is None and usage.reader.free <= 0:
                     capacity_error.params["reader"] = {
                         "purchased": usage.reader.purchased,
                         "used": usage.reader.used,
                     }
                     raise capacity_error
-                from src.core.seats import assert_reader_role_read_only
-                from src.roles.roles_repository import RolesRepository
+                from src.core.seats import assert_reader_role_locked
 
-                role_full = await RolesRepository(self.db).get_role_with_permissions(
-                    invitation.role_id
-                )
-                if role_full is not None:
-                    assert_reader_role_read_only({p.key for p in role_full.permissions})
+                if role is not None:
+                    assert_reader_role_locked(role)
         if pre_agent is not None:
             pre_agent.password_hash = hash_password(password)
             pre_agent.first_name = first_name

@@ -17,7 +17,7 @@ from src.core.exceptions import (
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
-from src.core.seats import assert_reader_role_read_only
+from src.core.seats import assert_reader_role_locked
 from src.roles.roles_repository import RolesRepository
 
 _SYSTEM_ROLE_LOCKED = "System roles are shared across agencies and cannot be deleted."
@@ -266,9 +266,11 @@ class RolesManager:
             actor.agency_id, reassigned_agent=(target.id, new_keys)
         )
         if target.seat_type == SeatType.READER.value:
-            # A READER seat wears a read-only role — the rule holds through
-            # role changes too (flip the seat type first to widen).
-            assert_reader_role_read_only(new_keys)
+            # THE SEAT CAPS THE ROLE (verrou 08/08): a reader wears the
+            # system viewer and nothing else — direct assignment, custom
+            # role or clone, every elevation path dies HERE, the single
+            # role-assignment door. Widening = flip the seat first.
+            assert_reader_role_locked(role)
 
         target.role_id = role.id
         await self.db.commit()

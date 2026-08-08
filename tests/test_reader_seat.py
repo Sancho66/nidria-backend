@@ -432,51 +432,160 @@ async def test_seat_type_change_is_a_traced_admin_gesture(
     assert own.status_code == 403, own.text
 
 
-# --- (h) role coherence, by capability -------------------------------------------------
+# --- (h) THE SEAT CAPS THE ROLE (verrou 08/08) -----------------------------------------
 
 
-async def test_reader_role_must_be_read_only(
+async def test_the_seat_caps_the_role_every_elevation_path_refused(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
     agent_headers: AuthHeaders,
     make_agent: MakeAgent,
+    make_role,
     system_roles: dict[str, Role],
 ) -> None:
+    """A reader wears THE system viewer, nothing else (v1): the writing
+    role, the custom role — even read-only — and the clone are ALL
+    refused with the same named 422, at the invitation AND at the single
+    role-assignment door."""
     headers = agent_headers(admin)
 
-    # Invitation: a reader on a WRITING role (member holds case.edit…) → 422.
+    # Invitation: a reader on a WRITING role → 422 locked.
     invited = await _invite(client, headers, system_roles["member"], "w@example.com")
     assert invited.status_code == 422, invited.text
-    assert invited.json()["code"] == "seat.reader_role_not_read_only"
+    assert invited.json()["code"] == "seat.reader_role_locked"
 
-    # Flip: a member wearing a writing role cannot become a reader as-is.
-    member = await make_agent(
-        role=system_roles["member"], agency_id=admin.agency_id, email="m@example.com"
-    )
-    flipped = await client.put(
-        f"/agencies/me/members/{member.id}/seat-type",
-        headers=headers,
-        json={"seat_type": "reader"},
-    )
-    assert flipped.status_code == 422, flipped.text
-    assert flipped.json()["code"] == "seat.reader_role_not_read_only"
+    # Invitation: even a CUSTOM READ-ONLY role is refused in v1.
+    from src.core.rbac.permissions import Permission
 
-    # Role change on an EXISTING reader: widening the role is refused —
-    # flip the seat type first.
+    custom_ro = await make_role(agency_id=admin.agency_id, permissions=[Permission.CASE_VIEW])
+    invited_custom = await _invite(client, headers, custom_ro, "cro@example.com")
+    assert invited_custom.status_code == 422, invited_custom.text
+    assert invited_custom.json()["code"] == "seat.reader_role_locked"
+
+    # The role DOOR on an existing reader: direct (member), custom, clone —
+    # all die on the same lock.
     reader = await make_agent(
         role=system_roles["viewer"],
         agency_id=admin.agency_id,
         email="r@example.com",
         seat_type="reader",
     )
-    widened = await client.put(
-        f"/agencies/me/members/{reader.id}/role",
+    clone = await make_role(
+        agency_id=admin.agency_id,
+        cloned_from_role_id=system_roles["viewer"].id,
+        permissions=[Permission.CASE_VIEW],
+        name="Lecteur",
+    )
+    for role in (system_roles["member"], custom_ro, clone):
+        refused = await client.put(
+            f"/agencies/me/members/{reader.id}/role",
+            headers=headers,
+            json={"role_id": str(role.id)},
+        )
+        assert refused.status_code == 422, f"{role.name}: {refused.text}"
+        assert refused.json()["code"] == "seat.reader_role_locked", role.name
+
+
+async def test_flip_to_reader_forces_the_viewer_role(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+) -> None:
+    """manager→reader does BOTH gestures at once: the seat flips AND the
+    role is FORCED to viewer (said in the response and in the trace) —
+    an admin must never survive the flip in a reader seat. reader→
+    manager frees the role choice but restores nothing."""
+    headers = agent_headers(admin)
+    await _convert(client, superadmin, agent_headers, admin.agency_id)
+    bought = await client.post("/billing/seats/add", headers=headers, json={"reader": 1})
+    assert bought.status_code == 200, bought.text
+    member = await make_agent(
+        role=system_roles["member"], agency_id=admin.agency_id, email="m@example.com"
+    )
+
+    flipped = await client.put(
+        f"/agencies/me/members/{member.id}/seat-type",
+        headers=headers,
+        json={"seat_type": "reader"},
+    )
+    assert flipped.status_code == 200, flipped.text
+    body = flipped.json()
+    assert body["seat_type"] == "reader"
+    assert body["role"] == "viewer"  # the confirmation SAYS the forced role
+
+    event = (
+        await db_session.execute(
+            select(UsageEvent).where(
+                UsageEvent.agency_id == admin.agency_id,
+                UsageEvent.event_type == "member.seat_type_changed",
+            )
+        )
+    ).scalar_one()
+    assert event.details == {
+        "member_id": str(member.id),
+        "from": "manager",
+        "to": "reader",
+        "role_forced_to": "viewer",
+    }
+
+    # Back to manager: the role choice is FREED, not restored — the
+    # member stays viewer until the role door changes them.
+    back = await client.put(
+        f"/agencies/me/members/{member.id}/seat-type",
+        headers=headers,
+        json={"seat_type": "manager"},
+    )
+    assert back.status_code == 200, back.text
+    assert back.json()["role"] == "viewer"
+    promoted = await client.put(
+        f"/agencies/me/members/{member.id}/role",
         headers=headers,
         json={"role_id": str(system_roles["member"].id)},
     )
-    assert widened.status_code == 422, widened.text
-    assert widened.json()["code"] == "seat.reader_role_not_read_only"
+    assert promoted.status_code == 200, promoted.text  # the door is open again
+
+
+async def test_flip_refused_while_a_clone_masks_the_viewer(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    make_agent: MakeAgent,
+    make_role,
+    system_roles: dict[str, Role],
+) -> None:
+    """Copy-on-write masking holds: with a viewer clone in the agency,
+    force-assigning the MASKED system viewer would break the listing
+    invariant — the flip answers a named 409 instead (v1: delete the
+    clone or stay manager)."""
+    from src.core.rbac.permissions import Permission
+
+    headers = agent_headers(admin)
+    await _convert(client, superadmin, agent_headers, admin.agency_id)
+    bought = await client.post("/billing/seats/add", headers=headers, json={"reader": 1})
+    assert bought.status_code == 200, bought.text
+    member = await make_agent(
+        role=system_roles["member"], agency_id=admin.agency_id, email="mm@example.com"
+    )
+    await make_role(
+        agency_id=admin.agency_id,
+        cloned_from_role_id=system_roles["viewer"].id,
+        permissions=[Permission.CASE_VIEW],
+        name="Lecteur maison",
+    )
+    refused = await client.put(
+        f"/agencies/me/members/{member.id}/seat-type",
+        headers=headers,
+        json={"seat_type": "reader"},
+    )
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["code"] == "seat.viewer_masked_by_clone"
 
 
 # --- (g) never a designated actor ------------------------------------------------------
