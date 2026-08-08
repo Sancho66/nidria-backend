@@ -29484,7 +29484,7 @@
           "recurring_add"
         ],
         "title": "ManagerQuoteLine",
-        "description": "The manager side of the quote. `to_bill` seats are billed by the\nroster MIRROR at ACCEPTANCE of each invitation (spec S1) — the quote\nprices the recurring outcome, the acceptance triggers it."
+        "description": "The manager side of the quote. `to_bill` seats are billed by the\nmirror at the INVITE gesture itself (règle 08/08: inviter = payer,\nprorated immediately) — acceptance changes nothing; deleting the\ninvitation or the member returns the seat at the next cycle."
       },
       "MappingListResponse": {
         "properties": {

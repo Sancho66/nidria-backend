@@ -13,11 +13,13 @@ test_offboarding / test_billing_paddle, against the real app:
 (3) the first checkout of a converting trial agency with readers is the
     EXACT amount: base×1 + reader×N, no manager seat item (the S2 rule
     priced at entry — the conversion UI must announce it);
-(4) deactivating a READER returns the seat to the POOL: free +1, the
-    Paddle quantity untouched (the pool keeps billing until RELEASED);
-(5) reactivation is symmetric per type: a reader takes a FREE pool seat
-    (named 409 when none is free) and never pushes; a manager re-pushes
-    the mirror UP (prorated_immediately), same rule as a new acceptance.
+(4) NEW MODEL (simplification radicale 08/08) — deactivating a READER
+    takes its seat WITH it: the pool drops by one automatically and the
+    Paddle quantity is pushed DOWN (full_next_billing_period). No more
+    lingering vacant seat;
+(5) reactivation is symmetric per type: a reader RE-BUYS its pool seat
+    (implicit add, prorated_immediately — no free-seat 409 anymore); a
+    manager re-pushes the mirror UP, same rule as a new acceptance.
 """
 
 import json
@@ -233,10 +235,10 @@ async def test_checkout_amount_is_exact_for_a_trial_agency_with_readers(
     ]
 
 
-# --- (4) reader deactivation returns the seat to the pool ------------------------------
+# --- (4) reader deactivation takes its seat with it ------------------------------------
 
 
-async def test_reader_deactivation_frees_a_pool_seat_without_any_push(
+async def test_reader_deactivation_drops_the_pool_and_pushes_down(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -245,9 +247,10 @@ async def test_reader_deactivation_frees_a_pool_seat_without_any_push(
     system_roles: dict[str, Role],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The pool semantics: N purchased seats, freely attributed. A reader
-    leaving frees a seat (+1 free), bills nothing differently, pushes
-    nothing — the pool keeps billing until RELEASED (seats/remove)."""
+    """NEW MODEL (08/08): un membre = un siège. A reader leaving takes its
+    seat WITH it — the pool drops by one and the Paddle quantity is pushed
+    DOWN (full_next_billing_period, the started month stays due). No
+    lingering vacant: free stays 0."""
     await _paddle_activate(db_session, admin.agency_id, pool=2)
     readers = [
         await make_agent(
@@ -264,15 +267,19 @@ async def test_reader_deactivation_frees_a_pool_seat_without_any_push(
     gone = await client.post(f"/agencies/me/members/{readers[0].id}/deactivate", headers=headers)
     assert gone.status_code == 200, gone.text
 
-    assert push.await_count == 0  # the billed pool is untouched by occupancy
+    push.assert_awaited_once()
+    kwargs = push.await_args.kwargs
+    assert kwargs["proration_billing_mode"] == "full_next_billing_period"
+    items = {i["price_id"]: i["quantity"] for i in kwargs["items"]}
+    assert items["pri_seat_reader_m"] == 1  # the pool followed the departure
     seats = await _seats(client, headers)
-    assert seats["reader"] == {"purchased": 2, "used": 1, "free": 1}
+    assert seats["reader"] == {"purchased": 1, "used": 1, "free": 0}
 
 
 # --- (5) reactivation, symmetric per type ----------------------------------------------
 
 
-async def test_reader_reactivation_takes_a_free_pool_seat_or_409(
+async def test_reader_reactivation_rebuys_its_pool_seat(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -281,9 +288,9 @@ async def test_reader_reactivation_takes_a_free_pool_seat_or_409(
     system_roles: dict[str, Role],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Coming back consumes a POOL seat, same rule as accepting a reader
-    invitation: full pool → named 409; a bought seat opens the door; the
-    reactivation itself never pushes (occupancy is not billing)."""
+    """NEW MODEL (08/08): a reader can always come back — reactivation
+    RE-BUYS its pool seat (implicit add, prorated_immediately). No
+    free-seat 409: the pool follows the roster in both directions."""
     await _paddle_activate(db_session, admin.agency_id, pool=1)
     headers = agent_headers(admin)
     returning = await make_agent(
@@ -294,30 +301,20 @@ async def test_reader_reactivation_takes_a_free_pool_seat_or_409(
     )
     gone = await client.post(f"/agencies/me/members/{returning.id}/deactivate", headers=headers)
     assert gone.status_code == 200, gone.text
-    await make_agent(  # the freed seat is taken while they are away
-        role=system_roles["viewer"],
-        agency_id=admin.agency_id,
-        email="occupant@example.com",
-        seat_type="reader",
-    )
+    # The departure dropped the pool to 0 (its seat left with it).
+    seats = await _seats(client, headers)
+    assert seats["reader"] == {"purchased": 0, "used": 0, "free": 0}
     push = _mock_push(monkeypatch)
-
-    blocked = await client.post(f"/agencies/me/members/{returning.id}/reactivate", headers=headers)
-    assert blocked.status_code == 409, blocked.text
-    body = blocked.json()
-    assert body["code"] == "subscription.reader_seat_limit"
-    assert body["params"] == {"purchased": 1, "used": 1}
-
-    bought = await client.post("/billing/seats/add", headers=headers, json={"reader": 1})
-    assert bought.status_code == 200, bought.text
-    assert push.await_count == 1  # the PURCHASE pushes…
-    push.reset_mock()
 
     back = await client.post(f"/agencies/me/members/{returning.id}/reactivate", headers=headers)
     assert back.status_code == 204, back.text
-    assert push.await_count == 0  # …the reactivation does not
+    push.assert_awaited_once()  # the reactivation RE-BUYS…
+    kwargs = push.await_args.kwargs
+    assert kwargs["proration_billing_mode"] == "prorated_immediately"  # …prorated, like an add
+    items = {i["price_id"]: i["quantity"] for i in kwargs["items"]}
+    assert items["pri_seat_reader_m"] == 1
     seats = await _seats(client, headers)
-    assert seats["reader"] == {"purchased": 2, "used": 2, "free": 0}
+    assert seats["reader"] == {"purchased": 1, "used": 1, "free": 0}
 
 
 async def test_manager_reactivation_pushes_the_mirror_up(

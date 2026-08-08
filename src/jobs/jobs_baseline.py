@@ -35,6 +35,14 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         # a closed window is flushed (at most ~1 min late).
         "cron_expression": "* * * * *",
     },
+    {
+        "job_id": "expire_agent_invitations",
+        "name": "Expire agent invitations (return their seats)",
+        # Hourly: invitations live 7 days — the sweep only bounds how late
+        # a dead invitation's seat comes back (at most ~1 h, well within
+        # the next-cycle décrue it feeds).
+        "cron_expression": "30 * * * *",
+    },
 ]
 
 

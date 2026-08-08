@@ -257,6 +257,39 @@ class AgenciesRepository:
         stmt = select(Agent).where(Agent.email == email)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def count_pending_internal_invitations_by_seat(
+        self, agency_id: uuid.UUID, now: datetime
+    ) -> dict[str, int]:
+        """{seat_type: count} of PENDING, non-expired, INTERNAL invitations
+        — the « attente » side of the unified rule (inviter = payer): a
+        pending invitation occupies its seat exactly like a member.
+        External invitations are excluded by ROLE (they carry the default
+        manager seat_type but never consume a seat)."""
+        from shared.models.rbac import Role
+
+        stmt = (
+            select(AgentInvitation.seat_type, func.count(AgentInvitation.id))
+            .join(Role, Role.id == AgentInvitation.role_id)
+            .where(
+                AgentInvitation.agency_id == agency_id,
+                AgentInvitation.status == InvitationStatus.PENDING,
+                AgentInvitation.expires_at > now,
+                Role.is_external.is_(False),
+            )
+            .group_by(AgentInvitation.seat_type)
+        )
+        return {seat_type: count for seat_type, count in (await self.db.execute(stmt)).all()}
+
+    async def list_expired_pending_invitations(self, now: datetime) -> list[AgentInvitation]:
+        """PENDING rows past their term, ALL agencies — the expiration
+        job's sweep (an invitation whose clock ran out must stop costing
+        at the next cycle)."""
+        stmt = select(AgentInvitation).where(
+            AgentInvitation.status == InvitationStatus.PENDING,
+            AgentInvitation.expires_at <= now,
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
     async def get_pending_invitation(
         self, agency_id: uuid.UUID, email: str, now: datetime
     ) -> AgentInvitation | None:

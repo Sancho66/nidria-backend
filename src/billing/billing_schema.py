@@ -139,8 +139,9 @@ class SeatQuoteRequest(BaseModel):
 
 class ManagerQuoteLine(BaseModel):
     """The manager side of the quote. `to_bill` seats are billed by the
-    roster MIRROR at ACCEPTANCE of each invitation (spec S1) — the quote
-    prices the recurring outcome, the acceptance triggers it."""
+    mirror at the INVITE gesture itself (règle 08/08: inviter = payer,
+    prorated immediately) — acceptance changes nothing; deleting the
+    invitation or the member returns the seat at the next cycle."""
 
     requested: int
     from_included: int

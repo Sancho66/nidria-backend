@@ -229,7 +229,7 @@ async def test_trial_caps_all_seat_types_at_three_total(
 # --- (c) active subscription: pool for readers, mirror for managers --------------------
 
 
-async def test_reader_lands_on_purchased_pool_seats_only(
+async def test_reader_invitation_auto_buys_its_pool_seat(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -237,24 +237,20 @@ async def test_reader_lands_on_purchased_pool_seats_only(
     agent_headers: AuthHeaders,
     system_roles: dict[str, Role],
 ) -> None:
+    """Règle 08/08 (inviter = payer): the reader invitation AUTO-BUYS its
+    pool seat at the gesture — the old « no free reader seat » 409 is
+    gone, and the pending invitation OCCUPIES the seat (used counts
+    attente). Acceptance changes nothing; the reader never eats the
+    included tier (billed counts managers only)."""
     headers = agent_headers(admin)
     await _convert(client, superadmin, agent_headers, admin.agency_id)
 
-    # Pool empty: the reader invitation is refused with the NAMED code.
-    refused = await _invite(client, headers, system_roles["viewer"], "r1@example.com")
-    assert refused.status_code == 409, refused.text
-    body = refused.json()
-    assert body["code"] == "subscription.reader_seat_limit"
-    assert body["params"] == {"purchased": 0, "used": 0}
-
-    # Buy 2 seats (manual agency: the invoice is Eric's gesture, no Paddle).
-    bought = await client.post("/billing/seats/add", headers=headers, json={"reader": 2})
-    assert bought.status_code == 200, bought.text
-    assert bought.json()["reader"] == {"purchased": 2, "used": 0, "free": 2}
-
-    # Invite + accept onto a free seat.
+    # Pool empty, no purchase beforehand: the invitation buys the seat.
     invited = await _invite(client, headers, system_roles["viewer"], "r1@example.com")
     assert invited.status_code == 201, invited.text
+    seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
+    assert seats["reader"] == {"purchased": 1, "used": 1, "free": 0}  # attente occupies
+
     invitation = (
         await db_session.execute(
             select(AgentInvitation).where(AgentInvitation.email == "r1@example.com")
@@ -272,8 +268,8 @@ async def test_reader_lands_on_purchased_pool_seats_only(
     assert accepted.status_code == 200, accepted.text
 
     seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
-    # The reader NEVER eats the included tier: billed counts managers only.
-    assert seats["reader"] == {"purchased": 2, "used": 1, "free": 1}
+    # Acceptance moved the seat from attente to roster: totals IDENTICAL.
+    assert seats["reader"] == {"purchased": 1, "used": 1, "free": 0}
     assert seats["managers"] == 1 and seats["billed"] == 0 and seats["max"] is None
 
 
@@ -328,9 +324,14 @@ async def test_grouped_removal_guards_then_one_call(
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
 
+    # The pool follows roster + attente (the agency face can never strand
+    # an occupant) — but the INVARIANT BELT stays on this superadmin-only
+    # contract (GO 08/08): below the committed readers → named 409.
     in_use = await client.post("/billing/seats/remove", headers=headers, json={"reader": 6})
     assert in_use.status_code == 409, in_use.text
-    assert in_use.json()["code"] == "billing.reader_seats_in_use"
+    body = in_use.json()
+    assert body["code"] == "billing.reader_seats_in_use"
+    assert body["params"] == {"purchased": 7, "used": 2, "requested": 6}
 
     beyond = await client.post("/billing/seats/remove", headers=headers, json={"reader": 8})
     assert beyond.status_code == 422, beyond.text
@@ -386,17 +387,9 @@ async def test_seat_type_change_is_a_traced_admin_gesture(
         role=system_roles["viewer"], agency_id=admin.agency_id, email="flip@example.com"
     )
 
-    # Pool empty → the flip to reader is refused (the seat must exist).
-    refused = await client.put(
-        f"/agencies/me/members/{member.id}/seat-type",
-        headers=headers,
-        json={"seat_type": "reader"},
-    )
-    assert refused.status_code == 409, refused.text
-    assert refused.json()["code"] == "subscription.reader_seat_limit"
-
-    bought = await client.post("/billing/seats/add", headers=headers, json={"reader": 1})
-    assert bought.status_code == 200, bought.text
+    # NEW MODEL (08/08): flipping to reader AUTO-BUYS the seat — no pre-buy,
+    # no « no free reader seat » 409 (the pool follows the roster). The
+    # member already wears viewer, so no role is forced.
     flipped = await client.put(
         f"/agencies/me/members/{member.id}/seat-type",
         headers=headers,
@@ -404,6 +397,9 @@ async def test_seat_type_change_is_a_traced_admin_gesture(
     )
     assert flipped.status_code == 200, flipped.text
     assert flipped.json()["seat_type"] == "reader"
+
+    seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
+    assert seats["reader"] == {"purchased": 1, "used": 1, "free": 0}  # pool followed the flip
 
     event = (
         await db_session.execute(
@@ -415,13 +411,15 @@ async def test_seat_type_change_is_a_traced_admin_gesture(
     ).scalar_one()
     assert event.details == {"member_id": str(member.id), "from": "manager", "to": "reader"}
 
-    # reader → manager is always open (the mirror bills it).
+    # reader → manager RELEASES the reader seat (the mirror bills instead).
     back = await client.put(
         f"/agencies/me/members/{member.id}/seat-type",
         headers=headers,
         json={"seat_type": "manager"},
     )
     assert back.status_code == 200, back.text
+    seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
+    assert seats["reader"]["purchased"] == 0  # the seat left with the flip
 
     # Self-change refused, same rule as the role.
     own = await client.put(

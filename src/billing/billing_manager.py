@@ -237,12 +237,13 @@ class BillingManager:
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:
             items.append({"price_id": seat_price, "quantity": usage.billed})
-        # Reader seats (lot lecteur): the checkout adopts max(pool, active
-        # readers) — a trial reader is billed from day one, never offered
-        # by accident. The pool itself is posed at conversion
-        # (apply_conversion / subscription.activated).
+        # Reader seats (lot lecteur, base unifiée 08/08): the checkout
+        # adopts max(pool, COMMITTED readers — active + pending reader
+        # invitations): a trial reader is billed from day one, an
+        # invitation is a seat, never offered by accident. The pool itself
+        # is posed at conversion (apply_conversion / subscription.activated).
         reader_quantity = max(
-            agency.reader_seats_purchased, await agencies.active_reader_count(agency.id)
+            agency.reader_seats_purchased, await agencies.committed_reader_count(agency.id)
         )
         if reader_quantity > 0:
             reader_price = settings.paddle_price_ids.get(_reader_price_key(cycle))
@@ -629,14 +630,15 @@ class BillingManager:
         # Re-delivery / already-converted: converted_at is NEVER overwritten.
         if not await self._status_is_stale(agency.id, occurred_at):
             self._apply_status(agency, "active", occurred_at)
-        # Reader pool adoption (lot lecteur): the activated subscription
-        # bills every active reader from day one — pool = max(pool, active
-        # readers). Idempotent (max), also posed by apply_conversion for
-        # the first conversion; this line covers RE-subscriptions too.
+        # Reader pool adoption (lot lecteur, base unifiée 08/08): the
+        # activated subscription bills every COMMITTED reader from day one
+        # — pool = max(pool, active + pending reader invitations).
+        # Idempotent (max), also posed by apply_conversion for the first
+        # conversion; this line covers RE-subscriptions too.
         from src.agencies.agencies_manager import AgenciesManager as _Agencies
 
-        active_readers = await _Agencies(self.db).active_reader_count(agency.id)
-        agency.reader_seats_purchased = max(agency.reader_seats_purchased, active_readers)
+        committed_readers = await _Agencies(self.db).committed_reader_count(agency.id)
+        agency.reader_seats_purchased = max(agency.reader_seats_purchased, committed_readers)
         return "processed"
 
     async def _on_updated(self, agency: Agency, occurred_at: datetime, data: dict[str, Any]) -> str:
@@ -1117,10 +1119,19 @@ class BillingManager:
         return await AgenciesManager(self.db).seat_usage(agency)
 
     async def remove_seats(self, agent: Agent, payload: SeatQuantityRequest) -> SeatUsage:
-        """POST /billing/seats/remove — release N reader seats. Refused
-        below the ACTIVE reader count (deactivate readers first); billing
+        """POST /billing/seats/remove — release N reader seats; billing
         stops at the next cycle (full_next_billing_period), the started
-        period stays due — same asymmetry as the manager mirror."""
+        period stays due — same asymmetry as the manager mirror.
+
+        NEW MODEL (simplification radicale 08/08): the pool FOLLOWS the
+        roster + attente — deactivating a reader or cancelling a reader
+        invitation releases its seat automatically, so the agency never
+        sheds vacants by hand. This endpoint stays at the contract for the
+        superadmin only — and the `billing.reader_seats_in_use` 409 stays
+        WITH it as an INVARIANT BELT (GO 08/08): the agency face can no
+        longer pull the pool below its occupants, so the guard only ever
+        fires on a superadmin/manual gesture — exactly where a typo would
+        otherwise strand committed readers on unpaid seats."""
         quantity = self._reader_quantity_from(payload)
         agency = await self._seat_pool_agency(agent)
         pool = agency.reader_seats_purchased
@@ -1132,11 +1143,12 @@ class BillingManager:
             )
         from src.agencies.agencies_manager import AgenciesManager
 
-        used = await AgenciesManager(self.db).active_reader_count(agency.id)
         new_pool = pool - quantity
+        used = await AgenciesManager(self.db).committed_reader_count(agency.id)
         if new_pool < used:
             raise ConflictError(
-                "Released seats are still occupied: deactivate readers first.",
+                "Released seats are still occupied (active readers or pending "
+                "reader invitations): free them first.",
                 code="billing.reader_seats_in_use",
                 params={"purchased": pool, "used": used, "requested": quantity},
             )

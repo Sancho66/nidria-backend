@@ -83,13 +83,14 @@ async def test_trial_agency_is_capped_at_three_members(
     headers = agent_headers(admin)
     member_role = system_roles["member"]
 
-    # 2 members total: the 3rd is invitable.
+    # 2 members total: the 3rd seat is invitable.
     await _add_members(db_session, admin.agency_id, member_role, 1)
     allowed = await _invite(client, headers, member_role, "third@example.com")
     assert allowed.status_code == 201, allowed.text
 
-    # 3 members total: the cap. The next INVITATION is blocked.
-    await _add_members(db_session, admin.agency_id, member_role, 1)
+    # 3 seats COMMITTED (2 members + 1 pending invitation — règle 08/08:
+    # an invitation IS a seat): the next INVITATION is blocked, no
+    # acceptance needed to reach the cap.
     blocked = await _invite(client, headers, member_role, "fourth@example.com")
     assert blocked.status_code == 409, blocked.text
     body = blocked.json()
@@ -133,14 +134,16 @@ async def test_active_subscription_has_no_seat_ceiling(
     thirteenth = await _invite(client, headers, member_role, "m13@example.com")
     assert thirteenth.status_code == 201, thirteenth.text
 
-    # The seat is billed, never offered: billed = 12 − 3 included.
+    # The seat is billed, never offered — and the base counts roster +
+    # attente (règle 08/08): 12 members + the 2 PENDING invitations above
+    # (never accepted) = 14 committed, billed = 14 − 3 included.
     seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
     assert seats == {
-        "members": 12,
-        "managers": 12,
+        "members": 14,
+        "managers": 14,
         "included": 3,
         "offered": 0,
-        "billed": 9,
+        "billed": 11,
         "max": None,
         "reader": {"purchased": 0, "used": 0, "free": 0},
     }
@@ -555,20 +558,24 @@ async def test_acceptance_recheck_blocks_at_the_cap_invitation_stays_pending(
     agent_headers: AuthHeaders,
     system_roles: dict[str, Role],
 ) -> None:
-    """N invitations on one slot can no longer overshoot: the cap re-checks
-    at ACCEPTANCE — 409 to the acceptant, the invitation STAYS PENDING (a
-    seat can free up and the same link works again)."""
+    """Règle 08/08: the cap plays at the INVITE (a pending invitation IS a
+    seat) and acceptance is billing-neutral — the re-check survives only
+    as a LEGACY BELT, firing when the agency sits STRICTLY over its cap
+    (roster stuffed through another path). The invitation STAYS PENDING;
+    the same link works again once the committed total is back within
+    the cap — and the OTHER pending invitation holds its seat too."""
     from shared.models.invitation import AgentInvitation
 
     headers = agent_headers(admin)
     member_role = system_roles["member"]
     aid = admin.agency_id  # plain id: instances expire below (expire_all)
-    # 1 member, trial cap 3: two invitations pass the invite gate.
+    # 1 member + 2 invitations = the trial cap (3), all seats held.
     for email in ("i2@example.com", "i3@example.com"):
         r = await _invite(client, headers, member_role, email)
         assert r.status_code == 201, r.text
-    # The roster fills up THROUGH ANOTHER PATH before anyone accepts.
-    await _add_members(db_session, admin.agency_id, member_role, 2)  # 3 = cap
+    # The roster fills up THROUGH ANOTHER PATH (bypassing the invite gate):
+    # 3 members + 2 pending = 5 committed, strictly over the cap.
+    await _add_members(db_session, admin.agency_id, member_role, 2)
 
     token = await _pending_token(db_session, admin.agency_id, "i2@example.com")
     blocked = await _accept(client, token)
@@ -585,8 +592,9 @@ async def test_acceptance_recheck_blocks_at_the_cap_invitation_stays_pending(
     ).scalar_one()
     assert status == "pending"
 
-    # A seat frees up -> the SAME link works.
-    victim = (
+    # ONE member leaves: 2 + 2 pending = 4, STILL over — the other pending
+    # invitation holds its seat (the new arithmetic, the point of the lot).
+    victims = (
         (
             await db_session.execute(
                 select(Agent).where(
@@ -596,9 +604,16 @@ async def test_acceptance_recheck_blocks_at_the_cap_invitation_stays_pending(
             )
         )
         .scalars()
-        .first()
+        .all()
     )
-    await db_session.delete(victim)
+    await db_session.delete(victims[0])
+    await db_session.commit()
+    still = await _accept(client, token)
+    assert still.status_code == 409, still.text
+
+    # A SECOND seat frees -> 1 + 2 pending = 3 = cap -> the SAME link works
+    # (acceptance moves attente to roster, the total stays 3).
+    await db_session.delete(victims[1])
     await db_session.commit()
     accepted = await _accept(client, token)
     assert accepted.status_code == 200, accepted.text
