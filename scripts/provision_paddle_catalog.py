@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.billing.catalog_provisioning import (  # noqa: E402
+    align_names,
     align_quantity_bounds,
     align_tax_mode,
     provision_catalog,
@@ -56,6 +57,17 @@ async def main() -> int:
             "nothing else, then exits."
         ),
     )
+    parser.add_argument(
+        "--align-names",
+        action="store_true",
+        help=(
+            "PATCH ONLY the display name of divergent prices to the "
+            "declared value (the third sanctioned update — micro-lot "
+            "08/08: a price name can appear on a client invoice, the "
+            "Agence bases wrongly said 3 sieges inclus). Lists every "
+            "patched price, touches nothing else, then exits."
+        ),
+    )
     args = parser.parse_args()
     dry_run = not args.execute
 
@@ -78,6 +90,15 @@ async def main() -> int:
                 "  nothing to align: every matched price already carries "
                 "the declared quantity bounds."
             )
+        for line in patched:
+            print(f"  PATCHED {line}")
+        return 0
+
+    if args.align_names:
+        print(f"Paddle env: {settings.paddle_env} | mode: ALIGN NAMES (patches this field only)")
+        patched = await align_names(client=PaddleClient())
+        if not patched:
+            print("  nothing to align: every matched price already carries the declared name.")
         for line in patched:
             print(f"  PATCHED {line}")
         return 0

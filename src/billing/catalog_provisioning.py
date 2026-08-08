@@ -169,6 +169,30 @@ async def align_quantity_bounds(*, client: PaddleClient) -> list[str]:
     return patched
 
 
+async def align_names(*, client: PaddleClient) -> list[str]:
+    """The THIRD sanctioned update (micro-lot 08/08): PATCH the display
+    NAME (a patchable price field, unlike the amount) to the declared
+    value, on every matched price that diverges on it — NOTHING else is
+    touched. A price name can appear on a client invoice (the Agence base
+    labels wrongly said « 3 sièges inclus » where the real included tier
+    is 6). The name stays OUT of `_price_divergences` on purpose: matching
+    and conformity are by stable key, never by display name (doctrine
+    gravée) — this gesture carries its own comparison. Explicit human
+    decision via --align-names, never a silent reconciliation. Returns one
+    line per patched price."""
+    remote_prices = {k: p for p in await client.list_prices() if (k := _stable_key(p))}
+    patched: list[str] = []
+    for spec in PRICES:
+        remote = remote_prices.get(spec.stable_key)
+        if remote is None or remote.get("name") == spec.name:
+            continue
+        await client.update_price_name(remote["id"], spec.name)
+        patched.append(
+            f"{spec.stable_key} ({remote['id']}): name {remote.get('name')!r} -> {spec.name!r}"
+        )
+    return patched
+
+
 async def verify_catalog_env(*, client: PaddleClient, price_ids: dict[str, str]) -> list[str]:
     """The BOOT check (light): every env price_id must exist in Paddle and
     carry the SAME stable key it is mapped under. Returns the divergences —

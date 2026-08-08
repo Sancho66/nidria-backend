@@ -26,7 +26,7 @@ on:
           declared products/prices — lot lecteur; flow-* = seat-flow proof)
         required: true
         type: choice
-        options: [dry-run, execute, align-quantity, align-tax-mode, flow-list, flow-push]
+        options: [dry-run, execute, align-quantity, align-tax-mode, align-names, flow-list, flow-push]
       flow_args:
         description: >-
           flow-push only: args for paddle_seat_flow_proof.py, e.g.

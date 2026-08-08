@@ -167,6 +167,12 @@ class PaddleClient:
             {"quantity": {"minimum": minimum, "maximum": maximum}},
         )
 
+    async def update_price_name(self, price_id: str, name: str) -> dict[str, Any]:
+        """PATCH ONLY the display name — the third sanctioned align
+        (--align-names, micro-lot 08/08): a price name can appear on a
+        client invoice; amounts stay immutable by principle."""
+        return await self._request("PATCH", f"/prices/{price_id}", {"name": name})
+
     # --- discounts (referral program) -----------------------------------------------
 
     async def get_discount(self, discount_id: str) -> dict[str, Any]:

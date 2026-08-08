@@ -33,6 +33,7 @@ def _remote_price(spec: Any, price_id: str) -> dict[str, Any]:
     return {
         "id": price_id,
         "custom_data": {"stable_key": spec.stable_key},
+        "name": spec.name,
         "unit_price": {"amount": str(spec.amount_cents), "currency_code": CURRENCY},
         "billing_cycle": {"interval": spec.interval, "frequency": 1},
         "quantity": {"minimum": spec.quantity_min, "maximum": spec.quantity_max},
@@ -68,6 +69,7 @@ class FakePaddle:
         price = {
             "id": f"pri_{len(self.prices)}",
             "custom_data": kwargs["custom_data"],
+            "name": kwargs["name"],
             "unit_price": {
                 "amount": str(kwargs["amount_cents"]),
                 "currency_code": kwargs["currency"],
@@ -77,6 +79,12 @@ class FakePaddle:
             "tax_mode": kwargs["tax_mode"],
         }
         self.prices.append(price)
+        return price
+
+    async def update_price_name(self, price_id: str, name: str) -> dict[str, Any]:
+        self.patch_calls = getattr(self, "patch_calls", 0) + 1
+        price = next(p for p in self.prices if p["id"] == price_id)
+        price["name"] = name
         return price
 
     async def update_price_tax_mode(self, price_id: str, tax_mode: str) -> dict[str, Any]:
@@ -200,6 +208,43 @@ async def test_align_quantity_bounds_patches_only_quantity_and_lists_each() -> N
 
     # Second run: nothing left to align.
     assert await align_quantity_bounds(client=paddle) == []  # type: ignore[arg-type]
+
+
+async def test_align_names_patches_only_the_name_and_lists_each() -> None:
+    """The THIRD sanctioned update (micro-lot 08/08): only the prices whose
+    display name diverges from the declaration are patched — the real
+    case: the two Agence base labels said « 3 sièges inclus » where the
+    included tier is 6. Amounts, tax_mode and quantity untouched; the name
+    stays OUT of provision_catalog's conformity (matching by stable key,
+    never by name — doctrine gravée par test_matching_is_by_stable_key)."""
+    from src.billing.catalog_provisioning import align_names
+
+    paddle = FakePaddle()
+    for index, spec in enumerate(PRICES):
+        remote = _remote_price(spec, f"pri_{index}")
+        if spec.stable_key in ("agence_mensuel", "agence_annuel"):
+            # The live wart, verbatim: the old label with the wrong tier.
+            remote["name"] = remote["name"].replace("6 sièges inclus", "3 sièges inclus")
+        paddle.prices.append(remote)
+    before_amounts = [p["unit_price"]["amount"] for p in paddle.prices]
+
+    patched = await align_names(client=paddle)  # type: ignore[arg-type]
+    assert len(patched) == 2  # the two Agence bases only; conform names untouched
+    assert all("name" in line for line in patched)
+    for spec in PRICES:
+        remote = next(p for p in paddle.prices if p["custom_data"]["stable_key"] == spec.stable_key)
+        assert remote["name"] == spec.name
+    # ONLY the name moved: amounts, tax_mode and quantity untouched, no create.
+    assert [p["unit_price"]["amount"] for p in paddle.prices] == before_amounts
+    assert all(p["tax_mode"] == "external" for p in paddle.prices)
+    assert paddle.create_calls == 0
+    # And a renamed price is never a DIVERGENCE for provision_catalog:
+    # the name is not part of conformity (matching doctrine untouched).
+    report = await provision_catalog(dry_run=True, client=paddle)  # type: ignore[arg-type]
+    assert not report.divergences and not report.created_prices
+
+    # Second run: nothing left to align.
+    assert await align_names(client=paddle) == []  # type: ignore[arg-type]
 
 
 async def test_dry_run_writes_nothing() -> None:
