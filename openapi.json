@@ -19493,12 +19493,17 @@
           "discount_percent": {
             "type": "integer",
             "title": "Discount Percent"
+          },
+          "saved_per_year": {
+            "type": "string",
+            "title": "Saved Per Year"
           }
         },
         "type": "object",
         "required": [
           "total_recurring_add",
-          "discount_percent"
+          "discount_percent",
+          "saved_per_year"
         ],
         "title": "AnnualEquivalent",
         "description": "The line that sells the annual cycle: the SAME billable composition\npriced at the annual rates, as a monthly equivalent (annual / 12)."

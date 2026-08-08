@@ -117,7 +117,13 @@ async def test_nicolas_case_exact_figures(
             "recurring_add": "27.98",
         },
         "total_recurring_add": "62.98",
-        "annual_equivalent": {"total_recurring_add": "51.15", "discount_percent": 19},
+        # saved_per_year: exact cents (62.98 × 12 = 755.76) − (350.00 +
+        # 2 × 131.88 = 613.76) = 142.00 — no rounding drift (micro-lot).
+        "annual_equivalent": {
+            "total_recurring_add": "51.15",
+            "discount_percent": 19,
+            "saved_per_year": "142.00",
+        },
     }
 
 
@@ -172,8 +178,13 @@ async def test_quote_without_free_seats_prices_all_and_touches_nothing(
         "recurring_add": "27.98",
     }
     assert body["total_recurring_add"] == "27.98"
-    # 2 × 131.88 / 12 = 21.98 ; (27.98 − 21.98) / 27.98 → 21 %
-    assert body["annual_equivalent"] == {"total_recurring_add": "21.98", "discount_percent": 21}
+    # 2 × 131.88 / 12 = 21.98 ; (27.98 − 21.98) / 27.98 → 21 % ;
+    # saved_per_year = 27.98 × 12 − 263.76 = 72.00 (exact cents).
+    assert body["annual_equivalent"] == {
+        "total_recurring_add": "21.98",
+        "discount_percent": 21,
+        "saved_per_year": "72.00",
+    }
 
     assert push.await_count == 0 and txn.await_count == 0  # dry-run, by contract
     await db_session.refresh(agency)

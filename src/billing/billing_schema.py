@@ -174,8 +174,13 @@ class AnnualEquivalent(BaseModel):
 
     total_recurring_add: Decimal
     discount_percent: int
+    # The yearly gap (micro-lot 08/08), served ONLY when the cycle is
+    # monthly (like the whole block) and EXACT to the cent: monthly cents
+    # × 12 − annual cents, integer arithmetic before any conversion — no
+    # rounding drift from the /12 equivalent above.
+    saved_per_year: Decimal
 
-    @field_serializer("total_recurring_add")
+    @field_serializer("total_recurring_add", "saved_per_year")
     def _ser_money(self, value: Decimal) -> str:
         return str(value)
 

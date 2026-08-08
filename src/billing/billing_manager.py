@@ -1209,7 +1209,9 @@ class BillingManager:
                 Decimal("1"), rounding=ROUND_HALF_UP
             )
             annual = AnnualEquivalent(
-                total_recurring_add=annual_total, discount_percent=int(discount)
+                total_recurring_add=annual_total,
+                discount_percent=int(discount),
+                saved_per_year=_eur(total_cents * 12 - annual_cents),
             )
         return SeatQuoteResponse(
             currency=CURRENCY,
