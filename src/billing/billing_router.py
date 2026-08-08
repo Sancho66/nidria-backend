@@ -11,6 +11,8 @@ from src.billing.billing_schema import (
     CheckoutCreateResponse,
     PaymentMethodUpdateResponse,
     SeatQuantityRequest,
+    SeatQuoteRequest,
+    SeatQuoteResponse,
     SubscriptionCancelResponse,
     SubscriptionStateResponse,
     WebhookAck,
@@ -40,6 +42,9 @@ BINDINGS = [
     # agency financially — same gate as the checkout.
     RouteBinding("POST", "/billing/seats/add", Audience.AGENT, Permission.AGENCY_MANAGE),
     RouteBinding("POST", "/billing/seats/remove", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # The composition dry-run (panier d'invitations): read-only, but it
+    # prices the agency's money — the same financial gate applies.
+    RouteBinding("POST", "/billing/seats/quote", Audience.AGENT, Permission.AGENCY_MANAGE),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -88,3 +93,8 @@ async def add_seats(body: SeatQuantityRequest, agent: AgentDep, db: DbDep) -> Se
 @router.post("/seats/remove", response_model=SeatUsage)
 async def remove_seats(body: SeatQuantityRequest, agent: AgentDep, db: DbDep) -> SeatUsage:
     return await BillingManager(db).remove_seats(agent, body)
+
+
+@router.post("/seats/quote", response_model=SeatQuoteResponse)
+async def quote_seats(body: SeatQuoteRequest, agent: AgentDep, db: DbDep) -> SeatQuoteResponse:
+    return await BillingManager(db).quote_seats(agent, body)

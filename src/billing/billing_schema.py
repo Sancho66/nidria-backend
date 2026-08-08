@@ -127,6 +127,79 @@ class SeatQuantityRequest(BaseModel):
     reader: int | None = Field(default=None, ge=1)
 
 
+class SeatQuoteRequest(BaseModel):
+    """POST /billing/seats/quote — the composition to ADD (the invitation
+    basket), quantities per seat type. Unlike add/remove, `manager` is
+    WELCOME here: the quote prices the mirror's future crossings without
+    touching it."""
+
+    manager: int | None = Field(default=None, ge=1)
+    reader: int | None = Field(default=None, ge=1)
+
+
+class ManagerQuoteLine(BaseModel):
+    """The manager side of the quote. `to_bill` seats are billed by the
+    roster MIRROR at ACCEPTANCE of each invitation (spec S1) — the quote
+    prices the recurring outcome, the acceptance triggers it."""
+
+    requested: int
+    from_included: int
+    to_bill: int
+    unit_price: Decimal
+    recurring_add: Decimal
+
+    @field_serializer("unit_price", "recurring_add")
+    def _ser_money(self, value: Decimal) -> str:
+        return str(value)
+
+
+class ReaderQuoteLine(BaseModel):
+    """The reader side: `from_free` land on already-paid pool seats (no new
+    cost), `to_buy` must be purchased (seats/add) before inviting."""
+
+    requested: int
+    from_free: int
+    to_buy: int
+    unit_price: Decimal
+    recurring_add: Decimal
+
+    @field_serializer("unit_price", "recurring_add")
+    def _ser_money(self, value: Decimal) -> str:
+        return str(value)
+
+
+class AnnualEquivalent(BaseModel):
+    """The line that sells the annual cycle: the SAME billable composition
+    priced at the annual rates, as a monthly equivalent (annual / 12)."""
+
+    total_recurring_add: Decimal
+    discount_percent: int
+
+    @field_serializer("total_recurring_add")
+    def _ser_money(self, value: Decimal) -> str:
+        return str(value)
+
+
+class SeatQuoteResponse(BaseModel):
+    """The composition dry-run (panier d'invitations): what the requested
+    seats consume (included tier, free pool seats) and what they add to the
+    recurring bill. Money as STRINGS (decimal euros). INDICATIVE — priced
+    from the declared catalog; Paddle stays the sole judge at payment.
+    `annual_equivalent` only on a monthly cycle, and only when something is
+    actually billed (no discount line over zero)."""
+
+    currency: str
+    billing_cycle: str
+    manager: ManagerQuoteLine
+    reader: ReaderQuoteLine
+    total_recurring_add: Decimal
+    annual_equivalent: AnnualEquivalent | None = None
+
+    @field_serializer("total_recurring_add")
+    def _ser_money(self, value: Decimal) -> str:
+        return str(value)
+
+
 class SubscriptionCancelResponse(BaseModel):
     """POST /billing/subscription/cancel — cancellation at PERIOD END (the
     commercial default): the date the access actually ends."""

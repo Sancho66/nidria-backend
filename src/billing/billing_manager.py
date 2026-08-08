@@ -11,7 +11,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import exists, select
@@ -23,19 +23,26 @@ from shared.models.agent import Agent
 from shared.models.paddle_event import PaddleWebhookEvent
 from src.agencies.agencies_schema import SeatUsage
 from src.billing.billing_schema import (
+    AnnualEquivalent,
     CheckoutCreateRequest,
     CheckoutCreateResponse,
+    ManagerQuoteLine,
     PaymentMethodUpdateResponse,
+    ReaderQuoteLine,
     ReferralDiscountState,
     SeatQuantityRequest,
+    SeatQuoteRequest,
+    SeatQuoteResponse,
     SubscriptionCancelResponse,
     SubscriptionStateResponse,
     WebhookAck,
 )
+from src.billing.catalog import CURRENCY
+from src.billing.catalog import PRICES as CATALOG_PRICES
 from src.billing.paddle_client import PaddleClient
 from src.billing.paddle_signature import verify_paddle_signature
 from src.core.config import get_settings
-from src.core.enums import ActorType, SubscriptionPlan
+from src.core.enums import ActorType, BillingCycle, SubscriptionPlan
 from src.core.exceptions import ConflictError, UnauthorizedError, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -112,6 +119,18 @@ def _plan_cycle_from_items(items: list[dict[str, Any]]) -> tuple[str, str] | Non
             plan, _, cycle = key.partition("_")
             return plan, cycle
     return None
+
+
+# The DECLARED catalog amounts (cents) by stable key — the QUOTE's price
+# source: local, zero Paddle traffic. Sanctioned exception to "runtime reads
+# Paddle": the quote is a DISPLAY surface (indicative basket arithmetic) and
+# the provisioning script refuses any declaration/Paddle divergence, so the
+# two cannot drift. Paddle stays the sole judge at payment.
+_DECLARED_CENTS: dict[str, int] = {spec.stable_key: spec.amount_cents for spec in CATALOG_PRICES}
+
+
+def _eur(cents: int) -> Decimal:
+    return (Decimal(cents) / 100).quantize(Decimal("0.01"))
 
 
 def _seat_quantities_from_items(items: list[dict[str, Any]]) -> tuple[int, int]:
@@ -1134,3 +1153,81 @@ class BillingManager:
         )
         await self.db.commit()
         return await AgenciesManager(self.db).seat_usage(agency)
+
+    async def quote_seats(self, agent: Agent, payload: SeatQuoteRequest) -> SeatQuoteResponse:
+        """POST /billing/seats/quote — the composition DRY-RUN (panier
+        d'invitations): what the requested seats consume (included tier for
+        managers, free pool seats for readers) and what they add to the
+        recurring bill. READ-ONLY by contract: no write, no Paddle call —
+        prices come from the DECLARED catalog. Trial: the SAME named 409 as
+        add/remove (tranché 08/08) — a quote prices a billable composition
+        and the trial has nothing to bill; the front shows « Inclus pendant
+        l'essai » without calling this."""
+        managers_add = payload.manager or 0
+        readers_add = payload.reader or 0
+        if managers_add == 0 and readers_add == 0:
+            raise ValidationError(
+                "A composition to add is required.",
+                code="billing.quote_composition_required",
+            )
+        agency = await self._seat_pool_agency(agent)
+        cycle = agency.billing_cycle
+        seat_key = f"seat_{agency.plan}_{cycle}"
+        if cycle is None or seat_key not in _DECLARED_CENTS:
+            # sur_mesure (a hand-written devis) or a cycle-less manual row:
+            # no self-serve grid to price against.
+            raise ConflictError(
+                "This plan has no self-serve seat grid to quote against.",
+                code="billing.quote_unavailable",
+                params={"plan": agency.plan},
+            )
+        from src.agencies.agencies_manager import AgenciesManager
+
+        usage = await AgenciesManager(self.db).seat_usage(agency)
+        # Manager headroom counts the offered (founding) seats with the
+        # included tier: both are simply "not billed" for the basket.
+        headroom = max(0, usage.included + usage.offered - usage.managers)
+        from_included = min(managers_add, headroom)
+        to_bill = managers_add - from_included
+        from_free = min(readers_add, usage.reader.free)
+        to_buy = readers_add - from_free
+        seat_cents = _DECLARED_CENTS[seat_key]
+        reader_cents = _DECLARED_CENTS[f"seat_reader_{cycle}"]
+        total_cents = seat_cents * to_bill + reader_cents * to_buy
+        annual = None
+        if cycle == BillingCycle.MONTHLY.value and total_cents > 0:
+            # The same billable composition at the annual rates, as a
+            # monthly equivalent (annual / 12) — one rounding, at the end.
+            annual_cents = (
+                _DECLARED_CENTS[f"seat_{agency.plan}_annuel"] * to_bill
+                + _DECLARED_CENTS["seat_reader_annuel"] * to_buy
+            )
+            annual_total = (Decimal(annual_cents) / 12 / 100).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            discount = ((_eur(total_cents) - annual_total) / _eur(total_cents) * 100).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+            annual = AnnualEquivalent(
+                total_recurring_add=annual_total, discount_percent=int(discount)
+            )
+        return SeatQuoteResponse(
+            currency=CURRENCY,
+            billing_cycle=cycle,
+            manager=ManagerQuoteLine(
+                requested=managers_add,
+                from_included=from_included,
+                to_bill=to_bill,
+                unit_price=_eur(seat_cents),
+                recurring_add=_eur(seat_cents * to_bill),
+            ),
+            reader=ReaderQuoteLine(
+                requested=readers_add,
+                from_free=from_free,
+                to_buy=to_buy,
+                unit_price=_eur(reader_cents),
+                recurring_add=_eur(reader_cents * to_buy),
+            ),
+            total_recurring_add=_eur(total_cents),
+            annual_equivalent=annual,
+        )
