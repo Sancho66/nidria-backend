@@ -34,6 +34,12 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "founding_free_seats >= 0 AND founding_free_seats <= 3",
             name="agency_founding_free_seats_check",
         ),
+        # Reader pool can never go negative (the release gesture re-checks
+        # against ACTIVE readers in the manager; this is the last guard).
+        CheckConstraint(
+            "reader_seats_purchased >= 0",
+            name="agency_reader_seats_purchased_check",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -99,6 +105,19 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # DEPRECATED (2026-07-12) — même statut : posé à la conversion (35/25),
     # informationnel seulement ; la vérité vit chez Paddle (PRICE_IDS).
     seat_price_eur: Mapped[int | None] = mapped_column()
+    # READER seat pool (lot lecteur 08/08): the number of reader seats
+    # the agency PURCHASED — this pool IS the Paddle quantity of the
+    # reader SKU (13.99 EUR/month · 131.88 EUR/year, plan-transverse),
+    # never the live reader count. Bought/released in ONE gesture (one
+    # proration, one invoice line: POST /billing/seats/add|remove), then
+    # the agency invites onto the free seats (active readers <= pool,
+    # enforced at invite/accept/reactivate/type-change). 0 and untouched
+    # without an active subscription (trial readers live inside the
+    # 3-seat TOTAL); the conversion adopts max(pool, active readers) —
+    # a trial reader is billed from day one, never offered by accident.
+    reader_seats_purchased: Mapped[int] = mapped_column(
+        default=0, server_default=text("0"), nullable=False
+    )
     # Annual/founding promise: price locked until this date (or as long
     # as the subscription stays continuous - Eric's call, not enforced).
     price_locked_until: Mapped[date | None] = mapped_column(Date)

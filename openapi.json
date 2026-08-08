@@ -1296,6 +1296,98 @@
         ]
       }
     },
+    "/billing/seats/add": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Add Seats",
+        "operationId": "add_seats_billing_seats_add_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeatQuantityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeatUsage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/billing/seats/remove": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Remove Seats",
+        "operationId": "remove_seats_billing_seats_remove_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeatQuantityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeatUsage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/{case_id}/activity": {
       "get": {
         "tags": [
@@ -3529,6 +3621,65 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/me/members/{agent_id}/seat-type": {
+      "put": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Set Member Seat Type",
+        "description": "The traced admin gesture (lot lecteur): manager ↔ reader — billing\nfollows (mirror vs purchased pool), Paddle re-syncs in one push.",
+        "operationId": "set_member_seat_type_agencies_me_members__agent_id__seat_type_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeatTypeUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyMemberResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -18705,6 +18856,11 @@
               }
             ],
             "title": "Deactivated At"
+          },
+          "seat_type": {
+            "type": "string",
+            "title": "Seat Type",
+            "default": "manager"
           }
         },
         "type": "object",
@@ -19046,6 +19202,10 @@
             "type": "string",
             "format": "uuid",
             "title": "Role Id"
+          },
+          "seat_type": {
+            "$ref": "#/components/schemas/SeatType",
+            "default": "manager"
           }
         },
         "type": "object",
@@ -19096,6 +19256,10 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "seat_type": {
+            "type": "string",
+            "title": "Seat Type"
           }
         },
         "type": "object",
@@ -19106,7 +19270,8 @@
           "status",
           "expires_at",
           "invited_by_agent_id",
-          "created_at"
+          "created_at",
+          "seat_type"
         ],
         "title": "AgentInvitationResponse"
       },
@@ -21830,6 +21995,16 @@
           },
           "agence": {
             "$ref": "#/components/schemas/PlanCatalogPrices"
+          },
+          "reader": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReaderCatalogPrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -32876,6 +33051,59 @@
         "title": "ProviderUsage",
         "description": "Provider capacity (grid 2026-07), DERIVED live: `count` = external\nagents (the external flow pre-creates the Agent at invitation, so this\nIS actives + invitees); `included` = free tier (10 cabinet / 15 agence);\n`max` = the cap (15/25, 10 on trial) — None for sur_mesure (\"illimité\").\nBilling past the included tier is PHASE 2: nothing billed today."
       },
+      "ReaderCatalogPrices": {
+        "properties": {
+          "monthly": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly"
+          },
+          "annual": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual"
+          }
+        },
+        "type": "object",
+        "title": "ReaderCatalogPrices",
+        "description": "Reader-seat unit prices (lot lecteur) — plan-TRANSVERSE by decision\n(arbitrage 07/08): one price per cycle, whatever the plan."
+      },
+      "ReaderSeatUsage": {
+        "properties": {
+          "purchased": {
+            "type": "integer",
+            "title": "Purchased"
+          },
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "free": {
+            "type": "integer",
+            "title": "Free"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purchased",
+          "used",
+          "free"
+        ],
+        "title": "ReaderSeatUsage",
+        "description": "Reader-seat pool state (lot lecteur 08/08): `purchased` is the\npool the agency BOUGHT (the Paddle quantity of the reader SKU),\n`used` the active readers, `free` the seats left to invite onto —\nthe front's « 3 sièges lecteur libres »."
+      },
       "RecipientType": {
         "type": "string",
         "enum": [
@@ -34261,11 +34489,68 @@
         "type": "object",
         "title": "SavedViewUpdate"
       },
+      "SeatQuantityRequest": {
+        "properties": {
+          "manager": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manager"
+          },
+          "reader": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reader"
+          }
+        },
+        "type": "object",
+        "title": "SeatQuantityRequest",
+        "description": "POST /billing/seats/add|remove — a quantity PER SEAT TYPE. The\ncontract carries both types (consigne), but `manager` answers a named\n422 (billing.manager_seats_follow_roster): manager seats stay a\nroster MIRROR (spec S1), only reader seats are a purchased pool. One\ngesture = ONE Paddle quantity change per type = one proration, one\ninvoice line (cas Nicolas: +7 readers, one call)."
+      },
+      "SeatType": {
+        "type": "string",
+        "enum": [
+          "manager",
+          "reader"
+        ],
+        "title": "SeatType",
+        "description": "The KIND of seat an internal member occupies (lot lecteur 08/08).\n\nMANAGER = the historical seat: billed as a MIRROR of the roster\n(billed = members − included − offered, pushed on every crossing).\nREADER = a read-only seat billed from the PURCHASED pool\n(agency.reader_seats_purchased): the agency buys N seats in ONE\ngesture (one proration, one invoice line) then invites onto the free\nones. Orthogonal to the ROLE (roles stay dynamic, clones included):\nthe seat type is the BILLING truth and the actor gate — a reader can\nonly wear a read-only-capable role and is never a designated actor\n(case owner, step responsible/validator, template default). External\nproviders keep the default value; their seat logic ignores it."
+      },
+      "SeatTypeUpdateRequest": {
+        "properties": {
+          "seat_type": {
+            "$ref": "#/components/schemas/SeatType"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seat_type"
+        ],
+        "title": "SeatTypeUpdateRequest",
+        "description": "PUT /agencies/me/members/{agent_id}/seat-type — the traced admin\ngesture that flips a member between manager and reader (billing\nfollows: mirror vs purchased pool)."
+      },
       "SeatUsage": {
         "properties": {
           "members": {
             "type": "integer",
             "title": "Members"
+          },
+          "managers": {
+            "type": "integer",
+            "title": "Managers"
           },
           "included": {
             "type": "integer",
@@ -34289,18 +34574,23 @@
               }
             ],
             "title": "Max"
+          },
+          "reader": {
+            "$ref": "#/components/schemas/ReaderSeatUsage"
           }
         },
         "type": "object",
         "required": [
           "members",
+          "managers",
           "included",
           "offered",
           "billed",
-          "max"
+          "max",
+          "reader"
         ],
         "title": "SeatUsage",
-        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = None on any ACTIVE subscription — NO ceiling (décision Alex +\nEric 05/08/2026), extra seats are billed per seat and the front\ndisplays \"illimité\", never a blank. Without an active subscription\n(trial, no plan, dead paddle sub): 3."
+        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = None on any ACTIVE subscription — NO ceiling (décision Alex +\nEric 05/08/2026), extra seats are billed per seat and the front\ndisplays \"illimité\", never a blank. Without an active subscription\n(trial, no plan, dead paddle sub): 3 — a TOTAL across seat types.\n\nLot lecteur (08/08): `members` stays the TOTAL of active internals\n(the trial gate reads it); `managers`/`reader` ventilate it. The\nincluded + offered seats are MANAGER seats — `billed` counts past\nthem from the managers only; on an active subscription every reader\ncomes from the purchased pool (13.99 EUR), never from the included\ntier."
       },
       "SectionCreateRequest": {
         "properties": {
@@ -35720,6 +36010,22 @@
                 "type": "null"
               }
             ]
+          },
+          "reader_seats_purchased": {
+            "type": "integer",
+            "title": "Reader Seats Purchased",
+            "default": 0
+          },
+          "reader_unit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reader Unit Price"
           }
         },
         "type": "object",

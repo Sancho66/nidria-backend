@@ -135,7 +135,15 @@ async def test_active_subscription_has_no_seat_ceiling(
 
     # The seat is billed, never offered: billed = 12 − 3 included.
     seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
-    assert seats == {"members": 12, "included": 3, "offered": 0, "billed": 9, "max": None}
+    assert seats == {
+        "members": 12,
+        "managers": 12,
+        "included": 3,
+        "offered": 0,
+        "billed": 9,
+        "max": None,
+        "reader": {"purchased": 0, "used": 0, "free": 0},
+    }
 
 
 def test_seats_max_facts_table() -> None:
@@ -195,7 +203,15 @@ async def test_superadmin_patch_poses_the_conversion(
     assert block["billing_cycle"] == "annuel"
     assert block["is_founding"] is True
     # max: None = no ceiling — the subscription is active (décision 05/08).
-    assert block["seats"] == {"members": 1, "included": 6, "offered": 2, "billed": 0, "max": None}
+    assert block["seats"] == {
+        "members": 1,
+        "managers": 1,
+        "included": 6,
+        "offered": 2,
+        "billed": 0,
+        "max": None,
+        "reader": {"purchased": 0, "used": 0, "free": 0},
+    }
 
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
@@ -238,7 +254,15 @@ async def test_settings_expose_the_subscription_block(
         "plan": None,
         "billing_cycle": None,
         "is_founding": False,
-        "seats": {"members": 1, "included": 3, "offered": 0, "billed": 0, "max": 3},
+        "seats": {
+            "members": 1,
+            "managers": 1,
+            "included": 3,
+            "offered": 0,
+            "billed": 0,
+            "max": 3,
+            "reader": {"purchased": 0, "used": 0, "free": 0},
+        },
         # Billing lock: a running trial is not blocked (the front's banner).
         "is_blocked": False,
         "blocked_reason": None,
@@ -337,7 +361,15 @@ async def test_agence_plan_includes_six_seats(
     seats = (await client.get("/agencies/me", headers=agent_headers(admin))).json()["subscription"][
         "seats"
     ]
-    assert seats == {"members": 5, "included": 6, "offered": 0, "billed": 0, "max": None}
+    assert seats == {
+        "members": 5,
+        "managers": 5,
+        "included": 6,
+        "offered": 0,
+        "billed": 0,
+        "max": None,
+        "reader": {"purchased": 0, "used": 0, "free": 0},
+    }
 
     # 7 members: the 7th is the first billed one.
     await _add_members(db_session, admin.agency_id, system_roles["member"], 2)

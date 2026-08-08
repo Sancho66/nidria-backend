@@ -82,6 +82,13 @@ IMPERSONATION_AGENT_DENIED: frozenset[tuple[str, str]] = frozenset(
         ("DELETE", "/agencies/me/roles/{role_id}"),
         ("POST", "/agencies/me/roles/{role_id}/duplicate"),
         ("PUT", "/agencies/me/members/{agent_id}/role"),
+        ("PUT", "/agencies/me/members/{agent_id}/seat-type"),
+        # reader-pool purchases CHARGE IMMEDIATELY (prorated, no payment
+        # UI) — under a mask that would spend the client's money. The
+        # checkout is deliberately absent: its overlay requires the
+        # client's own payment action.
+        ("POST", "/billing/seats/add"),
+        ("POST", "/billing/seats/remove"),
         # consent (point 16): accepting a legal document binds the AGENCY
         # under the accepting agent's name; forged under a mask it would
         # poison the clickwrap trace (the expat face needs no entry: its

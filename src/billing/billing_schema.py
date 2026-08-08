@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, Field, field_serializer
 
 from src.core.enums import BillingCycle, SubscriptionPlan
 
@@ -44,6 +44,14 @@ class PlanCatalogPrices(BaseModel):
     annual: PlanCyclePrices | None = None
 
 
+class ReaderCatalogPrices(BaseModel):
+    """Reader-seat unit prices (lot lecteur) — plan-TRANSVERSE by decision
+    (arbitrage 07/08): one price per cycle, whatever the plan."""
+
+    monthly: str | None = None
+    annual: str | None = None
+
+
 class CatalogPrices(BaseModel):
     """The whole public grid, from the LIVE Paddle catalog (PADDLE_PRICE_IDS),
     long-cached in memory: Paddle prices are immutable — a rotation means new
@@ -52,6 +60,8 @@ class CatalogPrices(BaseModel):
     currency: str
     cabinet: PlanCatalogPrices
     agence: PlanCatalogPrices
+    # None until the reader SKUs are provisioned on this environment.
+    reader: ReaderCatalogPrices | None = None
 
 
 class ReferralDiscountState(BaseModel):
@@ -92,10 +102,29 @@ class SubscriptionStateResponse(BaseModel):
     # The referral program's posed discount — None when none, or when the
     # sub's discount is not ours (front line, 2026-07-17).
     referral_discount: ReferralDiscountState | None = None
+    # Reader seats (lot lecteur): the PURCHASED pool (the Paddle quantity
+    # of the reader item — never the live reader count) and its unit
+    # price read off the subscription (None when no reader item yet).
+    reader_seats_purchased: int = 0
+    reader_unit_price: Decimal | None = None
 
-    @field_serializer("base_unit_price", "seat_unit_price", "next_payment_amount")
+    @field_serializer(
+        "base_unit_price", "seat_unit_price", "next_payment_amount", "reader_unit_price"
+    )
     def _ser_money(self, value: Decimal | None) -> str | None:
         return str(value) if value is not None else None
+
+
+class SeatQuantityRequest(BaseModel):
+    """POST /billing/seats/add|remove — a quantity PER SEAT TYPE. The
+    contract carries both types (consigne), but `manager` answers a named
+    422 (billing.manager_seats_follow_roster): manager seats stay a
+    roster MIRROR (spec S1), only reader seats are a purchased pool. One
+    gesture = ONE Paddle quantity change per type = one proration, one
+    invoice line (cas Nicolas: +7 readers, one call)."""
+
+    manager: int | None = Field(default=None, ge=1)
+    reader: int | None = Field(default=None, ge=1)
 
 
 class SubscriptionCancelResponse(BaseModel):

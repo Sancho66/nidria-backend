@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -28,6 +28,12 @@ class AgentInvitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     invited_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agent.id", ondelete="SET NULL")
+    )
+    # Seat KIND the invitee will occupy (SeatType, lot lecteur 08/08) —
+    # posed at invite, copied onto the Agent at acceptance. The reader
+    # gate (purchased pool) checks it at BOTH moments, like the role.
+    seat_type: Mapped[str] = mapped_column(
+        String(10), default="manager", server_default=text("'manager'"), nullable=False
     )
     # For an EXTERNAL (provider) invitation: the directory external_contact
     # created at invite time. On acceptance the Agent is created and this

@@ -52,5 +52,13 @@ class Agent(UUIDPrimaryKeyMixin, PersonNameMixin, TimestampMixin, Base):
     # on|grouped|off, ready_to_validate: on|off} — NULL = the defaults
     # (src/core/notification_prefs.py). The critical is not in the model.
     notification_prefs: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    # Seat KIND (SeatType, lot lecteur 08/08): 'manager' (mirror-billed
+    # roster seat) or 'reader' (billed from the purchased pool, read-only
+    # role required, never a designated actor). Orthogonal to role_id —
+    # the billing/actor truth, validated in the managers. Irrelevant for
+    # externals (kept at the default).
+    seat_type: Mapped[str] = mapped_column(
+        String(10), default="manager", server_default=text("'manager'"), nullable=False
+    )
 
     role: Mapped["Role"] = relationship("Role")

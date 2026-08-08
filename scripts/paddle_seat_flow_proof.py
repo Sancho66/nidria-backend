@@ -31,10 +31,16 @@ def _key_of(price_id: str | None, ids: dict[str, str]) -> str:
     return next((k for k, v in ids.items() if v == price_id), price_id or "?")
 
 
-def _items(ids: dict[str, str], plan: str, cycle: str, seats: int) -> list[dict[str, Any]]:
+def _items(
+    ids: dict[str, str], plan: str, cycle: str, seats: int, readers: int = 0
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = [{"price_id": ids[f"{plan}_{cycle}"], "quantity": 1}]
     if seats > 0:
         out.append({"price_id": ids[f"seat_{plan}_{cycle}"], "quantity": seats})
+    # Reader pool (lot lecteur): plan-transverse SKU, same single-PATCH
+    # shape as the backend's sync — the +7-readers-one-proration proof.
+    if readers > 0:
+        out.append({"price_id": ids[f"seat_reader_{cycle}"], "quantity": readers})
     return out
 
 
@@ -61,22 +67,33 @@ async def push_proof(
     plan: str,
     cycle: str,
     quantity: int,
+    reader_quantity: int,
     revert_quantity: int | None,
+    revert_reader_quantity: int | None,
     execute: bool,
 ) -> None:
     if not execute:
         print(f"DRY-RUN — would PATCH {subscription} with:")
-        for item in _items(ids, plan, cycle, quantity):
+        for item in _items(ids, plan, cycle, quantity, reader_quantity):
             print(f"  {_key_of(item['price_id'], ids)} × {item['quantity']}")
         print("  proration_billing_mode=prorated_immediately (the backend's exact call)")
-        if revert_quantity is not None:
-            print(f"  then REVERT to seat×{revert_quantity} (full_next_billing_period)")
+        if revert_quantity is not None or revert_reader_quantity is not None:
+            seats_back = revert_quantity if revert_quantity is not None else quantity
+            readers_back = (
+                revert_reader_quantity if revert_reader_quantity is not None else reader_quantity
+            )
+            print(
+                f"  then REVERT to seat×{seats_back} reader×{readers_back}"
+                " (full_next_billing_period)"
+            )
         return
 
-    print(f"PUSH seat×{quantity} on {subscription} (prorated_immediately)…")
+    print(
+        f"PUSH seat×{quantity} reader×{reader_quantity} on {subscription} (prorated_immediately)…"
+    )
     updated = await client.update_subscription_items(
         subscription,
-        items=_items(ids, plan, cycle, quantity),
+        items=_items(ids, plan, cycle, quantity, reader_quantity),
         proration_billing_mode="prorated_immediately",
     )
     for it in updated.get("items") or []:
@@ -100,11 +117,15 @@ async def push_proof(
                 f"{' (prorated)' if li.get('proration') else ''}"
             )
 
-    if revert_quantity is not None:
-        print(f"REVERT to seat×{revert_quantity} (full_next_billing_period)…")
+    if revert_quantity is not None or revert_reader_quantity is not None:
+        seats_back = revert_quantity if revert_quantity is not None else quantity
+        readers_back = (
+            revert_reader_quantity if revert_reader_quantity is not None else reader_quantity
+        )
+        print(f"REVERT to seat×{seats_back} reader×{readers_back} (full_next_billing_period)…")
         reverted = await client.update_subscription_items(
             subscription,
-            items=_items(ids, plan, cycle, revert_quantity),
+            items=_items(ids, plan, cycle, seats_back, readers_back),
             proration_billing_mode="full_next_billing_period",
         )
         print(
@@ -123,7 +144,9 @@ async def main() -> int:
     parser.add_argument("--plan", choices=["cabinet", "agence"])
     parser.add_argument("--cycle", choices=["mensuel", "annuel"])
     parser.add_argument("--quantity", type=int)
+    parser.add_argument("--reader-quantity", type=int, default=0)
     parser.add_argument("--revert-quantity", type=int, default=None)
+    parser.add_argument("--revert-reader-quantity", type=int, default=None)
     parser.add_argument("--execute", action="store_true", help="Actually write (default: dry-run).")
     args = parser.parse_args()
 
@@ -150,7 +173,9 @@ async def main() -> int:
         plan=args.plan,
         cycle=args.cycle,
         quantity=args.quantity,
+        reader_quantity=args.reader_quantity,
         revert_quantity=args.revert_quantity,
+        revert_reader_quantity=args.revert_reader_quantity,
         execute=args.execute,
     )
     return 0

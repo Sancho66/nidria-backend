@@ -21,11 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.paddle_event import PaddleWebhookEvent
+from src.agencies.agencies_schema import SeatUsage
 from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
     PaymentMethodUpdateResponse,
     ReferralDiscountState,
+    SeatQuantityRequest,
     SubscriptionCancelResponse,
     SubscriptionStateResponse,
     WebhookAck,
@@ -34,7 +36,7 @@ from src.billing.paddle_client import PaddleClient
 from src.billing.paddle_signature import verify_paddle_signature
 from src.core.config import get_settings
 from src.core.enums import ActorType, SubscriptionPlan
-from src.core.exceptions import ConflictError, UnauthorizedError
+from src.core.exceptions import ConflictError, UnauthorizedError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,26 @@ def _seat_price_key(plan: str, cycle: str) -> str:
     return f"seat_{plan}_{cycle}"
 
 
+def _reader_price_key(cycle: str) -> str:
+    # Plan-transverse by arbitrage (07/08): the reader tariff does not
+    # depend on the plan, only the cycle follows the agency's.
+    return f"seat_reader_{cycle}"
+
+
+def _reader_price_ids() -> set[str]:
+    price_ids = get_settings().paddle_price_ids
+    return {pid for key, pid in price_ids.items() if key.startswith("seat_reader_")}
+
+
+def _manager_seat_price_ids() -> set[str]:
+    price_ids = get_settings().paddle_price_ids
+    return {
+        pid
+        for key, pid in price_ids.items()
+        if key.startswith("seat_") and not key.startswith("seat_reader_")
+    }
+
+
 def _plan_cycle_from_items(items: list[dict[str, Any]]) -> tuple[str, str] | None:
     """Resolve (plan, cycle) from the subscription items' price ids via the
     env mapping — the base-plan price id is the discriminator."""
@@ -92,14 +114,20 @@ def _plan_cycle_from_items(items: list[dict[str, Any]]) -> tuple[str, str] | Non
     return None
 
 
-def _seat_quantity_from_items(items: list[dict[str, Any]]) -> int:
-    price_ids = get_settings().paddle_price_ids
-    seat_ids = {pid for key, pid in price_ids.items() if key.startswith("seat_")}
+def _seat_quantities_from_items(items: list[dict[str, Any]]) -> tuple[int, int]:
+    """(manager_qty, reader_qty), VENTILATED by price id — with two seat
+    SKUs on one subscription (lot lecteur), "the first seat item" is
+    meaningless. Absent item = 0 (that is how a seat line is removed)."""
+    manager_ids = _manager_seat_price_ids()
+    reader_ids = _reader_price_ids()
+    manager = reader = 0
     for item in items:
         price_id = (item.get("price") or {}).get("id") or item.get("price_id")
-        if price_id in seat_ids:
-            return int(item.get("quantity", 0))
-    return 0
+        if price_id in manager_ids:
+            manager = int(item.get("quantity", 0))
+        elif price_id in reader_ids:
+            reader = int(item.get("quantity", 0))
+    return manager, reader
 
 
 class BillingManager:
@@ -185,10 +213,26 @@ class BillingManager:
         # the included tier is billed, never blocked and never offered.
         from src.agencies.agencies_manager import AgenciesManager
 
-        usage = await AgenciesManager(self.db).seat_usage(agency)
+        agencies = AgenciesManager(self.db)
+        usage = await agencies.seat_usage(agency)
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:
             items.append({"price_id": seat_price, "quantity": usage.billed})
+        # Reader seats (lot lecteur): the checkout adopts max(pool, active
+        # readers) — a trial reader is billed from day one, never offered
+        # by accident. The pool itself is posed at conversion
+        # (apply_conversion / subscription.activated).
+        reader_quantity = max(
+            agency.reader_seats_purchased, await agencies.active_reader_count(agency.id)
+        )
+        if reader_quantity > 0:
+            reader_price = settings.paddle_price_ids.get(_reader_price_key(cycle))
+            if reader_price is None:
+                raise ConflictError(
+                    "Paddle billing is not configured on this environment.",
+                    code="billing.not_configured",
+                )
+            items.append({"price_id": reader_price, "quantity": reader_quantity})
         transaction = await PaddleClient().create_transaction(
             items=items, custom_data={"agency_id": str(agency.id)}
         )
@@ -231,9 +275,21 @@ class BillingManager:
         if usage.max is not None:
             logger.info("paddle seat sync skipped for %s: subscription inactive", agency.slug)
             return
+        # Reader item (lot lecteur): quantity = the PURCHASED pool, pushed
+        # alongside the manager mirror in the SAME PATCH — Paddle always
+        # receives the full item list. Pool > 0 with no reader price id =
+        # incomplete env: pushing without the item would DELETE the reader
+        # line from the subscription, so we refuse to touch anything.
+        reader_price = settings.paddle_price_ids.get(_reader_price_key(agency.billing_cycle))
+        pool = agency.reader_seats_purchased
+        if pool > 0 and reader_price is None:
+            logger.error("paddle reader price id missing; seat sync skipped for %s", agency.slug)
+            return
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:
             items.append({"price_id": seat_price, "quantity": usage.billed})
+        if pool > 0:
+            items.append({"price_id": reader_price, "quantity": pool})
         await PaddleClient().update_subscription_items(
             agency.paddle_subscription_id,
             items=items,
@@ -554,6 +610,14 @@ class BillingManager:
         # Re-delivery / already-converted: converted_at is NEVER overwritten.
         if not await self._status_is_stale(agency.id, occurred_at):
             self._apply_status(agency, "active", occurred_at)
+        # Reader pool adoption (lot lecteur): the activated subscription
+        # bills every active reader from day one — pool = max(pool, active
+        # readers). Idempotent (max), also posed by apply_conversion for
+        # the first conversion; this line covers RE-subscriptions too.
+        from src.agencies.agencies_manager import AgenciesManager as _Agencies
+
+        active_readers = await _Agencies(self.db).active_reader_count(agency.id)
+        agency.reader_seats_purchased = max(agency.reader_seats_purchased, active_readers)
         return "processed"
 
     async def _on_updated(self, agency: Agency, occurred_at: datetime, data: dict[str, Any]) -> str:
@@ -564,13 +628,16 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        echoed = _seat_quantity_from_items(items)
-        if echoed != usage.billed:
+        manager_echo, reader_echo = _seat_quantities_from_items(items)
+        if manager_echo != usage.billed or reader_echo != agency.reader_seats_purchased:
             logger.error(
-                "ALERT paddle updated for %s: seat quantity %s diverges from billed %s — no write",
+                "ALERT paddle updated for %s: seat quantities (manager %s, reader %s) "
+                "diverge from derived (billed %s, pool %s) — no write",
                 agency.slug,
-                echoed,
+                manager_echo,
+                reader_echo,
                 usage.billed,
+                agency.reader_seats_purchased,
             )
             return "ignored"
         if await self._status_is_stale(agency.id, occurred_at):
@@ -629,6 +696,16 @@ class BillingManager:
                 seat = _unit(f"seat_{plan}_{cycle_key}")
                 cycles[cycle_out] = {"base": base, "seat": seat} if base and seat else None
             catalog[plan] = cycles
+        # Reader seat grid (lot lecteur): plan-transverse, one price per
+        # cycle. None until the reader SKUs are provisioned on this env —
+        # the front keeps its skeleton, same doctrine as the plan cards.
+        reader_monthly = _unit("seat_reader_mensuel")
+        reader_annual = _unit("seat_reader_annuel")
+        catalog["reader"] = (
+            {"monthly": reader_monthly, "annual": reader_annual}
+            if reader_monthly or reader_annual
+            else None
+        )
         _CATALOG_PRICES_CACHE = catalog
         return catalog
 
@@ -759,12 +836,15 @@ class BillingManager:
         referral_discount: ReferralDiscountState | None = None,
     ) -> SubscriptionStateResponse:
         settings = get_settings()
-        seat_ids = {pid for k, pid in settings.paddle_price_ids.items() if k.startswith("seat_")}
-        base_price = seat_price = None
+        manager_seat_ids = _manager_seat_price_ids()
+        reader_ids = _reader_price_ids()
+        base_price = seat_price = reader_price = None
         for item in subscription.get("items", []):
             price = item.get("price") or {}
             unit = self._cents((price.get("unit_price") or {}).get("amount"))
-            if price.get("id") in seat_ids:
+            if price.get("id") in reader_ids:
+                reader_price = unit
+            elif price.get("id") in manager_seat_ids:
                 seat_price = unit
             else:
                 base_price = unit
@@ -793,6 +873,8 @@ class BillingManager:
             checkout_enabled=settings.billing_checkout_enabled,
             catalog_prices=catalog,
             referral_discount=referral_discount,
+            reader_seats_purchased=agency.reader_seats_purchased,
+            reader_unit_price=reader_price,
         )
 
     async def get_subscription_state(self, agent: Agent) -> SubscriptionStateResponse:
@@ -871,17 +953,23 @@ class BillingManager:
         # ajoutés pendant la fenêtre, rare), fin de cycle à la baisse (le
         # cas du bug). Best-effort : un hoquet Paddle ne casse pas le
         # resume, l'alerte du sync (cas scheduled-change reconnu) trace.
-        echoed = _seat_quantity_from_items(subscription.get("items", []))
-        if echoed != usage.billed:
+        manager_echo, reader_echo = _seat_quantities_from_items(subscription.get("items", []))
+        pool = agency.reader_seats_purchased
+        if manager_echo != usage.billed or reader_echo != pool:
             try:
-                await self.sync_seat_quantity(agency.id, increase=usage.billed > echoed)
+                await self.sync_seat_quantity(
+                    agency.id,
+                    increase=usage.billed > manager_echo or pool > reader_echo,
+                )
                 subscription = await self._fetch_subscription(agency.paddle_subscription_id)
             except Exception:
                 logger.exception(
-                    "resume catch-up seat sync failed for %s (echo %s != billed %s)",
+                    "resume catch-up seat sync failed for %s (echo %s/%s != derived %s/%s)",
                     agency.slug,
-                    echoed,
+                    manager_echo,
+                    reader_echo,
                     usage.billed,
+                    pool,
                 )
         return self._state_from(
             agency,
@@ -902,3 +990,147 @@ class BillingManager:
         return PaymentMethodUpdateResponse(
             transaction_id=transaction["id"], paddle_env=get_settings().paddle_env
         )
+
+    # --- reader seat pool (lot lecteur: one gesture, one invoice line) ----------------
+
+    async def _seat_pool_agency(self, agent: Agent) -> Agency:
+        """Common gates of the pool gestures. The pool is a SUBSCRIPTION
+        object — without an active one (trial, no plan, dead paddle sub)
+        there is nothing to bill against: trial readers live inside the
+        3-seat TOTAL, no purchase possible (arbitrage 07/08)."""
+        agency = await self.db.get(Agency, agent.agency_id)
+        assert agency is not None
+        if agency.is_internal:
+            raise ConflictError(
+                "This agency is internal; billing does not apply.",
+                code="billing.internal_agency",
+            )
+        from src.agencies.agencies_manager import subscription_is_active
+
+        if not subscription_is_active(agency):
+            raise ConflictError(
+                "Reader seats are purchased on an active subscription; the trial "
+                "keeps its 3-seat total.",
+                code="billing.seats_require_subscription",
+                params={"plan": agency.plan},
+            )
+        return agency
+
+    @staticmethod
+    def _reader_quantity_from(payload: SeatQuantityRequest) -> int:
+        """The contract accepts a quantity PER TYPE ({manager, reader}) but
+        manager is REFUSED by decision (spec S1): manager seats follow the
+        roster mirror (billed per member crossing), only reader seats are
+        a purchased pool. The refusal is named at the contract, never
+        implicit."""
+        if payload.manager is not None:
+            raise ValidationError(
+                "Manager seats follow the roster mirror (billed per member); "
+                "only reader seats are purchased in quantity.",
+                code="billing.manager_seats_follow_roster",
+            )
+        if payload.reader is None:
+            raise ValidationError(
+                "A reader seat quantity is required.",
+                code="billing.reader_quantity_required",
+            )
+        return payload.reader
+
+    async def _push_reader_pool(self, agency: Agency, new_pool: int, *, increase: bool) -> None:
+        """ONE update_subscription_items for the WHOLE gesture (cas Nicolas:
+        +7 readers = one PATCH, one proration, one invoice line — never N
+        unit calls). Paddle FIRST, commit after: the purchase IS the
+        billing act, so a Paddle failure aborts the gesture — a seat is
+        never granted unbilled ("jamais offert par accident"). Manual-
+        billed agencies: no push, the invoice is Eric's gesture."""
+        if agency.billing_mode != "paddle" or agency.paddle_subscription_id is None:
+            return
+        settings = get_settings()
+        assert agency.plan is not None and agency.billing_cycle is not None
+        base_price = settings.paddle_price_ids.get(_price_key(agency.plan, agency.billing_cycle))
+        seat_price = settings.paddle_price_ids.get(
+            _seat_price_key(agency.plan, agency.billing_cycle)
+        )
+        reader_price = settings.paddle_price_ids.get(_reader_price_key(agency.billing_cycle))
+        if base_price is None or seat_price is None or reader_price is None:
+            raise ConflictError(
+                "Paddle billing is not configured on this environment.",
+                code="billing.not_configured",
+            )
+        from src.agencies.agencies_manager import AgenciesManager
+
+        usage = await AgenciesManager(self.db).seat_usage(agency)
+        items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
+        if usage.billed > 0:
+            items.append({"price_id": seat_price, "quantity": usage.billed})
+        if new_pool > 0:
+            items.append({"price_id": reader_price, "quantity": new_pool})
+        await PaddleClient().update_subscription_items(
+            agency.paddle_subscription_id,
+            items=items,
+            proration_billing_mode=(
+                "prorated_immediately" if increase else "full_next_billing_period"
+            ),
+        )
+        self._invalidate_subscription_cache(agency.paddle_subscription_id)
+
+    async def add_seats(self, agent: Agent, payload: SeatQuantityRequest) -> SeatUsage:
+        """POST /billing/seats/add — buy N reader seats in one gesture,
+        then invite onto the free ones (the front's « 3 sièges lecteur
+        libres »). Proration is immediate: the invoice line is now."""
+        quantity = self._reader_quantity_from(payload)
+        agency = await self._seat_pool_agency(agent)
+        new_pool = agency.reader_seats_purchased + quantity
+        await self._push_reader_pool(agency, new_pool, increase=True)
+        agency.reader_seats_purchased = new_pool
+        from src.usage.usage_manager import UsageManager
+
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="reader_seats.purchased",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"quantity": quantity, "pool": new_pool},
+        )
+        await self.db.commit()
+        from src.agencies.agencies_manager import AgenciesManager
+
+        return await AgenciesManager(self.db).seat_usage(agency)
+
+    async def remove_seats(self, agent: Agent, payload: SeatQuantityRequest) -> SeatUsage:
+        """POST /billing/seats/remove — release N reader seats. Refused
+        below the ACTIVE reader count (deactivate readers first); billing
+        stops at the next cycle (full_next_billing_period), the started
+        period stays due — same asymmetry as the manager mirror."""
+        quantity = self._reader_quantity_from(payload)
+        agency = await self._seat_pool_agency(agent)
+        pool = agency.reader_seats_purchased
+        if quantity > pool:
+            raise ValidationError(
+                "Cannot release more reader seats than purchased.",
+                code="billing.reader_seats_exceed_pool",
+                params={"purchased": pool, "requested": quantity},
+            )
+        from src.agencies.agencies_manager import AgenciesManager
+
+        used = await AgenciesManager(self.db).active_reader_count(agency.id)
+        new_pool = pool - quantity
+        if new_pool < used:
+            raise ConflictError(
+                "Released seats are still occupied: deactivate readers first.",
+                code="billing.reader_seats_in_use",
+                params={"purchased": pool, "used": used, "requested": quantity},
+            )
+        await self._push_reader_pool(agency, new_pool, increase=False)
+        agency.reader_seats_purchased = new_pool
+        from src.usage.usage_manager import UsageManager
+
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="reader_seats.released",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"quantity": quantity, "pool": new_pool},
+        )
+        await self.db.commit()
+        return await AgenciesManager(self.db).seat_usage(agency)

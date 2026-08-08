@@ -21,10 +21,12 @@ on:
         type: choice
         options: [sandbox, live]
       mode:
-        description: "Gesture (dry-run = read-only audit; flow-* = seat-flow proof)"
+        description: >-
+          Gesture (dry-run = read-only audit; execute = CREATE the missing
+          declared products/prices — lot lecteur; flow-* = seat-flow proof)
         required: true
         type: choice
-        options: [dry-run, align-quantity, align-tax-mode, flow-list, flow-push]
+        options: [dry-run, execute, align-quantity, align-tax-mode, flow-list, flow-push]
       flow_args:
         description: >-
           flow-push only: args for paddle_seat_flow_proof.py, e.g.

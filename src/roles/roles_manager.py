@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.rbac import Permission as PermissionRow
 from shared.models.rbac import Role
+from src.core.enums import SeatType
 from src.core.exceptions import (
     ConflictError,
     ForbiddenError,
@@ -16,6 +17,7 @@ from src.core.exceptions import (
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
+from src.core.seats import assert_reader_role_read_only
 from src.roles.roles_repository import RolesRepository
 
 _SYSTEM_ROLE_LOCKED = "System roles are shared across agencies and cannot be deleted."
@@ -263,6 +265,10 @@ class RolesManager:
         await self._assert_agency_keeps_manager(
             actor.agency_id, reassigned_agent=(target.id, new_keys)
         )
+        if target.seat_type == SeatType.READER.value:
+            # A READER seat wears a read-only role — the rule holds through
+            # role changes too (flip the seat type first to widen).
+            assert_reader_role_read_only(new_keys)
 
         target.role_id = role.id
         await self.db.commit()

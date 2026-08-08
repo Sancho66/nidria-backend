@@ -299,6 +299,7 @@ class AgenciesRepository:
         expires_at: datetime,
         invited_by_agent_id: uuid.UUID,
         external_contact_id: uuid.UUID | None = None,
+        seat_type: str = "manager",
     ) -> AgentInvitation:
         invitation = AgentInvitation(
             agency_id=agency_id,
@@ -308,6 +309,7 @@ class AgenciesRepository:
             expires_at=expires_at,
             invited_by_agent_id=invited_by_agent_id,
             external_contact_id=external_contact_id,
+            seat_type=seat_type,
         )
         self.db.add(invitation)
         return invitation
@@ -378,6 +380,7 @@ class AgenciesRepository:
         last_name: str,
         password_hash: str,
         is_external: bool = False,
+        seat_type: str = "manager",
     ) -> Agent:
         agent = Agent(
             agency_id=agency_id,
@@ -387,6 +390,7 @@ class AgenciesRepository:
             last_name=last_name,
             password_hash=password_hash,
             is_external=is_external,
+            seat_type=seat_type,
         )
         self.db.add(agent)
         return agent

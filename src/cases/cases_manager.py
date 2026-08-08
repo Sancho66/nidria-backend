@@ -67,6 +67,7 @@ from src.core.i18n import (
 from src.core.notification_window import record_send
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
+from src.core.seats import assert_not_reader_actor
 from src.costs.costs_repository import CostsRepository
 from src.costs.costs_rules import case_margin, check_amount_decimals, resolve_cost_currency
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
@@ -107,6 +108,9 @@ class CasesManager:
             raise ValidationError(
                 "Owner must be an agent of this agency.", code="case.owner_not_in_agency"
             )
+        # Lot lecteur: a reader seat is never a designated actor — the ONE
+        # owner gate covers create, PATCH and the 500-case bulk alike.
+        assert_not_reader_actor(owner, designation="owner")
 
     async def _pending_invitations(self, case_id: uuid.UUID) -> dict[str, datetime]:
         """email → furthest PENDING invitation expiry, for ONE case. Inline

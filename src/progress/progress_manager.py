@@ -49,6 +49,7 @@ from src.core.i18n import (
 )
 from src.core.notification_prefs import agent_pref, client_pref
 from src.core.notification_window import record_send, window_allows
+from src.core.seats import assert_not_reader_actor
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import (
@@ -1115,6 +1116,8 @@ class ProgressManager:
                 target = await self.repo.get_any_agent_in_agency(agent.agency_id, agent_id)
                 if target is None or target.is_external:
                     raise ValidationError("Agency validator must be an internal member.")
+                # Lot lecteur: a reader seat is never a designated actor.
+                assert_not_reader_actor(target, designation="validator")
             new_values = (new_type.value, agent_id)
         else:  # EXTERNAL — a designated provider, assigned to the case
             agent_id = payload.validated_by_agent_id
@@ -1217,6 +1220,9 @@ class ProgressManager:
                 raise ValidationError(
                     "Assign this provider to the case before naming them responsible."
                 )
+            # Lot lecteur: a reader seat is never a designated actor
+            # (externals carry the default seat type and pass through).
+            assert_not_reader_actor(target, designation="responsible")
             new_values = (new_type.value, payload.responsible_agent_id, None)
         elif new_type is ResponsibleType.EXTERNAL:
             if payload.responsible_external_id is None:

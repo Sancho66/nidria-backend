@@ -27,7 +27,11 @@ from src.views.views_schema import (
 router = APIRouter(tags=["views"])
 
 # Auth-only spirit of Prism (a viewer customizes their own display):
-# everything gates on the broadest case permission, case.view.
+# everything gates on the broadest case permission, case.view. CONFIRMED
+# by arbitrage (07/08, lot lecteur): these writes stay OPEN to reader
+# seats — saved views are strictly personal display preferences (owner-
+# scoped in the manager), not business writes; a reader who cannot pin a
+# view would be punished for nothing.
 _VIEW = Permission.CASE_VIEW
 
 BINDINGS = [

@@ -28,6 +28,11 @@ _SEAT_MAX = {"cabinet": 999, "agence": 999}
 PRODUCTS: dict[str, str] = {
     "cabinet": "Nidria Cabinet",
     "agence": "Nidria Agence",
+    # Reader seats (lot lecteur 08/08): ONE plan-transverse product — the
+    # tariff does not depend on the plan (arbitrage 07/08), the cycle
+    # follows the agency's billing_cycle. Quantity = the PURCHASED pool
+    # (agency.reader_seats_purchased), never the live reader count.
+    "reader": "Nidria Lecteur",
 }
 
 
@@ -71,6 +76,19 @@ def _seat(plan: str, cycle_key: str, interval: str, cents: int, label: str) -> P
     )
 
 
+def _reader_seat(cycle_key: str, interval: str, cents: int, label: str) -> PriceSpec:
+    # Same 999 hygiene bound as the manager seats — a sanity guard, not a cap.
+    return PriceSpec(
+        stable_key=f"seat_reader_{cycle_key}",
+        product_key="reader",
+        name=label,
+        amount_cents=cents,
+        interval=interval,
+        quantity_min=1,
+        quantity_max=999,
+    )
+
+
 # Grid 2026-07: Cabinet 99 €/mois (annuel 990), Agence 129 €/mois (annuel
 # 1290); extra seats 35/25 €/mois (annuel 350/250). Base includes 3 seats.
 PRICES: tuple[PriceSpec, ...] = (
@@ -82,6 +100,10 @@ PRICES: tuple[PriceSpec, ...] = (
     _seat("cabinet", "annuel", "year", 35_000, "Cabinet — siège supplémentaire (annuel)"),
     _seat("agence", "mensuel", "month", 2_500, "Agence — siège supplémentaire (mensuel)"),
     _seat("agence", "annuel", "year", 25_000, "Agence — siège supplémentaire (annuel)"),
+    # Reader grid (arbitrage 07/08): 13.99 EUR/month, 131.88 EUR/year
+    # (10.99 × 12) — NET amounts like everything here (tax external).
+    _reader_seat("mensuel", "month", 1_399, "Siège lecteur (mensuel)"),
+    _reader_seat("annuel", "year", 13_188, "Siège lecteur (annuel)"),
 )
 
 CURRENCY = "EUR"

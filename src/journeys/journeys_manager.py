@@ -49,6 +49,7 @@ from src.core.i18n import (
 )
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
+from src.core.seats import assert_not_reader_actor
 from src.costs.costs_rules import check_amount_decimals, resolve_cost_currency
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.journeys.field_catalog import FIELD_PRESETS
@@ -735,6 +736,12 @@ class JourneysManager:
                 "Default responsible must belong to this agency.",
                 code="journey.responsible_not_in_agency",
             )
+        # Lot lecteur: a reader seat is never a designated actor — and a
+        # template default MULTIPLIES (recopied onto every instantiated
+        # case), so the gate matters even more here. Covers the template
+        # defaults (responsible + validator) AND participants (this is
+        # their shared validator).
+        assert_not_reader_actor(target, designation="template_default")
 
     async def add_step(
         self, agent: Agent, template_id: uuid.UUID, payload: TemplateStepCreateRequest

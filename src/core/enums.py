@@ -138,6 +138,24 @@ class InvitationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class SeatType(StrEnum):
+    """The KIND of seat an internal member occupies (lot lecteur 08/08).
+
+    MANAGER = the historical seat: billed as a MIRROR of the roster
+    (billed = members − included − offered, pushed on every crossing).
+    READER = a read-only seat billed from the PURCHASED pool
+    (agency.reader_seats_purchased): the agency buys N seats in ONE
+    gesture (one proration, one invoice line) then invites onto the free
+    ones. Orthogonal to the ROLE (roles stay dynamic, clones included):
+    the seat type is the BILLING truth and the actor gate — a reader can
+    only wear a read-only-capable role and is never a designated actor
+    (case owner, step responsible/validator, template default). External
+    providers keep the default value; their seat logic ignores it."""
+
+    MANAGER = "manager"
+    READER = "reader"
+
+
 class ClientSpaceState(StrEnum):
     """Can this person reach their client space RIGHT NOW? DERIVED at read
     time (never stored): ACTIVE = the account is activated; PENDING = a live

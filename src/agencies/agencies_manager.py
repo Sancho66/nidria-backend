@@ -33,6 +33,7 @@ from src.agencies.agencies_schema import (
     OnboardingResponse,
     OnboardingStepState,
     ProviderUsage,
+    ReaderSeatUsage,
     ResponsibleStepRef,
     SeatUsage,
     SubscriptionUpdateRequest,
@@ -53,11 +54,13 @@ from src.core.enums import (
     ConsentDocumentType,
     ExternalContactType,
     InvitationStatus,
+    SeatType,
     SubscriptionPlan,
 )
 from src.core.exceptions import (
     BadRequestError,
     ConflictError,
+    ForbiddenError,
     NotFoundError,
     ValidationError,
 )
@@ -523,26 +526,50 @@ class AgenciesManager:
 
     async def seat_usage(self, agency: Agency) -> SeatUsage:
         """Derived seat capacity: active INTERNAL members only (external
-        providers never consume a seat). `billed` counts past the
-        included + founding-offered seats - Eric bills those manually,
-        the app never blocks paid usage below the plan cap."""
-        members = (
+        providers never consume a seat). `billed` counts MANAGER seats
+        past the included + founding-offered ones (included seats are
+        manager seats — lot lecteur); readers are billed from the
+        PURCHASED pool, never from the included tier. `members` stays the
+        TOTAL: the trial gate (3) is a total across seat types."""
+        counts = await self.db.execute(
+            select(Agent.seat_type, func.count(Agent.id))
+            .where(
+                Agent.agency_id == agency.id,
+                Agent.is_external.is_(False),
+                Agent.deactivated_at.is_(None),  # offboarded = out of every count
+            )
+            .group_by(Agent.seat_type)
+        )
+        by_type: dict[str, int] = {seat_type: count for seat_type, count in counts.all()}
+        managers = by_type.get(SeatType.MANAGER.value, 0)
+        readers = by_type.get(SeatType.READER.value, 0)
+        included = SEATS_INCLUDED_BY_PLAN.get(agency.plan or "", TRIAL_SEATS_INCLUDED)
+        return SeatUsage(
+            members=managers + readers,
+            managers=managers,
+            included=included,
+            offered=agency.founding_free_seats,
+            billed=max(0, managers - included - agency.founding_free_seats),
+            max=seats_max_for(agency),
+            reader=ReaderSeatUsage(
+                purchased=agency.reader_seats_purchased,
+                used=readers,
+                free=max(0, agency.reader_seats_purchased - readers),
+            ),
+        )
+
+    async def active_reader_count(self, agency_id: uuid.UUID) -> int:
+        """Active internal READER seats — the pool's `used` side."""
+        return (
             await self.db.execute(
                 select(func.count(Agent.id)).where(
-                    Agent.agency_id == agency.id,
+                    Agent.agency_id == agency_id,
                     Agent.is_external.is_(False),
-                    Agent.deactivated_at.is_(None),  # offboarded = out of every count
+                    Agent.deactivated_at.is_(None),
+                    Agent.seat_type == SeatType.READER.value,
                 )
             )
         ).scalar_one()
-        included = SEATS_INCLUDED_BY_PLAN.get(agency.plan or "", TRIAL_SEATS_INCLUDED)
-        return SeatUsage(
-            members=members,
-            included=included,
-            offered=agency.founding_free_seats,
-            billed=max(0, members - included - agency.founding_free_seats),
-            max=seats_max_for(agency),
-        )
 
     async def _providers_with_access(self, agency_id: uuid.UUID) -> int:
         """Providers WITH access = external Agent rows. The external flow
@@ -793,6 +820,12 @@ class AgenciesManager:
             agency.converted_at = converted_at
         elif agency.converted_at is None:
             agency.converted_at = datetime.now(UTC)
+        # Reader pool adoption (lot lecteur): the conversion bills every
+        # active reader from day one — pool = max(pool, active readers),
+        # never offered by accident. Idempotent; shared by BOTH billing
+        # modes since this is THE single conversion gesture.
+        active_readers = await self.active_reader_count(agency.id)
+        agency.reader_seats_purchased = max(agency.reader_seats_purchased, active_readers)
         # Referral grant — INSIDE the single gesture, so a manually
         # converted godchild triggers exactly like a Paddle one. DB only
         # (the caller owns the transaction); the Paddle/email effects run
@@ -1009,8 +1042,10 @@ class AgenciesManager:
         steps = await self.repo.list_responsible_active_steps(agent.agency_id, target.id)
         self._log_member_event(agent, target, "agent.deactivated")
         await self.db.commit()
-        if not target.is_external:
+        if not target.is_external and target.seat_type != SeatType.READER.value:
             # Best-effort: a Paddle hiccup must never block an offboarding.
+            # A READER leaving frees a pool seat but changes nothing billed
+            # (the pool keeps billing until RELEASED): no push.
             await self._sync_paddle_seats(agent.agency_id, increase=False)
         return MemberDeactivationResponse(
             deactivated_at=now,
@@ -1047,11 +1082,83 @@ class AgenciesManager:
                     code="subscription.seat_limit",
                     params={"members": usage.members, "max": usage.max, "plan": agency.plan},
                 )
+            if (
+                target.seat_type == SeatType.READER.value
+                and usage.max is None
+                and usage.reader.free <= 0
+            ):
+                # Coming back consumes a POOL seat (same rule as accepting
+                # a reader invitation) — trial stays on the total gate.
+                raise ConflictError(
+                    "No free reader seat: buy reader seats first, then reactivate.",
+                    code="subscription.reader_seat_limit",
+                    params={"purchased": usage.reader.purchased, "used": usage.reader.used},
+                )
         target.deactivated_at = None
         self._log_member_event(agent, target, "agent.reactivated")
         await self.db.commit()
-        if not target.is_external:
+        if not target.is_external and target.seat_type != SeatType.READER.value:
             await self._sync_paddle_seats(agent.agency_id, increase=True)
+
+    async def set_member_seat_type(
+        self, agent: Agent, agent_id: uuid.UUID, seat_type: str
+    ) -> Agent:
+        """The traced admin gesture (arbitrage 07/08): flip a member
+        between manager (mirror-billed) and reader (purchased pool).
+        Self-change refused, same rule as the role. manager→reader
+        requires a read-only role (change the role FIRST — its own
+        gesture, with its own anti-lockout) and a free pool seat on an
+        active subscription; reader→manager is always open, the mirror
+        bills it. The flip moves the member between the two Paddle
+        quantities: one re-sync after commit."""
+        if agent_id == agent.id:
+            raise ForbiddenError("You cannot modify your own seat type.")
+        from src.roles.roles_repository import RolesRepository
+
+        roles_repo = RolesRepository(self.db)
+        # Internal only (role+permissions loaded): an external target is a
+        # 404 here, same as the member-role flow — no seat to speak of.
+        target = await roles_repo.get_agent_in_agency(agent.agency_id, agent_id)
+        if target is None:
+            raise NotFoundError("Member not found.")
+        if target.seat_type == seat_type:
+            return target  # idempotent no-op — nothing traced, nothing pushed
+        agency = await self.get_my_agency(agent)
+        if seat_type == SeatType.READER.value:
+            from src.core.seats import assert_reader_role_read_only
+
+            assert_reader_role_read_only({p.key for p in target.role.permissions})
+            if target.deactivated_at is None:
+                usage = await self.seat_usage(agency)
+                if usage.max is None and usage.reader.free <= 0:
+                    raise ConflictError(
+                        "No free reader seat: buy reader seats first.",
+                        code="subscription.reader_seat_limit",
+                        params={
+                            "purchased": usage.reader.purchased,
+                            "used": usage.reader.used,
+                        },
+                    )
+        previous = target.seat_type
+        target.seat_type = seat_type
+        await UsageManager(self.db).emit(
+            agency_id=agent.agency_id,
+            event_type="member.seat_type_changed",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={"member_id": str(target.id), "from": previous, "to": seat_type},
+        )
+        self._log_member_event(agent, target, "agent.seat_type_changed")
+        await self.db.commit()
+        await self.db.refresh(target, ["role"])
+        if target.deactivated_at is None:
+            # manager→reader: `billed` may DROP (one manager less);
+            # reader→manager: it may RISE. Push the mirror accordingly —
+            # the reader pool itself is untouched by the flip.
+            await self._sync_paddle_seats(
+                agent.agency_id, increase=seat_type == SeatType.MANAGER.value
+            )
+        return target
 
     def _log_member_event(self, actor: Agent, target: Agent, event: str) -> None:
         logger.info("%s: agency=%s actor=%s target=%s", event, actor.agency_id, actor.id, target.id)
@@ -1136,9 +1243,15 @@ class AgenciesManager:
     # --- agent invitations -------------------------------------------------------
 
     async def create_invitation(
-        self, agent: Agent, email: str, role_id: uuid.UUID
+        self,
+        agent: Agent,
+        email: str,
+        role_id: uuid.UUID,
+        seat_type: str = SeatType.MANAGER.value,
     ) -> AgentInvitation:
-        return await self._create_invitation(agent, email, role_id, external=False)
+        return await self._create_invitation(
+            agent, email, role_id, external=False, seat_type=seat_type
+        )
 
     async def _create_invitation(
         self,
@@ -1149,6 +1262,7 @@ class AgenciesManager:
         external: bool,
         name: str | None = None,
         existing_contact_id: uuid.UUID | None = None,
+        seat_type: str = SeatType.MANAGER.value,
     ) -> AgentInvitation:
         # Role validated AT CREATION (not only at accept): system role
         # OR a role of THIS agency — never another agency's role.
@@ -1194,6 +1308,28 @@ class AgenciesManager:
                     code="subscription.seat_limit",
                     params={"members": usage.members, "max": usage.max, "plan": agency.plan},
                 )
+            if seat_type == SeatType.READER.value:
+                # READER GATES (lot lecteur). Role coherence first: a reader
+                # seat wears a read-only role — by CAPABILITY, never by
+                # role name (clones). Then the pool: on an ACTIVE
+                # subscription (max is None) the reader must land on a
+                # PURCHASED free seat; in trial the 3-seat TOTAL above is
+                # the only gate (no purchase possible, none needed).
+                from src.core.seats import assert_reader_role_read_only
+                from src.roles.roles_repository import RolesRepository
+
+                role_full = await RolesRepository(self.db).get_role_with_permissions(role_id)
+                assert role_full is not None  # existence validated above
+                assert_reader_role_read_only({p.key for p in role_full.permissions})
+                if usage.max is None and usage.reader.free <= 0:
+                    raise ConflictError(
+                        "No free reader seat: buy reader seats first, then invite.",
+                        code="subscription.reader_seat_limit",
+                        params={
+                            "purchased": usage.reader.purchased,
+                            "used": usage.reader.used,
+                        },
+                    )
         else:
             # PROVIDER GATE (grid 2026-07), the seat gate's mirror at the
             # SAME single point. Counting rule (Alexandre's, stricter than
@@ -1293,6 +1429,8 @@ class AgenciesManager:
             expires_at=now + timedelta(days=settings.agent_invitation_expires_days),
             invited_by_agent_id=agent.id,
             external_contact_id=external_contact_id,
+            # Externals have no seat: they keep the column default.
+            seat_type=SeatType.MANAGER.value if external else seat_type,
         )
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
@@ -1394,6 +1532,25 @@ class AgenciesManager:
             if usage.max is not None and usage.members >= usage.max:
                 capacity_error.params["max"] = usage.max
                 raise capacity_error
+            if invitation.seat_type == SeatType.READER.value:
+                # Reader re-checks at ACCEPTANCE (same doctrine as the
+                # member total): the pool may have filled since the
+                # invite, and the role may have GAINED write permissions
+                # (a custom role edit — clones never rebind invitations).
+                if usage.max is None and usage.reader.free <= 0:
+                    capacity_error.params["reader"] = {
+                        "purchased": usage.reader.purchased,
+                        "used": usage.reader.used,
+                    }
+                    raise capacity_error
+                from src.core.seats import assert_reader_role_read_only
+                from src.roles.roles_repository import RolesRepository
+
+                role_full = await RolesRepository(self.db).get_role_with_permissions(
+                    invitation.role_id
+                )
+                if role_full is not None:
+                    assert_reader_role_read_only({p.key for p in role_full.permissions})
         if pre_agent is not None:
             pre_agent.password_hash = hash_password(password)
             pre_agent.first_name = first_name
@@ -1413,6 +1570,11 @@ class AgenciesManager:
                 last_name=last_name,
                 password_hash=hash_password(password),
                 is_external=bool(role and role.is_external),
+                # The invitation's seat kind lands on the member (externals
+                # keep the default — no seat).
+                seat_type=(
+                    SeatType.MANAGER.value if role and role.is_external else invitation.seat_type
+                ),
             )
             await self.db.flush()
             if role and role.is_external and contact is not None:
@@ -1449,7 +1611,9 @@ class AgenciesManager:
         await self.db.commit()
         # A new INTERNAL member can cross the included-seats threshold: push
         # the derived quantity to Paddle (no-op for manual agencies; external
-        # providers never consume a seat). Best-effort, after commit.
-        if not (role and role.is_external):
+        # providers never consume a seat). Best-effort, after commit. A
+        # READER acceptance changes NOTHING billable (the pool was bought
+        # beforehand, `billed` counts managers only): no push.
+        if not (role and role.is_external) and invitation.seat_type != SeatType.READER.value:
             await self._sync_paddle_seats(invitation.agency_id, increase=True)
         return pair

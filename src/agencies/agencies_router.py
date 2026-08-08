@@ -30,6 +30,7 @@ from src.agencies.agencies_schema import (
     MemberDeactivationResponse,
     OnboardingResponse,
     RoleResponse,
+    SeatTypeUpdateRequest,
     SignatureCreditGrantRequest,
     SignatureCreditGrantResponse,
     SubscriptionUpdateRequest,
@@ -92,10 +93,13 @@ BINDINGS = [
     RouteBinding("GET", "/agencies/me/referrals", Audience.AGENT, Permission.AGENCY_MANAGE),
     # AI quota state: any agent of the agency (a read on their own tenant).
     RouteBinding("GET", "/agencies/me/ai-usage", Audience.AGENT),
-    # Activation checklist: any agent reads it, any agent can dismiss the
-    # banner (a UI aid, not a structural mutation).
+    # Activation checklist: any agent reads it. The DISMISS was the one
+    # business write with NO permission at all — closed 08/08 (arbitrage:
+    # a matrix hole, independent of the reader lot) with the weakest
+    # existing permission, case.view: every internal role holds it, the
+    # UX is unchanged, but "no gate" no longer exists as a class.
     RouteBinding("GET", "/agencies/me/onboarding", Audience.AGENT),
-    RouteBinding("POST", "/agencies/me/onboarding/dismiss", Audience.AGENT),
+    RouteBinding("POST", "/agencies/me/onboarding/dismiss", Audience.AGENT, Permission.CASE_VIEW),
     RouteBinding("PATCH", "/agencies/me", Audience.AGENT, Permission.AGENCY_MANAGE),
     # Logo: any agent of the agency reads it (the app shell shows it);
     # only agency.manage uploads/removes it.
@@ -140,6 +144,14 @@ BINDINGS = [
     RouteBinding(
         "POST",
         "/agencies/me/members/{agent_id}/reactivate",
+        Audience.AGENT,
+        Permission.AGENT_MANAGE,
+    ),
+    # Seat-type flip (lot lecteur): an agent-management act, traced —
+    # same gate as the role assignment.
+    RouteBinding(
+        "PUT",
+        "/agencies/me/members/{agent_id}/seat-type",
         Audience.AGENT,
         Permission.AGENT_MANAGE,
     ),
@@ -383,6 +395,7 @@ def _member_response(member: Agent) -> AgencyMemberResponse:
         role_id=member.role_id,
         is_external=member.is_external,
         deactivated_at=member.deactivated_at,
+        seat_type=member.seat_type,
     )
 
 
@@ -426,6 +439,16 @@ async def reactivate_member(agent_id: uuid.UUID, agent: AgentDep, db: DbDep) -> 
     """The symmetric gesture — with the cap re-check (same rule as
     accepting an invitation: coming back consumes a slot)."""
     await AgenciesManager(db).reactivate_member(agent, agent_id)
+
+
+@router.put("/me/members/{agent_id}/seat-type", response_model=AgencyMemberResponse)
+async def set_member_seat_type(
+    agent_id: uuid.UUID, body: SeatTypeUpdateRequest, agent: AgentDep, db: DbDep
+) -> AgencyMemberResponse:
+    """The traced admin gesture (lot lecteur): manager ↔ reader — billing
+    follows (mirror vs purchased pool), Paddle re-syncs in one push."""
+    member = await AgenciesManager(db).set_member_seat_type(agent, agent_id, body.seat_type.value)
+    return _member_response(member)
 
 
 @router.get("/me/external-members", response_model=list[AgencyMemberResponse])
@@ -491,7 +514,9 @@ async def list_invitations(agent: AgentDep, db: DbDep) -> list[AgentInvitationRe
 async def create_invitation(
     body: AgentInvitationCreateRequest, agent: AgentDep, db: DbDep
 ) -> AgentInvitationResponse:
-    invitation = await AgenciesManager(db).create_invitation(agent, body.email, body.role_id)
+    invitation = await AgenciesManager(db).create_invitation(
+        agent, body.email, body.role_id, body.seat_type.value
+    )
     return AgentInvitationResponse.model_validate(invitation)
 
 

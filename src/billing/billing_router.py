@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from src.agencies.agencies_schema import SeatUsage
 from src.billing.billing_manager import BillingManager
 from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
     PaymentMethodUpdateResponse,
+    SeatQuantityRequest,
     SubscriptionCancelResponse,
     SubscriptionStateResponse,
     WebhookAck,
@@ -34,6 +36,10 @@ BINDINGS = [
     RouteBinding(
         "POST", "/billing/payment-method/update", Audience.AGENT, Permission.AGENCY_MANAGE
     ),
+    # Reader seat pool (lot lecteur): buying/releasing seats commits the
+    # agency financially — same gate as the checkout.
+    RouteBinding("POST", "/billing/seats/add", Audience.AGENT, Permission.AGENCY_MANAGE),
+    RouteBinding("POST", "/billing/seats/remove", Audience.AGENT, Permission.AGENCY_MANAGE),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -72,3 +78,13 @@ async def resume_subscription(agent: AgentDep, db: DbDep) -> SubscriptionStateRe
 @router.post("/payment-method/update", response_model=PaymentMethodUpdateResponse)
 async def payment_method_update(agent: AgentDep, db: DbDep) -> PaymentMethodUpdateResponse:
     return await BillingManager(db).payment_method_update(agent)
+
+
+@router.post("/seats/add", response_model=SeatUsage)
+async def add_seats(body: SeatQuantityRequest, agent: AgentDep, db: DbDep) -> SeatUsage:
+    return await BillingManager(db).add_seats(agent, body)
+
+
+@router.post("/seats/remove", response_model=SeatUsage)
+async def remove_seats(body: SeatQuantityRequest, agent: AgentDep, db: DbDep) -> SeatUsage:
+    return await BillingManager(db).remove_seats(agent, body)

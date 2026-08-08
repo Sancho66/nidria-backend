@@ -304,7 +304,8 @@ async def test_updated_with_diverging_quantity_alerts_and_writes_nothing(
     with caplog.at_level("ERROR"):
         resp = await _post(client, envelope)
     assert resp.json()["status"] == "ignored"
-    assert any("diverges from billed" in r.message for r in caplog.records)
+    # Message ventilé (lot lecteur): both quantities are named in the alert.
+    assert any("diverge from derived" in r.message for r in caplog.records)
     agency = await _agency(db_session, aid)
     assert agency.plan == "cabinet"  # the lying update changed NOTHING
 

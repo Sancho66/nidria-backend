@@ -6,7 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.currencies import is_supported
 from src.core.email import NormalizedEmailStr
-from src.core.enums import AgencySector, BillingCycle, ExternalContactType, SubscriptionPlan
+from src.core.enums import (
+    AgencySector,
+    BillingCycle,
+    ExternalContactType,
+    SeatType,
+    SubscriptionPlan,
+)
 
 # The agency's default content language — the fallback for its i18n blobs.
 # Single source of truth: src.core.i18n (SUPPORTED_LANGUAGES / Language).
@@ -102,19 +108,39 @@ class AiUsageResponse(BaseModel):
     month: str
 
 
+class ReaderSeatUsage(BaseModel):
+    """Reader-seat pool state (lot lecteur 08/08): `purchased` is the
+    pool the agency BOUGHT (the Paddle quantity of the reader SKU),
+    `used` the active readers, `free` the seats left to invite onto —
+    the front's « 3 sièges lecteur libres »."""
+
+    purchased: int
+    used: int
+    free: int
+
+
 class SeatUsage(BaseModel):
     """Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`
     starts past included (3 cabinet / 6 agence) + founding offered;
     `max` = None on any ACTIVE subscription — NO ceiling (décision Alex +
     Eric 05/08/2026), extra seats are billed per seat and the front
     displays "illimité", never a blank. Without an active subscription
-    (trial, no plan, dead paddle sub): 3."""
+    (trial, no plan, dead paddle sub): 3 — a TOTAL across seat types.
 
-    members: int  # active internal agents (externals never consume a seat)
+    Lot lecteur (08/08): `members` stays the TOTAL of active internals
+    (the trial gate reads it); `managers`/`reader` ventilate it. The
+    included + offered seats are MANAGER seats — `billed` counts past
+    them from the managers only; on an active subscription every reader
+    comes from the purchased pool (13.99 EUR), never from the included
+    tier."""
+
+    members: int  # active internal agents, ALL seat types (externals never consume a seat)
+    managers: int  # active internal manager seats (the mirror-billed kind)
     included: int
     offered: int  # founding free seats
-    billed: int
+    billed: int  # manager seats past included + offered
     max: int | None
+    reader: ReaderSeatUsage
 
 
 class ProviderUsage(BaseModel):
@@ -402,6 +428,18 @@ class AgencyMemberResponse(BaseModel):
     # Offboarding: NULL = active; set = deactivated (badge + reactivate
     # button on the front — deactivated members STAY listed).
     deactivated_at: datetime | None = None
+    # Seat KIND (lot lecteur): manager | reader — the front's pickers
+    # exclude readers from actor designation, the settings page shows the
+    # badge. Externals carry the default value (no seat).
+    seat_type: str = SeatType.MANAGER.value
+
+
+class SeatTypeUpdateRequest(BaseModel):
+    """PUT /agencies/me/members/{agent_id}/seat-type — the traced admin
+    gesture that flips a member between manager and reader (billing
+    follows: mirror vs purchased pool)."""
+
+    seat_type: SeatType
 
 
 class RoleResponse(BaseModel):
@@ -416,6 +454,10 @@ class RoleResponse(BaseModel):
 class AgentInvitationCreateRequest(BaseModel):
     email: NormalizedEmailStr
     role_id: uuid.UUID
+    # Seat KIND the invitee will occupy (lot lecteur): default manager —
+    # the historical behaviour. reader requires a read-only role AND a
+    # free purchased seat on an active subscription.
+    seat_type: SeatType = SeatType.MANAGER
 
 
 class AgentInvitationResponse(BaseModel):
@@ -428,6 +470,7 @@ class AgentInvitationResponse(BaseModel):
     expires_at: datetime
     invited_by_agent_id: uuid.UUID | None
     created_at: datetime
+    seat_type: str
 
 
 class AcceptInvitationRequest(BaseModel):
