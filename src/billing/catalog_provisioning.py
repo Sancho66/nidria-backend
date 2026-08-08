@@ -141,6 +141,34 @@ async def align_tax_mode(*, client: PaddleClient) -> list[str]:
     return patched
 
 
+async def align_quantity_bounds(*, client: PaddleClient) -> list[str]:
+    """The SECOND sanctioned update (décision 05/08/2026 — the seat
+    ceilings fell for active subscriptions): PATCH the quantity bounds (a
+    patchable price field, like tax_mode, unlike the amount) to the
+    declared values, on every matched price that diverges on them —
+    NOTHING else is touched. Explicit human decision via --align-quantity,
+    never a silent reconciliation. Returns one line per patched price."""
+    remote_prices = {k: p for p in await client.list_prices() if (k := _stable_key(p))}
+    patched: list[str] = []
+    for spec in PRICES:
+        remote = remote_prices.get(spec.stable_key)
+        if remote is None:
+            continue
+        quantity = remote.get("quantity") or {}
+        current = (quantity.get("minimum"), quantity.get("maximum"))
+        if current == (spec.quantity_min, spec.quantity_max):
+            continue
+        await client.update_price_quantity(
+            remote["id"], minimum=spec.quantity_min, maximum=spec.quantity_max
+        )
+        patched.append(
+            f"{spec.stable_key} ({remote['id']}): "
+            f"quantity {current[0]}..{current[1]} -> "
+            f"{spec.quantity_min}..{spec.quantity_max}"
+        )
+    return patched
+
+
 async def verify_catalog_env(*, client: PaddleClient, price_ids: dict[str, str]) -> list[str]:
     """The BOOT check (light): every env price_id must exist in Paddle and
     carry the SAME stable key it is mapped under. Returns the divergences —

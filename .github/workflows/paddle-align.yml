@@ -1,0 +1,49 @@
+# Paddle catalog operations from a CI runner — manual dispatch ONLY.
+#
+# Exists because the sanctioned provisioning gestures (align-tax-mode,
+# align-quantity, dry-run audit) sometimes cannot run from a dev machine:
+# Paddle's Cloudflare IP-blocks residential IPs (429 Access denied, vécu
+# 2026-08-07 pendant le lot sièges). Same script, same declaration — only
+# the egress IP changes. NEVER runs on push/schedule; each run is one
+# explicit human decision, like the flags it forwards.
+#
+# Secrets: PADDLE_SANDBOX_API_KEY / PADDLE_LIVE_API_KEY (repo secrets).
+# The dummy DATABASE/JWT values mirror ci.yml's openapi job — settings
+# need them to instantiate; the script never touches a database.
+name: paddle-align
+
+on:
+  workflow_dispatch:
+    inputs:
+      paddle_env:
+        description: "Paddle environment"
+        required: true
+        type: choice
+        options: [sandbox, live]
+      mode:
+        description: "Gesture (dry-run = read-only audit)"
+        required: true
+        type: choice
+        options: [dry-run, align-quantity, align-tax-mode]
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - name: Run the sanctioned provisioning script
+        env:
+          PADDLE_ENV: ${{ inputs.paddle_env }}
+          PADDLE_API_KEY: ${{ inputs.paddle_env == 'live' && secrets.PADDLE_LIVE_API_KEY || secrets.PADDLE_SANDBOX_API_KEY }}
+          DATABASE_URL: postgresql+asyncpg://placeholder/placeholder
+          DATABASE_URL_SYNC: postgresql+psycopg2://placeholder/placeholder
+          JWT_AGENT_SECRET: ci-paddle-align-agent
+          JWT_EXPAT_SECRET: ci-paddle-align-expat
+          JWT_REFRESH_SECRET: ci-paddle-align-refresh
+        run: |
+          FLAG="--${{ inputs.mode }}"
+          if [ "${{ inputs.mode }}" = "dry-run" ]; then FLAG=""; fi
+          uv run python scripts/provision_paddle_catalog.py $FLAG

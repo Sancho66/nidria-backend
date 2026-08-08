@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.billing.catalog_provisioning import (  # noqa: E402
+    align_quantity_bounds,
     align_tax_mode,
     provision_catalog,
     provision_webhook_destination,
@@ -39,8 +40,19 @@ async def main() -> int:
         action="store_true",
         help=(
             "PATCH ONLY the tax_mode of divergent prices to the declared value "
-            "(the one sanctioned update — the explicit human decision the "
+            "(a sanctioned update — the explicit human decision the "
             "no-update rule reserves). Lists every patched price, touches "
+            "nothing else, then exits."
+        ),
+    )
+    parser.add_argument(
+        "--align-quantity",
+        action="store_true",
+        help=(
+            "PATCH ONLY the quantity bounds of divergent prices to the "
+            "declared values (the second sanctioned update — décision "
+            "05/08: the seat ceilings fell, existing seat prices must "
+            "accept the real quantity). Lists every patched price, touches "
             "nothing else, then exits."
         ),
     )
@@ -54,6 +66,18 @@ async def main() -> int:
         patched = await align_tax_mode(client=PaddleClient())
         if not patched:
             print("  nothing to align: every matched price already carries the declared tax_mode.")
+        for line in patched:
+            print(f"  PATCHED {line}")
+        return 0
+
+    if args.align_quantity:
+        print(f"Paddle env: {settings.paddle_env} | mode: ALIGN QUANTITY (patches this field only)")
+        patched = await align_quantity_bounds(client=PaddleClient())
+        if not patched:
+            print(
+                "  nothing to align: every matched price already carries "
+                "the declared quantity bounds."
+            )
         for line in patched:
             print(f"  PATCHED {line}")
         return 0

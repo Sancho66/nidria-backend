@@ -512,21 +512,20 @@ async def test_checkout_builds_transaction_with_agency_custom_data(
     assert kwargs["items"][0] == {"price_id": PRICE_IDS["cabinet_mensuel"], "quantity": 1}
 
 
-# --- plafonds par plan : jamais une quantity au-dela du cap ----------------------------
+# --- plafond tombe (decision 05/08) : la quantite suit, la sub morte ne pousse rien ----
 
 
-async def test_seat_sync_never_pushes_beyond_the_plan_cap(
+async def test_seat_sync_pushes_past_the_old_plan_cap(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
     make_agent: MakeAgent,
     system_roles: dict[str, Role],
-    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Defense in depth: the invitation seat gate blocks growth beyond the
-    cap, but even a DB-grown roster (support gesture, bug) must never push a
-    beyond-cap quantity to Paddle — alert, no call."""
+    """The ceiling fell (décision 05/08): a roster past the OLD cabinet cap
+    (5) pushes its real derived quantity — the seat is billed, never
+    blocked, never silently dropped."""
     from src.billing import paddle_client
     from src.billing.billing_manager import BillingManager
 
@@ -534,17 +533,44 @@ async def test_seat_sync_never_pushes_beyond_the_plan_cap(
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
     await _post(client, _envelope("subscription.activated", agency_id=aid))
-    # 6 internal members on a cabinet plan (cap 5) — grown OUTSIDE the gate.
+    # 6 internal members on a cabinet plan — past the old cap of 5.
     for _ in range(5):
         await make_agent(agency_id=aid, role=system_roles["member"])
 
-    with caplog.at_level("ERROR"):
-        await BillingManager(db_session).sync_seat_quantity(aid, increase=True)
+    await BillingManager(db_session).sync_seat_quantity(aid, increase=True)
+    push.assert_awaited_once()
+    kwargs = push.await_args.kwargs
+    seat_item = next(
+        i for i in kwargs["items"] if i["price_id"] == PRICE_IDS["seat_cabinet_mensuel"]
+    )
+    assert seat_item["quantity"] == 3  # 6 members − 3 included
+
+
+async def test_seat_sync_skips_a_dead_subscription(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """billing_status canceled = the subscription is DEAD: nothing to push
+    (a re-subscribe checkout re-derives the quantity from scratch)."""
+    from src.billing import paddle_client
+    from src.billing.billing_manager import BillingManager
+
+    aid = admin.agency_id
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    await _post(client, _envelope("subscription.canceled", agency_id=aid))
+    await make_agent(agency_id=aid, role=system_roles["member"])
+
+    await BillingManager(db_session).sync_seat_quantity(aid, increase=True)
     push.assert_not_awaited()
-    assert any("exceed" in r.message for r in caplog.records)
 
 
-async def test_checkout_refuses_a_plan_below_current_members(
+async def test_acceptance_past_the_old_cap_passes_and_pushes_quantity(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -553,12 +579,65 @@ async def test_checkout_refuses_a_plan_below_current_members(
     agent_headers: AuthHeaders,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The REAL flow across the old cap: at 5 members (the former cabinet
+    ceiling) the 6th invitation goes through, the acceptance lands, and the
+    Paddle quantity follows — the seat is billed, never offered."""
+    from src.billing import paddle_client
+
+    aid = admin.agency_id
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    await _post(client, _envelope("subscription.activated", agency_id=aid))
+    for _ in range(4):  # 5 members = the OLD cap
+        await make_agent(agency_id=aid, role=system_roles["member"])
+
+    invited = await client.post(
+        "/agencies/me/invitations",
+        headers=agent_headers(admin),
+        json={"email": "sixth@x.io", "role_id": str(system_roles["member"].id)},
+    )
+    assert invited.status_code == 201, invited.text
+    token = (
+        await db_session.execute(
+            select(AgentInvitation.token).where(AgentInvitation.email == "sixth@x.io")
+        )
+    ).scalar_one()
+    accepted = await client.post(
+        "/agencies/invitations/accept",
+        json={
+            "token": token,
+            "password": "pw12345678",
+            "first_name": "Sixth",
+            "last_name": "Member",
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    push.assert_awaited_once()
+    kwargs = push.await_args.kwargs
+    assert kwargs["proration_billing_mode"] == "prorated_immediately"
+    seat_item = next(
+        i for i in kwargs["items"] if i["price_id"] == PRICE_IDS["seat_cabinet_mensuel"]
+    )
+    assert seat_item["quantity"] == 3  # 6 members − 3 included
+
+
+async def test_checkout_bills_every_seat_past_included_without_a_ceiling(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The checkout guard fell with the ceilings: 6 members on a cabinet
+    checkout (old cap 5) open a transaction billing base + 3 extra seats."""
     from src.billing import paddle_client
 
     aid = admin.agency_id
     create = AsyncMock(return_value={"id": "txn_1"})
     monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", create)
-    for _ in range(5):  # 6 members > cabinet cap (5)
+    for _ in range(5):  # 6 members — past the old cabinet cap
         await make_agent(agency_id=aid, role=system_roles["member"])
 
     resp = await client.post(
@@ -566,16 +645,11 @@ async def test_checkout_refuses_a_plan_below_current_members(
         headers=agent_headers(admin),
         json={"plan": "cabinet", "billing_cycle": "mensuel"},
     )
-    assert resp.status_code == 409
-    assert resp.json()["code"] == "billing.plan_capacity_exceeded"
-    create.assert_not_awaited()
-    # The larger plan (cap 10) takes them fine.
-    ok = await client.post(
-        "/billing/checkout",
-        headers=agent_headers(admin),
-        json={"plan": "agence", "billing_cycle": "mensuel"},
-    )
-    assert ok.status_code == 200, ok.text
+    assert resp.status_code == 200, resp.text
+    create.assert_awaited_once()
+    items = create.await_args.kwargs["items"]
+    assert items[0] == {"price_id": PRICE_IDS["cabinet_mensuel"], "quantity": 1}
+    assert items[1] == {"price_id": PRICE_IDS["seat_cabinet_mensuel"], "quantity": 3}
 
 
 # --- gestion d'abonnement in-app (GET/cancel/resume/payment-method) --------------------

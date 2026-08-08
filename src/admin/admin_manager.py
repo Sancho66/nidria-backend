@@ -10,12 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.admin.admin_repository import AdminRepository
 from src.admin.admin_schema import AdminAgenciesResponse, AdminAgencyRow
 
-# Seat caps + the SINGLE onboarding-gesture derivation live with the agency
+# Seat rule + the SINGLE onboarding-gesture derivation live with the agency
 # logic — reuse, never duplicate, so the table can never drift.
 from src.agencies.agencies_manager import (
-    SEATS_MAX_BY_PLAN,
-    TRIAL_SEAT_LIMIT,
     onboarding_gestures,
+    seats_max_for,
 )
 from src.usage.usage_manager import classify_usage_state
 
@@ -99,7 +98,9 @@ class AdminManager:
             logo_url=f"/public/agencies/{r.slug}/logo" if r.logo_path else None,
             plan=r.plan,
             seats_used=r.seats_used,
-            seats_limit=SEATS_MAX_BY_PLAN.get(r.plan or "", TRIAL_SEAT_LIMIT),
+            # None = no ceiling (active subscription — décision 05/08); the
+            # Row carries the same four billing columns as Agency.
+            seats_limit=seats_max_for(r),
             is_founding=r.is_founding,
             is_internal=r.is_internal,
             lifetime_access=r.lifetime_access,

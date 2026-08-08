@@ -342,14 +342,16 @@ class RequirementStatus(StrEnum):
 
 
 class SubscriptionPlan(StrEnum):
-    """Product plans (grid nidria.com/#tarifs). Included seats and caps
-    live in the SEATS_*/PROVIDERS_* constants (agencies_manager); the
-    AMOUNTS live in Paddle (PRICE_IDS env) — never in code."""
+    """Product plans (grid nidria.com/#tarifs). Included seats and provider
+    caps live in the SEATS_*/PROVIDERS_* constants (agencies_manager); the
+    AMOUNTS live in Paddle (PRICE_IDS env) — never in code. Seats have NO
+    ceiling on an active subscription (décision Alex + Eric 05/08/2026):
+    extra seats are billed per seat, never blocked."""
 
-    CABINET = "cabinet"  # 3 seats included, cap 5; 10 providers included, cap 15
-    AGENCE = "agence"  # 6 seats included, cap 10; 15 providers included, cap 25
-    # Quote-based, manual billing (Eric's PATCH), NO caps: absent from the
-    # MAX dicts = unlimited. The self-serve checkout refuses it.
+    CABINET = "cabinet"  # 3 seats included; 10 providers included, cap 15
+    AGENCE = "agence"  # 6 seats included; 15 providers included, cap 25
+    # Quote-based, manual billing (Eric's PATCH), NO provider cap: absent
+    # from the MAX dicts = unlimited. The self-serve checkout refuses it.
     SUR_MESURE = "sur_mesure"
 
 

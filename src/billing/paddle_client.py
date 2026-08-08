@@ -37,7 +37,14 @@ class PaddleClient:
                 code="billing.not_configured",
             )
         self._base = _BASE_URLS[settings.paddle_env]
-        self._headers = {"Authorization": f"Bearer {settings.paddle_api_key}"}
+        self._headers = {
+            "Authorization": f"Bearer {settings.paddle_api_key}",
+            # Explicit UA: Paddle's Cloudflare now 429-blocks the default
+            # "python-httpx/x.y" agent (observed 2026-08-07 on sandbox —
+            # provisioning died on Access denied); an identified app agent
+            # passes. Applies to prod calls too, same edge.
+            "User-Agent": "nidria-backend/PaddleClient",
+        }
 
     async def _request(
         self, method: str, path: str, json: dict[str, Any] | None = None
@@ -143,9 +150,22 @@ class PaddleClient:
         )
 
     async def update_price_tax_mode(self, price_id: str, tax_mode: str) -> dict[str, Any]:
-        """PATCH ONLY tax_mode — the one price field the provisioning may
-        align (--align-tax-mode); amounts stay immutable by principle."""
+        """PATCH ONLY tax_mode — one of the two price fields the
+        provisioning may align (--align-tax-mode); amounts stay immutable
+        by principle."""
         return await self._request("PATCH", f"/prices/{price_id}", {"tax_mode": tax_mode})
+
+    async def update_price_quantity(
+        self, price_id: str, *, minimum: int, maximum: int
+    ) -> dict[str, Any]:
+        """PATCH ONLY the quantity bounds — the other sanctioned align
+        (--align-quantity, décision 05/08: the seat ceilings fell, the
+        already-provisioned seat prices must accept the real quantity)."""
+        return await self._request(
+            "PATCH",
+            f"/prices/{price_id}",
+            {"quantity": {"minimum": minimum, "maximum": maximum}},
+        )
 
     # --- discounts (referral program) -----------------------------------------------
 

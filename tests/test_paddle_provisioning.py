@@ -85,6 +85,14 @@ class FakePaddle:
         price["tax_mode"] = tax_mode
         return price
 
+    async def update_price_quantity(
+        self, price_id: str, *, minimum: int, maximum: int
+    ) -> dict[str, Any]:
+        self.patch_calls = getattr(self, "patch_calls", 0) + 1
+        price = next(p for p in self.prices if p["id"] == price_id)
+        price["quantity"] = {"minimum": minimum, "maximum": maximum}
+        return price
+
 
 async def test_first_run_creates_then_second_run_is_pure_noop() -> None:
     paddle = FakePaddle()
@@ -159,6 +167,37 @@ async def test_align_tax_mode_patches_only_that_field_and_lists_each() -> None:
 
     # Second run: nothing left to align.
     assert await align_tax_mode(client=paddle) == []  # type: ignore[arg-type]
+
+
+async def test_align_quantity_bounds_patches_only_quantity_and_lists_each() -> None:
+    """The SECOND sanctioned update (décision 05/08 — the seat ceilings
+    fell): only the 4 seat prices still carrying the OLD caps (2/7) are
+    patched to the declared bounds; amounts and tax_mode untouched."""
+    from src.billing.catalog_provisioning import align_quantity_bounds
+
+    OLD_SEAT_MAX = {"cabinet": 2, "agence": 7}
+    paddle = FakePaddle()
+    for index, spec in enumerate(PRICES):
+        remote = _remote_price(spec, f"pri_{index}")
+        if spec.stable_key.startswith("seat_"):
+            plan = spec.stable_key.split("_")[1]
+            remote["quantity"] = {"minimum": 1, "maximum": OLD_SEAT_MAX[plan]}
+        paddle.prices.append(remote)
+    before_amounts = [p["unit_price"]["amount"] for p in paddle.prices]
+
+    patched = await align_quantity_bounds(client=paddle)  # type: ignore[arg-type]
+    assert len(patched) == 4  # the seat prices only; conform bases untouched
+    assert all("quantity" in line for line in patched)
+    for spec in PRICES:
+        remote = next(p for p in paddle.prices if p["custom_data"]["stable_key"] == spec.stable_key)
+        assert remote["quantity"] == {"minimum": spec.quantity_min, "maximum": spec.quantity_max}
+    # ONLY quantity moved: amounts and tax_mode untouched, no create.
+    assert [p["unit_price"]["amount"] for p in paddle.prices] == before_amounts
+    assert all(p["tax_mode"] == "external" for p in paddle.prices)
+    assert paddle.create_calls == 0
+
+    # Second run: nothing left to align.
+    assert await align_quantity_bounds(client=paddle) == []  # type: ignore[arg-type]
 
 
 async def test_dry_run_writes_nothing() -> None:

@@ -180,18 +180,12 @@ class BillingManager:
                 code="billing.not_configured",
             )
         # Seats are DERIVED from the real member count — the checkout charges
-        # the base plan + the seats already beyond the included ones.
-        from src.agencies.agencies_manager import SEATS_MAX_BY_PLAN, AgenciesManager
+        # the base plan + the seats already beyond the included ones. No plan
+        # ceiling (décision 05/08): whatever the roster size, every seat past
+        # the included tier is billed, never blocked and never offered.
+        from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        # Plan cap guard (Cabinet 5, Agence 10): never open a checkout that
-        # would bill more members than the chosen plan allows.
-        if usage.members > SEATS_MAX_BY_PLAN[plan]:
-            raise ConflictError(
-                f"The {plan} plan is capped at {SEATS_MAX_BY_PLAN[plan]} members; "
-                f"this agency has {usage.members}.",
-                code="billing.plan_capacity_exceeded",
-            )
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:
             items.append({"price_id": seat_price, "quantity": usage.billed})
@@ -230,18 +224,12 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        # Plan cap guard (defense in depth — the invitation seat gate already
-        # blocks growth beyond the cap): NEVER push a quantity implying more
-        # members than the plan allows; alert instead. usage.max None =
-        # sur_mesure (no cap) — a sur_mesure agency is manual-billed and
-        # never reaches this paddle path anyway, but stay type-honest.
-        if usage.max is not None and usage.members > usage.max:
-            logger.error(
-                "ALERT paddle seat sync for %s: %s members exceed the %s-seat cap — no push",
-                agency.slug,
-                usage.members,
-                usage.max,
-            )
+        # A live subscription has NO seat ceiling (décision 05/08), so
+        # usage.max is None on every pushable agency. max still set here =
+        # the paddle subscription is DEAD (canceled): nothing to push — a
+        # re-subscribe checkout re-derives the quantity from scratch.
+        if usage.max is not None:
+            logger.info("paddle seat sync skipped for %s: subscription inactive", agency.slug)
             return
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:

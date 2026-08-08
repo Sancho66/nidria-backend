@@ -1,13 +1,16 @@
-"""Subscription model (structure F, pricing Eric 2026-07-07).
+"""Subscription model (structure F, pricing Eric 2026-07-07; seat
+ceilings dropped for active subscriptions, décision Alex + Eric
+05/08/2026).
 
-Covers: (a) internal invitation BLOCKED at the plan cap
-(subscription.seat_limit) but ALLOWED between included+offered and the
-cap (manual billing: the app never blocks paid usage), externals never
-gated; (b) an unconverted agency (trial) is capped at 3 members with
-the same code; (c) the superadmin PATCH poses the conversion (plan,
-derived seat price, converted_at, agency.converted event); (d) the
-agency settings expose the read-only subscription block; (e) a
-converted agency leaves the trial-nurture scope even with
+Covers: (a) an ACTIVE subscription has NO seat ceiling — invitations
+pass beyond the old plan caps, every seat past included+offered is
+billed, seats.max serves null; without an active subscription the
+3-seat trial limit holds (the seats_max_for facts table); (b) an
+unconverted agency (trial) is capped at 3 members
+(subscription.seat_limit); (c) the superadmin PATCH poses the
+conversion (plan, derived seat price, converted_at, agency.converted
+event); (d) the agency settings expose the read-only subscription
+block; (e) a converted agency leaves the trial-nurture scope even with
 trial_ends_at still set."""
 
 import uuid
@@ -95,10 +98,10 @@ async def test_trial_agency_is_capped_at_three_members(
     assert "trial" in body["detail"].lower()
 
 
-# --- (a) plan cap: blocked past max, allowed between included and max -----------------
+# --- (a) active subscription: NO seat ceiling (décision 05/08) ------------------------
 
 
-async def test_plan_cap_blocks_past_max_and_allows_billed_seats(
+async def test_active_subscription_has_no_seat_ceiling(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -106,6 +109,9 @@ async def test_plan_cap_blocks_past_max_and_allows_billed_seats(
     agent_headers: AuthHeaders,
     system_roles: dict[str, Role],
 ) -> None:
+    """The plan caps fell: a converted agency invites past the old cabinet
+    cap (5) — the seat past included is BILLED (usage.billed grows), never
+    blocked; seats.max serves null (the front shows "illimité")."""
     headers = agent_headers(admin)
     member_role = system_roles["member"]
 
@@ -115,45 +121,51 @@ async def test_plan_cap_blocks_past_max_and_allows_billed_seats(
         json={"plan": "cabinet", "billing_cycle": "mensuel"},
     )
     assert converted.status_code == 200, converted.text
+    assert converted.json()["seats"]["max"] is None
 
-    # 4 members (past the 3 included): invitation of the 5th ALLOWED -
-    # billing is manual, the app never blocks paid usage under the cap.
-    await _add_members(db_session, admin.agency_id, member_role, 3)
-    fifth = await _invite(client, headers, member_role, "fifth@example.com")
-    assert fifth.status_code == 201, fifth.text
+    # 5 members = the OLD cabinet cap: the 6th invitation now goes THROUGH.
+    await _add_members(db_session, admin.agency_id, member_role, 4)
+    sixth = await _invite(client, headers, member_role, "sixth@example.com")
+    assert sixth.status_code == 201, sixth.text
 
-    # 5 members = the cabinet cap: the next invitation is blocked.
-    await _add_members(db_session, admin.agency_id, member_role, 1)
-    blocked = await _invite(client, headers, member_role, "sixth@example.com")
-    assert blocked.status_code == 409, blocked.text
-    body = blocked.json()
-    assert body["code"] == "subscription.seat_limit"
-    assert body["params"] == {"members": 5, "max": 5, "plan": "cabinet"}
+    # Far past any old cap (12 members > the old agence cap of 10): still open.
+    await _add_members(db_session, admin.agency_id, member_role, 7)
+    thirteenth = await _invite(client, headers, member_role, "m13@example.com")
+    assert thirteenth.status_code == 201, thirteenth.text
 
-    # Externals never consume a seat: the external invitation still goes
-    # through at the cap.
-    external_role = next(
-        iter(
-            [
-                r
-                for r in (
-                    await db_session.execute(select(Role).where(Role.is_external.is_(True)))
-                ).scalars()
-            ]
-        ),
-        None,
-    )
-    if external_role is not None:
-        provider = await client.post(
-            "/agencies/me/external-invitations",
-            headers=headers,
-            json={
-                "name": "Avocat",
-                "email": "avocat@example.com",
-                "role_id": str(external_role.id),
-            },
+    # The seat is billed, never offered: billed = 12 − 3 included.
+    seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
+    assert seats == {"members": 12, "included": 3, "offered": 0, "billed": 9, "max": None}
+
+
+def test_seats_max_facts_table() -> None:
+    """The rule in one table: NO active subscription (trial, no plan, a
+    conversion date without a plan, dead paddle sub) → the 3-seat trial
+    limit; active subscription (manual or paddle, past_due included) →
+    None, no ceiling."""
+    from types import SimpleNamespace
+
+    from src.agencies.agencies_manager import seats_max_for
+
+    def facts(plan=None, converted=None, mode="manual", status=None):
+        return SimpleNamespace(
+            plan=plan, converted_at=converted, billing_mode=mode, billing_status=status
         )
-        assert provider.status_code == 201, provider.text
+
+    now = datetime.now(UTC)
+    assert seats_max_for(facts()) == 3  # trial / no plan / lifetime sans plan
+    assert seats_max_for(facts(converted=now)) == 3  # conversion date, no plan
+    assert seats_max_for(facts(plan="cabinet", converted=now)) is None  # manual conversion
+    assert seats_max_for(facts(plan="agence", converted=now, mode="paddle", status="active")) is (
+        None
+    )
+    assert (
+        seats_max_for(facts(plan="agence", converted=now, mode="paddle", status="past_due")) is None
+    )  # grace window: the billing lock's concern, not the seat rule's
+    assert (
+        seats_max_for(facts(plan="cabinet", converted=now, mode="paddle", status="canceled")) == 3
+    )  # dead sub: back to the trial limit
+    assert seats_max_for(facts(plan="sur_mesure", converted=now)) is None
 
 
 # --- (c) superadmin PATCH poses the conversion -----------------------------------------
@@ -182,7 +194,8 @@ async def test_superadmin_patch_poses_the_conversion(
     assert block["plan"] == "agence"
     assert block["billing_cycle"] == "annuel"
     assert block["is_founding"] is True
-    assert block["seats"] == {"members": 1, "included": 6, "offered": 2, "billed": 0, "max": 10}
+    # max: None = no ceiling — the subscription is active (décision 05/08).
+    assert block["seats"] == {"members": 1, "included": 6, "offered": 2, "billed": 0, "max": None}
 
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
@@ -240,7 +253,7 @@ async def test_settings_expose_the_subscription_block(
     )
     after = (await client.get("/agencies/me", headers=agent_headers(admin))).json()
     assert after["subscription"]["plan"] == "cabinet"
-    assert after["subscription"]["seats"]["max"] == 5
+    assert after["subscription"]["seats"]["max"] is None  # active sub: no ceiling
 
 
 # --- (e) converted agencies leave the nurture scope --------------------------------------
@@ -324,7 +337,7 @@ async def test_agence_plan_includes_six_seats(
     seats = (await client.get("/agencies/me", headers=agent_headers(admin))).json()["subscription"][
         "seats"
     ]
-    assert seats == {"members": 5, "included": 6, "offered": 0, "billed": 0, "max": 10}
+    assert seats == {"members": 5, "included": 6, "offered": 0, "billed": 0, "max": None}
 
     # 7 members: the 7th is the first billed one.
     await _add_members(db_session, admin.agency_id, system_roles["member"], 2)

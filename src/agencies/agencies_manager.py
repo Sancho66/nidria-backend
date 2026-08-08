@@ -6,6 +6,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -71,19 +72,19 @@ logger = logging.getLogger(__name__)
 
 _EMAIL_TAKEN = "This email already has an agent account."
 
-# Structure F. Seats bill from the 4th; the caps are hard PRODUCT limits
-# per plan (not prices — they stay in code). An unconverted agency (trial)
-# is capped at the 3 included seats of the future base plan.
+# Structure F. Seats bill from the 4th. Décision Alex + Eric (05/08/2026):
+# the per-plan seat CEILINGS fell — an ACTIVE subscription is never capped,
+# the seat past the included tier is BILLED (Paddle quantity sync, or
+# Eric's manual invoice), never blocked and never offered by accident.
+# Without an active subscription (trial, no plan, lifetime without plan,
+# dead paddle sub) the 3-seat trial limit holds unchanged.
 # SEAT_PRICES_EUR feeds the DEPRECATED informational seat_price_eur column
 # only — la vérité tarifaire vit chez Paddle (PRICE_IDS).
 SEAT_PRICES_EUR = {SubscriptionPlan.CABINET.value: 35, SubscriptionPlan.AGENCE.value: 25}
 # Grid nidria.com/#tarifs (2026-07). THE single truth for included seats —
 # the former agency.seats_included column is DROPPED (a per-row copy of a
-# plan property was a second truth waiting to diverge). Semantics of the
-# MAX dicts: a CONVERTED plan absent from them (sur_mesure) = NO cap
-# (unlimited, gates skip); no plan at all = the trial limits.
+# plan property was a second truth waiting to diverge).
 SEATS_INCLUDED_BY_PLAN = {SubscriptionPlan.CABINET.value: 3, SubscriptionPlan.AGENCE.value: 6}
-SEATS_MAX_BY_PLAN = {SubscriptionPlan.CABINET.value: 5, SubscriptionPlan.AGENCE.value: 10}
 TRIAL_SEAT_LIMIT = 3
 TRIAL_SEATS_INCLUDED = 3
 # Providers WITH access (external agents, active + invited). The directory
@@ -96,12 +97,33 @@ TRIAL_PROVIDER_LIMIT = 10
 TRIAL_PROVIDERS_INCLUDED = 10
 
 
-def seats_max_for(plan: str | None) -> int | None:
-    """None = unlimited (a converted plan absent from the MAX dict:
-    sur_mesure); no plan = trial limit."""
-    if plan == SubscriptionPlan.SUR_MESURE.value:
+class BillingFacts(Protocol):
+    """The four columns the seat rule reads — satisfied by an Agency
+    instance AND by the admin-listing Row (same column names)."""
+
+    plan: str | None
+    converted_at: datetime | None
+    billing_mode: str
+    billing_status: str | None
+
+
+def subscription_is_active(agency: BillingFacts) -> bool:
+    """Converted with a plan, and the (paddle) subscription is not dead.
+    Manual conversions count: their extra seats are billed by Eric's hand.
+    past_due stays active — the grace window is the billing lock's concern,
+    not the seat rule's (beyond grace the agency is read-only anyway)."""
+    if agency.plan is None or agency.converted_at is None:
+        return False
+    return not (agency.billing_mode == "paddle" and agency.billing_status == "canceled")
+
+
+def seats_max_for(agency: BillingFacts) -> int | None:
+    """None = NO seat ceiling (décision Alex + Eric 05/08/2026): an active
+    subscription is never capped — the seat past included+offered is billed,
+    never blocked. No active subscription = the 3-seat trial limit."""
+    if subscription_is_active(agency):
         return None
-    return SEATS_MAX_BY_PLAN.get(plan or "", TRIAL_SEAT_LIMIT)
+    return TRIAL_SEAT_LIMIT
 
 
 def providers_max_for(plan: str | None) -> int | None:
@@ -519,7 +541,7 @@ class AgenciesManager:
             included=included,
             offered=agency.founding_free_seats,
             billed=max(0, members - included - agency.founding_free_seats),
-            max=seats_max_for(agency.plan),
+            max=seats_max_for(agency),
         )
 
     async def _providers_with_access(self, agency_id: uuid.UUID) -> int:
@@ -1021,7 +1043,7 @@ class AgenciesManager:
             usage = await self.seat_usage(agency)
             if usage.max is not None and usage.members >= usage.max:
                 raise ConflictError(
-                    f"The plan is capped at {usage.max} members.",
+                    f"Without an active subscription the team is capped at {usage.max} members.",
                     code="subscription.seat_limit",
                     params={"members": usage.members, "max": usage.max, "plan": agency.plan},
                 )
@@ -1145,22 +1167,27 @@ class AgenciesManager:
             raise ValidationError("This endpoint requires one of the external provider roles.")
         if not external and role.is_external:
             raise ValidationError("External roles are invited via the external-invitation flow.")
-        # SEAT GATE: an INTERNAL invitation is blocked only at the plan's
-        # hard cap (5 cabinet, 10 agence; 3 on trial). Between
-        # included+offered and the cap the invitation goes THROUGH: the
-        # app never blocks paid usage, it bills it. Externals never
-        # consume a seat. Members are counted, not pending invitations —
-        # the cap RE-CHECKS AT ACCEPTANCE (invitation-hygiene lot), so N
-        # pending invitations on one slot can never overshoot the cap.
+        # SEAT GATE (décision 05/08): an ACTIVE subscription is never
+        # capped — usage.max is None, the gate skips, and the extra seat
+        # is BILLED (Paddle quantity sync after acceptance, or Eric's
+        # manual invoice). The gate only fires WITHOUT an active
+        # subscription (trial, no plan, dead paddle sub): 3 members.
+        # Externals never consume a seat. Members are counted, not
+        # pending invitations — the limit RE-CHECKS AT ACCEPTANCE
+        # (invitation-hygiene lot), so N pending invitations on one slot
+        # can never overshoot it.
         if not external:
             agency = await self.get_my_agency(agent)
             usage = await self.seat_usage(agency)
-            # usage.max is None = sur_mesure = no cap (gate skips).
             if usage.max is not None and usage.members >= usage.max:
                 message = (
-                    f"The {agency.plan} plan is capped at {usage.max} members."
+                    "The subscription is inactive; the team is capped at "
+                    f"{usage.max} members until it is resumed."
                     if agency.plan
-                    else "The trial is capped at 3 members; converting to a plan unlocks more."
+                    else (
+                        "The trial is capped at 3 members; subscribing removes "
+                        "the ceiling (extra seats are billed per seat)."
+                    )
                 )
                 raise ConflictError(
                     message,
@@ -1348,8 +1375,8 @@ class AgenciesManager:
         assert agency is not None
         capacity_error = ConflictError(
             "This invitation cannot be accepted right now: the agency has "
-            "reached its plan capacity. The invitation stays valid — retry "
-            "once a seat frees up or the plan is upgraded.",
+            "reached its member capacity. The invitation stays valid — retry "
+            "once a seat frees up or the agency subscribes.",
             code="invitation.capacity_reached",
             params={"plan": agency.plan},
         )

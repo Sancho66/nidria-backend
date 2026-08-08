@@ -105,8 +105,10 @@ class AiUsageResponse(BaseModel):
 class SeatUsage(BaseModel):
     """Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`
     starts past included (3 cabinet / 6 agence) + founding offered;
-    `max` = 5 (cabinet), 10 (agence), 3 on trial — and None for
-    sur_mesure: NO cap, the front displays "illimité", never a blank."""
+    `max` = None on any ACTIVE subscription — NO ceiling (décision Alex +
+    Eric 05/08/2026), extra seats are billed per seat and the front
+    displays "illimité", never a blank. Without an active subscription
+    (trial, no plan, dead paddle sub): 3."""
 
     members: int  # active internal agents (externals never consume a seat)
     included: int

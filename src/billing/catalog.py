@@ -16,9 +16,14 @@ founding freeze depends on it): the script refuses divergences, always."""
 
 from dataclasses import dataclass
 
-# Plan caps (product limits, mirrored from agencies_manager.SEATS_MAX_BY_PLAN
-# minus the 3 included seats): the max quantity a seat price may carry.
-_SEAT_MAX = {"cabinet": 2, "agence": 7}  # 5−3 and 10−3
+# Technical Paddle hygiene bound on the seat-item quantity — NOT a product
+# cap: the seat ceilings fell for active subscriptions (décision Alex +
+# Eric 05/08/2026), the quantity is derived from the real member count and
+# every extra seat is billed. 999 is a sanity guard against an absurd push,
+# far above any real roster. (Was 2/7 = the old per-plan caps minus the 3
+# included; raising it on an already-provisioned env is the sanctioned
+# --align-quantity update of provision_paddle_catalog.py.)
+_SEAT_MAX = {"cabinet": 999, "agence": 999}
 
 PRODUCTS: dict[str, str] = {
     "cabinet": "Nidria Cabinet",

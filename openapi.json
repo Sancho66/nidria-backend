@@ -18355,7 +18355,14 @@
             "title": "Seats Used"
           },
           "seats_limit": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Seats Limit"
           },
           "is_founding": {
@@ -34293,7 +34300,7 @@
           "max"
         ],
         "title": "SeatUsage",
-        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = 5 (cabinet), 10 (agence), 3 on trial — and None for\nsur_mesure: NO cap, the front displays \"illimité\", never a blank."
+        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = None on any ACTIVE subscription — NO ceiling (décision Alex +\nEric 05/08/2026), extra seats are billed per seat and the front\ndisplays \"illimité\", never a blank. Without an active subscription\n(trial, no plan, dead paddle sub): 3."
       },
       "SectionCreateRequest": {
         "properties": {
@@ -35602,7 +35609,7 @@
           "sur_mesure"
         ],
         "title": "SubscriptionPlan",
-        "description": "Product plans (grid nidria.com/#tarifs). Included seats and caps\nlive in the SEATS_*/PROVIDERS_* constants (agencies_manager); the\nAMOUNTS live in Paddle (PRICE_IDS env) — never in code."
+        "description": "Product plans (grid nidria.com/#tarifs). Included seats and provider\ncaps live in the SEATS_*/PROVIDERS_* constants (agencies_manager); the\nAMOUNTS live in Paddle (PRICE_IDS env) — never in code. Seats have NO\nceiling on an active subscription (décision Alex + Eric 05/08/2026):\nextra seats are billed per seat, never blocked."
       },
       "SubscriptionStateResponse": {
         "properties": {

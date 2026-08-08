@@ -26,7 +26,8 @@ class AdminAgencyRow(BaseModel):
     logo_url: str | None
     plan: str | None
     seats_used: int
-    seats_limit: int
+    # None = no ceiling (active subscription — décision 05/08) ; 3 sinon.
+    seats_limit: int | None
     is_founding: bool
     # Badge "Interne" (agence maison, hors facturation) — jamais un client.
     is_internal: bool
