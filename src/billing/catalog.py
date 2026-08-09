@@ -23,9 +23,10 @@ from dataclasses import dataclass
 # far above any real roster. (Was 2/7 = the old per-plan caps minus the 3
 # included; raising it on an already-provisioned env is the sanctioned
 # --align-quantity update of provision_paddle_catalog.py.)
-_SEAT_MAX = {"cabinet": 999, "agence": 999}
+_SEAT_MAX = {"independant": 999, "cabinet": 999, "agence": 999}
 
 PRODUCTS: dict[str, str] = {
+    "independant": "Nidria Indépendant",
     "cabinet": "Nidria Cabinet",
     "agence": "Nidria Agence",
     # Reader seats (lot lecteur 08/08): ONE plan-transverse product — the
@@ -95,6 +96,14 @@ def _reader_seat(cycle_key: str, interval: str, cents: int, label: str) -> Price
 # NAMES say it because a name can appear on a client invoice (micro-lot
 # 08/08: the Agence labels wrongly said 3; align with --align-names).
 PRICES: tuple[PriceSpec, ...] = (
+    # Indépendant (lot 09/08, décision Alex — mot d'Eric requis avant le
+    # live) : 49/mois, 490/an (2 mois offerts), 1 siège gestionnaire
+    # inclus ; le siège additionnel à 50 (500/an) pour qu'Indépendant + 1
+    # = Cabinet = 99 exactement — la marche est une proposition.
+    _base("independant", "mensuel", "month", 4_900, "Indépendant — mensuel (1 siège inclus)"),
+    _base("independant", "annuel", "year", 49_000, "Indépendant — annuel (1 siège inclus)"),
+    _seat("independant", "mensuel", "month", 5_000, "Indépendant — siège supplémentaire (mensuel)"),
+    _seat("independant", "annuel", "year", 50_000, "Indépendant — siège supplémentaire (annuel)"),
     _base("cabinet", "mensuel", "month", 9_900, "Cabinet — mensuel (3 sièges inclus)"),
     _base("cabinet", "annuel", "year", 99_000, "Cabinet — annuel (3 sièges inclus)"),
     _base("agence", "mensuel", "month", 12_900, "Agence — mensuel (6 sièges inclus)"),

@@ -133,6 +133,7 @@ async def test_nicolas_case_exact_figures(
         # shows the composition and the phrase, never a wall.
         "charged_today_estimate": None,
         "next_cycle_date": None,
+        "upgrade_alternative": None,  # cabinet agency: no step to propose
     }
 
 

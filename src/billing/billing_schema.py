@@ -58,6 +58,9 @@ class CatalogPrices(BaseModel):
     ids, a new env deploy, a fresh cache by construction."""
 
     currency: str
+    # None until the Indépendant SKUs are provisioned on this environment
+    # (lot 09/08) — the front keeps its skeleton, same doctrine as reader.
+    independant: PlanCatalogPrices | None = None
     cabinet: PlanCatalogPrices
     agence: PlanCatalogPrices
     # None until the reader SKUs are provisioned on this environment.
@@ -193,6 +196,25 @@ class AnnualEquivalent(BaseModel):
         return str(value)
 
 
+class UpgradeAlternative(BaseModel):
+    """The PROPOSED step up (lot independant 09/08) — never a wall: when an
+    Indépendant agency prices a manager beyond its single included seat,
+    the quote serves BOTH paths' full recurring, computed back-side — the
+    front only displays. `stay` = keep the plan and pay the extra seats
+    (49 + 50×n); `switch` = the target plan with the same roster (99, 3
+    included). Both totals include the reader pool (identical on both
+    sides, so the comparison stays apples-to-apples)."""
+
+    plan: str
+    included_managers: int
+    stay_total_recurring: Decimal
+    switch_total_recurring: Decimal
+
+    @field_serializer("stay_total_recurring", "switch_total_recurring")
+    def _ser_money(self, value: Decimal) -> str:
+        return str(value)
+
+
 class SeatQuoteResponse(BaseModel):
     """The composition dry-run (panier d'invitations): what the requested
     seats consume (included tier, free pool seats) and what they add to the
@@ -221,6 +243,9 @@ class SeatQuoteResponse(BaseModel):
     # When the recurring lands: the subscription's next_billed_at (same
     # cached read). None on manual agencies.
     next_cycle_date: datetime | None = None
+    # The proposed step up (Indépendant pricing a 2nd+ manager): both
+    # paths chiffrés — None everywhere else.
+    upgrade_alternative: UpgradeAlternative | None = None
 
     @field_serializer("total_recurring_add")
     def _ser_money(self, value: Decimal) -> str:

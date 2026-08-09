@@ -141,7 +141,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list", action="store_true", help="Inventory only (read-only).")
     parser.add_argument("--subscription")
-    parser.add_argument("--plan", choices=["cabinet", "agence"])
+    parser.add_argument("--plan", choices=["independant", "cabinet", "agence"])
     parser.add_argument("--cycle", choices=["mensuel", "annuel"])
     parser.add_argument("--quantity", type=int)
     parser.add_argument("--reader-quantity", type=int, default=0)

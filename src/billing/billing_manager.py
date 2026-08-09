@@ -35,6 +35,7 @@ from src.billing.billing_schema import (
     SeatQuoteResponse,
     SubscriptionCancelResponse,
     SubscriptionStateResponse,
+    UpgradeAlternative,
     WebhookAck,
 )
 from src.billing.catalog import CURRENCY
@@ -238,17 +239,27 @@ class BillingManager:
                 "Paddle billing is not configured on this environment.",
                 code="billing.not_configured",
             )
-        # Seats are DERIVED from the real member count — the checkout charges
-        # the base plan + the seats already beyond the included ones. No plan
-        # ceiling (décision 05/08): whatever the roster size, every seat past
-        # the included tier is billed, never blocked and never offered.
-        from src.agencies.agencies_manager import AgenciesManager
+        # Seats are DERIVED from the real committed count (roster + attente)
+        # — the checkout charges the base plan + the seats beyond the
+        # included tier OF THE PLAN BEING BOUGHT (lot independant 09/08: the
+        # trial row has no plan, so seat_usage.billed counts against the
+        # trial tier of 3 — harmless while every plan included ≥ 3, WRONG
+        # for Indépendant's single seat: a 3-seat trial converting there
+        # must be billed 2 seats at entry, announced by the conversion
+        # quote). No plan ceiling (décision 05/08): billed, never blocked.
+        from src.agencies.agencies_manager import (
+            SEATS_INCLUDED_BY_PLAN,
+            TRIAL_SEATS_INCLUDED,
+            AgenciesManager,
+        )
 
         agencies = AgenciesManager(self.db)
         usage = await agencies.seat_usage(agency)
+        target_included = SEATS_INCLUDED_BY_PLAN.get(plan, TRIAL_SEATS_INCLUDED)
+        billed_target = max(0, usage.managers - target_included - agency.founding_free_seats)
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
-        if usage.billed > 0:
-            items.append({"price_id": seat_price, "quantity": usage.billed})
+        if billed_target > 0:
+            items.append({"price_id": seat_price, "quantity": billed_target})
         # Reader seats (lot lecteur, base unifiée 08/08): the checkout
         # adopts max(pool, COMMITTED readers — active + pending reader
         # invitations): a trial reader is billed from day one, an
@@ -722,7 +733,7 @@ class BillingManager:
                 currency = code
                 break
         catalog: dict[str, Any] = {"currency": currency}
-        for plan in ("cabinet", "agence"):
+        for plan in ("independant", "cabinet", "agence"):
             cycles: dict[str, Any] = {}
             for cycle_out, cycle_key in (("monthly", "mensuel"), ("annual", "annuel")):
                 base = _unit(f"{plan}_{cycle_key}")
@@ -1279,6 +1290,41 @@ class BillingManager:
                     "quote debit-today estimate skipped for %s: subscription unreadable",
                     agency.slug,
                 )
+        # THE PROPOSED STEP UP (lot independant): an Indépendant agency
+        # pricing a manager beyond its single included seat gets BOTH
+        # paths chiffrés — stay (49 + 50×n) vs Cabinet (99, 3 included),
+        # readers identical on both sides. A proposal, never a wall.
+        upgrade = None
+        if (
+            agency.plan == SubscriptionPlan.INDEPENDANT.value
+            and to_bill > 0
+            and f"seat_cabinet_{cycle}" in _DECLARED_CENTS
+        ):
+            cabinet = SubscriptionPlan.CABINET.value
+            cab_included = 3
+            from src.agencies.agencies_manager import SEATS_INCLUDED_BY_PLAN
+
+            cab_included = SEATS_INCLUDED_BY_PLAN[cabinet]
+            managers_after = usage.managers + managers_add
+            reader_part = reader_cents * (usage.reader.purchased + to_buy)
+            offered = agency.founding_free_seats
+            stay_cents = (
+                _DECLARED_CENTS[f"independant_{cycle}"]
+                + seat_cents * max(0, managers_after - usage.included - offered)
+                + reader_part
+            )
+            switch_cents = (
+                _DECLARED_CENTS[f"cabinet_{cycle}"]
+                + _DECLARED_CENTS[f"seat_cabinet_{cycle}"]
+                * max(0, managers_after - cab_included - offered)
+                + reader_part
+            )
+            upgrade = UpgradeAlternative(
+                plan=cabinet,
+                included_managers=cab_included,
+                stay_total_recurring=_eur(stay_cents),
+                switch_total_recurring=_eur(switch_cents),
+            )
         return SeatQuoteResponse(
             currency=CURRENCY,
             billing_cycle=cycle,
@@ -1303,4 +1349,5 @@ class BillingManager:
             annual_equivalent=annual,
             charged_today_estimate=charged_today,
             next_cycle_date=next_cycle,
+            upgrade_alternative=upgrade,
         )

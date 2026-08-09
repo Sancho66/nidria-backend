@@ -366,6 +366,11 @@ class SubscriptionPlan(StrEnum):
     ceiling on an active subscription (décision Alex + Eric 05/08/2026):
     extra seats are billed per seat, never blocked."""
 
+    # 1 manager seat included (extra manager: 50 €/mois — priced so that
+    # Indépendant + 1 = Cabinet exactly: the step up is a PROPOSAL, never
+    # a wall); readers unlimited at the transverse SKU; providers at
+    # Cabinet parity (décision de cadrage 09/08, à confirmer au GO).
+    INDEPENDANT = "independant"
     CABINET = "cabinet"  # 3 seats included; 10 providers included, cap 15
     AGENCE = "agence"  # 6 seats included; 15 providers included, cap 25
     # Quote-based, manual billing (Eric's PATCH), NO provider cap: absent

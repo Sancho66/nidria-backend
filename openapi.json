@@ -22060,6 +22060,16 @@
             "type": "string",
             "title": "Currency"
           },
+          "independant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCatalogPrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "cabinet": {
             "$ref": "#/components/schemas/PlanCatalogPrices"
           },
@@ -34767,6 +34777,16 @@
               }
             ],
             "title": "Next Cycle Date"
+          },
+          "upgrade_alternative": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpgradeAlternative"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -36155,6 +36175,7 @@
       "SubscriptionPlan": {
         "type": "string",
         "enum": [
+          "independant",
           "cabinet",
           "agence",
           "sur_mesure"
@@ -37393,6 +37414,35 @@
         ],
         "title": "UnsectionedFields",
         "description": "The NULL bucket — fields not assigned to any section. Same\nsegmented shape, no section identity."
+      },
+      "UpgradeAlternative": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "included_managers": {
+            "type": "integer",
+            "title": "Included Managers"
+          },
+          "stay_total_recurring": {
+            "type": "string",
+            "title": "Stay Total Recurring"
+          },
+          "switch_total_recurring": {
+            "type": "string",
+            "title": "Switch Total Recurring"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "included_managers",
+          "stay_total_recurring",
+          "switch_total_recurring"
+        ],
+        "title": "UpgradeAlternative",
+        "description": "The PROPOSED step up (lot independant 09/08) — never a wall: when an\nIndépendant agency prices a manager beyond its single included seat,\nthe quote serves BOTH paths' full recurring, computed back-side — the\nfront only displays. `stay` = keep the plan and pay the extra seats\n(49 + 50×n); `switch` = the target plan with the same roster (99, 3\nincluded). Both totals include the reader pool (identical on both\nsides, so the comparison stays apples-to-apples)."
       },
       "ValidationError": {
         "properties": {

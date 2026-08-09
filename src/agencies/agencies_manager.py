@@ -83,19 +83,38 @@ _EMAIL_TAKEN = "This email already has an agent account."
 # dead paddle sub) the 3-seat trial limit holds unchanged.
 # SEAT_PRICES_EUR feeds the DEPRECATED informational seat_price_eur column
 # only — la vérité tarifaire vit chez Paddle (PRICE_IDS).
-SEAT_PRICES_EUR = {SubscriptionPlan.CABINET.value: 35, SubscriptionPlan.AGENCE.value: 25}
+SEAT_PRICES_EUR = {
+    SubscriptionPlan.INDEPENDANT.value: 50,
+    SubscriptionPlan.CABINET.value: 35,
+    SubscriptionPlan.AGENCE.value: 25,
+}
 # Grid nidria.com/#tarifs (2026-07). THE single truth for included seats —
 # the former agency.seats_included column is DROPPED (a per-row copy of a
 # plan property was a second truth waiting to diverge).
-SEATS_INCLUDED_BY_PLAN = {SubscriptionPlan.CABINET.value: 3, SubscriptionPlan.AGENCE.value: 6}
+SEATS_INCLUDED_BY_PLAN = {
+    SubscriptionPlan.INDEPENDANT.value: 1,
+    SubscriptionPlan.CABINET.value: 3,
+    SubscriptionPlan.AGENCE.value: 6,
+}
 TRIAL_SEAT_LIMIT = 3
 TRIAL_SEATS_INCLUDED = 3
 # Providers WITH access (external agents, active + invited). The directory
 # (external_contact, no login) costs nothing. Phase 1: free up to the CAP,
 # blocked at the cap (409 pointing to sur-mesure); billing past the
 # included tier (5 EUR/month) is PHASE 2.
-PROVIDERS_INCLUDED_BY_PLAN = {SubscriptionPlan.CABINET.value: 10, SubscriptionPlan.AGENCE.value: 15}
-PROVIDERS_MAX_BY_PLAN = {SubscriptionPlan.CABINET.value: 15, SubscriptionPlan.AGENCE.value: 25}
+# Indépendant: Cabinet PARITY on providers (cadrage 09/08 « aucun
+# bridage artificiel, la seule différence est le siège » — à confirmer
+# au GO avec le tarif).
+PROVIDERS_INCLUDED_BY_PLAN = {
+    SubscriptionPlan.INDEPENDANT.value: 10,
+    SubscriptionPlan.CABINET.value: 10,
+    SubscriptionPlan.AGENCE.value: 15,
+}
+PROVIDERS_MAX_BY_PLAN = {
+    SubscriptionPlan.INDEPENDANT.value: 15,
+    SubscriptionPlan.CABINET.value: 15,
+    SubscriptionPlan.AGENCE.value: 25,
+}
 TRIAL_PROVIDER_LIMIT = 10
 TRIAL_PROVIDERS_INCLUDED = 10
 

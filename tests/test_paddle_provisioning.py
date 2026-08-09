@@ -115,7 +115,8 @@ async def test_first_run_creates_then_second_run_is_pure_noop() -> None:
     first = await provision_catalog(dry_run=False, client=paddle)  # type: ignore[arg-type]
     assert sorted(first.created_products) == sorted(PRODUCTS)
     assert sorted(first.created_prices) == sorted(s.stable_key for s in PRICES)
-    assert len(first.price_ids) == 10 and not first.divergences  # 8 + 2 reader (lot lecteur)
+    # 12 plan prices + 2 reader (independant joined 09/08)
+    assert len(first.price_ids) == 14 and not first.divergences
 
     calls_after_first = paddle.create_calls
     second = await provision_catalog(dry_run=False, client=paddle)  # type: ignore[arg-type]
@@ -175,7 +176,7 @@ async def test_align_tax_mode_patches_only_that_field_and_lists_each() -> None:
     before_amounts = [p["unit_price"]["amount"] for p in paddle.prices]
 
     patched = await align_tax_mode(client=paddle)  # type: ignore[arg-type]
-    assert len(patched) == 10 and all("-> external" in line for line in patched)
+    assert len(patched) == 14 and all("-> external" in line for line in patched)
     assert all(p["tax_mode"] == "external" for p in paddle.prices)
     # ONLY tax_mode moved: amounts (and everything else) untouched, no create.
     assert [p["unit_price"]["amount"] for p in paddle.prices] == before_amounts
@@ -195,16 +196,18 @@ async def test_align_quantity_bounds_patches_only_quantity_and_lists_each() -> N
     paddle = FakePaddle()
     for index, spec in enumerate(PRICES):
         remote = _remote_price(spec, f"pri_{index}")
-        # Only the PLAN seat prices ever carried the old caps; the reader
-        # prices (lot lecteur) are born with the declared bounds.
+        # Only the cabinet/agence seat prices ever carried the old caps;
+        # the reader (lot lecteur) and Indépendant (09/08) prices are born
+        # with the declared bounds.
         if spec.stable_key.startswith("seat_") and not spec.stable_key.startswith("seat_reader_"):
             plan = spec.stable_key.split("_")[1]
-            remote["quantity"] = {"minimum": 1, "maximum": OLD_SEAT_MAX[plan]}
+            if plan in OLD_SEAT_MAX:
+                remote["quantity"] = {"minimum": 1, "maximum": OLD_SEAT_MAX[plan]}
         paddle.prices.append(remote)
     before_amounts = [p["unit_price"]["amount"] for p in paddle.prices]
 
     patched = await align_quantity_bounds(client=paddle)  # type: ignore[arg-type]
-    assert len(patched) == 4  # the seat prices only; conform bases untouched
+    assert len(patched) == 4  # cabinet/agence seats only; conform rows untouched
     assert all("quantity" in line for line in patched)
     for spec in PRICES:
         remote = next(p for p in paddle.prices if p["custom_data"]["stable_key"] == spec.stable_key)
@@ -240,10 +243,10 @@ async def test_rotate_prices_creates_new_and_archives_old() -> None:
     lines, price_ids = await rotate_prices(client=paddle)  # type: ignore[arg-type]
     assert len(lines) == 2 and all(line.startswith("ROTATED seat_reader_") for line in lines)
     assert paddle.create_calls == 2  # the two reader successors, nothing else
-    assert len(price_ids) == 10  # rotated AND kept, the full env paste
+    assert len(price_ids) == 14  # rotated AND kept, the full env paste
 
     active = {p["custom_data"]["stable_key"]: p for p in await paddle.list_prices()}
-    assert len(active) == 10  # the archived old readers left the listing
+    assert len(active) == 14  # the archived old readers left the listing
     for spec in PRICES:
         assert active[spec.stable_key]["unit_price"]["amount"] == str(spec.amount_cents)
     archived = [p for p in paddle.prices if p.get("status") == "archived"]
@@ -298,7 +301,7 @@ async def test_dry_run_writes_nothing() -> None:
     paddle = FakePaddle()
     report = await provision_catalog(dry_run=True, client=paddle)  # type: ignore[arg-type]
     assert paddle.create_calls == 0  # read-only, guaranteed
-    assert len(report.created_prices) == 10  # it still SAYS what it would do
+    assert len(report.created_prices) == 14  # it still SAYS what it would do
     assert all(v.startswith("(dry-run:") for v in report.price_ids.values())
 
 
@@ -321,9 +324,15 @@ async def test_boot_check_flags_missing_and_mismatched_ids() -> None:
 
 def test_declared_grid_matches_the_public_pricing() -> None:
     """The declaration IS the grid (2026-07 + reader seats 08/08) — one
-    place to read it. Reader (rotation 09/08): 12.99/mois, 119.88/an (9.99 × 12), NET."""
+    place to read it. Reader (rotation 09/08): 12.99/mois, 119.88/an
+    (9.99 × 12), NET. Indépendant (lot 09/08): 49/490 base, siège 50/500 —
+    Indépendant + 1 siège = Cabinet = 99 exactement, la marche-proposition."""
     amounts = {s.stable_key: s.amount_cents for s in PRICES}
     assert amounts == {
+        "independant_mensuel": 4_900,
+        "independant_annuel": 49_000,
+        "seat_independant_mensuel": 5_000,
+        "seat_independant_annuel": 50_000,
         "cabinet_mensuel": 9_900,
         "cabinet_annuel": 99_000,
         "agence_mensuel": 12_900,
@@ -341,7 +350,7 @@ def test_declared_grid_matches_the_public_pricing() -> None:
             [
                 f"{prefix}{plan}_{cycle}"
                 for prefix in ("", "seat_")
-                for plan in ("cabinet", "agence")
+                for plan in ("independant", "cabinet", "agence")
                 for cycle in ("mensuel", "annuel")
             ]
             + ["seat_reader_mensuel", "seat_reader_annuel"]
