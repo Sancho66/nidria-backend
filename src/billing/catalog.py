@@ -103,10 +103,12 @@ PRICES: tuple[PriceSpec, ...] = (
     _seat("cabinet", "annuel", "year", 35_000, "Cabinet — siège supplémentaire (annuel)"),
     _seat("agence", "mensuel", "month", 2_500, "Agence — siège supplémentaire (mensuel)"),
     _seat("agence", "annuel", "year", 25_000, "Agence — siège supplémentaire (annuel)"),
-    # Reader grid (arbitrage 07/08): 13.99 EUR/month, 131.88 EUR/year
-    # (10.99 × 12) — NET amounts like everything here (tax external).
-    _reader_seat("mensuel", "month", 1_399, "Siège lecteur (mensuel)"),
-    _reader_seat("annuel", "year", 13_188, "Siège lecteur (annuel)"),
+    # Reader grid (rotation 09/08, décision Alex — à confirmer Eric):
+    # 12.99 EUR/month, 119.88 EUR/year (9.99 × 12) — NET amounts like
+    # everything here (tax external). Was 13.99/131.88 (arbitrage 07/08);
+    # the amount change goes through --rotate-prices, never a PATCH.
+    _reader_seat("mensuel", "month", 1_299, "Siège lecteur (mensuel)"),
+    _reader_seat("annuel", "year", 11_988, "Siège lecteur (annuel)"),
 )
 
 CURRENCY = "EUR"

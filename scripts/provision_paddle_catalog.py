@@ -24,6 +24,7 @@ from src.billing.catalog_provisioning import (  # noqa: E402
     align_tax_mode,
     provision_catalog,
     provision_webhook_destination,
+    rotate_prices,
 )
 from src.billing.paddle_client import PaddleClient  # noqa: E402
 from src.core.config import get_settings  # noqa: E402
@@ -68,6 +69,17 @@ async def main() -> int:
             "patched price, touches nothing else, then exits."
         ),
     )
+    parser.add_argument(
+        "--rotate-prices",
+        action="store_true",
+        help=(
+            "PRICE ROTATION for declared AMOUNT changes (rotation lecteur "
+            "09/08): CREATE the declared price and ARCHIVE the divergent "
+            "one, per stable key (a Paddle amount is immutable — never a "
+            "modification). Prints the fresh PADDLE_PRICE_IDS to paste, "
+            "then exits."
+        ),
+    )
     args = parser.parse_args()
     dry_run = not args.execute
 
@@ -92,6 +104,17 @@ async def main() -> int:
             )
         for line in patched:
             print(f"  PATCHED {line}")
+        return 0
+
+    if args.rotate_prices:
+        print(f"Paddle env: {settings.paddle_env} | mode: ROTATE PRICES (create new + archive old)")
+        lines, price_ids = await rotate_prices(client=PaddleClient())
+        if not lines:
+            print("  nothing to rotate: every matched price already carries the declared amount.")
+        for line in lines:
+            print(f"  {line}")
+        print("\nPADDLE_PRICE_IDS to paste into the env:")
+        print(json.dumps(price_ids, indent=2, sort_keys=True))
         return 0
 
     if args.align_names:

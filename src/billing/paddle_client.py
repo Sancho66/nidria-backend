@@ -173,6 +173,13 @@ class PaddleClient:
         client invoice; amounts stay immutable by principle."""
         return await self._request("PATCH", f"/prices/{price_id}", {"name": name})
 
+    async def archive_price(self, price_id: str) -> dict[str, Any]:
+        """PATCH status=archived — the retirement half of a PRICE ROTATION
+        (--rotate-prices): an archived price leaves every active listing
+        (list_prices filters status=active), freeing its stable_key for
+        the freshly created successor. Never a deletion: history stays."""
+        return await self._request("PATCH", f"/prices/{price_id}", {"status": "archived"})
+
     # --- discounts (referral program) -----------------------------------------------
 
     async def get_discount(self, discount_id: str) -> dict[str, Any]:

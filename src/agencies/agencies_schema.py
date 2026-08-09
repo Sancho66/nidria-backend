@@ -131,7 +131,7 @@ class SeatUsage(BaseModel):
     (the trial gate reads it); `managers`/`reader` ventilate it. The
     included + offered seats are MANAGER seats — `billed` counts past
     them from the managers only; on an active subscription every reader
-    comes from the purchased pool (13.99 EUR), never from the included
+    comes from the purchased pool (reader SKU price), never from the included
     tier."""
 
     members: int  # active internal agents, ALL seat types (externals never consume a seat)

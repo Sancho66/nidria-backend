@@ -169,6 +169,55 @@ async def align_quantity_bounds(*, client: PaddleClient) -> list[str]:
     return patched
 
 
+async def rotate_prices(*, client: PaddleClient) -> tuple[list[str], dict[str, str]]:
+    """PRICE ROTATION (--rotate-prices) — the sanctioned path for a DECLARED
+    AMOUNT CHANGE (rotation lecteur 09/08): a Paddle amount is immutable by
+    principle (the founding freeze depends on it), so a new grid means NEW
+    prices. For every matched price whose amount diverges from the
+    declaration: CREATE the declared price (same stable_key — free once the
+    old one leaves the active listing), then ARCHIVE the old one (never a
+    deletion, history stays). Non-amount divergences are NOT rotated (they
+    have their own align gestures). Returns (report lines, fresh
+    stable_key → price_id mapping for the env paste — rotated AND kept)."""
+    remote_products = {k: p for p in await client.list_products() if (k := _stable_key(p))}
+    remote_prices = {k: p for p in await client.list_prices() if (k := _stable_key(p))}
+    lines: list[str] = []
+    price_ids: dict[str, str] = {}
+    for spec in PRICES:
+        remote = remote_prices.get(spec.stable_key)
+        if remote is None:
+            lines.append(f"{spec.stable_key}: ABSENT — run execute (creation), not a rotation")
+            continue
+        unit = remote.get("unit_price") or {}
+        if str(unit.get("amount")) == str(spec.amount_cents):
+            price_ids[spec.stable_key] = remote["id"]
+            continue
+        product = remote_products.get(spec.product_key)
+        if product is None:
+            lines.append(f"{spec.stable_key}: product {spec.product_key} missing — SKIPPED")
+            continue
+        # Archive FIRST so the stable_key never matches two active prices,
+        # then create the successor with the declared amount.
+        await client.archive_price(remote["id"])
+        created = await client.create_price(
+            product_id=product["id"],
+            name=spec.name,
+            amount_cents=spec.amount_cents,
+            currency=CURRENCY,
+            interval=spec.interval,
+            quantity_min=spec.quantity_min,
+            quantity_max=spec.quantity_max,
+            tax_mode=spec.tax_mode,
+            custom_data={"stable_key": spec.stable_key},
+        )
+        price_ids[spec.stable_key] = created["id"]
+        lines.append(
+            f"ROTATED {spec.stable_key}: {remote['id']} ({unit.get('amount')}c, archived) "
+            f"-> {created['id']} ({spec.amount_cents}c)"
+        )
+    return lines, price_ids
+
+
 async def align_names(*, client: PaddleClient) -> list[str]:
     """The THIRD sanctioned update (micro-lot 08/08): PATCH the display
     NAME (a patchable price field, unlike the amount) to the declared

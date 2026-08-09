@@ -4,8 +4,8 @@ The basket (panier d'invitations) never computes a price front-side; this
 endpoint serves the whole arithmetic, READ-ONLY, from the DECLARED catalog:
 
 (a) the exact Nicolas case: +2 managers (1 covered by the included tier)
-    and +5 readers (3 on free pool seats, 2 to buy) → 62.98, with the
-    annual line (51.15, −19 %);
+    and +5 readers (3 on free pool seats, 2 to buy) → 60.98, with the
+    annual line (49.15, −19 %) — rotated reader grid 09/08;
 (b) nothing free: every requested seat is priced, and the gesture proves
     ZERO Paddle traffic and ZERO writes;
 (c) trial: the SAME named 409 as add/remove (tranché 08/08 — a quote
@@ -88,9 +88,9 @@ async def test_nicolas_case_exact_figures(
     system_roles: dict[str, Role],
 ) -> None:
     """Cabinet mensuel, 2 managers already (1 included seat left), pool of
-    3 free reader seats: quoting +2 managers +5 readers is THE maquette
-    JSON, to the cent — including the annual line (rates ×12 → /12,
-    rounded once: 51.15, and the rounded discount 19)."""
+    3 free reader seats: quoting +2 managers +5 readers, to the cent —
+    including the annual line (rates /12, rounded once) — at the ROTATED
+    reader grid (09/08: 12.99 mensuel / 119.88 annuel)."""
     await _convert(client, superadmin, agent_headers, admin.agency_id)
     await make_agent(
         role=system_roles["member"], agency_id=admin.agency_id, email="second@example.com"
@@ -113,14 +113,15 @@ async def test_nicolas_case_exact_figures(
             "requested": 5,
             "from_free": 3,
             "to_buy": 2,
-            "unit_price": "13.99",
-            "recurring_add": "27.98",
+            "unit_price": "12.99",
+            "recurring_add": "25.98",
         },
-        "total_recurring_add": "62.98",
-        # saved_per_year: exact cents (62.98 × 12 = 755.76) − (350.00 +
-        # 2 × 131.88 = 613.76) = 142.00 — no rounding drift (micro-lot).
+        "total_recurring_add": "60.98",
+        # annual: (35000 + 2 × 11988) / 12 = 4914.67c → 49.15 ; discount
+        # (60.98 − 49.15) / 60.98 → 19 % ; saved_per_year: exact cents
+        # (60.98 × 12 = 731.76) − 589.76 = 142.00 — no rounding drift.
         "annual_equivalent": {
-            "total_recurring_add": "51.15",
+            "total_recurring_add": "49.15",
             "discount_percent": 19,
             "saved_per_year": "142.00",
         },
@@ -174,15 +175,15 @@ async def test_quote_without_free_seats_prices_all_and_touches_nothing(
         "requested": 2,
         "from_free": 0,
         "to_buy": 2,
-        "unit_price": "13.99",
-        "recurring_add": "27.98",
+        "unit_price": "12.99",
+        "recurring_add": "25.98",
     }
-    assert body["total_recurring_add"] == "27.98"
-    # 2 × 131.88 / 12 = 21.98 ; (27.98 − 21.98) / 27.98 → 21 % ;
-    # saved_per_year = 27.98 × 12 − 263.76 = 72.00 (exact cents).
+    assert body["total_recurring_add"] == "25.98"
+    # 2 × 119.88 / 12 = 19.98 ; (25.98 − 19.98) / 25.98 → 23 % ;
+    # saved_per_year = 25.98 × 12 − 239.76 = 72.00 (exact cents).
     assert body["annual_equivalent"] == {
-        "total_recurring_add": "21.98",
-        "discount_percent": 21,
+        "total_recurring_add": "19.98",
+        "discount_percent": 23,
         "saved_per_year": "72.00",
     }
 
@@ -226,7 +227,7 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
     agent_headers: AuthHeaders,
 ) -> None:
     """On an ANNUAL cycle the recurring amounts ARE the annual rates
-    (350.00 / 131.88) and the annual_equivalent line does not exist —
+    (350.00 / 119.88) and the annual_equivalent line does not exist —
     there is nothing to upsell."""
     await _convert(client, superadmin, agent_headers, admin.agency_id, cycle="annuel")
 
@@ -245,11 +246,38 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
         "requested": 1,
         "from_free": 0,
         "to_buy": 1,
-        "unit_price": "131.88",
-        "recurring_add": "131.88",
+        "unit_price": "119.88",
+        "recurring_add": "119.88",
     }
-    assert body["total_recurring_add"] == "481.88"
+    assert body["total_recurring_add"] == "469.88"
     assert body["annual_equivalent"] is None
+
+
+async def test_seven_readers_quote_at_the_rotated_grid(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """The rotation's named case (09/08): +7 readers on a monthly cycle →
+    90.93 €/mois, 69.93 €/mois in annual equivalent (7 × 119.88 / 12,
+    EXACT), −23 % — the percent is COMPUTED, never a hardcoded string."""
+    await _convert(client, superadmin, agent_headers, admin.agency_id)
+
+    quoted = await _quote(client, agent_headers(admin), {"reader": 7})
+    assert quoted.status_code == 200, quoted.text
+    body = quoted.json()
+    assert body["reader"]["to_buy"] == 7
+    assert body["reader"]["unit_price"] == "12.99"
+    assert body["total_recurring_add"] == "90.93"
+    # 7 × 11988 / 12 = 6993c exact ; (90.93 − 69.93) / 90.93 → 23 % ;
+    # saved = 90.93 × 12 − 839.16 = 252.00.
+    assert body["annual_equivalent"] == {
+        "total_recurring_add": "69.93",
+        "discount_percent": 23,
+        "saved_per_year": "252.00",
+    }
 
 
 # --- (e) fully absorbed: 0.00, no annual line ------------------------------------------

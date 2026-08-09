@@ -53,10 +53,12 @@ class FakePaddle:
         return list(self.products)
 
     async def list_prices(self, ids: list[str] | None = None) -> list[dict[str, Any]]:
-        # Mirrors the real API's ?id= filter (verified live on sandbox).
+        # Mirrors the real API: ?id= filter, and status=active only (an
+        # archived price leaves every listing — the rotation depends on it).
+        active = [p for p in self.prices if p.get("status") != "archived"]
         if ids is not None:
-            return [p for p in self.prices if p["id"] in ids]
-        return list(self.prices)
+            return [p for p in active if p["id"] in ids]
+        return list(active)
 
     async def create_product(self, *, name: str, custom_data: dict[str, str]) -> dict[str, Any]:
         self.create_calls += 1
@@ -79,6 +81,12 @@ class FakePaddle:
             "tax_mode": kwargs["tax_mode"],
         }
         self.prices.append(price)
+        return price
+
+    async def archive_price(self, price_id: str) -> dict[str, Any]:
+        self.patch_calls = getattr(self, "patch_calls", 0) + 1
+        price = next(p for p in self.prices if p["id"] == price_id)
+        price["status"] = "archived"
         return price
 
     async def update_price_name(self, price_id: str, name: str) -> dict[str, Any]:
@@ -210,6 +218,45 @@ async def test_align_quantity_bounds_patches_only_quantity_and_lists_each() -> N
     assert await align_quantity_bounds(client=paddle) == []  # type: ignore[arg-type]
 
 
+async def test_rotate_prices_creates_new_and_archives_old() -> None:
+    """PRICE ROTATION (rotation lecteur 09/08): amounts are immutable — a
+    declared amount change CREATES the successor (same stable_key) and
+    ARCHIVES the divergent price, never a modification. Only the diverging
+    prices rotate; the conform eight are untouched; the fresh mapping
+    covers all ten keys; a second run has nothing left to rotate."""
+    from src.billing.catalog_provisioning import rotate_prices
+
+    paddle = FakePaddle()
+    for key, name in PRODUCTS.items():
+        await paddle.create_product(name=name, custom_data={"stable_key": key})
+    paddle.create_calls = 0
+    for index, spec in enumerate(PRICES):
+        remote = _remote_price(spec, f"pri_old_{index}")
+        if spec.stable_key.startswith("seat_reader_"):
+            # The PRE-rotation reader grid (13.99 / 131.88).
+            remote["unit_price"]["amount"] = "1399" if spec.interval == "month" else "13188"
+        paddle.prices.append(remote)
+
+    lines, price_ids = await rotate_prices(client=paddle)  # type: ignore[arg-type]
+    assert len(lines) == 2 and all(line.startswith("ROTATED seat_reader_") for line in lines)
+    assert paddle.create_calls == 2  # the two reader successors, nothing else
+    assert len(price_ids) == 10  # rotated AND kept, the full env paste
+
+    active = {p["custom_data"]["stable_key"]: p for p in await paddle.list_prices()}
+    assert len(active) == 10  # the archived old readers left the listing
+    for spec in PRICES:
+        assert active[spec.stable_key]["unit_price"]["amount"] == str(spec.amount_cents)
+    archived = [p for p in paddle.prices if p.get("status") == "archived"]
+    assert {p["custom_data"]["stable_key"] for p in archived} == {
+        "seat_reader_mensuel",
+        "seat_reader_annuel",
+    }
+
+    # Second run: everything conform, nothing to rotate, same mapping.
+    lines2, price_ids2 = await rotate_prices(client=paddle)  # type: ignore[arg-type]
+    assert lines2 == [] and price_ids2 == price_ids
+
+
 async def test_align_names_patches_only_the_name_and_lists_each() -> None:
     """The THIRD sanctioned update (micro-lot 08/08): only the prices whose
     display name diverges from the declaration are patched — the real
@@ -274,7 +321,7 @@ async def test_boot_check_flags_missing_and_mismatched_ids() -> None:
 
 def test_declared_grid_matches_the_public_pricing() -> None:
     """The declaration IS the grid (2026-07 + reader seats 08/08) — one
-    place to read it. Reader: 13.99/mois, 131.88/an (10.99 × 12), NET."""
+    place to read it. Reader (rotation 09/08): 12.99/mois, 119.88/an (9.99 × 12), NET."""
     amounts = {s.stable_key: s.amount_cents for s in PRICES}
     assert amounts == {
         "cabinet_mensuel": 9_900,
@@ -285,8 +332,8 @@ def test_declared_grid_matches_the_public_pricing() -> None:
         "seat_cabinet_annuel": 35_000,
         "seat_agence_mensuel": 2_500,
         "seat_agence_annuel": 25_000,
-        "seat_reader_mensuel": 1_399,
-        "seat_reader_annuel": 13_188,
+        "seat_reader_mensuel": 1_299,
+        "seat_reader_annuel": 11_988,
     }
     # And the env keys the runtime reads are exactly these stable keys.
     assert json.dumps(sorted(amounts)) == json.dumps(
