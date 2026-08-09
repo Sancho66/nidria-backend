@@ -34801,7 +34801,7 @@
           "reader"
         ],
         "title": "SeatUsage",
-        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = None on any ACTIVE subscription — NO ceiling (décision Alex +\nEric 05/08/2026), extra seats are billed per seat and the front\ndisplays \"illimité\", never a blank. Without an active subscription\n(trial, no plan, dead paddle sub): 3 — a TOTAL across seat types.\n\nLot lecteur (08/08): `members` stays the TOTAL of active internals\n(the trial gate reads it); `managers`/`reader` ventilate it. The\nincluded + offered seats are MANAGER seats — `billed` counts past\nthem from the managers only; on an active subscription every reader\ncomes from the purchased pool (13.99 EUR), never from the included\ntier."
+        "description": "Seat capacity, DERIVED live (grid nidria.com/#tarifs): `billed`\nstarts past included (3 cabinet / 6 agence) + founding offered;\n`max` = None on any ACTIVE subscription — NO ceiling (décision Alex +\nEric 05/08/2026), extra seats are billed per seat and the front\ndisplays \"illimité\", never a blank. Without an active subscription\n(trial, no plan, dead paddle sub): 3 — a TOTAL across seat types.\n\nLot lecteur (08/08): `members` stays the TOTAL of active internals\n(the trial gate reads it); `managers`/`reader` ventilate it. The\nincluded + offered seats are MANAGER seats — `billed` counts past\nthem from the managers only; on an active subscription every reader\ncomes from the purchased pool (reader SKU price), never from the included\ntier."
       },
       "SectionCreateRequest": {
         "properties": {
