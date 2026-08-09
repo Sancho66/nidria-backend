@@ -18,7 +18,7 @@ endpoint serves the whole arithmetic, READ-ONLY, from the DECLARED catalog:
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -102,12 +102,15 @@ async def test_nicolas_case_exact_figures(
     assert quoted.json() == {
         "currency": "EUR",
         "billing_cycle": "mensuel",
+        "billing_mode": "manual",  # Eric's invoice: the etapes-03 discriminant
         "manager": {
             "requested": 2,
             "from_included": 1,
             "to_bill": 1,
             "unit_price": "35.00",
             "recurring_add": "35.00",
+            # (420 − 350) / 420 → 17 % : the REAL per-type discount, computed
+            "annual_discount_percent": 17,
         },
         "reader": {
             "requested": 5,
@@ -115,6 +118,7 @@ async def test_nicolas_case_exact_figures(
             "to_buy": 2,
             "unit_price": "12.99",
             "recurring_add": "25.98",
+            "annual_discount_percent": 23,  # (155.88 − 119.88) / 155.88
         },
         "total_recurring_add": "60.98",
         # annual: (35000 + 2 × 11988) / 12 = 4914.67c → 49.15 ; discount
@@ -125,6 +129,10 @@ async def test_nicolas_case_exact_figures(
             "discount_percent": 19,
             "saved_per_year": "142.00",
         },
+        # Manual agency: no debit-today figure, no cycle date — the front
+        # shows the composition and the phrase, never a wall.
+        "charged_today_estimate": None,
+        "next_cycle_date": None,
     }
 
 
@@ -160,6 +168,13 @@ async def test_quote_without_free_seats_prices_all_and_touches_nothing(
     txn = AsyncMock(return_value={"id": "txn_never"})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
     monkeypatch.setattr(paddle_client.PaddleClient, "create_transaction", txn)
+    # The estimate's cached read, mocked (a paddle agency would fetch it):
+    # unreadable period → estimate None, the quote NEVER 500s for Paddle.
+    from src.billing.billing_manager import BillingManager
+
+    monkeypatch.setattr(
+        BillingManager, "_fetch_subscription", AsyncMock(side_effect=RuntimeError("down"))
+    )
 
     quoted = await _quote(client, agent_headers(admin), {"reader": 2})
     assert quoted.status_code == 200, quoted.text
@@ -170,6 +185,7 @@ async def test_quote_without_free_seats_prices_all_and_touches_nothing(
         "to_bill": 0,
         "unit_price": "35.00",
         "recurring_add": "0.00",
+        "annual_discount_percent": 17,
     }
     assert body["reader"] == {
         "requested": 2,
@@ -177,7 +193,10 @@ async def test_quote_without_free_seats_prices_all_and_touches_nothing(
         "to_buy": 2,
         "unit_price": "12.99",
         "recurring_add": "25.98",
+        "annual_discount_percent": 23,
     }
+    assert body["billing_mode"] == "paddle"
+    assert body["charged_today_estimate"] is None  # Paddle unreadable → words, not a 500
     assert body["total_recurring_add"] == "25.98"
     # 2 × 119.88 / 12 = 19.98 ; (25.98 − 19.98) / 25.98 → 23 % ;
     # saved_per_year = 25.98 × 12 − 239.76 = 72.00 (exact cents).
@@ -241,6 +260,7 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
         "to_bill": 1,
         "unit_price": "350.00",
         "recurring_add": "350.00",
+        "annual_discount_percent": None,  # annual cycle: nothing to sell
     }
     assert body["reader"] == {
         "requested": 1,
@@ -248,6 +268,7 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
         "to_buy": 1,
         "unit_price": "119.88",
         "recurring_add": "119.88",
+        "annual_discount_percent": None,
     }
     assert body["total_recurring_add"] == "469.88"
     assert body["annual_equivalent"] is None
@@ -278,6 +299,84 @@ async def test_seven_readers_quote_at_the_rotated_grid(
         "discount_percent": 23,
         "saved_per_year": "252.00",
     }
+
+
+async def test_charged_today_estimate_serves_the_prorated_debit(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The debit-today ESTIMATE (lot devis complet 09/08), the three
+    ordered cases: the sandbox-proven monthly mid-cycle (26.174 %
+    remaining → ≈3.40 for a 12.99 SKU — the real 340c invoice), annual
+    day-0 (12/12 remaining → the full 119.88), annual mid-cycle (6/12 →
+    ≈59.94, never the full price). next_cycle_date rides the same cached
+    read; billing_mode says "paddle"."""
+    from src.billing.billing_manager import BillingManager
+
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    agency.plan = "cabinet"
+    agency.billing_cycle = "mensuel"
+    agency.converted_at = datetime.now(UTC)
+    agency.billing_mode = "paddle"
+    agency.billing_status = "active"
+    agency.paddle_subscription_id = "sub_estimate"
+    await db_session.commit()
+
+    def _sub(starts: datetime, ends: datetime, next_billed: datetime) -> AsyncMock:
+        iso = lambda d: d.isoformat().replace("+00:00", "Z")  # noqa: E731
+        return AsyncMock(
+            return_value={
+                "next_billed_at": iso(next_billed),
+                "current_billing_period": {"starts_at": iso(starts), "ends_at": iso(ends)},
+            }
+        )
+
+    headers = agent_headers(admin)
+
+    # (1) MONTHLY, 26.174 % of the period remaining — the sandbox-proven
+    # figure: 1299c × 0.26174 = 340c → « ≈ 3,40 € », jamais 12,99.
+    now = datetime.now(UTC)
+    span = timedelta(days=30)
+    remaining = timedelta(seconds=span.total_seconds() * 0.26174)
+    ends = now + remaining
+    monkeypatch.setattr(BillingManager, "_fetch_subscription", _sub(ends - span, ends, ends))
+    quoted = await _quote(client, headers, {"reader": 1})
+    assert quoted.status_code == 200, quoted.text
+    body = quoted.json()
+    assert body["billing_mode"] == "paddle"
+    assert body["charged_today_estimate"] == "3.40"
+    assert body["next_cycle_date"].startswith(ends.date().isoformat())
+
+    # (2) ANNUAL day-0: the period just opened, 12/12 remaining — the
+    # estimate IS the full annual price (cohérent, prouvé sandbox 11988c).
+    agency.billing_cycle = "annuel"
+    await db_session.commit()
+    now = datetime.now(UTC)
+    monkeypatch.setattr(
+        BillingManager,
+        "_fetch_subscription",
+        _sub(now, now + timedelta(days=365), now + timedelta(days=365)),
+    )
+    quoted = await _quote(client, headers, {"reader": 1})
+    assert quoted.status_code == 200, quoted.text
+    assert quoted.json()["charged_today_estimate"] == "119.88"
+
+    # (3) ANNUAL mid-cycle: 6/12 remaining → ≈ 59,94 — the perception
+    # fix, chiffré: never 119,88 for a seat taken en cours de route.
+    now = datetime.now(UTC)
+    half = timedelta(days=182, hours=12)
+    monkeypatch.setattr(
+        BillingManager,
+        "_fetch_subscription",
+        _sub(now - half, now + half, now + half),
+    )
+    quoted = await _quote(client, headers, {"reader": 1})
+    assert quoted.status_code == 200, quoted.text
+    assert quoted.json()["charged_today_estimate"] == "59.94"
 
 
 # --- (e) fully absorbed: 0.00, no annual line ------------------------------------------

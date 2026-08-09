@@ -10,7 +10,7 @@ is a no-op (unique row = the idempotence gate)."""
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -131,6 +131,18 @@ _DECLARED_CENTS: dict[str, int] = {spec.stable_key: spec.amount_cents for spec i
 
 def _eur(cents: int) -> Decimal:
     return (Decimal(cents) / 100).quantize(Decimal("0.01"))
+
+
+def _annual_discount_percent(monthly_cents: int, annual_cents: int) -> int:
+    """The REAL per-type annual discount, from the declared grid: what the
+    annual rate saves against 12 monthly payments, rounded to the integer
+    percent (half-up) — never a hardcoded string anywhere."""
+    yearly_at_monthly = monthly_cents * 12
+    return int(
+        (Decimal(yearly_at_monthly - annual_cents) / Decimal(yearly_at_monthly) * 100).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
 
 
 def _seat_quantities_from_items(items: list[dict[str, Any]]) -> tuple[int, int]:
@@ -1170,11 +1182,14 @@ class BillingManager:
         """POST /billing/seats/quote — the composition DRY-RUN (panier
         d'invitations): what the requested seats consume (included tier for
         managers, free pool seats for readers) and what they add to the
-        recurring bill. READ-ONLY by contract: no write, no Paddle call —
-        prices come from the DECLARED catalog. Trial: the SAME named 409 as
-        add/remove (tranché 08/08) — a quote prices a billable composition
-        and the trial has nothing to bill; the front shows « Inclus pendant
-        l'essai » without calling this."""
+        recurring bill. READ-ONLY by contract: no write, no MUTATING Paddle
+        call — prices come from the DECLARED catalog; the only network read
+        is the CACHED subscription fetch feeding the debit-today ESTIMATE
+        and next_cycle_date (lot devis complet 09/08), best-effort — the
+        quote never 500s because Paddle hiccuped. Trial: the SAME named 409
+        as add/remove (tranché 08/08) — a quote prices a billable
+        composition and the trial has nothing to bill; the front shows
+        « Inclus pendant l'essai » without calling this."""
         managers_add = payload.manager or 0
         readers_add = payload.reader or 0
         if managers_add == 0 and readers_add == 0:
@@ -1225,15 +1240,56 @@ class BillingManager:
                 discount_percent=int(discount),
                 saved_per_year=_eur(total_cents * 12 - annual_cents),
             )
+        # Per-type REAL annual discounts (grid-level, composition-free) —
+        # monthly cycle only: on annual there is nothing to sell.
+        manager_pct = reader_pct = None
+        if cycle == BillingCycle.MONTHLY.value:
+            manager_pct = _annual_discount_percent(
+                seat_cents, _DECLARED_CENTS[f"seat_{agency.plan}_annuel"]
+            )
+            reader_pct = _annual_discount_percent(
+                reader_cents, _DECLARED_CENTS["seat_reader_annuel"]
+            )
+        # The day's debit ESTIMATE + the next cycle date, from the CACHED
+        # subscription read (60 s TTL) — self-serve agencies only, both
+        # cycles, best-effort: an unreadable period serves None and the
+        # front falls back to the words (« au prorata dès aujourd'hui »).
+        charged_today = None
+        next_cycle = None
+        if agency.billing_mode == "paddle" and agency.paddle_subscription_id is not None:
+            try:
+                subscription = await self._fetch_subscription(agency.paddle_subscription_id)
+                next_raw = subscription.get("next_billed_at")
+                if next_raw:
+                    next_cycle = datetime.fromisoformat(next_raw.replace("Z", "+00:00"))
+                period = subscription.get("current_billing_period") or {}
+                starts_raw, ends_raw = period.get("starts_at"), period.get("ends_at")
+                if total_cents > 0 and starts_raw and ends_raw:
+                    starts = datetime.fromisoformat(starts_raw.replace("Z", "+00:00"))
+                    ends = datetime.fromisoformat(ends_raw.replace("Z", "+00:00"))
+                    now = datetime.now(UTC)
+                    span = (ends - starts).total_seconds()
+                    if span > 0:
+                        fraction = min(1.0, max(0.0, (ends - now).total_seconds() / span))
+                        charged_today = (
+                            Decimal(total_cents) * Decimal(str(fraction)) / 100
+                        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except Exception:
+                logger.warning(
+                    "quote debit-today estimate skipped for %s: subscription unreadable",
+                    agency.slug,
+                )
         return SeatQuoteResponse(
             currency=CURRENCY,
             billing_cycle=cycle,
+            billing_mode=agency.billing_mode,
             manager=ManagerQuoteLine(
                 requested=managers_add,
                 from_included=from_included,
                 to_bill=to_bill,
                 unit_price=_eur(seat_cents),
                 recurring_add=_eur(seat_cents * to_bill),
+                annual_discount_percent=manager_pct,
             ),
             reader=ReaderQuoteLine(
                 requested=readers_add,
@@ -1241,7 +1297,10 @@ class BillingManager:
                 to_buy=to_buy,
                 unit_price=_eur(reader_cents),
                 recurring_add=_eur(reader_cents * to_buy),
+                annual_discount_percent=reader_pct,
             ),
             total_recurring_add=_eur(total_cents),
             annual_equivalent=annual,
+            charged_today_estimate=charged_today,
+            next_cycle_date=next_cycle,
         )

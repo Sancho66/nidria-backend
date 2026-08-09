@@ -29473,6 +29473,17 @@
           "recurring_add": {
             "type": "string",
             "title": "Recurring Add"
+          },
+          "annual_discount_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Discount Percent"
           }
         },
         "type": "object",
@@ -29484,7 +29495,7 @@
           "recurring_add"
         ],
         "title": "ManagerQuoteLine",
-        "description": "The manager side of the quote. `to_bill` seats are billed by the\nmirror at the INVITE gesture itself (règle 08/08: inviter = payer,\nprorated immediately) — acceptance changes nothing; deleting the\ninvitation or the member returns the seat at the next cycle."
+        "description": "The manager side of the quote. `to_bill` seats are billed by the\nmirror at the INVITE gesture itself (règle 08/08: inviter = payer,\nprorated immediately) — acceptance changes nothing; deleting the\ninvitation or the member returns the seat at the next cycle.\n`annual_discount_percent` (lot devis complet): the REAL per-type\nannual discount — grid-level, independent of the composition — served\non the monthly cycle only (there is nothing to sell on annual)."
       },
       "MappingListResponse": {
         "properties": {
@@ -33205,6 +33216,17 @@
           "recurring_add": {
             "type": "string",
             "title": "Recurring Add"
+          },
+          "annual_discount_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Discount Percent"
           }
         },
         "type": "object",
@@ -33216,7 +33238,7 @@
           "recurring_add"
         ],
         "title": "ReaderQuoteLine",
-        "description": "The reader side: `from_free` land on already-paid pool seats (no new\ncost), `to_buy` must be purchased (seats/add) before inviting."
+        "description": "The reader side: `from_free` land on already-paid pool seats (no new\ncost), `to_buy` must be purchased (seats/add) before inviting.\n`annual_discount_percent`: same rule as the manager line — per-type,\nmonthly cycle only (the generic percent dies with it)."
       },
       "ReaderSeatUsage": {
         "properties": {
@@ -34699,6 +34721,10 @@
             "type": "string",
             "title": "Billing Cycle"
           },
+          "billing_mode": {
+            "type": "string",
+            "title": "Billing Mode"
+          },
           "manager": {
             "$ref": "#/components/schemas/ManagerQuoteLine"
           },
@@ -34718,12 +34744,36 @@
                 "type": "null"
               }
             ]
+          },
+          "charged_today_estimate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charged Today Estimate"
+          },
+          "next_cycle_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cycle Date"
           }
         },
         "type": "object",
         "required": [
           "currency",
           "billing_cycle",
+          "billing_mode",
           "manager",
           "reader",
           "total_recurring_add"

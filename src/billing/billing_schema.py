@@ -141,13 +141,17 @@ class ManagerQuoteLine(BaseModel):
     """The manager side of the quote. `to_bill` seats are billed by the
     mirror at the INVITE gesture itself (règle 08/08: inviter = payer,
     prorated immediately) — acceptance changes nothing; deleting the
-    invitation or the member returns the seat at the next cycle."""
+    invitation or the member returns the seat at the next cycle.
+    `annual_discount_percent` (lot devis complet): the REAL per-type
+    annual discount — grid-level, independent of the composition — served
+    on the monthly cycle only (there is nothing to sell on annual)."""
 
     requested: int
     from_included: int
     to_bill: int
     unit_price: Decimal
     recurring_add: Decimal
+    annual_discount_percent: int | None = None
 
     @field_serializer("unit_price", "recurring_add")
     def _ser_money(self, value: Decimal) -> str:
@@ -156,13 +160,16 @@ class ManagerQuoteLine(BaseModel):
 
 class ReaderQuoteLine(BaseModel):
     """The reader side: `from_free` land on already-paid pool seats (no new
-    cost), `to_buy` must be purchased (seats/add) before inviting."""
+    cost), `to_buy` must be purchased (seats/add) before inviting.
+    `annual_discount_percent`: same rule as the manager line — per-type,
+    monthly cycle only (the generic percent dies with it)."""
 
     requested: int
     from_free: int
     to_buy: int
     unit_price: Decimal
     recurring_add: Decimal
+    annual_discount_percent: int | None = None
 
     @field_serializer("unit_price", "recurring_add")
     def _ser_money(self, value: Decimal) -> str:
@@ -196,14 +203,32 @@ class SeatQuoteResponse(BaseModel):
 
     currency: str
     billing_cycle: str
+    # "paddle" (self-serve, the estimate fields below can live) or
+    # "manual" (Eric's invoice: composition and grid prices, but NO
+    # debit-today figure and no cycle date — the etapes-03 variant).
+    billing_mode: str
     manager: ManagerQuoteLine
     reader: ReaderQuoteLine
     total_recurring_add: Decimal
     annual_equivalent: AnnualEquivalent | None = None
+    # The day's debit, ESTIMATED (lot devis complet): remaining fraction
+    # of the CURRENT billing period (the locally-cached Paddle read) ×
+    # the billed amounts — served for BOTH cycles. Paddle stays the sole
+    # judge at checkout: the « ≈ » belongs to the display contract. None
+    # when nothing is billed, on manual agencies, or when the period is
+    # unreadable (best-effort — never a 500 for an estimate).
+    charged_today_estimate: Decimal | None = None
+    # When the recurring lands: the subscription's next_billed_at (same
+    # cached read). None on manual agencies.
+    next_cycle_date: datetime | None = None
 
     @field_serializer("total_recurring_add")
     def _ser_money(self, value: Decimal) -> str:
         return str(value)
+
+    @field_serializer("charged_today_estimate")
+    def _ser_estimate(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
 
 
 class SubscriptionCancelResponse(BaseModel):
