@@ -10,6 +10,8 @@ from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
     PaymentMethodUpdateResponse,
+    PlanChangeQuoteRequest,
+    PlanChangeQuoteResponse,
     SeatQuantityRequest,
     SeatQuoteRequest,
     SeatQuoteResponse,
@@ -45,6 +47,9 @@ BINDINGS = [
     # The composition dry-run (panier d'invitations): read-only, but it
     # prices the agency's money — the same financial gate applies.
     RouteBinding("POST", "/billing/seats/quote", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # The plan-change comparison (demande front 09/08): read-only, but it
+    # prices the agency's money — same financial gate.
+    RouteBinding("POST", "/billing/plan-change/quote", Audience.AGENT, Permission.AGENCY_MANAGE),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -98,3 +103,10 @@ async def remove_seats(body: SeatQuantityRequest, agent: AgentDep, db: DbDep) ->
 @router.post("/seats/quote", response_model=SeatQuoteResponse)
 async def quote_seats(body: SeatQuoteRequest, agent: AgentDep, db: DbDep) -> SeatQuoteResponse:
     return await BillingManager(db).quote_seats(agent, body)
+
+
+@router.post("/plan-change/quote", response_model=PlanChangeQuoteResponse)
+async def plan_change_quote(
+    body: PlanChangeQuoteRequest, agent: AgentDep, db: DbDep
+) -> PlanChangeQuoteResponse:
+    return await BillingManager(db).plan_change_quote(agent, body)

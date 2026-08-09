@@ -1434,6 +1434,52 @@
         ]
       }
     },
+    "/billing/plan-change/quote": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Plan Change Quote",
+        "operationId": "plan_change_quote_billing_plan_change_quote_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanChangeQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanChangeQuoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/{case_id}/activity": {
       "get": {
         "tags": [
@@ -30940,6 +30986,85 @@
         },
         "type": "object",
         "title": "PlanCatalogPrices"
+      },
+      "PlanChangeQuoteRequest": {
+        "properties": {
+          "target_plan": {
+            "$ref": "#/components/schemas/SubscriptionPlan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_plan"
+        ],
+        "title": "PlanChangeQuoteRequest",
+        "description": "POST /billing/plan-change/quote — « votre facture si vous passiez\nsur X », with the CURRENT committed composition (roster + attente,\nreader pool included). The agency's cycle is kept: a plan change\nnever silently changes the cycle."
+      },
+      "PlanChangeQuoteResponse": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "title": "Billing Cycle"
+          },
+          "billing_mode": {
+            "type": "string",
+            "title": "Billing Mode"
+          },
+          "current": {
+            "$ref": "#/components/schemas/PlanChangeSide"
+          },
+          "target": {
+            "$ref": "#/components/schemas/PlanChangeSide"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "billing_cycle",
+          "billing_mode",
+          "current",
+          "target"
+        ],
+        "title": "PlanChangeQuoteResponse",
+        "description": "The comparison in BOTH directions (demande front 09/08): the same\ncommitted composition priced on the current plan and on the target —\nbase + billed manager seats + the reader pool (identical on both\nsides, kept in the totals so they stay apples-to-apples). INDICATIVE,\ndeclared-catalog priced; Paddle stays the sole judge at payment."
+      },
+      "PlanChangeSide": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "included_managers": {
+            "type": "integer",
+            "title": "Included Managers"
+          },
+          "manager_seats_billed": {
+            "type": "integer",
+            "title": "Manager Seats Billed"
+          },
+          "manager_seat_unit_price": {
+            "type": "string",
+            "title": "Manager Seat Unit Price"
+          },
+          "total_recurring": {
+            "type": "string",
+            "title": "Total Recurring"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "included_managers",
+          "manager_seats_billed",
+          "manager_seat_unit_price",
+          "total_recurring"
+        ],
+        "title": "PlanChangeSide",
+        "description": "One side of the plan-change comparison — everything the sentence\nneeds (« 149 €/mois vs vos 99 actuels »), SERVED, never computed\nfront-side."
       },
       "PlanCyclePrices": {
         "properties": {

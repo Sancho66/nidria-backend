@@ -295,3 +295,89 @@ async def test_plan_changes_rederive_the_seat_mirror(
     await BillingManager(db_session).sync_seat_quantity(admin.agency_id, increase=True)
     items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
     assert items == {"pri_base_cab_m": 1}  # resorbed: 3 managers on 3 included
+
+
+# --- plan-change/quote : la comparaison dans les deux sens (demande front 09/08) -------
+
+
+async def test_plan_change_quote_prices_both_directions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+) -> None:
+    """Cabinet (3 gestionnaires) → Indépendant : « 149.00 vs vos 99.00
+    actuels » — les deux totaux SERVIS avec la composition courante, le
+    front n'a que la phrase. Le sens inverse redescend à 99.00."""
+    await _convert(client, superadmin, agent_headers, admin.agency_id, plan="cabinet")
+    for i in range(2):  # 3 managers
+        await make_agent(
+            role=system_roles["member"], agency_id=admin.agency_id, email=f"pc{i}@example.com"
+        )
+    headers = agent_headers(admin)
+
+    quoted = await client.post(
+        "/billing/plan-change/quote", headers=headers, json={"target_plan": "independant"}
+    )
+    assert quoted.status_code == 200, quoted.text
+    body = quoted.json()
+    assert body["current"] == {
+        "plan": "cabinet",
+        "included_managers": 3,
+        "manager_seats_billed": 0,
+        "manager_seat_unit_price": "35.00",
+        "total_recurring": "99.00",
+    }
+    assert body["target"] == {
+        "plan": "independant",
+        "included_managers": 1,
+        "manager_seats_billed": 2,
+        "manager_seat_unit_price": "50.00",
+        "total_recurring": "149.00",  # 49 + 2×50 : la comparaison arrête seule
+    }
+
+    # Le sens voulu (une agence Indépendant regarde Cabinet) : symétrique.
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    agency.plan = "independant"
+    await db_session.commit()
+    quoted = await client.post(
+        "/billing/plan-change/quote", headers=headers, json={"target_plan": "cabinet"}
+    )
+    assert quoted.status_code == 200, quoted.text
+    body = quoted.json()
+    assert body["current"]["total_recurring"] == "149.00"
+    assert body["target"]["total_recurring"] == "99.00"  # les sièges à 50 se résorbent
+
+
+async def test_plan_change_quote_guards(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Essai → 409 (rien à comparer sans abonnement) ; même plan → 422
+    nommée ; sur_mesure → 409 nommée (pas de grille)."""
+    headers = agent_headers(admin)
+    trial = await client.post(
+        "/billing/plan-change/quote", headers=headers, json={"target_plan": "cabinet"}
+    )
+    assert trial.status_code == 409, trial.text
+    assert trial.json()["code"] == "billing.seats_require_subscription"
+
+    await _convert(client, superadmin, agent_headers, admin.agency_id, plan="cabinet")
+    same = await client.post(
+        "/billing/plan-change/quote", headers=headers, json={"target_plan": "cabinet"}
+    )
+    assert same.status_code == 422, same.text
+    assert same.json()["code"] == "billing.plan_change_same_plan"
+
+    sur_mesure = await client.post(
+        "/billing/plan-change/quote", headers=headers, json={"target_plan": "sur_mesure"}
+    )
+    assert sur_mesure.status_code == 409, sur_mesure.text
+    assert sur_mesure.json()["code"] == "billing.quote_unavailable"

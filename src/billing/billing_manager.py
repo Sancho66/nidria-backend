@@ -28,6 +28,9 @@ from src.billing.billing_schema import (
     CheckoutCreateResponse,
     ManagerQuoteLine,
     PaymentMethodUpdateResponse,
+    PlanChangeQuoteRequest,
+    PlanChangeQuoteResponse,
+    PlanChangeSide,
     ReaderQuoteLine,
     ReferralDiscountState,
     SeatQuantityRequest,
@@ -1188,6 +1191,59 @@ class BillingManager:
         )
         await self.db.commit()
         return await AgenciesManager(self.db).seat_usage(agency)
+
+    async def plan_change_quote(
+        self, agent: Agent, payload: PlanChangeQuoteRequest
+    ) -> PlanChangeQuoteResponse:
+        """POST /billing/plan-change/quote (demande front 09/08) — the
+        plan-change comparison in both directions: the CURRENT committed
+        composition (roster + attente managers, reader pool) priced on
+        the current plan AND on the target. Read-only, declared-catalog
+        priced, the agency's cycle kept. Cabinet→Indépendant with 3
+        managers says « 149.00 vs 99.00 » — the information stops the
+        client, never a refusal."""
+        agency = await self._seat_pool_agency(agent)
+        cycle = agency.billing_cycle
+        target = payload.target_plan.value
+        if target == agency.plan:
+            raise ValidationError(
+                "The target plan is the current plan.",
+                code="billing.plan_change_same_plan",
+            )
+        from src.agencies.agencies_manager import SEATS_INCLUDED_BY_PLAN, AgenciesManager
+
+        for plan in (agency.plan, target):
+            if cycle is None or f"seat_{plan}_{cycle}" not in _DECLARED_CENTS:
+                raise ConflictError(
+                    "This plan has no self-serve seat grid to quote against.",
+                    code="billing.quote_unavailable",
+                    params={"plan": plan},
+                )
+        usage = await AgenciesManager(self.db).seat_usage(agency)
+        reader_part = _DECLARED_CENTS[f"seat_reader_{cycle}"] * usage.reader.purchased
+        offered = agency.founding_free_seats
+
+        def _side(plan: str) -> PlanChangeSide:
+            included = SEATS_INCLUDED_BY_PLAN[plan]
+            seat_cents = _DECLARED_CENTS[f"seat_{plan}_{cycle}"]
+            billed = max(0, usage.managers - included - offered)
+            total = _DECLARED_CENTS[f"{plan}_{cycle}"] + seat_cents * billed + reader_part
+            return PlanChangeSide(
+                plan=plan,
+                included_managers=included,
+                manager_seats_billed=billed,
+                manager_seat_unit_price=_eur(seat_cents),
+                total_recurring=_eur(total),
+            )
+
+        assert agency.plan is not None
+        return PlanChangeQuoteResponse(
+            currency=CURRENCY,
+            billing_cycle=cycle,
+            billing_mode=agency.billing_mode,
+            current=_side(agency.plan),
+            target=_side(target),
+        )
 
     async def quote_seats(self, agent: Agent, payload: SeatQuoteRequest) -> SeatQuoteResponse:
         """POST /billing/seats/quote — the composition DRY-RUN (panier
