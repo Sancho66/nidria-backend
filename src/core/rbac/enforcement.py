@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -9,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import ProtectedResource, Role
 from src.billing.billing_lock import blocking_reason
@@ -193,21 +195,42 @@ BILLING_LOCK_WRITE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+# What the OUTSIDE faces (providers, clients) are told when an agency's
+# subscription is DEAD. Deliberately neutral and free of any billing word:
+# a notary or a client must never learn that the agency stopped paying —
+# they learn that the space is closed and who to ask.
+_WORKSPACE_CLOSED_MESSAGE = "Cet espace n'est plus actif — contactez votre interlocuteur."
+_WORKSPACE_CLOSED_CODE = "billing.workspace_inactive"
+
+
+def _closes_the_outside_faces(reason: str | None) -> bool:
+    """THE distinction between the two walls (lot 10/08).
+
+    `canceled` = the agency LEFT: nothing more will be deposited there, so
+    the outside faces close too — letting a provider upload into a dead
+    workspace only manufactures an orphan document nobody will ever read.
+
+    `trial_expired` and `past_due` = the agency is EXPECTED BACK (it will
+    convert, or fix its card): the outside faces stay open, and the
+    deposits piling up under the eyes of read-only agents are precisely
+    the commercial argument. past_due rides with trial deliberately — a
+    failed payment is not a departure."""
+    return reason == "canceled"
+
+
 async def _enforce_billing_lock(db: AsyncSession, agent: Agent, method: str, path: str) -> None:
     """4th stage of the agent pipeline (after impersonation and consent):
     a BLOCKED agency is READ-ONLY. Same construction as the impersonation
     expat mask: the rule is on the METHOD, not on a route list, so every
     future write endpoint is born covered (fail-closed).
 
-    Out of scope by decision: the superadmin (the human exit), external
-    providers and the whole expat face (their démarches, not the agency's
-    fault — and a commercial argument: deposits keep landing, read-only
-    agents watch them pile up until payment)."""
+    TWO WALLS since 10/08 (see _closes_the_outside_faces): the agency side
+    closes on every reason; the EXTERNAL provider side closes on `canceled`
+    only, with the neutral outside message. The superadmin stays exempt
+    from both — the human exit."""
     if method == "GET":  # HEAD is normalized upstream; OPTIONS never reaches deps
         return
     if (method, path) in BILLING_LOCK_WRITE_ALLOWLIST:
-        return
-    if agent.is_external:
         return
     role = agent.role
     if role.is_system and role.name == "superadmin":
@@ -215,12 +238,56 @@ async def _enforce_billing_lock(db: AsyncSession, agent: Agent, method: str, pat
     agency = await db.get(Agency, agent.agency_id)
     assert agency is not None
     reason = blocking_reason(agency, now=datetime.now(UTC))
-    if reason is not None:
+    if reason is None:
+        return
+    if agent.is_external:
+        if _closes_the_outside_faces(reason):
+            raise ForbiddenError(
+                _WORKSPACE_CLOSED_MESSAGE,
+                code=_WORKSPACE_CLOSED_CODE,
+                params={"reason": reason},
+            )
+        return  # trial_expired / past_due: the provider keeps working
+    raise ForbiddenError(
+        "The trial has ended or the subscription lapsed; the workspace is read-only until payment.",
+        code="billing.subscription_required",
+        params={"reason": reason},
+    )
+
+
+async def _enforce_expat_billing_lock(db: AsyncSession, request: Request, method: str) -> None:
+    """The client face's half of the canceled wall (lot 10/08).
+
+    Scoped PER CASE, never per person: an ExpatUser carries no agency_id —
+    the same client may hold dossiers in SEVERAL agencies (CLAUDE.md), so
+    a blanket block would shut agency B because agency A left. The gate
+    therefore reads the CASE being written and closes only when THAT
+    agency is canceled. Self endpoints (session, password, 2FA, consents,
+    profile) carry no case_id and stay open by construction — the same
+    doctrine as the agent allowlist."""
+    if method == "GET":
+        return
+    raw_case_id = request.path_params.get("case_id")
+    if raw_case_id is None:
+        return
+    try:
+        case_id = uuid.UUID(str(raw_case_id))
+    except ValueError:
+        return  # malformed id: the route's own 422/404 owns it, not the wall
+    agency = (
+        await db.execute(
+            select(Agency)
+            .join(ClientCase, ClientCase.agency_id == Agency.id)
+            .where(ClientCase.id == case_id)
+        )
+    ).scalar_one_or_none()
+    if agency is None:
+        return  # unknown case: the manager's 404 answers, never the wall
+    if _closes_the_outside_faces(blocking_reason(agency, now=datetime.now(UTC))):
         raise ForbiddenError(
-            "The trial has ended or the subscription lapsed; "
-            "the workspace is read-only until payment.",
-            code="billing.subscription_required",
-            params={"reason": reason},
+            _WORKSPACE_CLOSED_MESSAGE,
+            code=_WORKSPACE_CLOSED_CODE,
+            params={"reason": "canceled"},
         )
 
 
@@ -429,4 +496,7 @@ async def enforce(
     expat, payload = await _resolve_expat(request, db)
     _enforce_impersonation(request, payload, Audience.EXPAT, method, path)
     await _enforce_consent(request, db, Audience.EXPAT, expat, method, path)
+    # The canceled wall, per CASE (lot 10/08) — a closed agency's client
+    # space stops accepting writes; the client's other agencies do not.
+    await _enforce_expat_billing_lock(db, request, method)
     request.state.actor = expat
