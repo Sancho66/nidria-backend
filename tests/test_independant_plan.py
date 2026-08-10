@@ -529,3 +529,46 @@ async def test_plan_change_guards(
     assert same.status_code == 422, same.text
     assert same.json()["code"] == "billing.plan_change_same_plan"
     assert push.await_count == 0  # un refus ne touche jamais Paddle
+
+
+async def test_annual_agency_can_go_back_to_monthly(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LE SENS DESCENDANT (constat bug 2, 10/08) — le symétrique du test
+    de bascule ci-dessus, qui ne couvrait que mensuel → annuel : une
+    agence ANNUELLE voit sa face mensuelle OFFERTE (selectable, sans
+    reason) et le geste l'applique. Paddle l'accepte et crédite le
+    restant de l'année (preuve sandbox : un avoir de −440,74 € sur une
+    sub Indépendant annuelle) — rien, d'aucun côté, ne ferme ce chemin."""
+    await _paddle_agency(db_session, admin.agency_id, plan="cabinet", cycle="annuel")
+    headers = agent_headers(admin)
+
+    grid = await client.post("/billing/plan-change/quote", headers=headers)
+    assert grid.status_code == 200, grid.text
+    body = grid.json()
+    assert (body["current_plan"], body["current_cycle"]) == ("cabinet", "annuel")
+    faces = {(o["plan"], o["billing_cycle"]): o for o in body["options"]}
+    monthly = faces[("cabinet", "mensuel")]
+    assert monthly["is_current"] is False
+    assert monthly["selectable"] is True and monthly["reason"] is None
+    assert faces[("cabinet", "annuel")]["selectable"] is False  # la face assise
+
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    applied = await client.post(
+        "/billing/plan-change",
+        headers=headers,
+        json={"target_plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["billing_cycle"] == "mensuel"
+    items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
+    assert items == {"pri_base_cab_m": 1}
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    await db_session.refresh(agency)
+    assert agency.billing_cycle == "mensuel"
