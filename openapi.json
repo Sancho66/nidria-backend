@@ -4430,6 +4430,31 @@
         }
       }
     },
+    "/agencies/me/export": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export Agency Data",
+        "description": "Export the agency's profiles + cases + history as a ZIP of CSVs.\nDeposited documents are excluded (README says so); they stay\ndownloadable case by case.",
+        "operationId": "export_agency_data_agencies_me_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/cases/columns": {
       "get": {
         "tags": [

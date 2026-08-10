@@ -167,6 +167,7 @@ def collect_bindings() -> list[RouteBinding]:
     )
     from src.documents.documents_router import BINDINGS as documents_bindings
     from src.expat.expat_router import BINDINGS as expat_bindings
+    from src.export.export_router import BINDINGS as export_bindings
     from src.external.external_router import BINDINGS as external_bindings
     from src.impersonation.impersonation_router import BINDINGS as impersonation_bindings
     from src.imports.imports_router import BINDINGS as imports_bindings
@@ -186,6 +187,7 @@ def collect_bindings() -> list[RouteBinding]:
         *signup_bindings,
         *billing_bindings,
         *agencies_bindings,
+        *export_bindings,
         *admin_bindings,
         *roles_bindings,
         *impersonation_bindings,
