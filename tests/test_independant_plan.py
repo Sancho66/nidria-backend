@@ -297,10 +297,10 @@ async def test_plan_changes_rederive_the_seat_mirror(
     assert items == {"pri_base_cab_m": 1}  # resorbed: 3 managers on 3 included
 
 
-# --- plan-change/quote : la comparaison dans les deux sens (demande front 09/08) -------
+# --- la GRILLE complète : six faces, selectable servi (lot 10/08) ----------------------
 
 
-async def test_plan_change_quote_prices_both_directions(
+async def test_plan_change_quote_serves_the_whole_grid(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
@@ -309,48 +309,64 @@ async def test_plan_change_quote_prices_both_directions(
     make_agent: MakeAgent,
     system_roles: dict[str, Role],
 ) -> None:
-    """Cabinet (3 gestionnaires) → Indépendant : « 149.00 vs vos 99.00
-    actuels » — les deux totaux SERVIS avec la composition courante, le
-    front n'a que la phrase. Le sens inverse redescend à 99.00."""
+    """UN appel rend les TROIS plans × DEUX cycles avec la composition
+    courante (Cabinet mensuel, 3 gestionnaires) — plus l'équivalent
+    mensuel des faces annuelles, pour comparer sans diviser."""
     await _convert(client, superadmin, agent_headers, admin.agency_id, plan="cabinet")
     for i in range(2):  # 3 managers
         await make_agent(
             role=system_roles["member"], agency_id=admin.agency_id, email=f"pc{i}@example.com"
         )
-    headers = agent_headers(admin)
 
-    quoted = await client.post(
-        "/billing/plan-change/quote", headers=headers, json={"target_plan": "independant"}
-    )
+    quoted = await client.post("/billing/plan-change/quote", headers=agent_headers(admin))
     assert quoted.status_code == 200, quoted.text
     body = quoted.json()
-    assert body["current"] == {
-        "plan": "cabinet",
-        "included_managers": 3,
-        "manager_seats_billed": 0,
-        "manager_seat_unit_price": "35.00",
-        "total_recurring": "99.00",
-    }
-    assert body["target"] == {
-        "plan": "independant",
-        "included_managers": 1,
-        "manager_seats_billed": 2,
-        "manager_seat_unit_price": "50.00",
-        "total_recurring": "149.00",  # 49 + 2×50 : la comparaison arrête seule
-    }
+    assert body["current_plan"] == "cabinet" and body["current_cycle"] == "mensuel"
+    assert len(body["options"]) == 6  # jamais six appels côté front
 
-    # Le sens voulu (une agence Indépendant regarde Cabinet) : symétrique.
-    agency = await db_session.get(Agency, admin.agency_id)
-    assert agency is not None
-    agency.plan = "independant"
-    await db_session.commit()
-    quoted = await client.post(
-        "/billing/plan-change/quote", headers=headers, json={"target_plan": "cabinet"}
-    )
-    assert quoted.status_code == 200, quoted.text
-    body = quoted.json()
-    assert body["current"]["total_recurring"] == "149.00"
-    assert body["target"]["total_recurring"] == "99.00"  # les sièges à 50 se résorbent
+    faces = {(o["plan"], o["billing_cycle"]): o for o in body["options"]}
+    # Indépendant: 1 inclus → 2 sièges à 50 (le downgrade coûteux, dit).
+    assert faces[("independant", "mensuel")]["total_recurring"] == "149.00"
+    assert faces[("independant", "mensuel")]["manager_seats_billed"] == 2
+    assert faces[("independant", "mensuel")]["monthly_equivalent"] is None
+    assert faces[("independant", "annuel")]["total_recurring"] == "1490.00"
+    assert faces[("independant", "annuel")]["monthly_equivalent"] == "124.17"
+    # Cabinet: 3 inclus → rien de facturé, la face courante.
+    assert faces[("cabinet", "mensuel")]["total_recurring"] == "99.00"
+    assert faces[("cabinet", "annuel")]["total_recurring"] == "990.00"
+    assert faces[("cabinet", "annuel")]["monthly_equivalent"] == "82.50"
+    assert faces[("agence", "mensuel")]["total_recurring"] == "129.00"
+    assert faces[("agence", "annuel")]["monthly_equivalent"] == "107.50"
+
+
+async def test_plan_change_quote_serves_the_offer_rule(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """La règle d'offre est SERVIE, jamais devinée : la face courante
+    (même plan, même cycle) n'est pas sélectionnable et le dit ; le MÊME
+    plan dans l'AUTRE cycle l'est (c'est la bascule de cycle) ; tout le
+    reste l'est."""
+    await _convert(client, superadmin, agent_headers, admin.agency_id, plan="cabinet")
+
+    body = (await client.post("/billing/plan-change/quote", headers=agent_headers(admin))).json()
+    faces = {(o["plan"], o["billing_cycle"]): o for o in body["options"]}
+
+    current = faces[("cabinet", "mensuel")]
+    assert current["is_current"] is True
+    assert current["selectable"] is False
+    assert current["reason"] == "current_plan_and_cycle"
+
+    cycle_switch = faces[("cabinet", "annuel")]  # LA bascule de cycle offerte
+    assert cycle_switch["is_current"] is False
+    assert cycle_switch["selectable"] is True and cycle_switch["reason"] is None
+
+    assert all(
+        faces[key]["selectable"] is True for key in faces if key != ("cabinet", "mensuel")
+    )  # une seule face fermée, jamais deux
 
 
 async def test_plan_change_quote_guards(
@@ -360,24 +376,156 @@ async def test_plan_change_quote_guards(
     superadmin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    """Essai → 409 (rien à comparer sans abonnement) ; même plan → 422
-    nommée ; sur_mesure → 409 nommée (pas de grille)."""
+    """Essai → 409 (rien à comparer sans abonnement) ; sur_mesure → 409
+    nommée (pas de grille self-serve où asseoir l'agence)."""
     headers = agent_headers(admin)
-    trial = await client.post(
-        "/billing/plan-change/quote", headers=headers, json={"target_plan": "cabinet"}
-    )
+    trial = await client.post("/billing/plan-change/quote", headers=headers)
     assert trial.status_code == 409, trial.text
     assert trial.json()["code"] == "billing.seats_require_subscription"
 
-    await _convert(client, superadmin, agent_headers, admin.agency_id, plan="cabinet")
+    await _convert(client, superadmin, agent_headers, admin.agency_id, plan="sur_mesure")
+    sur_mesure = await client.post("/billing/plan-change/quote", headers=headers)
+    assert sur_mesure.status_code == 409, sur_mesure.text
+    assert sur_mesure.json()["code"] == "billing.quote_unavailable"
+
+
+# --- L'EXÉCUTION : un seul PATCH Paddle (constat prouvé sandbox 10/08) -----------------
+
+
+async def _paddle_agency(db: AsyncSession, agency_id: uuid.UUID, *, plan: str, cycle: str) -> None:
+    agency = await db.get(Agency, agency_id)
+    assert agency is not None
+    agency.plan = plan
+    agency.billing_cycle = cycle
+    agency.converted_at = datetime.now(UTC)
+    agency.billing_mode = "paddle"
+    agency.billing_status = "active"
+    agency.paddle_subscription_id = "sub_plan_change"
+    await db.commit()
+
+
+async def test_plan_change_executes_in_one_patch_both_directions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Le geste qui manquait : plan ET cycle en UN update Paddle, prorata
+    immédiat, l'état local écrit APRÈS Paddle. Descente Cabinet →
+    Indépendant (3 gestionnaires → 2 sièges à 50), puis remontée (les
+    sièges se résorbent : la ligne quitte l'envoi)."""
+    await _paddle_agency(db_session, admin.agency_id, plan="cabinet", cycle="mensuel")
+    for i in range(2):  # 3 managers
+        await make_agent(
+            role=system_roles["member"], agency_id=admin.agency_id, email=f"ex{i}@example.com"
+        )
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    headers = agent_headers(admin)
+
+    down = await client.post(
+        "/billing/plan-change",
+        headers=headers,
+        json={"target_plan": "independant", "billing_cycle": "mensuel"},
+    )
+    assert down.status_code == 200, down.text
+    assert down.json() == {
+        "plan": "independant",
+        "billing_cycle": "mensuel",
+        "manager_seats_billed": 2,
+        "reader_seats": 0,
+        "total_recurring": "149.00",
+    }
+    push.assert_awaited_once()
+    assert push.await_args.kwargs["proration_billing_mode"] == "prorated_immediately"
+    items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
+    assert items == {"pri_base_ind_m": 1, "pri_seat_ind_m": 2}
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    await db_session.refresh(agency)
+    assert agency.plan == "independant" and agency.billing_cycle == "mensuel"
+
+    # Remontée : les sièges à 50 se résorbent dans les 3 inclus.
+    push.reset_mock()
+    up = await client.post(
+        "/billing/plan-change",
+        headers=headers,
+        json={"target_plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["total_recurring"] == "99.00"
+    items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
+    assert items == {"pri_base_cab_m": 1}  # la ligne siège a disparu
+
+
+async def test_plan_change_switches_the_cycle_in_the_same_gesture(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La bascule de cycle qu'Alexandre veut offrir : même plan, cycle
+    annuel — un seul PATCH (constat sandbox : Paddle porte les deux)."""
+    await _paddle_agency(db_session, admin.agency_id, plan="cabinet", cycle="mensuel")
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+
+    switched = await client.post(
+        "/billing/plan-change",
+        headers=agent_headers(admin),
+        json={"target_plan": "cabinet", "billing_cycle": "annuel"},
+    )
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["billing_cycle"] == "annuel"
+    assert switched.json()["total_recurring"] == "990.00"
+    items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
+    assert items == {"pri_base_cab_a": 1}
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    await db_session.refresh(agency)
+    assert agency.billing_cycle == "annuel"
+
+
+async def test_plan_change_guards(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Essai → la CONVERSION (409 not_paddle_managed, l'état d'essai du
+    front) ; sur_mesure → refus nommé ; même plan + même cycle → 422 ;
+    et AUCUN appel Paddle sur un refus."""
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    headers = agent_headers(admin)
+
+    trial = await client.post(
+        "/billing/plan-change",
+        headers=headers,
+        json={"target_plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    assert trial.status_code == 409, trial.text
+    assert trial.json()["code"] == "billing.not_paddle_managed"  # → le checkout
+
+    await _paddle_agency(db_session, admin.agency_id, plan="cabinet", cycle="mensuel")
+    sur_mesure = await client.post(
+        "/billing/plan-change",
+        headers=headers,
+        json={"target_plan": "sur_mesure", "billing_cycle": "mensuel"},
+    )
+    assert sur_mesure.status_code == 409, sur_mesure.text
+    assert sur_mesure.json()["code"] == "billing.plan_change_unavailable"
+
     same = await client.post(
-        "/billing/plan-change/quote", headers=headers, json={"target_plan": "cabinet"}
+        "/billing/plan-change",
+        headers=headers,
+        json={"target_plan": "cabinet", "billing_cycle": "mensuel"},
     )
     assert same.status_code == 422, same.text
     assert same.json()["code"] == "billing.plan_change_same_plan"
-
-    sur_mesure = await client.post(
-        "/billing/plan-change/quote", headers=headers, json={"target_plan": "sur_mesure"}
-    )
-    assert sur_mesure.status_code == 409, sur_mesure.text
-    assert sur_mesure.json()["code"] == "billing.quote_unavailable"
+    assert push.await_count == 0  # un refus ne touche jamais Paddle

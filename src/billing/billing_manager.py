@@ -28,9 +28,10 @@ from src.billing.billing_schema import (
     CheckoutCreateResponse,
     ManagerQuoteLine,
     PaymentMethodUpdateResponse,
-    PlanChangeQuoteRequest,
+    PlanChangeFace,
     PlanChangeQuoteResponse,
-    PlanChangeSide,
+    PlanChangeRequest,
+    PlanChangeResponse,
     ReaderQuoteLine,
     ReferralDiscountState,
     SeatQuantityRequest,
@@ -1192,57 +1193,175 @@ class BillingManager:
         await self.db.commit()
         return await AgenciesManager(self.db).seat_usage(agency)
 
-    async def plan_change_quote(
-        self, agent: Agent, payload: PlanChangeQuoteRequest
-    ) -> PlanChangeQuoteResponse:
-        """POST /billing/plan-change/quote (demande front 09/08) — the
-        plan-change comparison in both directions: the CURRENT committed
-        composition (roster + attente managers, reader pool) priced on
-        the current plan AND on the target. Read-only, declared-catalog
-        priced, the agency's cycle kept. Cabinet→Indépendant with 3
-        managers says « 149.00 vs 99.00 » — the information stops the
-        client, never a refusal."""
+    # The self-serve plan grid: the three plans, both cycles. sur_mesure
+    # is deliberately absent (a hand-written devis has no grid).
+    _GRID_PLANS = (
+        SubscriptionPlan.INDEPENDANT.value,
+        SubscriptionPlan.CABINET.value,
+        SubscriptionPlan.AGENCE.value,
+    )
+
+    def _plan_face_cents(
+        self, plan: str, cycle: str, managers: int, offered: int, readers: int
+    ) -> tuple[int, int, int, int]:
+        """(included, billed seats, seat unit cents, total cents) for ONE
+        (plan, cycle) face — the reader pool priced AT THAT FACE'S cycle,
+        so an annual face is a real annual bill, not a mixed one."""
+        from src.agencies.agencies_manager import SEATS_INCLUDED_BY_PLAN
+
+        included = SEATS_INCLUDED_BY_PLAN[plan]
+        seat_cents = _DECLARED_CENTS[f"seat_{plan}_{cycle}"]
+        billed = max(0, managers - included - offered)
+        total = (
+            _DECLARED_CENTS[f"{plan}_{cycle}"]
+            + seat_cents * billed
+            + _DECLARED_CENTS[f"seat_reader_{cycle}"] * readers
+        )
+        return included, billed, seat_cents, total
+
+    async def plan_change_quote(self, agent: Agent) -> PlanChangeQuoteResponse:
+        """POST /billing/plan-change/quote (lot 10/08) — THE WHOLE GRID in
+        one call: the three plans × the two cycles, each priced with the
+        agency's current committed composition, plus `selectable`/`reason`
+        so the front never invents an offer rule. Read-only, declared
+        catalog, no Paddle traffic."""
         agency = await self._seat_pool_agency(agent)
         cycle = agency.billing_cycle
-        target = payload.target_plan.value
-        if target == agency.plan:
-            raise ValidationError(
-                "The target plan is the current plan.",
-                code="billing.plan_change_same_plan",
+        if cycle is None or agency.plan not in self._GRID_PLANS:
+            # sur_mesure (hand-written devis) or a cycle-less manual row:
+            # no self-serve grid to sit the agency on.
+            raise ConflictError(
+                "This plan has no self-serve seat grid to quote against.",
+                code="billing.quote_unavailable",
+                params={"plan": agency.plan},
             )
-        from src.agencies.agencies_manager import SEATS_INCLUDED_BY_PLAN, AgenciesManager
+        from src.agencies.agencies_manager import AgenciesManager
 
-        for plan in (agency.plan, target):
-            if cycle is None or f"seat_{plan}_{cycle}" not in _DECLARED_CENTS:
-                raise ConflictError(
-                    "This plan has no self-serve seat grid to quote against.",
-                    code="billing.quote_unavailable",
-                    params={"plan": plan},
-                )
         usage = await AgenciesManager(self.db).seat_usage(agency)
-        reader_part = _DECLARED_CENTS[f"seat_reader_{cycle}"] * usage.reader.purchased
-        offered = agency.founding_free_seats
-
-        def _side(plan: str) -> PlanChangeSide:
-            included = SEATS_INCLUDED_BY_PLAN[plan]
-            seat_cents = _DECLARED_CENTS[f"seat_{plan}_{cycle}"]
-            billed = max(0, usage.managers - included - offered)
-            total = _DECLARED_CENTS[f"{plan}_{cycle}"] + seat_cents * billed + reader_part
-            return PlanChangeSide(
-                plan=plan,
-                included_managers=included,
-                manager_seats_billed=billed,
-                manager_seat_unit_price=_eur(seat_cents),
-                total_recurring=_eur(total),
-            )
-
-        assert agency.plan is not None
+        options: list[PlanChangeFace] = []
+        for plan in self._GRID_PLANS:
+            for face_cycle in (BillingCycle.MONTHLY.value, BillingCycle.ANNUAL.value):
+                included, billed, seat_cents, total = self._plan_face_cents(
+                    plan,
+                    face_cycle,
+                    usage.managers,
+                    agency.founding_free_seats,
+                    usage.reader.purchased,
+                )
+                is_current = plan == agency.plan and face_cycle == cycle
+                options.append(
+                    PlanChangeFace(
+                        plan=plan,
+                        billing_cycle=face_cycle,
+                        included_managers=included,
+                        manager_seats_billed=billed,
+                        manager_seat_unit_price=_eur(seat_cents),
+                        total_recurring=_eur(total),
+                        # Annual faces carry their monthly equivalent so the
+                        # front compares cycles without dividing anything.
+                        monthly_equivalent=(
+                            (Decimal(total) / 12 / 100).quantize(
+                                Decimal("0.01"), rounding=ROUND_HALF_UP
+                            )
+                            if face_cycle == BillingCycle.ANNUAL.value
+                            else None
+                        ),
+                        is_current=is_current,
+                        # THE OFFER RULE, served: the face the agency sits
+                        # on has nothing to do; the SAME plan in the other
+                        # cycle IS offered (that is the cycle switch); every
+                        # other face is open.
+                        selectable=not is_current,
+                        reason="current_plan_and_cycle" if is_current else None,
+                    )
+                )
         return PlanChangeQuoteResponse(
             currency=CURRENCY,
-            billing_cycle=cycle,
             billing_mode=agency.billing_mode,
-            current=_side(agency.plan),
-            target=_side(target),
+            current_plan=agency.plan,
+            current_cycle=cycle,
+            options=options,
+        )
+
+    async def plan_change(self, agent: Agent, payload: PlanChangeRequest) -> PlanChangeResponse:
+        """POST /billing/plan-change (lot 10/08) — the EXECUTION: plan AND
+        cycle in ONE Paddle subscription update, prorated immediately.
+
+        CONSTAT PROUVÉ EN SANDBOX (10/08): Paddle carries both in a single
+        PATCH — cabinet mensuel → indépendant annuel billed 49 000c (full
+        annual) − 2 277c (prorated credit of the unused month) in one
+        invoice. No two-step dance, no cancel-and-resubscribe.
+
+        Paddle FIRST, local state after: the update IS the billing act, so
+        a Paddle failure aborts the whole gesture (never a plan changed in
+        our base that Paddle ignores — the webhook echo would then alert
+        forever)."""
+        agency = await self._paddle_managed_agency(agent)
+        target, target_cycle = payload.target_plan.value, payload.billing_cycle.value
+        if target not in self._GRID_PLANS:
+            raise ConflictError(
+                "This plan is not self-serve; it is arranged with the team.",
+                code="billing.plan_change_unavailable",
+                params={"plan": target},
+            )
+        if target == agency.plan and target_cycle == agency.billing_cycle:
+            raise ValidationError(
+                "This is already the current plan and cycle.",
+                code="billing.plan_change_same_plan",
+            )
+        settings = get_settings()
+        base_price = settings.paddle_price_ids.get(_price_key(target, target_cycle))
+        seat_price = settings.paddle_price_ids.get(_seat_price_key(target, target_cycle))
+        reader_price = settings.paddle_price_ids.get(_reader_price_key(target_cycle))
+        if base_price is None or seat_price is None or reader_price is None:
+            raise ConflictError(
+                "Paddle billing is not configured on this environment.",
+                code="billing.not_configured",
+            )
+        from src.agencies.agencies_manager import SEAT_PRICES_EUR, AgenciesManager
+
+        usage = await AgenciesManager(self.db).seat_usage(agency)
+        pool = agency.reader_seats_purchased
+        _, billed, _, total_cents = self._plan_face_cents(
+            target, target_cycle, usage.managers, agency.founding_free_seats, pool
+        )
+        items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
+        if billed > 0:
+            items.append({"price_id": seat_price, "quantity": billed})
+        if pool > 0:
+            items.append({"price_id": reader_price, "quantity": pool})
+        assert agency.paddle_subscription_id is not None
+        await PaddleClient().update_subscription_items(
+            agency.paddle_subscription_id,
+            items=items,
+            proration_billing_mode="prorated_immediately",
+        )
+        self._invalidate_subscription_cache(agency.paddle_subscription_id)
+        previous_plan, previous_cycle = agency.plan, agency.billing_cycle
+        agency.plan = target
+        agency.billing_cycle = target_cycle
+        agency.seat_price_eur = SEAT_PRICES_EUR.get(target)
+        from src.usage.usage_manager import UsageManager
+
+        await UsageManager(self.db).emit(
+            agency_id=agency.id,
+            event_type="agency.plan_changed",
+            actor_type=ActorType.AGENT,
+            actor_id=agent.id,
+            details={
+                "from": {"plan": previous_plan, "cycle": previous_cycle},
+                "to": {"plan": target, "cycle": target_cycle},
+                "manager_seats_billed": billed,
+                "reader_seats": pool,
+            },
+        )
+        await self.db.commit()
+        return PlanChangeResponse(
+            plan=target,
+            billing_cycle=target_cycle,
+            manager_seats_billed=billed,
+            reader_seats=pool,
+            total_recurring=_eur(total_cents),
         )
 
     async def quote_seats(self, agent: Agent, payload: SeatQuoteRequest) -> SeatQuoteResponse:

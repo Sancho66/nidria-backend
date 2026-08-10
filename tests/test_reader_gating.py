@@ -79,6 +79,7 @@ WRITE_SWEEP = [
     ("billing-sieges-retrait", "POST", "/billing/seats/remove"),
     ("billing-sieges-quote", "POST", "/billing/seats/quote"),
     ("billing-plan-change-quote", "POST", "/billing/plan-change/quote"),
+    ("billing-plan-change", "POST", "/billing/plan-change"),
     ("impersonation", "POST", f"/agencies/me/members/{_ID}/impersonate"),
 ]
 

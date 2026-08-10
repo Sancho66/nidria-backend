@@ -256,43 +256,74 @@ class SeatQuoteResponse(BaseModel):
         return str(value) if value is not None else None
 
 
-class PlanChangeQuoteRequest(BaseModel):
-    """POST /billing/plan-change/quote — « votre facture si vous passiez
-    sur X », with the CURRENT committed composition (roster + attente,
-    reader pool included). The agency's cycle is kept: a plan change
-    never silently changes the cycle."""
-
-    target_plan: SubscriptionPlan
-
-
-class PlanChangeSide(BaseModel):
-    """One side of the plan-change comparison — everything the sentence
-    needs (« 149 €/mois vs vos 99 actuels »), SERVED, never computed
-    front-side."""
+class PlanChangeFace(BaseModel):
+    """ONE face of the plan grid — a (plan, cycle) pair priced with the
+    agency's CURRENT committed composition. `selectable` + `reason` are
+    SERVED, never guessed front-side: the current plan in the SAME cycle
+    has nothing to do; the current plan in the OTHER cycle IS offered
+    (the cycle switch); every other face is open. `monthly_equivalent`
+    (annual faces only) lets the front compare cycles without dividing."""
 
     plan: str
+    billing_cycle: str
     included_managers: int
     manager_seats_billed: int
     manager_seat_unit_price: Decimal
     total_recurring: Decimal
+    monthly_equivalent: Decimal | None = None
+    is_current: bool
+    selectable: bool
+    reason: str | None = None
 
     @field_serializer("manager_seat_unit_price", "total_recurring")
     def _ser_money(self, value: Decimal) -> str:
         return str(value)
 
+    @field_serializer("monthly_equivalent")
+    def _ser_optional_money(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
+
 
 class PlanChangeQuoteResponse(BaseModel):
-    """The comparison in BOTH directions (demande front 09/08): the same
-    committed composition priced on the current plan and on the target —
-    base + billed manager seats + the reader pool (identical on both
-    sides, kept in the totals so they stay apples-to-apples). INDICATIVE,
-    declared-catalog priced; Paddle stays the sole judge at payment."""
+    """POST /billing/plan-change/quote — the WHOLE grid in ONE call (lot
+    10/08): every plan × every cycle priced with the agency's current
+    committed composition (roster + attente managers, reader pool on both
+    sides so the comparison stays apples-to-apples), plus which face the
+    agency sits on. INDICATIVE, declared-catalog priced; Paddle stays the
+    sole judge at payment. No request body: the grid is always complete —
+    the front never issues six calls, and never invents a rule."""
 
     currency: str
-    billing_cycle: str
     billing_mode: str
-    current: PlanChangeSide
-    target: PlanChangeSide
+    current_plan: str
+    current_cycle: str
+    options: list[PlanChangeFace]
+
+
+class PlanChangeRequest(BaseModel):
+    """POST /billing/plan-change — the EXECUTION gesture (lot 10/08):
+    plan AND cycle in one move, because Paddle carries both in a single
+    subscription update (constat prouvé en sandbox: cabinet mensuel →
+    indépendant annuel = un PATCH, une facture proratisée)."""
+
+    target_plan: SubscriptionPlan
+    billing_cycle: BillingCycle
+
+
+class PlanChangeResponse(BaseModel):
+    """What was APPLIED — echoed back so the screen can confirm without a
+    second read (the Paddle invoice is the sole judge of the prorated
+    amount charged today; this is the new RECURRING truth)."""
+
+    plan: str
+    billing_cycle: str
+    manager_seats_billed: int
+    reader_seats: int
+    total_recurring: Decimal
+
+    @field_serializer("total_recurring")
+    def _ser_money(self, value: Decimal) -> str:
+        return str(value)
 
 
 class SubscriptionCancelResponse(BaseModel):

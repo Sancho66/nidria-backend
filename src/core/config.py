@@ -64,7 +64,10 @@ class Settings(BaseSettings):
     # for the full glm-4.7 set 0.40/1.75 alongside the model switch.
     ai_translation_price_input_usd_per_mtok: float = 0.06
     ai_translation_price_output_usd_per_mtok: float = 0.40
-    agent_invitation_expires_days: int = 7
+    # 30 days (décision 10/08) — a VALUE, never a hardcoded literal:
+    # the stamp lands on agent_invitation.expires_at AT CREATION, so a
+    # change of mind never resurrects already-expired rows.
+    agent_invitation_expires_days: int = 30
     # Expats are clients, not staff — longer runway than agent invites.
     case_invitation_expires_days: int = 14
 

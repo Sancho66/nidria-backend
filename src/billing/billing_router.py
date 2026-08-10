@@ -10,8 +10,9 @@ from src.billing.billing_schema import (
     CheckoutCreateRequest,
     CheckoutCreateResponse,
     PaymentMethodUpdateResponse,
-    PlanChangeQuoteRequest,
     PlanChangeQuoteResponse,
+    PlanChangeRequest,
+    PlanChangeResponse,
     SeatQuantityRequest,
     SeatQuoteRequest,
     SeatQuoteResponse,
@@ -50,6 +51,8 @@ BINDINGS = [
     # The plan-change comparison (demande front 09/08): read-only, but it
     # prices the agency's money — same financial gate.
     RouteBinding("POST", "/billing/plan-change/quote", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # The EXECUTION (lot 10/08): it moves the subscription — same gate.
+    RouteBinding("POST", "/billing/plan-change", Audience.AGENT, Permission.AGENCY_MANAGE),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -106,7 +109,12 @@ async def quote_seats(body: SeatQuoteRequest, agent: AgentDep, db: DbDep) -> Sea
 
 
 @router.post("/plan-change/quote", response_model=PlanChangeQuoteResponse)
-async def plan_change_quote(
-    body: PlanChangeQuoteRequest, agent: AgentDep, db: DbDep
-) -> PlanChangeQuoteResponse:
-    return await BillingManager(db).plan_change_quote(agent, body)
+async def plan_change_quote(agent: AgentDep, db: DbDep) -> PlanChangeQuoteResponse:
+    """No body: the grid is ALWAYS complete (three plans × two cycles) —
+    one call, never six, and the front never invents an offer rule."""
+    return await BillingManager(db).plan_change_quote(agent)
+
+
+@router.post("/plan-change", response_model=PlanChangeResponse)
+async def plan_change(body: PlanChangeRequest, agent: AgentDep, db: DbDep) -> PlanChangeResponse:
+    return await BillingManager(db).plan_change(agent, body)

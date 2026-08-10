@@ -533,3 +533,76 @@ async def test_trial_conversion_full_manager_roster_bills_nothing(
     )
     assert checkout.status_code == 200, checkout.text
     assert create_txn.await_args.kwargs["items"] == [{"price_id": "pri_base_cab_m", "quantity": 1}]
+
+
+# --- (h) l'expiration passe à 30 jours (lot 10/08) -------------------------------------
+
+
+async def test_invitation_expiry_follows_the_setting_and_never_resurrects(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+    sync_session_local,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La durée est une VALEUR de config (30 j, décision 10/08), lue à la
+    CRÉATION et gravée dans expires_at. Deux conséquences prouvées ici :
+    une invitation neuve vit 30 jours ; une invitation DÉJÀ expirée sous
+    l'ancienne règle (7 j) reste expirée — l'allongement ne ressuscite
+    rien, parce que le terme est une colonne, jamais un calcul."""
+    from src.agencies import agencies_jobs
+
+    settings = get_settings()
+    assert settings.agent_invitation_expires_days == 30  # la valeur, pas un littéral
+
+    headers = agent_headers(admin)
+    before = datetime.now(UTC)
+    assert (
+        await _invite(client, headers, system_roles["member"], "neuve@example.com")
+    ).status_code == 201
+    fresh = (
+        await db_session.execute(
+            select(AgentInvitation).where(AgentInvitation.email == "neuve@example.com")
+        )
+    ).scalar_one()
+    lifetime = fresh.expires_at - before
+    assert timedelta(days=29, hours=23) < lifetime <= timedelta(days=30, minutes=1)
+
+    # Une invitation née sous l'ANCIENNE règle et déjà périmée : le stamp
+    # stocké fait foi, la nouvelle durée ne la rappelle pas à la vie.
+    assert (
+        await _invite(client, headers, system_roles["member"], "vieille@example.com")
+    ).status_code == 201
+    old = (
+        await db_session.execute(
+            select(AgentInvitation).where(AgentInvitation.email == "vieille@example.com")
+        )
+    ).scalar_one()
+    old.expires_at = datetime.now(UTC) - timedelta(days=1)  # stamp 7 j, périmé hier
+    await db_session.commit()
+    agency_id = admin.agency_id
+
+    # Le FILET : la périmée sort des comptes AVANT même le job.
+    seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
+    assert seats["members"] == 2  # admin + la neuve ; la périmée ne compte plus
+
+    def _sweep() -> dict:
+        with sync_session_local() as sync_db:
+            return agencies_jobs.expire_agent_invitations(sync_db, log=lambda _line: None)
+
+    monkeypatch.setattr(agencies_jobs, "_push_seat_quantities_down", Mock())
+    stats = await asyncio.to_thread(_sweep)
+    assert stats["expired"] == 1  # la périmée seule ; la neuve (30 j) est intacte
+
+    db_session.expire_all()
+    statuses = {
+        row.email: row.status
+        for row in (
+            await db_session.execute(
+                select(AgentInvitation).where(AgentInvitation.agency_id == agency_id)
+            )
+        ).scalars()
+    }
+    assert statuses == {"neuve@example.com": "pending", "vieille@example.com": "expired"}

@@ -1440,12 +1440,39 @@
           "billing"
         ],
         "summary": "Plan Change Quote",
+        "description": "No body: the grid is ALWAYS complete (three plans × two cycles) —\none call, never six, and the front never invents an offer rule.",
         "operationId": "plan_change_quote_billing_plan_change_quote_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanChangeQuoteResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/billing/plan-change": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Plan Change",
+        "operationId": "plan_change_billing_plan_change_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PlanChangeQuoteRequest"
+                "$ref": "#/components/schemas/PlanChangeRequest"
               }
             }
           },
@@ -1457,7 +1484,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanChangeQuoteResponse"
+                  "$ref": "#/components/schemas/PlanChangeResponse"
                 }
               }
             }
@@ -30987,56 +31014,15 @@
         "type": "object",
         "title": "PlanCatalogPrices"
       },
-      "PlanChangeQuoteRequest": {
-        "properties": {
-          "target_plan": {
-            "$ref": "#/components/schemas/SubscriptionPlan"
-          }
-        },
-        "type": "object",
-        "required": [
-          "target_plan"
-        ],
-        "title": "PlanChangeQuoteRequest",
-        "description": "POST /billing/plan-change/quote — « votre facture si vous passiez\nsur X », with the CURRENT committed composition (roster + attente,\nreader pool included). The agency's cycle is kept: a plan change\nnever silently changes the cycle."
-      },
-      "PlanChangeQuoteResponse": {
-        "properties": {
-          "currency": {
-            "type": "string",
-            "title": "Currency"
-          },
-          "billing_cycle": {
-            "type": "string",
-            "title": "Billing Cycle"
-          },
-          "billing_mode": {
-            "type": "string",
-            "title": "Billing Mode"
-          },
-          "current": {
-            "$ref": "#/components/schemas/PlanChangeSide"
-          },
-          "target": {
-            "$ref": "#/components/schemas/PlanChangeSide"
-          }
-        },
-        "type": "object",
-        "required": [
-          "currency",
-          "billing_cycle",
-          "billing_mode",
-          "current",
-          "target"
-        ],
-        "title": "PlanChangeQuoteResponse",
-        "description": "The comparison in BOTH directions (demande front 09/08): the same\ncommitted composition priced on the current plan and on the target —\nbase + billed manager seats + the reader pool (identical on both\nsides, kept in the totals so they stay apples-to-apples). INDICATIVE,\ndeclared-catalog priced; Paddle stays the sole judge at payment."
-      },
-      "PlanChangeSide": {
+      "PlanChangeFace": {
         "properties": {
           "plan": {
             "type": "string",
             "title": "Plan"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "title": "Billing Cycle"
           },
           "included_managers": {
             "type": "integer",
@@ -31053,18 +31039,139 @@
           "total_recurring": {
             "type": "string",
             "title": "Total Recurring"
+          },
+          "monthly_equivalent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Equivalent"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current"
+          },
+          "selectable": {
+            "type": "boolean",
+            "title": "Selectable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "type": "object",
         "required": [
           "plan",
+          "billing_cycle",
           "included_managers",
           "manager_seats_billed",
           "manager_seat_unit_price",
+          "total_recurring",
+          "is_current",
+          "selectable"
+        ],
+        "title": "PlanChangeFace",
+        "description": "ONE face of the plan grid — a (plan, cycle) pair priced with the\nagency's CURRENT committed composition. `selectable` + `reason` are\nSERVED, never guessed front-side: the current plan in the SAME cycle\nhas nothing to do; the current plan in the OTHER cycle IS offered\n(the cycle switch); every other face is open. `monthly_equivalent`\n(annual faces only) lets the front compare cycles without dividing."
+      },
+      "PlanChangeQuoteResponse": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "billing_mode": {
+            "type": "string",
+            "title": "Billing Mode"
+          },
+          "current_plan": {
+            "type": "string",
+            "title": "Current Plan"
+          },
+          "current_cycle": {
+            "type": "string",
+            "title": "Current Cycle"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/PlanChangeFace"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "billing_mode",
+          "current_plan",
+          "current_cycle",
+          "options"
+        ],
+        "title": "PlanChangeQuoteResponse",
+        "description": "POST /billing/plan-change/quote — the WHOLE grid in ONE call (lot\n10/08): every plan × every cycle priced with the agency's current\ncommitted composition (roster + attente managers, reader pool on both\nsides so the comparison stays apples-to-apples), plus which face the\nagency sits on. INDICATIVE, declared-catalog priced; Paddle stays the\nsole judge at payment. No request body: the grid is always complete —\nthe front never issues six calls, and never invents a rule."
+      },
+      "PlanChangeRequest": {
+        "properties": {
+          "target_plan": {
+            "$ref": "#/components/schemas/SubscriptionPlan"
+          },
+          "billing_cycle": {
+            "$ref": "#/components/schemas/BillingCycle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_plan",
+          "billing_cycle"
+        ],
+        "title": "PlanChangeRequest",
+        "description": "POST /billing/plan-change — the EXECUTION gesture (lot 10/08):\nplan AND cycle in one move, because Paddle carries both in a single\nsubscription update (constat prouvé en sandbox: cabinet mensuel →\nindépendant annuel = un PATCH, une facture proratisée)."
+      },
+      "PlanChangeResponse": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "title": "Billing Cycle"
+          },
+          "manager_seats_billed": {
+            "type": "integer",
+            "title": "Manager Seats Billed"
+          },
+          "reader_seats": {
+            "type": "integer",
+            "title": "Reader Seats"
+          },
+          "total_recurring": {
+            "type": "string",
+            "title": "Total Recurring"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "billing_cycle",
+          "manager_seats_billed",
+          "reader_seats",
           "total_recurring"
         ],
-        "title": "PlanChangeSide",
-        "description": "One side of the plan-change comparison — everything the sentence\nneeds (« 149 €/mois vs vos 99 actuels »), SERVED, never computed\nfront-side."
+        "title": "PlanChangeResponse",
+        "description": "What was APPLIED — echoed back so the screen can confirm without a\nsecond read (the Paddle invoice is the sole judge of the prorated\namount charged today; this is the new RECURRING truth)."
       },
       "PlanCyclePrices": {
         "properties": {

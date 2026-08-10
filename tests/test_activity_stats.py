@@ -343,10 +343,12 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     # La semaine PRÉCÉDENTE, bornée JUSTE : l'événement lundi-3j compté,
     # le lundi-10j (ancien) JAMAIS.
     prev_block = week["previous_period"]
-    # L'ARÊTE DU LUNDI (rouge CI du 03/08) : un lundi, « hier » tombe dans
-    # la semaine PRÉCÉDENTE — ses trois événements (étape admin, doc de
-    # l'autre, relance manuelle de l'autre) s'y comptent. Aucun n'entre au
-    # barème temps gagné (10 inchangé).
+    # L'ARÊTE DU LUNDI (rouge CI du 03/08, re-mordue le 10/08) : un lundi,
+    # « hier » tombe dans la semaine PRÉCÉDENTE — ses trois événements
+    # (étape admin, doc de l'autre, relance manuelle de l'autre) s'y
+    # comptent. Depuis l'élargissement du barème, l'ÉTAPE de ce jour-là
+    # entre aussi au temps gagné (+5) : le décalage vaut pour les compteurs
+    # ET pour les minutes, sinon le test n'est vrai que six jours sur sept.
     prev_extra = 0 if yesterday_in_week else 1
     assert prev_block["agency"]["steps_completed"] == 1 + prev_extra
     assert prev_block["me"]["steps_completed"] == 1 + prev_extra
@@ -356,7 +358,7 @@ async def test_the_four_kpis_me_vs_agency_and_period_bounds(
     # l'élargissement du barème fait entrer la seconde. « Pour vos
     # clients », lui, ne retient que la pièce : une étape est un geste
     # d'agence.
-    assert prev_block["time_saved_minutes"] == 8 + 5
+    assert prev_block["time_saved_minutes"] == 8 + 5 + prev_extra * 5
     assert prev_block["clients_time_saved_minutes"] == 8
     assert prev_block["until"].startswith(monday.date().isoformat())
 
