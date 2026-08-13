@@ -62,6 +62,29 @@ class Settings(BaseSettings):
     nurture_booking_url: str = ""
     # Never nurtured: the platform agency + internal test agencies.
     nurture_excluded_slugs: list[str] = ["nidria-demo"]
+    # ONBOARDING MAIL (spec Eric 13/08, P1) — one mail ~10 min after an
+    # agency is created, to the admin who created it.
+    #   enabled: `bool | None` like `mock_email` — None = derive from the
+    #   environment (production only), True/False force it. Default None
+    #   means a local seed of 20 agencies sends ZERO mail without anyone
+    #   having to remember a flag.
+    onboarding_email_enabled: bool | None = None
+    onboarding_email_delay_minutes: int = 10
+    # How long past its due time an agency may still receive the mail. Also
+    # what keeps the sweep off the EXISTING park: every agency created before
+    # this feature is far outside the window, so no backfill is needed and
+    # nobody gets a "welcome" months late. A job outage under 24 h catches up.
+    onboarding_email_catchup_hours: int = 24
+    # Internal addresses that never receive it (substring match on the
+    # lowercased creator email) — comma-separated in env, never hardcoded.
+    onboarding_email_excluded_patterns: Annotated[list[str], NoDecode] = [
+        "@nidria.com",
+        "@nidria.app",
+        "+test@",
+    ]
+    # Eric's 3-minute walkthrough. FRENCH whatever the recipient language
+    # (his decision): the mail is translated, the video is not.
+    onboarding_video_url: str = "https://youtu.be/ciyXd7KZpnU"
     # AI translation (journey templates, GLM via Z.ai OpenAI-compatible API).
     ai_translation_base_url: str = "https://api.z.ai/api/paas/v4"
     ai_translation_api_key: str = ""
@@ -260,6 +283,7 @@ class Settings(BaseSettings):
         "cors_origins",
         "allowed_document_extensions",
         "allowed_task_attachment_extensions",
+        "onboarding_email_excluded_patterns",
         mode="before",
     )
     @classmethod

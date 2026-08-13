@@ -35,6 +35,7 @@ from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.nurture import NurtureSend
 from shared.models.usage import AgencyUsageMilestone
+from src.agencies.onboarding_email_job import first_internal_member
 from src.core.config import get_settings
 from src.core.email import send_email
 from src.core.enums import NurtureSendStatus
@@ -78,14 +79,10 @@ def _activation_anchor(db: Session, agency: Agency) -> datetime:
 
 def _first_admin(db: Session, agency_id: Any) -> Agent | None:
     """The recipient: the agency's first admin — its earliest internal
-    member (the wizard creates the admin first; backfilled agencies
-    follow the same shape)."""
-    return db.execute(
-        select(Agent)
-        .where(Agent.agency_id == agency_id, Agent.is_external.is_(False))
-        .order_by(Agent.created_at)
-        .limit(1)
-    ).scalar_one_or_none()
+    member. THE shared rule (onboarding_email_job.first_internal_member),
+    so the nurture calendar and the onboarding mail can never write to two
+    different people."""
+    return first_internal_member(db, agency_id)
 
 
 def _burn(db: Session, row: NurtureSend | None, agency_id: Any, day_key: str, state: str) -> None:

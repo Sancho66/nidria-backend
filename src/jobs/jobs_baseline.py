@@ -36,6 +36,13 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         "cron_expression": "* * * * *",
     },
     {
+        "job_id": "onboarding_email",
+        "name": "Onboarding email (~10 min after an agency is created)",
+        # Every 5 minutes: the delay is 10 min, this only decides how
+        # precisely the mail lands on it (between J+10 and J+15).
+        "cron_expression": "*/5 * * * *",
+    },
+    {
         "job_id": "expire_agent_invitations",
         "name": "Expire agent invitations (return their seats)",
         # Hourly: invitations live 7 days — the sweep only bounds how late

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from shared.models.job import JobConfig
 from src.admin.platform_task_digest_job import send_platform_task_watcher_digests
 from src.agencies.agencies_jobs import expire_agent_invitations
+from src.agencies.onboarding_email_job import send_onboarding_emails
 from src.core.config import get_settings
 from src.core.enums import JobTriggeredBy
 from src.core.job_wrapper import Pipeline, run_job
@@ -32,6 +33,7 @@ JOB_REGISTRY: dict[str, Pipeline] = {
     "notification_digest": run_notification_digest,
     "platform_task_watcher_digest": send_platform_task_watcher_digests,
     "expire_agent_invitations": expire_agent_invitations,
+    "onboarding_email": send_onboarding_emails,
 }
 
 

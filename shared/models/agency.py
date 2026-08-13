@@ -190,6 +190,11 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # template is published immediately (the Nidria fallback dies), this
     # flags the human review. Blocks NOTHING.
     client_terms_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ONBOARDING MAIL (spec Eric 13/08): stamped AFTER a successful send, so
+    # a send that raises is retried by the next sweep — never posed upfront.
+    # NULL = not sent (yet, or never: the sweep only looks at agencies inside
+    # its catch-up window, so the pre-feature park stays untouched).
+    onboarding_email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def has_logo(self) -> bool:

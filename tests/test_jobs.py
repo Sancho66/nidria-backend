@@ -89,6 +89,7 @@ async def test_jobs_require_job_manage(
         "notification_digest",
         "platform_task_watcher_digest",
         "expire_agent_invitations",
+        "onboarding_email",
     }
 
 
@@ -272,4 +273,5 @@ async def test_seed_never_overwrites_runtime_edits(db_session: AsyncSession) -> 
     await db_session.refresh(config)
     assert config.cron_expression == "5 5 * * *"
     total = len((await db_session.execute(select(JobConfig))).scalars().all())
-    assert total == 6  # dispatch, auto, nurture, digest, platform_task_watcher, expire_invitations
+    # dispatch, auto, nurture, digest, platform_task_watcher, expire_invitations, onboarding
+    assert total == 7

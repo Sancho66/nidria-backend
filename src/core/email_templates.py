@@ -8,6 +8,7 @@ built by the callers on settings.frontend_url, never hardcoded here.
 """
 
 import html as html_lib
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.core.config import get_settings
@@ -127,6 +128,7 @@ def _render(
     body_text: str | None = None,
     validity: str | None = None,
     lang: str = "fr",
+    extra_buttons: Sequence[tuple[str, str]] = (),
 ) -> EmailContent:
     footer = _FOOTER.get(lang, _FOOTER["fr"])
     action_blocks = ""
@@ -137,6 +139,15 @@ def _render(
         action_blocks += _HTML_BUTTON.format(
             label=html_lib.escape(button_label),
             url=html_lib.escape(button_url, quote=True),
+            copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]),
+        )
+    # A SECOND call to action, stacked under the first (the onboarding mail
+    # carries both "open my space" and "watch the video"). The block is
+    # repeatable by construction — action_blocks is a concatenation.
+    for extra_label, extra_url in extra_buttons:
+        action_blocks += _HTML_BUTTON.format(
+            label=html_lib.escape(extra_label),
+            url=html_lib.escape(extra_url, quote=True),
             copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]),
         )
     if validity is not None:
@@ -155,6 +166,8 @@ def _render(
         text_parts += ["", body_text]
     if button_label is not None and button_url is not None:
         text_parts += ["", f"{button_label} : {button_url}"]
+    for extra_label, extra_url in extra_buttons:
+        text_parts += ["", f"{extra_label} : {extra_url}"]
     if validity is not None:
         text_parts += ["", validity]
     text_parts += ["", "--", footer]
@@ -2139,5 +2152,185 @@ def signature_credits_low_email(
         intro=s["intro"].format(agency=agency_name, available=available, threshold=threshold),
         button_label=s["button"],
         button_url=f"{get_settings().frontend_url}/app/settings",
+        lang=lang,
+    )
+
+
+# --- agency onboarding mail (spec Eric 13/08, P1) -------------------------------------
+#
+# Sent ONCE, ~10 min after an agency is created, to the admin who created it.
+# Same sender, same layout as the client-activation mail — no new
+# infrastructure (spec point 6).
+#
+# ⚠️ LA COPIE : Eric's file was not in the repo when this shipped. The FR text
+# below is built from the fragments the spec quotes VERBATIM (« Bonjour
+# {prénom} », « un dossier d'exemple est déjà prêt dans votre espace », the
+# button « Regarder la vidéo (3 min) »). Swapping in Eric's final wording is a
+# one-file edit HERE — nothing else reads the copy.
+#
+# The video stays FRENCH whatever the language (Eric's decision), so the
+# non-FR versions say so: a Hungarian admin clicking into a French video
+# without warning is a worse welcome than the warning itself.
+_AGENCY_ONBOARDING = {
+    "fr": {
+        "subject": "Bienvenue dans Nidria",
+        "title": "Bienvenue dans Nidria",
+        # Named vs plain: « Bonjour , » never happens (spec point 4).
+        "greeting_named": "Bonjour {first_name},",
+        "greeting_plain": "Bonjour,",
+        "intro": "votre espace Nidria est prêt.",
+        "body": (
+            "En trois minutes, la vidéo ci-dessous vous montre l'essentiel : créer un dossier, "
+            "suivre ses étapes, et ce que votre client voit de son côté."
+        ),
+        # Included ONLY when the agency really has one (spec point 7).
+        "example": (
+            "Un dossier d'exemple est déjà prêt dans votre espace : ouvrez-le pour voir le "
+            "résultat sans rien saisir."
+        ),
+        "video_note": "",
+        "button_app": "Ouvrir mon espace",
+        "button_video": "Regarder la vidéo (3 min)",
+    },
+    "en": {
+        "subject": "Welcome to Nidria",
+        "title": "Welcome to Nidria",
+        "greeting_named": "Hello {first_name},",
+        "greeting_plain": "Hello,",
+        "intro": "your Nidria space is ready.",
+        "body": (
+            "In three minutes, the video below shows you the essentials: creating a case, "
+            "following its steps, and what your client sees on their side."
+        ),
+        "example": (
+            "An example case is already waiting in your space: open it to see the result "
+            "without typing anything."
+        ),
+        "video_note": "The video is in French.",
+        "button_app": "Open my space",
+        "button_video": "Watch the video (3 min)",
+    },
+    "es": {
+        "subject": "Bienvenido a Nidria",
+        "title": "Bienvenido a Nidria",
+        "greeting_named": "Hola {first_name}:",
+        "greeting_plain": "Hola:",
+        "intro": "su espacio Nidria está listo.",
+        "body": (
+            "En tres minutos, el vídeo de abajo le muestra lo esencial: crear un expediente, "
+            "seguir sus etapas y lo que su cliente ve por su lado."
+        ),
+        "example": (
+            "Un expediente de ejemplo ya le espera en su espacio: ábralo para ver el resultado "
+            "sin escribir nada."
+        ),
+        "video_note": "El vídeo está en francés.",
+        "button_app": "Abrir mi espacio",
+        "button_video": "Ver el vídeo (3 min)",
+    },
+    "ru": {
+        "subject": "Добро пожаловать в Nidria",
+        "title": "Добро пожаловать в Nidria",
+        "greeting_named": "Здравствуйте, {first_name},",
+        "greeting_plain": "Здравствуйте,",
+        "intro": "ваше пространство Nidria готово.",
+        "body": (
+            "За три минуты видео ниже покажет вам главное: как создать дело, как следить за его "
+            "этапами и что видит ваш клиент со своей стороны."
+        ),
+        "example": (
+            "Пример дела уже готов в вашем пространстве: откройте его, чтобы увидеть результат, "
+            "ничего не вводя."
+        ),
+        "video_note": "Видео на французском языке.",
+        "button_app": "Открыть пространство",
+        "button_video": "Смотреть видео (3 мин)",
+    },
+    "pt": {
+        "subject": "Bem-vindo à Nidria",
+        "title": "Bem-vindo à Nidria",
+        "greeting_named": "Olá {first_name},",
+        "greeting_plain": "Olá,",
+        "intro": "o seu espaço Nidria está pronto.",
+        "body": (
+            "Em três minutos, o vídeo abaixo mostra-lhe o essencial: criar um processo, "
+            "acompanhar as suas etapas e o que o seu cliente vê do lado dele."
+        ),
+        "example": (
+            "Um processo de exemplo já o espera no seu espaço: abra-o para ver o resultado sem "
+            "escrever nada."
+        ),
+        "video_note": "O vídeo está em francês.",
+        "button_app": "Abrir o meu espaço",
+        "button_video": "Ver o vídeo (3 min)",
+    },
+    "it": {
+        "subject": "Benvenuto in Nidria",
+        "title": "Benvenuto in Nidria",
+        "greeting_named": "Buongiorno {first_name},",
+        "greeting_plain": "Buongiorno,",
+        "intro": "il tuo spazio Nidria è pronto.",
+        "body": (
+            "In tre minuti, il video qui sotto ti mostra l'essenziale: creare una pratica, "
+            "seguirne le fasi e ciò che il tuo cliente vede dal suo lato."
+        ),
+        "example": (
+            "Una pratica di esempio ti aspetta già nel tuo spazio: aprila per vedere il "
+            "risultato senza scrivere nulla."
+        ),
+        "video_note": "Il video è in francese.",
+        "button_app": "Apri il mio spazio",
+        "button_video": "Guarda il video (3 min)",
+    },
+    "hu": {
+        "subject": "Üdvözöljük a Nidriában",
+        "title": "Üdvözöljük a Nidriában",
+        "greeting_named": "Kedves {first_name},",
+        "greeting_plain": "Üdvözöljük,",
+        "intro": "a Nidria felülete készen áll.",
+        "body": (
+            "Az alábbi videó három perc alatt bemutatja a lényeget: hogyan hoz létre egy ügyet, "
+            "hogyan követi a lépéseit, és mit lát ebből az ügyfele."
+        ),
+        "example": (
+            "Egy mintaügy már készen várja a felületén: nyissa meg, és gépelés nélkül látja az "
+            "eredményt."
+        ),
+        "video_note": "A videó francia nyelvű.",
+        "button_app": "Belépés a felületre",
+        "button_video": "Videó megtekintése (3 perc)",
+    },
+}
+
+
+def agency_onboarding_email(
+    first_name: str | None,
+    app_url: str,
+    video_url: str,
+    lang: str = "fr",
+    has_example_case: bool = True,
+) -> EmailContent:
+    """The welcome mail of a freshly created agency, in the agency language
+    (fr/en/es/hu; any other language falls back to FR via `_pick`).
+
+    `first_name` empty or blank → « Bonjour, » (never « Bonjour , »).
+    `has_example_case` False → the example sentence is DROPPED rather than
+    promising a dossier the agency does not have."""
+    s = _pick(_AGENCY_ONBOARDING, lang)
+    name = (first_name or "").strip()
+    greeting = s["greeting_named"].format(first_name=name) if name else s["greeting_plain"]
+    lines = [s["body"]]
+    if has_example_case:
+        lines.append(s["example"])
+    if s["video_note"]:
+        lines.append(s["video_note"])
+    return _render(
+        subject=s["subject"],
+        title=s["title"],
+        intro=f"{greeting} {s['intro']}",
+        body_text="\n\n".join(lines),
+        button_label=s["button_app"],
+        button_url=app_url,
+        extra_buttons=((s["button_video"], video_url),),
         lang=lang,
     )
