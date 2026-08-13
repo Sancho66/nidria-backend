@@ -3,9 +3,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.consent import ConsentDocument
 from shared.models.expat_user import ExpatUser
+from src.consents.agency_tokens import resolve
 from src.consents.consents_repository import ConsentsRepository
 from src.consents.consents_schema import (
     ConsentAcceptRequest,
@@ -32,13 +34,15 @@ from src.core.rbac.consent_gate import (
 )
 
 
-def _resolve(doc: ConsentDocument, agency_name: str) -> PendingDocumentResponse:
-    """{agency_name} resolved at READ time; the hash stays that of the
-    RAW text (what the acceptance copies)."""
+def _resolve(doc: ConsentDocument, agency: Agency | None) -> PendingDocumentResponse:
+    """Tokens resolved at READ time — the WHOLE catalogue now (legal
+    identity included), not just {agency_name}. The hash stays that of the
+    RAW text (what the acceptance copies), and an unknown token survives
+    verbatim: `resolve` only touches the names it knows."""
     return PendingDocumentResponse(
         type=doc.type,
         version=doc.version,
-        content=doc.content_md.replace("{agency_name}", agency_name),
+        content=resolve(doc.content_md, agency) if agency is not None else doc.content_md,
         content_hash=doc.content_hash,
     )
 
@@ -78,8 +82,8 @@ class ConsentsManager:
                 code="consent.document_not_found",
                 params={"type": doc_type},
             )
-        names = await self.repo.agency_names([agent.agency_id])
-        return _resolve(active, names.get(agent.agency_id, ""))
+        agencies = await self.repo.agencies_by_id([agent.agency_id])
+        return _resolve(active, agencies.get(agent.agency_id))
 
     # --- pending ---------------------------------------------------------------------
 
@@ -87,43 +91,38 @@ class ConsentsManager:
         missing = await missing_for_agent(self.db, agent)
         if not missing:
             return []
-        names = await self.repo.agency_names([agent.agency_id])
-        agency_name = names.get(agent.agency_id, "")
-        return [_resolve(doc, agency_name) for doc in missing]
+        agencies = await self.repo.agencies_by_id([agent.agency_id])
+        agency = agencies.get(agent.agency_id)
+        return [_resolve(doc, agency) for doc in missing]
+
+    async def _group_by_agency(
+        self, pairs: list[tuple[uuid.UUID, ConsentDocument]]
+    ) -> list[ExpatAgencyPendingResponse]:
+        """Pending documents grouped per agency, tokens resolved against THAT
+        agency's row — the shape the client and provider faces share."""
+        agencies = await self.repo.agencies_by_id(sorted({agency_id for agency_id, _ in pairs}))
+        grouped: dict[uuid.UUID, list[ConsentDocument]] = {}
+        for agency_id, doc in pairs:
+            grouped.setdefault(agency_id, []).append(doc)
+        out: list[ExpatAgencyPendingResponse] = []
+        for agency_id, docs in grouped.items():
+            agency = agencies.get(agency_id)
+            out.append(
+                ExpatAgencyPendingResponse(
+                    agency_id=agency_id,
+                    agency_name=agency.name if agency is not None else "",
+                    documents=[_resolve(doc, agency) for doc in docs],
+                )
+            )
+        return out
 
     async def pending_for_expat(self, expat: ExpatUser) -> list[ExpatAgencyPendingResponse]:
         pairs = await missing_for_expat(self.db, expat.id)
-        if not pairs:
-            return []
-        names = await self.repo.agency_names(sorted({agency_id for agency_id, _ in pairs}))
-        grouped: dict[uuid.UUID, list[ConsentDocument]] = {}
-        for agency_id, doc in pairs:
-            grouped.setdefault(agency_id, []).append(doc)
-        return [
-            ExpatAgencyPendingResponse(
-                agency_id=agency_id,
-                agency_name=names.get(agency_id, ""),
-                documents=[_resolve(doc, names.get(agency_id, "")) for doc in docs],
-            )
-            for agency_id, docs in grouped.items()
-        ]
+        return await self._group_by_agency(pairs) if pairs else []
 
     async def pending_for_external(self, external_agent: Agent) -> list[ExpatAgencyPendingResponse]:
         pairs = await missing_for_external(self.db, external_agent)
-        if not pairs:
-            return []
-        names = await self.repo.agency_names(sorted({agency_id for agency_id, _ in pairs}))
-        grouped: dict[uuid.UUID, list[ConsentDocument]] = {}
-        for agency_id, doc in pairs:
-            grouped.setdefault(agency_id, []).append(doc)
-        return [
-            ExpatAgencyPendingResponse(
-                agency_id=agency_id,
-                agency_name=names.get(agency_id, ""),
-                documents=[_resolve(doc, names.get(agency_id, "")) for doc in docs],
-            )
-            for agency_id, docs in grouped.items()
-        ]
+        return await self._group_by_agency(pairs) if pairs else []
 
     # --- accept ----------------------------------------------------------------------
 

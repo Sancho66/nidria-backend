@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from src.agencies.agencies_manager import AgenciesManager
 from src.agencies.agencies_schema import (
@@ -15,10 +16,13 @@ from src.agencies.agencies_schema import (
     AgencyMemberResponse,
     AgencyResponse,
     AgencySubscriptionInfo,
+    AgencyTokenInfo,
     AgencyUpdateRequest,
     AgentInvitationCreateRequest,
     AgentInvitationResponse,
     AiUsageResponse,
+    ClientTermsPreviewRequest,
+    ClientTermsPreviewResponse,
     ContactInviteRequest,
     CreatedAdminResponse,
     DirectoryContactCreateRequest,
@@ -40,6 +44,7 @@ from src.agencies.agencies_schema import (
 from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
 from src.consents.agency_template import missing_legal_fields
+from src.consents.agency_tokens import token_values, unfilled_tokens, unknown_tokens
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
@@ -106,6 +111,11 @@ BINDINGS = [
     # l'édition de l'agence.
     RouteBinding(
         "POST", "/agencies/me/client-terms/validate", Audience.AGENT, Permission.AGENCY_MANAGE
+    ),
+    # « Ce que voit votre client » : rend un BROUILLON, n'écrit rien — même
+    # gate que l'édition dont il est l'aperçu.
+    RouteBinding(
+        "POST", "/agencies/me/client-terms/preview", Audience.AGENT, Permission.AGENCY_MANAGE
     ),
     # Logo: any agent of the agency reads it (the app shell shows it);
     # only agency.manage uploads/removes it.
@@ -297,6 +307,31 @@ async def dismiss_onboarding(agent: AgentDep, db: DbDep) -> OnboardingResponse:
     return await AgenciesManager(db).dismiss_onboarding(agent)
 
 
+async def _fill_client_documents(
+    response: AgencyResponse, agency: Agency, manager: AgenciesManager
+) -> None:
+    """The client-documents block of the Settings payload: the two texts in
+    force, the profile fields still empty, and the DISCOVERABLE tokens (the
+    catalogue, its human labels and each CURRENT value) plus the two
+    edition-only warnings. ONE helper for the three routes that serve it, so
+    GET, PATCH and validate can never disagree about the same agency.
+
+    A written field must be re-readable in the very response that writes it:
+    the texts live in consent_document, so model_validate alone leaves them
+    None."""
+    response.client_terms_md = await manager.own_client_terms(agency)
+    response.client_privacy_md = await manager.own_client_privacy(agency)
+    response.missing_legal_fields = missing_legal_fields(agency)
+    response.client_terms_tokens = [
+        AgencyTokenInfo(token="{" + name + "}", name=name, label=label, value=value)
+        for name, label, value in token_values(agency)
+    ]
+    # The two signals go to the EDITOR, never to the client screen.
+    texts = (response.client_terms_md, response.client_privacy_md)
+    response.client_terms_unknown_tokens = unknown_tokens(*texts)
+    response.client_terms_unfilled_tokens = unfilled_tokens(agency, *texts)
+
+
 @router.get("/me", response_model=AgencyResponse)
 async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     manager = AgenciesManager(db)
@@ -306,9 +341,7 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     # (plan, cycle, seats); the conversion itself goes through Eric.
     response.subscription = await manager.subscription_info(agency)
     response.notification_prefs = effective_client_prefs(agency)
-    response.client_terms_md = await manager.own_client_terms(agency)
-    response.client_privacy_md = await manager.own_client_privacy(agency)
-    response.missing_legal_fields = missing_legal_fields(agency)
+    await _fill_client_documents(response, agency, manager)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
     response.signatures_enabled = signatures_effectively_enabled(agency)
@@ -378,13 +411,7 @@ async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep
     manager = AgenciesManager(db)
     agency = await manager.update_my_agency(agent, body)
     response = AgencyResponse.model_validate(agency)
-    # A written field must be re-readable in the very response that writes
-    # it: client_terms_md lives in consent_document, so model_validate alone
-    # leaves it None. Same source as the GET (own_client_terms), so the two
-    # can never disagree about what is in force.
-    response.client_terms_md = await manager.own_client_terms(agency)
-    response.client_privacy_md = await manager.own_client_privacy(agency)
-    response.missing_legal_fields = missing_legal_fields(agency)
+    await _fill_client_documents(response, agency, manager)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
     response.signatures_enabled = signatures_effectively_enabled(agency)
@@ -403,12 +430,21 @@ async def validate_client_terms(agent: AgentDep, db: DbDep) -> AgencyResponse:
     manager = AgenciesManager(db)
     agency = await manager.validate_client_terms(agent)
     response = AgencyResponse.model_validate(agency)
-    response.client_terms_md = await manager.own_client_terms(agency)
-    response.client_privacy_md = await manager.own_client_privacy(agency)
-    response.missing_legal_fields = missing_legal_fields(agency)
+    await _fill_client_documents(response, agency, manager)
     response.signatures_enabled = signatures_effectively_enabled(agency)
     response.notification_prefs = effective_client_prefs(agency)
     return response
+
+
+@router.post("/me/client-terms/preview", response_model=ClientTermsPreviewResponse)
+async def preview_client_terms(
+    body: ClientTermsPreviewRequest, agent: AgentDep, db: DbDep
+) -> ClientTermsPreviewResponse:
+    """« Ce que voit votre client » — le BROUILLON rendu par la MÊME
+    résolution que la face client (jetons compris), plus les jetons inconnus
+    et les jetons vides nommés AVANT publication (publier re-gate tous les
+    clients de l'agence). N'écrit rien."""
+    return await AgenciesManager(db).preview_client_document(agent, body.content)
 
 
 def _member_response(member: Agent) -> AgencyMemberResponse:

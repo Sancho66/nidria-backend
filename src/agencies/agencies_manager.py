@@ -28,6 +28,7 @@ from src.agencies.agencies_schema import (
     AgencyDeleteRequest,
     AgencySubscriptionInfo,
     AgencyUpdateRequest,
+    ClientTermsPreviewResponse,
     DirectoryContactCreateRequest,
     DirectoryContactListItem,
     MemberDeactivationResponse,
@@ -43,6 +44,7 @@ from src.agencies.demo_case_seed import seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
 from src.consents.agency_template import generate_client_privacy, generate_client_terms
+from src.consents.agency_tokens import resolve, unfilled_tokens, unknown_tokens
 from src.consents.consents_seed import (
     content_sha256,
     ensure_agency_default_terms,
@@ -1024,6 +1026,21 @@ class AgenciesManager:
         if edited:
             return
         await publish_if_changed(self.db, doc_type, generator(agency), agency_id=agency.id)
+
+    async def preview_client_document(
+        self, agent: Agent, content: str
+    ) -> ClientTermsPreviewResponse:
+        """« Ce que voit votre client », computed on the DRAFT: the SAME
+        `resolve` the client face runs, so the preview cannot flatter the
+        published result. Also names the unknown tokens BEFORE publication —
+        publishing re-gates every client of the agency, so a typo caught here
+        costs nothing and caught later costs a round of re-consent."""
+        agency = await self.get_my_agency(agent)
+        return ClientTermsPreviewResponse(
+            rendered=resolve(content, agency),
+            unknown_tokens=unknown_tokens(content),
+            unfilled_tokens=unfilled_tokens(agency, content),
+        )
 
     async def validate_client_terms(self, agent: Agent) -> Agency:
         """The « J'ai vérifié » gesture: stamp client_terms_reviewed_at (once).

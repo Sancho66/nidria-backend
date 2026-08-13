@@ -282,6 +282,44 @@ class AgencyDeletedResponse(BaseModel):
     deleted_cases_count: int
 
 
+class AgencyTokenInfo(BaseModel):
+    """ONE dynamic token of the client documents, as the editor needs it:
+    what to insert, how to say it, and what it renders TODAY for this
+    agency. Served (never guessed by the front) — the catalogue lives in
+    `consents.agency_tokens`."""
+
+    # Insertable as-is, braces included: a token retyped by hand is a token
+    # nobody resolves.
+    token: str
+    # The catalogue name — doubles as the front's i18n key (7 locales).
+    name: str
+    # Human FR label, the served fallback for a token this front predates.
+    label: str
+    # The CURRENT value for this agency; None = « non renseigné » (the
+    # client would read a blank there).
+    value: str | None = None
+
+
+class ClientTermsPreviewRequest(BaseModel):
+    """The DRAFT being edited (never persisted here) — the agency verifies
+    its client screen before publishing, since publishing re-gates every
+    client of the agency."""
+
+    content: str = Field(max_length=100_000)
+
+
+class ClientTermsPreviewResponse(BaseModel):
+    """What the CLIENT will read, rendered by the same resolution as the
+    client face — plus the two edition-only signals."""
+
+    rendered: str
+    # Tokens nobody resolves: rendered verbatim to the client. Named here so
+    # the agency fixes them BEFORE publishing.
+    unknown_tokens: list[str] = []
+    # Known tokens whose profile field is empty: the client reads a blank.
+    unfilled_tokens: list[str] = []
+
+
 class AgencyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -344,6 +382,20 @@ class AgencyResponse(BaseModel):
     # brackets left the published text, so the front no longer counts them).
     # Filled on GET/PATCH/validate /me only.
     missing_legal_fields: list[str] = []
+    # LES JETONS DYNAMIQUES, SERVIS (lot 13/08) — le front ne devine aucune
+    # liste : le catalogue, son libellé humain et la valeur ACTUELLE de
+    # chacun pour cette agence (value None = « non renseigné »). Filled on
+    # GET/PATCH/validate /me.
+    client_terms_tokens: list[AgencyTokenInfo] = []
+    # Signalled AT EDITION, never to the client: tokens found in the two
+    # published documents that nobody resolves (typo, invention). They reach
+    # the client verbatim — that is the deliberate rule, so the warning is
+    # here.
+    client_terms_unknown_tokens: list[str] = []
+    # Known tokens used by the texts whose profile field is empty: the client
+    # reads a blank there. Subset of missing_legal_fields that the text
+    # actually depends on.
+    client_terms_unfilled_tokens: list[str] = []
     # EFFECTIVE client notification prefs (defaults merged) — the front
     # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
     notification_prefs: dict[str, str] | None = None

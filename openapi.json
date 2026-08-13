@@ -3556,6 +3556,53 @@
         ]
       }
     },
+    "/agencies/me/client-terms/preview": {
+      "post": {
+        "tags": [
+          "agencies"
+        ],
+        "summary": "Preview Client Terms",
+        "description": "« Ce que voit votre client » — le BROUILLON rendu par la MÊME\nrésolution que la face client (jetons compris), plus les jetons inconnus\net les jetons vides nommés AVANT publication (publier re-gate tous les\nclients de l'agence). N'écrit rien.",
+        "operationId": "preview_client_terms_agencies_me_client_terms_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientTermsPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientTermsPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/agencies/me/members": {
       "get": {
         "tags": [
@@ -19274,6 +19321,30 @@
             "title": "Missing Legal Fields",
             "default": []
           },
+          "client_terms_tokens": {
+            "items": {
+              "$ref": "#/components/schemas/AgencyTokenInfo"
+            },
+            "type": "array",
+            "title": "Client Terms Tokens",
+            "default": []
+          },
+          "client_terms_unknown_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Client Terms Unknown Tokens",
+            "default": []
+          },
+          "client_terms_unfilled_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Client Terms Unfilled Tokens",
+            "default": []
+          },
           "notification_prefs": {
             "anyOf": [
               {
@@ -19386,6 +19457,41 @@
         ],
         "title": "AgencySubscriptionInfo",
         "description": "Read-only settings block: the agency SEES where it stands, never\nedits it - the conversion is Eric's post-closing gesture."
+      },
+      "AgencyTokenInfo": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "name",
+          "label"
+        ],
+        "title": "AgencyTokenInfo",
+        "description": "ONE dynamic token of the client documents, as the editor needs it:\nwhat to insert, how to say it, and what it renders TODAY for this\nagency. Served (never guessed by the front) — the catalogue lives in\n`consents.agency_tokens`."
       },
       "AgencyUpdateRequest": {
         "properties": {
@@ -23363,6 +23469,51 @@
         ],
         "title": "ClientSpaceState",
         "description": "Can this person reach their client space RIGHT NOW? DERIVED at read\ntime (never stored): ACTIVE = the account is activated; PENDING = a live\ninvitation link exists; EXPIRED = no usable link left — every case where\nthe person must be re-invited (link past `expires_at`, or invitation\ncancelled/absent). NULL on a person without an account at all.\n\nDeliberately NOT `InvitationStatus`: that one traces the invitation ROW\n(audit), this one answers the agency's question — \"why has my client\nnever logged in, and can I do something about it?\"."
+      },
+      "ClientTermsPreviewRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ClientTermsPreviewRequest",
+        "description": "The DRAFT being edited (never persisted here) — the agency verifies\nits client screen before publishing, since publishing re-gates every\nclient of the agency."
+      },
+      "ClientTermsPreviewResponse": {
+        "properties": {
+          "rendered": {
+            "type": "string",
+            "title": "Rendered"
+          },
+          "unknown_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Tokens",
+            "default": []
+          },
+          "unfilled_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unfilled Tokens",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "rendered"
+        ],
+        "title": "ClientTermsPreviewResponse",
+        "description": "What the CLIENT will read, rendered by the same resolution as the\nclient face — plus the two edition-only signals."
       },
       "CommentCreateRequest": {
         "properties": {

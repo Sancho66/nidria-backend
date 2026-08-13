@@ -50,8 +50,11 @@ class ConsentsRepository:
         self.db.add(row)
         return row
 
-    async def agency_names(self, agency_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    async def agencies_by_id(self, agency_ids: list[uuid.UUID]) -> dict[uuid.UUID, Agency]:
+        """The AGENCY ROWS, not just their names: read-time resolution now
+        covers the whole legal identity (agency_tokens.CATALOGUE), so the
+        name alone no longer suffices."""
         if not agency_ids:
             return {}
-        stmt = select(Agency.id, Agency.name).where(Agency.id.in_(agency_ids))
-        return {agency_id: name for agency_id, name in (await self.db.execute(stmt)).all()}
+        stmt = select(Agency).where(Agency.id.in_(agency_ids))
+        return {agency.id: agency for agency in (await self.db.execute(stmt)).scalars()}
