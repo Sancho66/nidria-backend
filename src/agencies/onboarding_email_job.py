@@ -37,6 +37,7 @@ from shared.models.client_case import ClientCase
 from src.core.config import Settings, get_settings
 from src.core.email import send_email
 from src.core.email_templates import agency_onboarding_email
+from src.core.i18n import resolve_notification_lang_agent
 from src.core.job_wrapper import LogFn
 
 logger = logging.getLogger(__name__)
@@ -139,8 +140,14 @@ def send_onboarding_emails(db: Session, *, log: LogFn, dry_run: bool = False) ->
             continue
 
         has_example = _has_example_case(db, agency.id)
+        # THE language: `agency.default_language`, posed AT CREATION from the
+        # signup form (an Agent carries no locale of its own). Ten minutes in,
+        # nothing else has been configured — this is the only value that means
+        # anything. Through the house resolver, so an unsupported or oddly
+        # cased value normalizes to FR instead of relying on the catalog miss.
+        lang = resolve_notification_lang_agent(agency.default_language)
         if dry_run:
-            log(f"{agency.slug}: would send to {admin.email} (lang={agency.default_language})")
+            log(f"{agency.slug}: would send to {admin.email} (lang={lang})")
             stats["sent"] += 1
             continue
 
@@ -148,7 +155,7 @@ def send_onboarding_emails(db: Session, *, log: LogFn, dry_run: bool = False) ->
             admin.first_name,
             app_url=settings.frontend_url,
             video_url=settings.onboarding_video_url,
-            lang=agency.default_language,
+            lang=lang,
             has_example_case=has_example,
         )
         try:
@@ -166,7 +173,7 @@ def send_onboarding_emails(db: Session, *, log: LogFn, dry_run: bool = False) ->
         stats["sent"] += 1
         log(
             f"{agency.slug}: onboarding mail sent to {admin.email} "
-            f"(lang={agency.default_language}, example={has_example})"
+            f"(lang={lang}, example={has_example})"
         )
 
     if dry_run:

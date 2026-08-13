@@ -249,6 +249,37 @@ async def test_the_four_languages_and_the_french_video(
     assert "The video is in French." in en.body
 
 
+async def test_the_language_is_the_one_posed_at_the_agency_creation(
+    db_session: AsyncSession, sync_session_local: sessionmaker[Session], new_agency: NewAgency
+) -> None:
+    """La langue lue est `agency.default_language` — la valeur posée à la
+    CRÉATION (formulaire d'inscription ou assistant superadmin). Un Agent n'a
+    pas de locale à lui, et à J+10 min rien d'autre n'est configuré. Changer
+    la langue de l'agence change la langue du mail : c'est bien cette
+    colonne-là qui est lue, aucune autre."""
+    agency, _ = await new_agency(lang="fr")
+    agency.default_language = "hu"
+    await db_session.commit()
+
+    _run(sync_session_local)
+    assert email.outbox[0].subject == "Üdvözöljük a Nidriában"
+
+
+def test_an_unknown_language_falls_back_to_french_never_to_an_error() -> None:
+    """Le repli, prouvé à la source. La base ne peut PAS porter autre chose
+    que les 7 langues (CHECK `agency_default_language_check`), donc ce cas est
+    déjà impossible en amont — mais si la garde tombait, la chaîne rend du
+    FRANÇAIS entier : pas une erreur, pas un vide, pas un mail à trous."""
+    from src.core.email_templates import agency_onboarding_email
+    from src.core.i18n import resolve_notification_lang_agent
+
+    for value in ("de", "FR", "fr-FR", "", None):
+        lang = resolve_notification_lang_agent(value)
+        content = agency_onboarding_email("Sidney", "https://app.nidria.com", "https://v", lang)
+        assert content.subject in ("Bienvenue dans Nidria",), value
+        assert "Bonjour Sidney, votre espace Nidria est prêt." in content.text
+
+
 # --- (f) la promesse du dossier d'exemple ---------------------------------------------
 
 

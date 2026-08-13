@@ -87,7 +87,7 @@ color:#3c3c46;">{intro}</p>
 
 _HTML_BUTTON = """\
                 <table role="presentation" cellpadding="0" cellspacing="0" \
-style="margin:0 auto 24px;">
+style="margin:0 auto {gap};">
                   <tr>
                     <td style="background-color:#1a1a2e;border-radius:6px;" align="center">
                       <a href="{url}" style="display:inline-block;padding:12px 28px;\
@@ -95,7 +95,14 @@ font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none;">{label}</a>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:#8a8a94;\
+"""
+
+# The raw link under the button. It EARNS its place under a token link (an
+# invitation, an activation, a reset): a client that strips the button would
+# otherwise leave the reader stuck. Under a plain public URL it is pure noise,
+# so `show_links=False` drops it (onboarding mail, 13/08).
+_HTML_COPY_PASTE = """\
+                <p style="margin:0 0 24px;font-size:12px;line-height:1.6;color:#8a8a94;\
 word-break:break-all;">{copy_paste}&nbsp;: \
 <a href="{url}" style="color:#3b3bd6;">{url}</a></p>
 """
@@ -129,27 +136,35 @@ def _render(
     validity: str | None = None,
     lang: str = "fr",
     extra_buttons: Sequence[tuple[str, str]] = (),
+    show_links: bool = True,
 ) -> EmailContent:
     footer = _FOOTER.get(lang, _FOOTER["fr"])
     action_blocks = ""
     if body_text is not None:
         escaped = html_lib.escape(body_text).replace("\n", "<br>")
         action_blocks += _HTML_BODY_TEXT.format(body=escaped)
-    if button_label is not None and button_url is not None:
-        action_blocks += _HTML_BUTTON.format(
-            label=html_lib.escape(button_label),
-            url=html_lib.escape(button_url, quote=True),
-            copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]),
+
+    # A button, optionally followed by its raw link. `show_links=False` keeps
+    # the button alone (a plain public URL needs no copy-paste fallback), and
+    # the button then carries its own bottom margin.
+    def _button(label: str, url: str) -> str:
+        escaped_url = html_lib.escape(url, quote=True)
+        block = _HTML_BUTTON.format(
+            label=html_lib.escape(label), url=escaped_url, gap="8px" if show_links else "16px"
         )
+        if show_links:
+            block += _HTML_COPY_PASTE.format(
+                copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]), url=escaped_url
+            )
+        return block
+
+    if button_label is not None and button_url is not None:
+        action_blocks += _button(button_label, button_url)
     # A SECOND call to action, stacked under the first (the onboarding mail
     # carries both "open my space" and "watch the video"). The block is
     # repeatable by construction — action_blocks is a concatenation.
     for extra_label, extra_url in extra_buttons:
-        action_blocks += _HTML_BUTTON.format(
-            label=html_lib.escape(extra_label),
-            url=html_lib.escape(extra_url, quote=True),
-            copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]),
-        )
+        action_blocks += _button(extra_label, extra_url)
     if validity is not None:
         action_blocks += _HTML_VALIDITY.format(validity=html_lib.escape(validity))
 
@@ -2332,5 +2347,9 @@ def agency_onboarding_email(
         button_label=s["button_app"],
         button_url=app_url,
         extra_buttons=((s["button_video"], video_url),),
+        # Two plain, public URLs (the app, the video): no token to rescue, so
+        # the « ou copiez-collez ce lien » line under each button would only
+        # be noise — and twice over.
+        show_links=False,
         lang=lang,
     )
