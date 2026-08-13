@@ -1,18 +1,24 @@
-"""Generate the agency-NAMED client documents (lot 13/08).
+"""Generate the agency-NAMED client documents (lot 13/08, omission 13/08).
 
 Decision (Alexandre): rather than block an agency without its own terms
 (which made its clients accept NIDRIA's text — legally untenable, they are
 not our clients), we furnish a MODEL in the agency's name, pre-filled from
 what we already know and immediately published as the agency's own document
-(the Nidria fallback dies). What we do NOT know appears as a VISIBLE marker
-(«[Votre numéro d'immatriculation]») — never a silent gap, never an
-invention. The markers are what push the agency to complete its profile.
+(the Nidria fallback dies).
+
+Omission by SEGMENT (13/08): the identity sentence is composed from the
+FILLED fields only — each optional segment («immatriculée sous le numéro X»,
+«dont le siège est situé Y», …) drops when its data is missing, so the
+published text stays GRAMMATICAL at every fill level (no orphan comma, no
+«sous le numéro .», no empty slot). No BRACKETS in the published document:
+signalling the missing fields is the job of the Settings warning (which
+reads `missing_legal_fields`), not of the text the client accepts.
 
 The brand name stays the `{agency_name}` token (resolved at read time to
-agency.name, like the canonical texts); the LEGAL identity fields are baked
-in at generation (and regenerated when the profile changes, until the
-agency validates). The responsibility disclaimer is served at EDITION only,
-never inside the text shown to the client.
+agency.name, like the canonical texts); the legal facts are baked in at
+generation (and regenerated when the profile changes, until the agency
+validates). The responsibility disclaimer is served at EDITION only, never
+inside the text shown to the client.
 """
 
 from shared.models.agency import Agency
@@ -20,28 +26,72 @@ from shared.models.agency import Agency
 # Shown at edition (Settings), NEVER inside the client-facing document.
 RESPONSIBILITY_DISCLAIMER = (
     "Modèle fourni à titre indicatif — vous êtes seul responsable des conditions "
-    "que vous diffusez à vos clients. Complétez les champs entre crochets et "
-    "adaptez le texte à votre activité."
+    "que vous diffusez à vos clients. Complétez votre profil et adaptez le texte à "
+    "votre activité."
+)
+
+# The Profil & marque fields, in display order — the ones the front lets the
+# agency fill and whose absence its warning names.
+_LEGAL_FIELDS: tuple[str, ...] = (
+    "legal_name",
+    "legal_form",
+    "registration_number",
+    "address",
+    "city",
+    "postal_code",
+    "country",
+    "contact_email",
 )
 
 
-def _or_marker(value: str | None, marker: str) -> str:
-    """The value if present, else a VISIBLE bracketed marker."""
-    return value.strip() if value and value.strip() else f"[{marker}]"
+def _f(value: str | None) -> str | None:
+    """The trimmed value if it carries content, else None."""
+    return value.strip() if value and value.strip() else None
+
+
+def missing_legal_fields(agency: Agency) -> list[str]:
+    """The Profil & marque fields still empty — served to the front so its
+    warning can name them (the brackets left the published text)."""
+    return [name for name in _LEGAL_FIELDS if _f(getattr(agency, name)) is None]
+
+
+def _address(agency: Agency) -> str | None:
+    present = [
+        part
+        for part in (
+            _f(agency.address),
+            _f(agency.postal_code),
+            _f(agency.city),
+            _f(agency.country),
+        )
+        if part
+    ]
+    return ", ".join(present) if present else None
 
 
 def _identity_block(agency: Agency) -> str:
-    """The legal identity header — each missing field a visible marker."""
-    denomination = _or_marker(agency.legal_name, "Votre dénomination légale")
-    form = _or_marker(agency.legal_form, "Votre forme juridique")
-    registration = _or_marker(agency.registration_number, "Votre numéro d'immatriculation")
-    parts = [agency.address, agency.postal_code, agency.city, agency.country]
-    address = ", ".join(p.strip() for p in parts if p and p.strip()) or "[Votre adresse]"
-    email = _or_marker(agency.contact_email, "Votre email de contact")
-    return (
-        f"**{denomination}** ({form}), immatriculée sous le numéro {registration}, "
-        f"dont le siège est situé {address}, joignable à l'adresse {email}."
-    )
+    """The legal identity as a grammatical clause, anchored on the
+    {agency_name} token and extended by ONE segment per filled field. Empty
+    profile → just «{agency_name}». Every fill level reads correctly."""
+    segments: list[str] = []
+    legal_name = _f(agency.legal_name)
+    if legal_name:
+        segments.append(f"dénommée {legal_name}")
+    legal_form = _f(agency.legal_form)
+    if legal_form:
+        segments.append(f"de forme {legal_form}")
+    registration = _f(agency.registration_number)
+    if registration:
+        segments.append(f"immatriculée sous le numéro {registration}")
+    address = _address(agency)
+    if address:
+        segments.append(f"dont le siège est situé {address}")
+    email = _f(agency.contact_email)
+    if email:
+        segments.append(f"joignable à {email}")
+    if not segments:
+        return "{agency_name}"
+    return "{agency_name}, " + ", ".join(segments)
 
 
 def generate_client_terms(agency: Agency) -> str:
@@ -50,9 +100,7 @@ def generate_client_terms(agency: Agency) -> str:
     return f"""# Conditions d'utilisation de l'espace client
 
 Ces conditions régissent l'utilisation de l'espace client mis à votre disposition par
-{{agency_name}}.
-
-Éditeur de l'espace : {identity}
+{{agency_name}}. Cet espace est édité par {identity}.
 
 1. Cet espace vous est fourni par {{agency_name}}, avec l'outil Nidria, pour suivre l'avancement
    de votre dossier, échanger avec {{agency_name}} et transmettre les informations et documents
@@ -75,8 +123,8 @@ def generate_client_privacy(agency: Agency) -> str:
     identity = _identity_block(agency)
     return f"""# Note d'information sur vos données
 
-1. Responsable de traitement : {{agency_name}} — {identity} — est responsable du traitement de
-   vos données personnelles dans le cadre de votre dossier.
+1. Responsable de traitement : le responsable du traitement de vos données personnelles, dans
+   le cadre de votre dossier, est {identity}.
 2. Sous-traitant : Nidria (BETTERSOFT LLC) héberge et traite ces données pour le compte de
    {{agency_name}}, en qualité de sous-traitant au sens du RGPD, dans le cadre d'un accord de
    traitement des données.

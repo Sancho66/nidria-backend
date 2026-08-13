@@ -19264,7 +19264,15 @@
           "client_terms_disclaimer": {
             "type": "string",
             "title": "Client Terms Disclaimer",
-            "default": "Modèle fourni à titre indicatif — vous êtes seul responsable des conditions que vous diffusez à vos clients. Complétez les champs entre crochets et adaptez le texte à votre activité."
+            "default": "Modèle fourni à titre indicatif — vous êtes seul responsable des conditions que vous diffusez à vos clients. Complétez votre profil et adaptez le texte à votre activité."
+          },
+          "missing_legal_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Legal Fields",
+            "default": []
           },
           "notification_prefs": {
             "anyOf": [

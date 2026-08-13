@@ -99,29 +99,34 @@ async def withdraw_agency_document(db: AsyncSession, doc_type: str, agency_id: u
     return bool(actives)
 
 
-async def _has_own_active(db: AsyncSession, doc_type: str, agency_id: uuid.UUID) -> bool:
-    return bool(
-        (
-            await db.execute(
-                select(ConsentDocument.id).where(
-                    ConsentDocument.type == doc_type,
-                    ConsentDocument.agency_id == agency_id,
-                    ConsentDocument.is_active.is_(True),
-                )
+async def _own_active_doc(
+    db: AsyncSession, doc_type: str, agency_id: uuid.UUID
+) -> ConsentDocument | None:
+    return (
+        await db.execute(
+            select(ConsentDocument).where(
+                ConsentDocument.type == doc_type,
+                ConsentDocument.agency_id == agency_id,
+                ConsentDocument.is_active.is_(True),
             )
-        ).first()
-    )
+        )
+    ).scalar_one_or_none()
+
+
+# Signature of the OLD bracketed template (lot du 13/08 matin) — a doc still
+# carrying it is an untouched auto-generated one, safe to regenerate. An
+# agency's hand-written text would not contain our exact marker.
+_LEGACY_BRACKET_MARKER = "[Votre "
 
 
 async def ensure_agency_default_terms(db: AsyncSession, agency: "Agency") -> bool:
-    """Generate and publish the agency's OWN client_terms + client_privacy,
-    ONLY when it has none yet — NEVER clobbering a doc the agency already
-    wrote. This is the death of the Nidria fallback (lot 13/08): once the
-    agency has its own documents, its clients resolve to THEM and are
-    re-gated at their next request (they had accepted the canonical text).
-    Called at boot seed (every agency) and at agency creation. Does NOT
-    commit. Regeneration on profile change goes through publish_if_changed
-    directly (the PATCH path), not here."""
+    """Generate and publish the agency's OWN client_terms + client_privacy.
+    Publishes when the agency has none yet (the death of the Nidria fallback,
+    lot 13/08). ALSO regenerates a doc still carrying the OLD bracketed
+    template (omission-by-segment lot) — a one-shot bracket removal for the
+    agencies seeded before it. NEVER clobbers a doc the agency hand-wrote
+    (no legacy marker → left alone). Called at boot seed and at creation.
+    Does NOT commit."""
     from src.consents.agency_template import generate_client_privacy, generate_client_terms
     from src.core.enums import ConsentDocumentType
 
@@ -130,8 +135,11 @@ async def ensure_agency_default_terms(db: AsyncSession, agency: "Agency") -> boo
         (ConsentDocumentType.CLIENT_TERMS.value, generate_client_terms),
         (ConsentDocumentType.CLIENT_PRIVACY.value, generate_client_privacy),
     ):
-        if await _has_own_active(db, doc_type, agency.id):
-            continue  # the agency already has its own — never overwrite it
+        existing = await _own_active_doc(db, doc_type, agency.id)
+        # None → first generation. Legacy bracketed → regenerate bracket-free.
+        # Hand-written (no legacy marker) → leave untouched.
+        if existing is not None and _LEGACY_BRACKET_MARKER not in existing.content_md:
+            continue
         if await publish_if_changed(db, doc_type, generator(agency), agency_id=agency.id):
             changed = True
     return changed

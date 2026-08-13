@@ -39,6 +39,7 @@ from src.agencies.agencies_schema import (
 )
 from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
+from src.consents.agency_template import missing_legal_fields
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
@@ -307,6 +308,7 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     response.notification_prefs = effective_client_prefs(agency)
     response.client_terms_md = await manager.own_client_terms(agency)
     response.client_privacy_md = await manager.own_client_privacy(agency)
+    response.missing_legal_fields = missing_legal_fields(agency)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
     response.signatures_enabled = signatures_effectively_enabled(agency)
@@ -382,6 +384,7 @@ async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep
     # can never disagree about what is in force.
     response.client_terms_md = await manager.own_client_terms(agency)
     response.client_privacy_md = await manager.own_client_privacy(agency)
+    response.missing_legal_fields = missing_legal_fields(agency)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
     response.signatures_enabled = signatures_effectively_enabled(agency)
@@ -402,6 +405,7 @@ async def validate_client_terms(agent: AgentDep, db: DbDep) -> AgencyResponse:
     response = AgencyResponse.model_validate(agency)
     response.client_terms_md = await manager.own_client_terms(agency)
     response.client_privacy_md = await manager.own_client_privacy(agency)
+    response.missing_legal_fields = missing_legal_fields(agency)
     response.signatures_enabled = signatures_effectively_enabled(agency)
     response.notification_prefs = effective_client_prefs(agency)
     return response

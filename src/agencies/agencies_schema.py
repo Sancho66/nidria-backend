@@ -339,6 +339,11 @@ class AgencyResponse(BaseModel):
     # The responsibility mention, served at EDITION only — NEVER inside the
     # text shown to a client. Constant, so the front always has it.
     client_terms_disclaimer: str = RESPONSIBILITY_DISCLAIMER
+    # Profil & marque fields still empty (omission-by-segment lot): the front
+    # warning names them and states the consequence. Served as a list (the
+    # brackets left the published text, so the front no longer counts them).
+    # Filled on GET/PATCH/validate /me only.
+    missing_legal_fields: list[str] = []
     # EFFECTIVE client notification prefs (defaults merged) — the front
     # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
     notification_prefs: dict[str, str] | None = None

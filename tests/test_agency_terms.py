@@ -46,14 +46,44 @@ async def _own_active(db: AsyncSession, agency_id, doc_type: str) -> ConsentDocu
     ).scalar_one_or_none()
 
 
-def test_generation_shows_markers_for_missing_fields() -> None:
-    """A template with empty legal fields carries VISIBLE markers, never a
-    silent gap; the brand name stays the {agency_name} token."""
-    agency = Agency(name="ACME", slug="acme")
-    terms = generate_client_terms(agency)
-    assert "[Votre numéro d'immatriculation]" in terms
-    assert "[Votre dénomination légale]" in terms
-    assert "{agency_name}" in terms  # resolved at read time, never baked here
+def test_generation_omits_missing_segments_grammatically() -> None:
+    """Omission by segment (13/08): a missing field DROPS its segment — no
+    bracket in the published text, and the sentence stays grammatical at
+    every fill level (no orphan comma, no « sous le numéro . », no empty
+    slot). The brand name stays the {agency_name} token."""
+    from src.consents.agency_template import generate_client_privacy
+
+    # Progressive fill: 0, 1, 2, … up to all fields.
+    steps = [
+        {},
+        {"legal_name": "ACME SARL"},
+        {"legal_name": "ACME SARL", "registration_number": "RCS 123"},
+        {
+            "legal_name": "ACME SARL",
+            "legal_form": "SAS",
+            "registration_number": "RCS 123",
+            "address": "1 rue de la Paix",
+            "city": "Paris",
+            "postal_code": "75001",
+            "country": "FR",
+            "contact_email": "contact@acme.fr",
+        },
+    ]
+    for fields in steps:
+        agency = Agency(name="ACME", slug="acme", **fields)
+        for text in (generate_client_terms(agency), generate_client_privacy(agency)):
+            assert "[" not in text and "]" not in text  # no brackets, ever
+            assert ", ," not in text  # no orphan comma
+            assert ",," not in text  # no glued orphan comma either
+            assert "numéro ." not in text and "situé ." not in text  # no dangling segment
+            assert "est ." not in text and "par ." not in text  # identity never empty-then-period
+            assert "{agency_name}" in text  # brand token kept for read-time resolve
+    # Empty profile → the identity is just the brand name (no legal segments).
+    empty_terms = generate_client_terms(Agency(name="ACME", slug="acme"))
+    assert "édité par {agency_name}." in empty_terms
+    # A filled field appears as its segment.
+    filled = generate_client_terms(Agency(name="ACME", slug="acme", registration_number="RCS 9"))
+    assert "immatriculée sous le numéro RCS 9" in filled
 
 
 async def test_ensure_publishes_both_docs_and_kills_the_fallback(
@@ -68,6 +98,7 @@ async def test_ensure_publishes_both_docs_and_kills_the_fallback(
     for doc_type in ("client_terms", "client_privacy"):
         doc = await _own_active(db_session, agency.id, doc_type)
         assert doc is not None and doc.agency_id == agency.id  # its OWN, not Nidria's
+        assert "[" not in doc.content_md  # no bracket in the published text
 
     manager = AgenciesManager(db_session)
     assert (await manager.own_client_terms(agency)) is not None
@@ -75,6 +106,37 @@ async def test_ensure_publishes_both_docs_and_kills_the_fallback(
 
     # Idempotent: a second call publishes nothing new.
     assert (await ensure_agency_default_terms(db_session, agency)) is False
+
+
+async def test_legacy_bracketed_doc_is_regenerated_bracket_free(
+    db_session: AsyncSession, admin
+) -> None:
+    """The one-shot bracket removal: an agency seeded with the OLD bracketed
+    template gets it regenerated (no bracket) — but a hand-written text is
+    left untouched."""
+    from src.consents.consents_seed import publish_if_changed
+
+    agency = await _agency(db_session, admin.agency_id)
+    # Simulate the OLD bracketed auto-generated doc.
+    await publish_if_changed(
+        db_session,
+        "client_terms",
+        "# Conditions\n\nCet espace est édité par [Votre dénomination légale].\n",
+        agency_id=agency.id,
+    )
+    await db_session.commit()
+
+    assert await ensure_agency_default_terms(db_session, agency)  # regenerated
+    await db_session.commit()
+    doc = await _own_active(db_session, agency.id, "client_terms")
+    assert doc is not None and "[" not in doc.content_md  # bracket gone
+
+    # A hand-written doc (no legacy marker) is NOT clobbered.
+    await publish_if_changed(db_session, "client_terms", "Mon texte à moi", agency_id=agency.id)
+    await db_session.commit()
+    assert (await ensure_agency_default_terms(db_session, agency)) is False
+    doc = await _own_active(db_session, agency.id, "client_terms")
+    assert doc is not None and doc.content_md == "Mon texte à moi"
 
 
 async def test_patch_publishes_privacy_and_validate_sets_the_flag(
@@ -113,15 +175,39 @@ async def test_patch_publishes_privacy_and_validate_sets_the_flag(
 async def test_blank_regenerates_the_template_never_nidria(
     client: AsyncClient, db_session: AsyncSession, admin, agent_headers: AuthHeaders
 ) -> None:
-    """Blanking the field REGENERATES the agency template (with markers) —
-    it never falls back to the Nidria text (that fallback is dead)."""
+    """Blanking the field REGENERATES the agency template — it never falls
+    back to the Nidria text (that fallback is dead), and carries no bracket."""
     headers = agent_headers(admin)
     await client.patch("/agencies/me", headers=headers, json={"client_terms_md": "Perso"})
     blanked = await client.patch("/agencies/me", headers=headers, json={"client_terms_md": ""})
     assert blanked.status_code == 200, blanked.text
     terms = blanked.json()["client_terms_md"]
     assert terms is not None  # NOT None (would be the Nidria fallback signal)
-    assert "[Votre dénomination légale]" in terms  # the regenerated template
+    assert "édité par" in terms  # the agency template (Nidria's canonical has no such line)
+    assert "[" not in terms  # no bracket in the published text
+
+
+async def test_missing_legal_fields_are_served_and_shrink_when_filled(
+    client: AsyncClient, admin, agent_headers: AuthHeaders
+) -> None:
+    """The missing fields are SERVED as a list (the brackets left the text,
+    so the front no longer counts them); filling one drops it."""
+    headers = agent_headers(admin)
+    before = (await client.get("/agencies/me", headers=headers)).json()["missing_legal_fields"]
+    assert set(before) == {
+        "legal_name",
+        "legal_form",
+        "registration_number",
+        "address",
+        "city",
+        "postal_code",
+        "country",
+        "contact_email",
+    }
+    after = (
+        await client.patch("/agencies/me", headers=headers, json={"registration_number": "RCS 1"})
+    ).json()["missing_legal_fields"]
+    assert "registration_number" not in after and "legal_name" in after
 
 
 async def test_legal_field_regenerates_while_untouched_but_not_after_edit(
@@ -133,12 +219,12 @@ async def test_legal_field_regenerates_while_untouched_but_not_after_edit(
     await ensure_agency_default_terms(db_session, agency)
     await db_session.commit()
 
-    # Filling a legal field regenerates the untouched template → the marker
-    # is replaced by the value.
+    # Filling a legal field regenerates the untouched template → its segment
+    # now appears in the text (and never a bracket).
     await client.patch("/agencies/me", headers=headers, json={"legal_name": "ACME SA"})
     terms = (await client.get("/agencies/me", headers=headers)).json()["client_terms_md"]
-    assert "ACME SA" in terms
-    assert "[Votre dénomination légale]" not in terms
+    assert "dénommée ACME SA" in terms
+    assert "[" not in terms
 
     # Now the agency EDITS the text → a later legal change must NOT clobber it.
     await client.patch("/agencies/me", headers=headers, json={"client_terms_md": "Texte maison"})

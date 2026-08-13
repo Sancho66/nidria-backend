@@ -350,10 +350,10 @@ async def test_clearing_the_terms_regenerates_the_agency_template(
     doc = _client_terms(
         (await cs_client.get("/consents/expat/pending", headers=_expat_headers(expat))).json()
     )
-    assert "[Votre dénomination légale]" in doc["content"]  # the AGENCY template, not Nidria
+    assert "édité par" in doc["content"]  # the AGENCY template (Nidria canonical has no such line)
     assert doc["content"] != _AGENCY_CGV
     own = (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"]
-    assert own is not None and "[Votre dénomination légale]" in own  # regenerated, never None
+    assert own is not None and "[" not in own  # regenerated, no bracket, never None
 
 
 async def test_accepted_nidria_v1_does_not_satisfy_the_agency_v1(
@@ -573,9 +573,9 @@ async def test_patch_blank_regenerates_the_template(
     cleared = await cs_client.patch("/agencies/me", headers=headers, json={"client_terms_md": ""})
     assert cleared.status_code == 200, cleared.text
     body = cleared.json()["client_terms_md"]
-    assert body is not None and "[Votre dénomination légale]" in body
+    assert body is not None and "édité par" in body and "[" not in body
     stored = (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"]
-    assert stored is not None and "[Votre dénomination légale]" in stored
+    assert stored is not None and "[" not in stored
 
 
 async def test_patch_untouching_the_terms_still_reports_them(
