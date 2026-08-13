@@ -30,6 +30,7 @@ from src.core.email_templates import signup_code_email, signup_existing_account_
 from src.core.enums import Audience
 from src.core.exceptions import BadRequestError, ValidationError
 from src.core.security import hash_password
+from src.signup.signup_alert import notify_signup
 from src.signup.signup_schema import (
     SignupCompleteRequest,
     SignupRequest,
@@ -182,4 +183,10 @@ class SignupManager:
         await self.db.delete(row)
         pair = AuthManager(self.db).issue_token_pair(admin.id, Audience.AGENT)
         await manager._finalize_agency_creation(agency, admin)
+        # INTERNAL alert to the team, immediately (demande Eric 13/08). Hooked
+        # HERE and not in _finalize_agency_creation on purpose: that writer is
+        # shared with the superadmin wizard, and an agency we created
+        # ourselves is not an acquisition to be told about. Best-effort by
+        # construction — notify_signup never raises.
+        await notify_signup(self.db, agency, admin)
         return pair

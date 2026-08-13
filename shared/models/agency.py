@@ -195,6 +195,11 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # NULL = not sent (yet, or never: the sweep only looks at agencies inside
     # its catch-up window, so the pre-feature park stays untouched).
     onboarding_email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Internal signup alert (demande Eric 13/08): posed AFTER a successful
+    # send. Deliberately NOT the same column as onboarding_email_sent_at —
+    # that mail goes TO the agency at J+10 min, this one goes to the team
+    # immediately. One flag each, so replaying one never suppresses the other.
+    signup_alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def has_logo(self) -> bool:

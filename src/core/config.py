@@ -85,6 +85,17 @@ class Settings(BaseSettings):
     # Eric's 3-minute walkthrough. FRENCH whatever the recipient language
     # (his decision): the mail is translated, the video is not.
     onboarding_video_url: str = "https://youtu.be/ciyXd7KZpnU"
+    # INTERNAL signup alert (demande Eric 13/08) — NOT the onboarding mail:
+    # that one goes TO the agency at J+10 min, this one goes to US, at once,
+    # so a signup can be traced and called back the same day. Recipients are
+    # CONFIG (comma-separated) precisely so adding a colleague tomorrow is an
+    # env change, not a deploy. Empty list = alert off.
+    # The test-account guards are NOT duplicated here: this alert reuses
+    # `onboarding_email_enabled` and `onboarding_email_excluded_patterns`
+    # verbatim, so "test account" keeps ONE definition across both mails.
+    signup_alert_recipients: Annotated[list[str], NoDecode] = [
+        "mr.schalk.eric@gmail.com",
+    ]
     # AI translation (journey templates, GLM via Z.ai OpenAI-compatible API).
     ai_translation_base_url: str = "https://api.z.ai/api/paas/v4"
     ai_translation_api_key: str = ""
@@ -284,6 +295,7 @@ class Settings(BaseSettings):
         "allowed_document_extensions",
         "allowed_task_attachment_extensions",
         "onboarding_email_excluded_patterns",
+        "signup_alert_recipients",
         mode="before",
     )
     @classmethod
