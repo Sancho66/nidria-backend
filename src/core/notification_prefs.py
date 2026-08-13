@@ -66,3 +66,26 @@ def effective_client_prefs(agency: Agency | None) -> dict[str, str]:
 
 def effective_agent_prefs(agent: Agent | None) -> dict[str, str]:
     return {key: agent_pref(agent, key) for key in AGENT_DEFAULTS}
+
+
+# --- automatic follow-ups: send, or queue for approval? ------------------------------
+#
+# Eloïse's promise (2026-06) was « rien ne part sans approbation », and the
+# automatic follow-ups inherited it. The prod constat of the 13/08 killed that
+# inheritance: 97 auto follow-ups waiting across two agencies, the oldest 17
+# days old, ZERO ever sent — the feature sold as « les relances partent sans
+# qu'on y pense » had never once fired. The approval queue is now a CHOICE, and
+# the default is the promise: they leave on their own.
+#
+# The key is stored REQUIRE-shaped (absent = False = they leave), so an agency
+# that never touched the setting gets the product it was sold. Manual reminders
+# are untouched: they ALWAYS go through approval, whatever this says.
+AUTO_REMINDERS_REQUIRE_APPROVAL_KEY = "auto_reminders_require_approval"
+
+
+def auto_reminders_require_approval(agency: Agency | None) -> bool:
+    """True → the automatic follow-ups land in the approval queue (the old
+    behaviour, kept for whoever wants it). Absent or anything but a real
+    `true` → they are created already approved and the dispatch sends them."""
+    stored = ((agency.settings if agency else None) or {}).get(AUTO_REMINDERS_REQUIRE_APPROVAL_KEY)
+    return stored is True

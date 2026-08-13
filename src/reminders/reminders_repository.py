@@ -146,6 +146,24 @@ class RemindersRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def list_cancellable_in_agency(
+        self, agency_id: uuid.UUID, reminder_ids: list[uuid.UUID], statuses: list[str]
+    ) -> list[Reminder]:
+        """The rows a bulk cancel may touch: THIS agency's, in a cancellable
+        status. Ids of another agency simply do not come back — the caller
+        reports `affected`, never a 404 that would confirm their existence."""
+        stmt = (
+            select(Reminder)
+            .join(ClientCase, ClientCase.id == Reminder.case_id)
+            .where(
+                ClientCase.agency_id == agency_id,
+                ClientCase.deleted_at.is_(None),
+                Reminder.id.in_(reminder_ids),
+                Reminder.status.in_(statuses),
+            )
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
     async def list_reminders(
         self,
         agency_id: uuid.UUID,

@@ -48,7 +48,7 @@ from src.consents.agency_tokens import token_values, unfilled_tokens, unknown_to
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
-from src.core.notification_prefs import effective_client_prefs
+from src.core.notification_prefs import auto_reminders_require_approval, effective_client_prefs
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.referral.referral_manager import ReferralManager
@@ -330,6 +330,9 @@ async def _fill_client_documents(
     texts = (response.client_terms_md, response.client_privacy_md)
     response.client_terms_unknown_tokens = unknown_tokens(*texts)
     response.client_terms_unfilled_tokens = unfilled_tokens(agency, *texts)
+    # Le régime des relances automatiques, lu depuis `settings` par LA fonction
+    # que le job lit aussi — l'écran et l'envoi ne peuvent pas diverger.
+    response.auto_reminders_require_approval = auto_reminders_require_approval(agency)
 
 
 @router.get("/me", response_model=AgencyResponse)

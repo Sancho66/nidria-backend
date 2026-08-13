@@ -128,7 +128,10 @@ async def test_auto_reminders_run_normally_for_an_activated_client(
     reminder = (
         await db_session.execute(select(Reminder).where(Reminder.case_id == case.id))
     ).scalar_one()
-    assert reminder.status == "to_approve"  # l'invariant d'Eloïse, intact
+    # Lot 13/08 : la relance AUTO part seule par défaut (créée approved, envoyée
+    # par le dispatch). L'invariant d'Eloïse tient sur les rappels écrits à la
+    # main, et le dispatch reste le seul chemin d'envoi.
+    assert reminder.status == "approved"
     assert reminder.auto_threshold_days == 20
 
 

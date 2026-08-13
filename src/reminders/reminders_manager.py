@@ -356,6 +356,30 @@ class RemindersManager:
         await self.db.refresh(reminder)
         return reminder
 
+    async def bulk_cancel(self, agent: Agent, reminder_ids: list[uuid.UUID]) -> tuple[int, int]:
+        """Cancel a batch in ONE gesture — the way out of an approval backlog
+        that piled up (97 rows in prod at the 13/08 constat, the oldest 17 days
+        old). Only this agency's reminders, only cancellable ones; everything
+        else is silently ignored, so `affected` may be lower than `examined`.
+
+        Each cancellation is logged exactly like the unit one: the trace stays
+        per-reminder, no « 85 rappels ont disparu » hole in the history."""
+        rows = await self.repo.list_cancellable_in_agency(
+            agent.agency_id,
+            reminder_ids,
+            [ReminderStatus.TO_APPROVE.value, ReminderStatus.APPROVED.value],
+        )
+        for reminder in rows:
+            reminder.status = ReminderStatus.CANCELLED.value
+            self._log(
+                reminder.case_id,
+                agent,
+                "reminder.cancelled",
+                {"reminder_id": str(reminder.id), "bulk": True},
+            )
+        await self.db.commit()
+        return len(reminder_ids), len(rows)
+
     async def cancel_reminder(self, agent: Agent, reminder_id: uuid.UUID) -> Reminder:
         reminder = await self.get_reminder(agent, reminder_id)
         if reminder.status not in (

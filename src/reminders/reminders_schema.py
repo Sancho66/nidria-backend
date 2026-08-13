@@ -81,3 +81,22 @@ class ReminderListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# Same cap and shape as the cases bulk actions (house pattern): explicit ids,
+# never a blind "cancel everything" — the screen sends what it shows.
+_BULK_MAX_IDS = 500
+
+
+class ReminderBulkCancelRequest(BaseModel):
+    """Annulation en masse — le geste de sortie du passif d'approbation (97
+    relances en attente en prod au 13/08, la plus vieille de 17 jours). Les
+    ids d'une AUTRE agence, ou d'un rappel déjà envoyé, sont ignorés
+    silencieusement : `affected` dit ce qui a bougé, jamais une fuite."""
+
+    reminder_ids: list[uuid.UUID] = Field(min_length=1, max_length=_BULK_MAX_IDS)
+
+
+class ReminderBulkCancelResponse(BaseModel):
+    examined: int
+    affected: int

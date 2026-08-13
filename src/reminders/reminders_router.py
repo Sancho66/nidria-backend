@@ -16,6 +16,8 @@ from src.reminders.reminders_schema import (
     MessageTemplateCreateRequest,
     MessageTemplateResponse,
     MessageTemplateUpdateRequest,
+    ReminderBulkCancelRequest,
+    ReminderBulkCancelResponse,
     ReminderCreateRequest,
     ReminderListResponse,
     ReminderResponse,
@@ -43,6 +45,10 @@ BINDINGS = [
         "POST", "/reminders/{reminder_id}/approve", Audience.AGENT, Permission.REMINDER_APPROVE
     ),
     RouteBinding("POST", "/reminders/{reminder_id}/cancel", Audience.AGENT, _CREATE),
+    # Literal segment declared BEFORE /{reminder_id}/… in the router below, so
+    # "bulk-cancel" is never read as a reminder id. Same gate as the unit
+    # cancel: cancelling 85 is cancelling, not a new power.
+    RouteBinding("POST", "/reminders/bulk-cancel", Audience.AGENT, _CREATE),
     RouteBinding("POST", "/reminders/{reminder_id}/mark-sent", Audience.AGENT, _CREATE),
 ]
 
@@ -140,6 +146,17 @@ async def update_reminder(
     manager = RemindersManager(db)
     reminder = await manager.update_reminder(agent, reminder_id, body)
     return await manager.to_response(reminder)
+
+
+@router.post("/reminders/bulk-cancel", response_model=ReminderBulkCancelResponse)
+async def bulk_cancel_reminders(
+    body: ReminderBulkCancelRequest, agent: AgentDep, db: DbDep
+) -> ReminderBulkCancelResponse:
+    """Annuler en masse (jusqu'à 500 ids) — la sortie d'un passif
+    d'approbation. Ids d'une autre agence ou rappels déjà envoyés : ignorés,
+    `affected` dit ce qui a bougé."""
+    examined, affected = await RemindersManager(db).bulk_cancel(agent, body.reminder_ids)
+    return ReminderBulkCancelResponse(examined=examined, affected=affected)
 
 
 @router.post("/reminders/{reminder_id}/approve", response_model=ReminderResponse)

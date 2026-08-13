@@ -1,6 +1,10 @@
-"""FEATURE 3 battery. THE ABSOLUTE INVARIANT carries its name below:
-nothing is ever sent without human approval — a due TO_APPROVE crosses
-a dispatch tick untouched. Mocks everywhere, zero real sends."""
+"""FEATURE 3 battery. THE INVARIANT carries its name below: a due
+TO_APPROVE crosses a dispatch tick untouched, whoever created it — that
+part never moves, and a reminder a human WRITES is always born
+TO_APPROVE. What the 13/08 lot changed is who decides for the AUTOMATIC
+follow-ups: the agency, in its settings, default « elles partent seules »
+(97 waiting in prod, oldest 17 days, zero ever sent). Mocks everywhere,
+zero real sends."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -454,7 +458,7 @@ async def test_auto_threshold_created_once_over_two_ticks(
     )
     assert len(reminders) == 1
     auto = reminders[0]
-    assert auto.status == "to_approve"  # NEVER more than proposed
+    assert auto.status == "approved"  # le régime par défaut : elle part seule
     assert auto.auto_threshold_days == 20
 
     log = (
@@ -637,7 +641,7 @@ async def test_auto_provider_j20_in_agency_language_client_untouched(
     )
     by_type = {r.recipient_type: r for r in rows}
     provider = by_type["external"]
-    assert provider.status == "to_approve"  # NEVER auto-sent
+    assert provider.status == "approved"  # part seule (régime par défaut, lot 13/08)
     assert provider.recipient_external_id == contact.id
     assert provider.auto_threshold_days == 20
     # The manual-flow language rule: AGENCY language (en), not the client's.
@@ -705,6 +709,14 @@ async def test_auto_provider_without_email_escalates_to_owner(
     _run_auto(sync_session_local)
 
     email.outbox.clear()
+    # Lot 13/08 : la relance CLIENT part désormais seule au même tick. Ce test
+    # porte sur le chemin PRESTATAIRE — on l'écarte pour garder une boîte
+    # d'envoi (et un « sent » unique) lisibles.
+    await db_session.execute(
+        update(Reminder)
+        .where(Reminder.recipient_type == "expat", Reminder.case_id == case.id)
+        .values(status="cancelled")
+    )
     await db_session.execute(
         update(Reminder)
         .where(Reminder.recipient_type == "external", Reminder.case_id == case.id)
@@ -809,6 +821,14 @@ async def test_auto_provider_escalated_line_still_blocks_next_tick(
     await _external_participant(db_session, case, contact.id)
     assert _run_auto(sync_session_local)["created"] == 2  # client + provider
 
+    # Lot 13/08 : la relance CLIENT part désormais seule au même tick. Ce test
+    # porte sur le chemin PRESTATAIRE — on l'écarte pour garder une boîte
+    # d'envoi (et un « sent » unique) lisibles.
+    await db_session.execute(
+        update(Reminder)
+        .where(Reminder.recipient_type == "expat", Reminder.case_id == case.id)
+        .values(status="cancelled")
+    )
     await db_session.execute(
         update(Reminder)
         .where(Reminder.recipient_type == "external", Reminder.case_id == case.id)
@@ -1110,7 +1130,7 @@ async def test_provider_pass_honors_per_journey_thresholds(
         .scalars()
         .one()
     )
-    assert provider.status == "to_approve"  # NEVER auto-sent
+    assert provider.status == "approved"  # part seule (régime par défaut, lot 13/08)
     assert provider.recipient_external_id == contact.id
     assert provider.auto_threshold_days == 5  # the journey threshold, not the default 20
 
@@ -1260,7 +1280,7 @@ async def test_incomplete_stalled_step_still_reminds_the_client(
         .scalars()
         .one()
     )
-    assert reminder.status == "to_approve"  # the absolute invariant holds
+    assert reminder.status == "approved"  # créée déjà approuvée, jamais envoyée hors dispatch
 
 
 async def test_step_with_all_requirements_met_stops_client_reminders(
@@ -1347,4 +1367,228 @@ async def test_provider_pass_untouched_by_a_fully_met_step(
     )
     assert reminder.recipient_type == "external"
     assert reminder.recipient_external_id == contact.id
+    assert reminder.status == "approved"
+
+
+# --- l'approbation des relances AUTOMATIQUES devient un choix (lot 13/08) ---------
+#
+# Constat prod du 13/08 : 97 relances automatiques en attente d'approbation sur
+# deux agences, la plus vieille de 17 jours, ZÉRO jamais partie. La promesse
+# d'Eloïse (« rien ne part sans approbation ») reste entière pour les rappels
+# ÉCRITS À LA MAIN ; les automatiques, elles, partent seules par défaut.
+
+
+async def _stalled(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    agent: Agent,
+    make_client_case: MakeClientCase,
+    headers: dict[str, str],
+) -> ClientCase:
+    return await _stalled_step(rem_client, db_session, agent, make_client_case, headers, days=21)
+
+
+async def test_by_default_an_auto_reminder_leaves_without_approval(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA promesse du produit : l'agence qui n'a rien réglé voit ses relances
+    partir. Créée APPROVED (aucun approbateur humain), puis envoyée par le
+    dispatch — le seul chemin d'envoi, inchangé."""
+    headers = agent_headers(manager_agent)
+    case = await _stalled(rem_client, db_session, manager_agent, make_client_case, headers)
+
+    assert _run_auto(sync_session_local)["created"] == 1
+    reminder = (
+        await db_session.execute(select(Reminder).where(Reminder.case_id == case.id))
+    ).scalar_one()
+    assert reminder.status == "approved"
+    assert reminder.approved_by_agent_id is None  # personne n'a cliqué : c'est le régime
+
+    assert _run_dispatch(sync_session_local)["sent"] == 1
+    await db_session.refresh(reminder)
+    assert reminder.status == "sent"
+
+    log = (
+        await db_session.execute(
+            select(ActivityLog).where(ActivityLog.action_type == "reminder.auto_created")
+        )
+    ).scalar_one()
+    assert log.details["approval"] == "auto"  # la trace dit QUEL régime a produit la ligne
+
+
+async def test_an_agency_can_still_validate_each_one(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    make_client_case: MakeClientCase,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le mode d'avant, conservé pour qui le veut : la relance attend, et le
+    dispatch ne peut pas la prendre."""
+    agency = await make_agency(settings={"auto_reminders_require_approval": True})
+    agent = await make_agent(agency_id=agency.id, role=system_roles["case_manager"])
+    headers = agent_headers(agent)
+    case = await _stalled(rem_client, db_session, agent, make_client_case, headers)
+
+    assert _run_auto(sync_session_local)["created"] == 1
+    reminder = (
+        await db_session.execute(select(Reminder).where(Reminder.case_id == case.id))
+    ).scalar_one()
     assert reminder.status == "to_approve"
+    assert _run_dispatch(sync_session_local)["sent"] == 0
+    assert email.outbox == []
+
+
+async def test_a_hand_written_reminder_always_needs_approval(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """La promesse d'Eloïse, intacte : le réglage ne concerne QUE les
+    automatiques. Un rappel écrit à la main naît toujours à approuver."""
+    headers = agent_headers(manager_agent)
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    created = await rem_client.post(
+        f"/cases/{case.id}/reminders",
+        headers=headers,
+        json={
+            "channel": "mail",
+            "scheduled_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "recipient_type": "expat",
+            "message_body": "Bonjour",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "to_approve"
+
+
+async def test_the_setting_is_served_and_written(
+    rem_client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    # Un réglage d'agence : c'est agency.manage qui l'écrit, pas le
+    # case_manager (qui, lui, approuve et annule les rappels).
+    admin = await make_agent(role=system_roles["admin"])
+    headers = agent_headers(admin)
+    assert (await rem_client.get("/agencies/me", headers=headers)).json()[
+        "auto_reminders_require_approval"
+    ] is False  # le défaut = la promesse
+
+    patched = await rem_client.patch(
+        "/agencies/me", headers=headers, json={"auto_reminders_require_approval": True}
+    )
+    assert patched.status_code == 200, patched.text
+    body = patched.json()
+    assert body["auto_reminders_require_approval"] is True
+    # Écrit dans settings sans rien y perdre (même discipline JSONB que les prefs).
+    assert body["settings"]["auto_reminders_require_approval"] is True
+    reread = (await rem_client.get("/agencies/me", headers=headers)).json()
+    assert reread["auto_reminders_require_approval"] is True
+
+
+async def test_the_waiting_backlog_never_leaves_retroactively(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Les 97 en attente ne partent PAS quand le réglage bascule : une relance
+    de trois semaines (« l'étape n'a pas progressé depuis 20 jours » alors
+    qu'il y en a 41) serait absurde. Elles restent où elles sont."""
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    old = datetime.now(UTC) - timedelta(days=17)
+    waiting = [
+        await make_reminder(case=case, status="to_approve", scheduled_at=old) for _ in range(3)
+    ]
+
+    _run_auto(sync_session_local)
+    assert _run_dispatch(sync_session_local)["sent"] == 0
+    assert email.outbox == []
+    for reminder in waiting:
+        await db_session.refresh(reminder)
+        assert reminder.status == "to_approve"
+
+
+async def test_bulk_cancel_clears_the_backlog_and_nothing_else(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le geste de sortie : annuler en masse. Seuls les rappels de SON agence
+    et dans un statut annulable bougent ; les ids étrangers sont ignorés, sans
+    404 qui confirmerait leur existence."""
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    waiting = [await make_reminder(case=case, status="to_approve") for _ in range(3)]
+    already_sent = await make_reminder(case=case, status="sent")
+
+    other_agency = await make_agency()
+    other_agent = await make_agent(agency_id=other_agency.id, role=system_roles["case_manager"])
+    other_case = await make_client_case(agency_id=other_agency.id)
+    foreign = await make_reminder(case=other_case, status="to_approve")
+
+    ids = [str(r.id) for r in (*waiting, already_sent, foreign)]
+    response = await rem_client.post(
+        "/reminders/bulk-cancel",
+        headers=agent_headers(manager_agent),
+        json={"reminder_ids": ids},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"examined": 5, "affected": 3}
+
+    for reminder in waiting:
+        await db_session.refresh(reminder)
+        assert reminder.status == "cancelled"
+    await db_session.refresh(already_sent)
+    assert already_sent.status == "sent"  # un envoi ne s'annule pas
+    await db_session.refresh(foreign)
+    assert foreign.status == "to_approve"  # l'autre agence, intouchée
+    assert other_agent.agency_id == other_agency.id
+
+    # La trace reste PAR rappel — pas de trou « 3 rappels ont disparu ».
+    logs = (
+        (
+            await db_session.execute(
+                select(ActivityLog).where(ActivityLog.action_type == "reminder.cancelled")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(logs) == 3
+    assert all(log.details["bulk"] is True for log in logs)
+
+
+async def test_bulk_cancel_is_gated_like_the_unit_cancel(
+    rem_client: AsyncClient,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    viewer = await make_agent(role=system_roles["viewer"])
+    refused = await rem_client.post(
+        "/reminders/bulk-cancel",
+        headers=agent_headers(viewer),
+        json={"reminder_ids": [str(uuid.uuid4())]},
+    )
+    assert refused.status_code == 403, refused.text

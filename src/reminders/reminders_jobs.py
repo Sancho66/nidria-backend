@@ -1,10 +1,21 @@
 """The two scheduled pipelines — SYNC (scheduler rule), run through
 src/core/job_wrapper.run_job.
 
-THE ABSOLUTE INVARIANT (Eloïse's promise): nothing is ever sent without
-human approval. The dispatch SELECT is syntactically unable to pick a
-TO_APPROVE row — there is no other send path in the codebase (the
-WhatsApp mark-sent endpoint requires APPROVED too).
+THE INVARIANT, AND WHAT THE 13/08 LOT CHANGED. Eloïse's promise —
+nothing leaves without approval — still holds WORD FOR WORD for the
+reminders a human writes: a manual reminder is always created TO_APPROVE.
+What changed is the AUTOMATIC follow-up: the prod constat found 97 of
+them waiting across two agencies, the oldest 17 days old, ZERO ever sent
+— the feature sold as « les relances partent sans qu'on y pense » had
+never fired once. An agency now CHOOSES (settings, default: they leave on
+their own); the approval queue stays available to whoever wants it.
+
+The dispatch itself is untouched and stays the single send path: its
+SELECT is syntactically unable to pick a TO_APPROVE row (the WhatsApp
+mark-sent endpoint requires APPROVED too). Auto-send does not bypass the
+dispatch — it creates the row already APPROVED, so every downstream rule
+(scheduling, client prefs, escalation, the demo filter) applies
+identically.
 """
 
 import logging
@@ -46,7 +57,7 @@ from src.core.enums import (
     StepStatus,
 )
 from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
-from src.core.notification_prefs import client_pref
+from src.core.notification_prefs import auto_reminders_require_approval, client_pref
 from src.progress.requirements_eval import step_all_met
 from src.reminders.reminders_targeting import targeted_member
 
@@ -393,6 +404,13 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                 f"({addressee.email if addressee else 'no recipient'})"
             )
             continue
+        # The agency's choice, read ONCE per agency row (lot 13/08): queue for
+        # approval, or create already approved so the dispatch sends it.
+        status = (
+            ReminderStatus.TO_APPROVE.value
+            if auto_reminders_require_approval(agency)
+            else ReminderStatus.APPROVED.value
+        )
         for threshold in resolve_auto_reminder_thresholds(journey, agency, default_thresholds):
             if not _age_reached(progress.updated_at, threshold):
                 continue
@@ -407,7 +425,9 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     step_progress_id=progress.id,
                     channel=ReminderChannel.MAIL.value,
                     scheduled_at=now,
-                    status=ReminderStatus.TO_APPROVE.value,
+                    status=status,
+                    # NULL approver: nobody clicked. The activity log below
+                    # records WHICH regime produced the row.
                     recipient_type=RecipientType.EXPAT.value,
                     # Translated into the CLIENT's language.
                     message_body=auto_reminder_body(
@@ -424,7 +444,15 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     actor_type=ActorType.SYSTEM.value,
                     actor_id=None,
                     action_type="reminder.auto_created",
-                    details={"step_progress_id": str(progress.id), "threshold": threshold},
+                    details={
+                        "step_progress_id": str(progress.id),
+                        "threshold": threshold,
+                        # WHICH regime produced this row — the audit answer to
+                        # « pourquoi celle-ci est-elle partie sans clic ? ».
+                        "approval": "required"
+                        if status == ReminderStatus.TO_APPROVE.value
+                        else "auto",
+                    },
                 )
             )
             seen_any.add((progress.id, threshold))
@@ -463,6 +491,11 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
     for progress, step, case, agency, contact, journey in db.execute(provider_stmt).all():
         if not (agency.settings or {}).get("auto_reminders_enabled", True):
             continue
+        status = (
+            ReminderStatus.TO_APPROVE.value
+            if auto_reminders_require_approval(agency)
+            else ReminderStatus.APPROVED.value
+        )
         for threshold in resolve_auto_reminder_thresholds(journey, agency, default_thresholds):
             if not _age_reached(progress.updated_at, threshold):
                 continue
@@ -477,7 +510,7 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     step_progress_id=progress.id,
                     channel=ReminderChannel.MAIL.value,
                     scheduled_at=now,
-                    status=ReminderStatus.TO_APPROVE.value,
+                    status=status,
                     recipient_type=RecipientType.EXTERNAL.value,
                     recipient_external_id=contact.id,
                     # The manual-flow language rule: a provider reads the
@@ -499,6 +532,9 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     details={
                         "step_progress_id": str(progress.id),
                         "threshold": threshold,
+                        "approval": (
+                            "required" if status == ReminderStatus.TO_APPROVE.value else "auto"
+                        ),
                         "recipient_external_id": str(contact.id),
                     },
                 )

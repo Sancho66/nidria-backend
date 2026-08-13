@@ -74,6 +74,7 @@ from src.core.exceptions import (
 )
 from src.core.i18n import resolve_notification_lang_agent
 from src.core.images import process_cover, process_logo
+from src.core.notification_prefs import AUTO_REMINDERS_REQUIRE_APPROVAL_KEY
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.rbac.consent_gate import active_documents_by_type
 from src.core.security import hash_password
@@ -1073,6 +1074,14 @@ class AgenciesManager:
             prefs["client"] = {**(prefs.get("client") or {}), **patch}
             settings_map["notification_prefs"] = prefs
             agency.settings = settings_map
+        if payload.auto_reminders_require_approval is not None:
+            # Same JSONB discipline as notification_prefs: full reassignment so
+            # SQLAlchemy sees the change, key-by-key merge so nothing else in
+            # `settings` is lost.
+            agency.settings = {
+                **(agency.settings or {}),
+                AUTO_REMINDERS_REQUIRE_APPROVAL_KEY: payload.auto_reminders_require_approval,
+            }
         if payload.default_language is not None:
             agency.default_language = payload.default_language
         if payload.currency is not None:

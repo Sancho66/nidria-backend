@@ -17826,6 +17826,53 @@
         }
       }
     },
+    "/reminders/bulk-cancel": {
+      "post": {
+        "tags": [
+          "reminders"
+        ],
+        "summary": "Bulk Cancel Reminders",
+        "description": "Annuler en masse (jusqu'à 500 ids) — la sortie d'un passif\nd'approbation. Ids d'une autre agence ou rappels déjà envoyés : ignorés,\n`affected` dit ce qui a bougé.",
+        "operationId": "bulk_cancel_reminders_reminders_bulk_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderBulkCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderBulkCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/reminders/{reminder_id}/approve": {
       "post": {
         "tags": [
@@ -19358,6 +19405,11 @@
               }
             ],
             "title": "Notification Prefs"
+          },
+          "auto_reminders_require_approval": {
+            "type": "boolean",
+            "title": "Auto Reminders Require Approval",
+            "default": false
           }
         },
         "type": "object",
@@ -19543,6 +19595,17 @@
                 "type": "null"
               }
             ]
+          },
+          "auto_reminders_require_approval": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reminders Require Approval"
           },
           "default_language": {
             "anyOf": [
@@ -34121,6 +34184,44 @@
           "refresh_token"
         ],
         "title": "RefreshRequest"
+      },
+      "ReminderBulkCancelRequest": {
+        "properties": {
+          "reminder_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Reminder Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reminder_ids"
+        ],
+        "title": "ReminderBulkCancelRequest",
+        "description": "Annulation en masse — le geste de sortie du passif d'approbation (97\nrelances en attente en prod au 13/08, la plus vieille de 17 jours). Les\nids d'une AUTRE agence, ou d'un rappel déjà envoyé, sont ignorés\nsilencieusement : `affected` dit ce qui a bougé, jamais une fuite."
+      },
+      "ReminderBulkCancelResponse": {
+        "properties": {
+          "examined": {
+            "type": "integer",
+            "title": "Examined"
+          },
+          "affected": {
+            "type": "integer",
+            "title": "Affected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "examined",
+          "affected"
+        ],
+        "title": "ReminderBulkCancelResponse"
       },
       "ReminderChannel": {
         "type": "string",

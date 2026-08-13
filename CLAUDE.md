@@ -39,7 +39,10 @@ Nidria réutilise l'infrastructure et la coquille CRM de **Prism** (un CRM de pr
 
 1. **Timeline client visible** — l'expatrié voit son parcours : étape en cours, étapes faites, à venir, délais estimés, interlocuteurs.
 2. **Espace agence** — liste des dossiers, création/édition, assignation d'un parcours, marquage d'étapes, notes, tags, owner.
-3. **Rappels customisables** (demande Eloïse) — planifier des rappels (mail / WhatsApp / in-app) avec message éditable et **approbation manuelle obligatoire** avant envoi. Inclut les **relances auto J+20 / J+30** sur étape sans avancement (activables/désactivables) : elles **créent un reminder en `TO_APPROVE`**, jamais d'envoi automatique — la règle d'approbation tient toujours.
+3. **Rappels customisables** (demande Eloïse) — planifier des rappels (mail / WhatsApp / in-app) avec message éditable et **approbation manuelle obligatoire** avant envoi. Inclut les **relances auto J+20 / J+30** sur étape sans avancement (activables/désactivables).
+   - **Un rappel ÉCRIT À LA MAIN naît toujours `TO_APPROVE`** — la promesse d'Eloïse, intacte.
+   - **Les relances AUTOMATIQUES : au choix de l'agence** (`agency.settings["auto_reminders_require_approval"]`, défaut **false**). Défaut = créées `APPROVED`, envoyées par le dispatch — c'est la promesse produit (« les relances partent sans qu'on y pense »). Décision du 13/08 sur constat prod : **97 relances auto en attente sur 2 agences, la plus vieille de 17 jours, ZÉRO jamais partie** — l'approbation héritée transformait la feature en file d'attente morte. L'agence qui veut valider chaque envoi coche le réglage.
+   - **Le dispatch reste le SEUL chemin d'envoi** et ne peut pas prendre une ligne `TO_APPROVE` : l'envoi auto ne contourne rien, il crée la ligne déjà approuvée.
 4. **Étapes verrouillées** (demande Didier) — une étape ne peut pas être validée tant que ses étapes prérequises ne le sont pas.
 
 ### Périmètre MVP — règle d'or

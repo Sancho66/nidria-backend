@@ -399,6 +399,12 @@ class AgencyResponse(BaseModel):
     # EFFECTIVE client notification prefs (defaults merged) — the front
     # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
     notification_prefs: dict[str, str] | None = None
+    # LES RELANCES AUTOMATIQUES (lot 13/08) : false = elles partent seules (la
+    # promesse du produit, et le défaut) ; true = elles attendent une
+    # approbation (le mode d'avant, pour qui le veut). Ne concerne QUE les
+    # relances automatiques — un rappel écrit à la main passe toujours par
+    # l'approbation. Rempli sur GET/PATCH/validate /me.
+    auto_reminders_require_approval: bool = False
 
 
 class AgencyCreateRequest(BaseModel):
@@ -468,6 +474,8 @@ class AgencyUpdateRequest(BaseModel):
     # dans settings.notification_prefs.client), jamais un remplacement du
     # settings brut.
     notification_prefs: ClientNotificationPrefsPatch | None = None
+    # Le régime des relances AUTOMATIQUES (lot 13/08). None = inchangé.
+    auto_reminders_require_approval: bool | None = None
     # i18n fallback language for this agency's content (validated fr/en/es).
     default_language: Language | None = None
     # ISO 4217 code for internal cost tracking. Strict: an EXACT uppercase code
