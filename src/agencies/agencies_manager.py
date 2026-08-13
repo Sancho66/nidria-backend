@@ -4,6 +4,7 @@ import re
 import secrets
 import unicodedata
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -41,7 +42,12 @@ from src.agencies.agencies_schema import (
 from src.agencies.demo_case_seed import seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
-from src.consents.consents_seed import publish_if_changed, withdraw_agency_document
+from src.consents.agency_template import generate_client_privacy, generate_client_terms
+from src.consents.consents_seed import (
+    content_sha256,
+    ensure_agency_default_terms,
+    publish_if_changed,
+)
 from src.core import storage
 from src.core.config import get_settings
 from src.core.currencies import default_currency_for_language
@@ -372,6 +378,11 @@ class AgenciesManager:
         await self.db.commit()
         await self.db.refresh(agency)
         await self.db.refresh(admin)
+        # Agency-named client documents (lot 13/08): the new agency gets its
+        # OWN client_terms + client_privacy immediately — its clients never
+        # hit the Nidria fallback, not even between creation and next boot.
+        if await ensure_agency_default_terms(self.db, agency):
+            await self.db.commit()
         try:
             await seed_demo_case(self.db, agency, admin)
         except Exception:
@@ -947,12 +958,24 @@ class AgenciesManager:
                 )
             )
         ).scalar_one_or_none()
+        steps = onboarding_gestures(
+            journey_at=journey_at,
+            premier_dossier=firsts.get("premier_dossier_cree"),
+            viewed=viewed_at,
+        )
+        # « Vos conditions générales » (lot 13/08): the review step. Driven by
+        # the reviewed flag, added here (the self view) — not in the shared
+        # onboarding_gestures, which the superadmin adoption dashboard also
+        # reads and needs no per-agency terms fetch.
+        steps.append(
+            OnboardingStepState(
+                key="review_client_terms",
+                done=agency.client_terms_reviewed_at is not None,
+                done_at=agency.client_terms_reviewed_at,
+            )
+        )
         return OnboardingResponse(
-            steps=onboarding_gestures(
-                journey_at=journey_at,
-                premier_dossier=firsts.get("premier_dossier_cree"),
-                viewed=viewed_at,
-            ),
+            steps=steps,
             dismissed=agency.onboarding_dismissed_at is not None,
         )
 
@@ -966,14 +989,52 @@ class AgenciesManager:
         return await self.onboarding_state(agent)
 
     async def own_client_terms(self, agency: Agency) -> str | None:
-        """The agency's OWN active client terms, or None when it has none
-        (its clients then see the Nidria text). Read from the published
-        consent_document — the text has no home on `agency`."""
-        active = await active_documents_by_type(
-            self.db, frozenset({ConsentDocumentType.CLIENT_TERMS.value}), agency.id
-        )
-        doc = active.get(ConsentDocumentType.CLIENT_TERMS.value)
+        """The agency's OWN active client terms (lot 13/08: always present —
+        the Nidria fallback is dead). Read from the published consent_document
+        — the text has no home on `agency`."""
+        return await self._own_client_doc(agency, ConsentDocumentType.CLIENT_TERMS.value)
+
+    async def own_client_privacy(self, agency: Agency) -> str | None:
+        """The agency's OWN active client privacy note."""
+        return await self._own_client_doc(agency, ConsentDocumentType.CLIENT_PRIVACY.value)
+
+    async def _own_client_doc(self, agency: Agency, doc_type: str) -> str | None:
+        active = await active_documents_by_type(self.db, frozenset({doc_type}), agency.id)
+        doc = active.get(doc_type)
         return doc.content_md if doc is not None and doc.agency_id is not None else None
+
+    async def _regenerate_doc_if_untouched(
+        self,
+        agency: Agency,
+        doc_type: str,
+        generator: Callable[[Agency], str],
+        old_generated: str,
+    ) -> None:
+        """Regenerate the agency document from its NEW profile, but ONLY if
+        the current one is still the untouched generated template (its hash
+        matches what generation produced from the OLD profile). An agency
+        that edited its text keeps it — the profile no longer overwrites."""
+        active = await active_documents_by_type(self.db, frozenset({doc_type}), agency.id)
+        doc = active.get(doc_type)
+        edited = (
+            doc is not None
+            and doc.agency_id is not None
+            and doc.content_hash != content_sha256(old_generated)
+        )
+        if edited:
+            return
+        await publish_if_changed(self.db, doc_type, generator(agency), agency_id=agency.id)
+
+    async def validate_client_terms(self, agent: Agent) -> Agency:
+        """The « J'ai vérifié » gesture: stamp client_terms_reviewed_at (once).
+        Clears the dashboard reminder and the onboarding step. Blocks nothing;
+        idempotent."""
+        agency = await self.get_my_agency(agent)
+        if agency.client_terms_reviewed_at is None:
+            agency.client_terms_reviewed_at = datetime.now(UTC)
+            await self.db.commit()
+            await self.db.refresh(agency)
+        return agency
 
     async def update_my_agency(self, agent: Agent, payload: AgencyUpdateRequest) -> Agency:
         agency = await self.get_my_agency(agent)
@@ -1003,26 +1064,53 @@ class AgenciesManager:
             # default reconverts NOTHING and is always allowed — the old
             # cost.currency_change_forbidden guard is gone.
             agency.currency = payload.currency
-        if payload.client_terms_md is not None:
-            # Blank = withdraw (clients fall back to the Nidria text); any
-            # other content = publish a new version if it actually changed.
-            # Same publication act as the canonical seed, so the agency's
-            # clients are re-gated at their next request, and acceptances
-            # already recorded keep pointing at the version they signed.
-            # strip() decides blank-vs-content ONLY; the text itself is
-            # stored VERBATIM. A legal document is served exactly as its
-            # author wrote it, and the hash covers those very bytes.
-            if payload.client_terms_md.strip():
-                await publish_if_changed(
-                    self.db,
-                    ConsentDocumentType.CLIENT_TERMS.value,
-                    payload.client_terms_md,
-                    agency_id=agency.id,
-                )
-            else:
-                await withdraw_agency_document(
-                    self.db, ConsentDocumentType.CLIENT_TERMS.value, agency.id
-                )
+        # Legal identity (lot 13/08). Capture what the template WOULD produce
+        # from the current profile BEFORE mutating — so regeneration can tell
+        # an untouched template from an edited one. None = leave untouched.
+        old_terms = generate_client_terms(agency)
+        old_privacy = generate_client_privacy(agency)
+        legal_changed = False
+        for field in (
+            "legal_name",
+            "legal_form",
+            "registration_number",
+            "address",
+            "city",
+            "postal_code",
+            "country",
+            "contact_email",
+        ):
+            value = getattr(payload, field)
+            if value is not None and getattr(agency, field) != value:
+                setattr(agency, field, value)
+                legal_changed = True
+
+        # CLIENT_TERMS / CLIENT_PRIVACY (lot 13/08): explicit text WINS
+        # (blank = REGENERATE the template, never fall back to Nidria — that
+        # fallback is dead). Otherwise, a profile change regenerates the
+        # doc while it is still the untouched template AND not yet validated,
+        # so the pre-filled model tracks the profile. Publishing versions the
+        # document and re-gates the agency's clients at their next request.
+        not_reviewed = agency.client_terms_reviewed_at is None
+        for doc_type, generator, explicit, old_generated in (
+            (
+                ConsentDocumentType.CLIENT_TERMS.value,
+                generate_client_terms,
+                payload.client_terms_md,
+                old_terms,
+            ),
+            (
+                ConsentDocumentType.CLIENT_PRIVACY.value,
+                generate_client_privacy,
+                payload.client_privacy_md,
+                old_privacy,
+            ),
+        ):
+            if explicit is not None:
+                content = explicit if explicit.strip() else generator(agency)
+                await publish_if_changed(self.db, doc_type, content, agency_id=agency.id)
+            elif legal_changed and not_reviewed:
+                await self._regenerate_doc_if_untouched(agency, doc_type, generator, old_generated)
         await self.db.commit()
         await self.db.refresh(agency)
         return agency

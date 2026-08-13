@@ -170,6 +170,26 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     referred_by_agency_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agency.id", ondelete="SET NULL")
     )
+    # LEGAL IDENTITY (lot conditions au nom de l'agence, 13/08). All
+    # OPTIONAL (migration without default): the generated terms template
+    # fills what exists and leaves a VISIBLE marker («[Votre numéro
+    # d'immatriculation]») for what is missing — never a silent gap, never
+    # an invention. `name` stays the commercial/brand name; `legal_name` is
+    # the registered denomination. Fed by the front « Profil & marque ».
+    legal_name: Mapped[str | None] = mapped_column(String(200))
+    legal_form: Mapped[str | None] = mapped_column(String(100))
+    registration_number: Mapped[str | None] = mapped_column(String(100))
+    address: Mapped[str | None] = mapped_column(String(255))
+    city: Mapped[str | None] = mapped_column(String(100))
+    postal_code: Mapped[str | None] = mapped_column(String(20))
+    country: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2
+    contact_email: Mapped[str | None] = mapped_column(String(255))
+    # The agency VALIDATED (relu) its generated terms — the « J'ai vérifié »
+    # gesture. NULL = generated but not yet reviewed → the dashboard task and
+    # the onboarding step nudge the agency. Distinct from « generated »: the
+    # template is published immediately (the Nidria fallback dies), this
+    # flags the human review. Blocks NOTHING.
+    client_terms_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def has_logo(self) -> bool:

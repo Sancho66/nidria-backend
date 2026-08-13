@@ -23,7 +23,7 @@ from src.comments.comments_router import agent_router as comments_agent_router
 from src.comments.comments_router import expat_router as comments_expat_router
 from src.company_profiles.company_profiles_router import router as company_profiles_router
 from src.consents.consents_router import router as consents_router
-from src.consents.consents_seed import seed_consent_documents
+from src.consents.consents_seed import seed_agency_default_terms, seed_consent_documents
 from src.core.config import get_settings
 from src.core.database import async_session_maker, get_db
 from src.core.exceptions import register_exception_handlers
@@ -111,6 +111,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         # texts (consents_texts.py = source of truth): a text edited in
         # code publishes a NEW version at boot and re-gates everyone.
         await seed_consent_documents(session)
+        # Agency-named client documents (lot 13/08): every agency gets its
+        # OWN client_terms + client_privacy (generated from its profile),
+        # published — the Nidria fallback dies and each agency's clients
+        # re-consent on their agency's text at their next request.
+        await seed_agency_default_terms(session)
         # Usage trackers (bloc 1) — one-shot idempotent backfill: agencies
         # predating the event layer get their milestones from REAL data
         # (existing rows are never touched, no fake event is fabricated).

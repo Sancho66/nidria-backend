@@ -44,13 +44,19 @@ async def _state(client: AsyncClient, headers: dict[str, str]) -> dict:
 # --- (a) fresh agency ----------------------------------------------------------------
 
 
-async def test_fresh_agency_has_three_unchecked_steps(
+async def test_fresh_agency_has_four_unchecked_steps(
     client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
     body = await _state(client, agent_headers(admin))
     assert body["dismissed"] is False
     steps = _by_key(body)
-    assert set(steps) == {"create_journey", "open_case", "view_as_client"}
+    # review_client_terms added by the lot 13/08 (conditions au nom de l'agence).
+    assert set(steps) == {
+        "create_journey",
+        "open_case",
+        "view_as_client",
+        "review_client_terms",
+    }
     assert all(not s["done"] and s["done_at"] is None for s in steps.values())
 
 

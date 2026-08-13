@@ -101,6 +101,11 @@ BINDINGS = [
     RouteBinding("GET", "/agencies/me/onboarding", Audience.AGENT),
     RouteBinding("POST", "/agencies/me/onboarding/dismiss", Audience.AGENT, Permission.CASE_VIEW),
     RouteBinding("PATCH", "/agencies/me", Audience.AGENT, Permission.AGENCY_MANAGE),
+    # « J'ai vérifié » mes conditions générales (lot 13/08) — même gate que
+    # l'édition de l'agence.
+    RouteBinding(
+        "POST", "/agencies/me/client-terms/validate", Audience.AGENT, Permission.AGENCY_MANAGE
+    ),
     # Logo: any agent of the agency reads it (the app shell shows it);
     # only agency.manage uploads/removes it.
     RouteBinding("GET", "/agencies/me/logo", Audience.AGENT),
@@ -301,6 +306,7 @@ async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     response.subscription = await manager.subscription_info(agency)
     response.notification_prefs = effective_client_prefs(agency)
     response.client_terms_md = await manager.own_client_terms(agency)
+    response.client_privacy_md = await manager.own_client_privacy(agency)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
     response.signatures_enabled = signatures_effectively_enabled(agency)
@@ -375,12 +381,28 @@ async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep
     # leaves it None. Same source as the GET (own_client_terms), so the two
     # can never disagree about what is in force.
     response.client_terms_md = await manager.own_client_terms(agency)
+    response.client_privacy_md = await manager.own_client_privacy(agency)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
     response.signatures_enabled = signatures_effectively_enabled(agency)
     # Same rule for the EFFECTIVE client prefs (defaults merged): this PATCH
     # writes them, so it answers them. Same function as the GET, so a
     # patched pref reads back identically on both routes.
+    response.notification_prefs = effective_client_prefs(agency)
+    return response
+
+
+@router.post("/me/client-terms/validate", response_model=AgencyResponse)
+async def validate_client_terms(agent: AgentDep, db: DbDep) -> AgencyResponse:
+    """« J'ai vérifié » — the agency validates its generated conditions.
+    Stamps client_terms_reviewed_at, clearing the dashboard reminder and the
+    onboarding step. Blocks nothing."""
+    manager = AgenciesManager(db)
+    agency = await manager.validate_client_terms(agent)
+    response = AgencyResponse.model_validate(agency)
+    response.client_terms_md = await manager.own_client_terms(agency)
+    response.client_privacy_md = await manager.own_client_privacy(agency)
+    response.signatures_enabled = signatures_effectively_enabled(agency)
     response.notification_prefs = effective_client_prefs(agency)
     return response
 

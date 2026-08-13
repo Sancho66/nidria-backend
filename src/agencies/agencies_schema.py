@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.consents.agency_template import RESPONSIBILITY_DISCLAIMER
 from src.core.currencies import is_supported
 from src.core.email import NormalizedEmailStr
 from src.core.enums import (
@@ -315,12 +316,29 @@ class AgencyResponse(BaseModel):
     # trial_ends_at : ce payload n'est pas manager-gated). Rempli sur
     # GET/PATCH /agencies/me.
     signatures_enabled: bool = False
-    # The agency's OWN client terms, when it published some — NULL means
-    # "none, my clients see Nidria's". Filled on GET /agencies/me only, so
-    # the Settings textarea can show what is currently in force (a written
-    # field must be re-readable). Read from the active consent_document,
-    # never from a column on `agency`.
+    # The agency's OWN client documents, shown to ITS clients (lot 13/08 —
+    # the Nidria fallback is dead, every agency has its own). Filled on
+    # GET/PATCH /agencies/me from the active consent_document; the Settings
+    # editor shows what is in force (a written field must be re-readable).
     client_terms_md: str | None = None
+    client_privacy_md: str | None = None
+    # The « J'ai vérifié » gesture — NULL = generated but not yet reviewed
+    # (the dashboard reminder + onboarding step nudge the agency). Maps from
+    # the column; blocks nothing.
+    client_terms_reviewed_at: datetime | None = None
+    # Legal identity (lot 13/08) — feeds the generated terms; each is a
+    # marker in the text until filled. Read/written via GET/PATCH.
+    legal_name: str | None = None
+    legal_form: str | None = None
+    registration_number: str | None = None
+    address: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    contact_email: str | None = None
+    # The responsibility mention, served at EDITION only — NEVER inside the
+    # text shown to a client. Constant, so the front always has it.
+    client_terms_disclaimer: str = RESPONSIBILITY_DISCLAIMER
     # EFFECTIVE client notification prefs (defaults merged) — the front
     # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
     notification_prefs: dict[str, str] | None = None
@@ -399,13 +417,24 @@ class AgencyUpdateRequest(BaseModel):
     # of a real currency (the iso4217 library is the source of truth) — "EURO",
     # "eur", "XYZ" → 422. Changing it once costs exist is refused in the manager.
     currency: str | None = None
-    # "Vos conditions générales" — the agency's OWN client terms, shown to
-    # ITS clients in place of Nidria's. Multiline markdown. Absent = leave
-    # untouched; "" (or blank) = withdraw them and fall back to Nidria's.
-    # Not stored on `agency`: writing it PUBLISHES a versioned
-    # consent_document, so the text gets a hash, a version and the same
-    # automatic re-gating as every other legal document.
+    # "Vos conditions générales" — the agency's OWN client documents, shown
+    # to ITS clients (lot 13/08). Multiline markdown. Absent = leave
+    # untouched; "" (or blank) = REGENERATE from the template (never fall
+    # back to Nidria — that fallback is dead). Writing PUBLISHES a versioned
+    # consent_document (hash, version, automatic re-gating).
     client_terms_md: str | None = Field(default=None, max_length=100_000)
+    client_privacy_md: str | None = Field(default=None, max_length=100_000)
+    # Legal identity (lot 13/08) — feeds the generated terms. Changing one,
+    # while the docs are still the untouched template AND not yet validated,
+    # regenerates them so the pre-filled model tracks the profile.
+    legal_name: str | None = Field(default=None, max_length=200)
+    legal_form: str | None = Field(default=None, max_length=100)
+    registration_number: str | None = Field(default=None, max_length=100)
+    address: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    postal_code: str | None = Field(default=None, max_length=20)
+    country: str | None = Field(default=None, max_length=2)
+    contact_email: NormalizedEmailStr | None = None
 
     @field_validator("currency")
     @classmethod

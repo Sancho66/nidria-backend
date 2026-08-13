@@ -13,12 +13,16 @@ identical text → zero write."""
 import hashlib
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.consent import ConsentDocument
 from src.consents.consents_texts import CANONICAL_DOCUMENTS
+
+if TYPE_CHECKING:
+    from shared.models.agency import Agency
 
 
 def content_sha256(content_md: str) -> str:
@@ -95,11 +99,66 @@ async def withdraw_agency_document(db: AsyncSession, doc_type: str, agency_id: u
     return bool(actives)
 
 
+async def _has_own_active(db: AsyncSession, doc_type: str, agency_id: uuid.UUID) -> bool:
+    return bool(
+        (
+            await db.execute(
+                select(ConsentDocument.id).where(
+                    ConsentDocument.type == doc_type,
+                    ConsentDocument.agency_id == agency_id,
+                    ConsentDocument.is_active.is_(True),
+                )
+            )
+        ).first()
+    )
+
+
+async def ensure_agency_default_terms(db: AsyncSession, agency: "Agency") -> bool:
+    """Generate and publish the agency's OWN client_terms + client_privacy,
+    ONLY when it has none yet — NEVER clobbering a doc the agency already
+    wrote. This is the death of the Nidria fallback (lot 13/08): once the
+    agency has its own documents, its clients resolve to THEM and are
+    re-gated at their next request (they had accepted the canonical text).
+    Called at boot seed (every agency) and at agency creation. Does NOT
+    commit. Regeneration on profile change goes through publish_if_changed
+    directly (the PATCH path), not here."""
+    from src.consents.agency_template import generate_client_privacy, generate_client_terms
+    from src.core.enums import ConsentDocumentType
+
+    changed = False
+    for doc_type, generator in (
+        (ConsentDocumentType.CLIENT_TERMS.value, generate_client_terms),
+        (ConsentDocumentType.CLIENT_PRIVACY.value, generate_client_privacy),
+    ):
+        if await _has_own_active(db, doc_type, agency.id):
+            continue  # the agency already has its own — never overwrite it
+        if await publish_if_changed(db, doc_type, generator(agency), agency_id=agency.id):
+            changed = True
+    return changed
+
+
 async def seed_consent_documents(db: AsyncSession) -> None:
     """Reconcile the stored CANONICAL documents with the texts in code."""
     changed = False
     for doc_type, content in CANONICAL_DOCUMENTS.items():
         if await publish_if_changed(db, doc_type, content):
+            changed = True
+    if changed:
+        await db.commit()
+
+
+async def seed_agency_default_terms(db: AsyncSession) -> None:
+    """At boot, give EVERY agency its own client documents (lot 13/08) — the
+    Nidria fallback dies for existing agencies too. Idempotent: an agency
+    that already has its own docs is skipped; a freshly-generated one is
+    published once (its clients re-consent on the agency-named text). Runs
+    AFTER the canonical seed."""
+    from shared.models.agency import Agency
+
+    agencies = (await db.execute(select(Agency))).scalars().all()
+    changed = False
+    for agency in agencies:
+        if await ensure_agency_default_terms(db, agency):
             changed = True
     if changed:
         await db.commit()

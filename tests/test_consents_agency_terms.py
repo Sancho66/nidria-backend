@@ -329,7 +329,7 @@ async def test_rewriting_the_same_text_publishes_nothing(
     assert versions == [1]
 
 
-async def test_clearing_the_terms_falls_back_to_nidria(
+async def test_clearing_the_terms_regenerates_the_agency_template(
     cs_client: AsyncClient,
     consent_docs: None,
     admin: Agent,
@@ -337,8 +337,9 @@ async def test_clearing_the_terms_falls_back_to_nidria(
     make_expat_user: MakeExpatUser,
     make_client_case: MakeClientCase,
 ) -> None:
-    """Withdrawing is a first-class move, not a trap: blank the field and
-    the clients see the Nidria text again (no blocking, no dead end)."""
+    """Lot 13/08: the Nidria fallback is DEAD. Blanking the field REGENERATES
+    the agency's own template (with visible markers) — never Nidria's text.
+    The client sees the agency template, still at the agency's name."""
     headers = agent_headers(admin)
     await _accept_agent_docs(cs_client, headers)
     await _set_agency_terms(cs_client, headers, _AGENCY_CGV)
@@ -349,9 +350,10 @@ async def test_clearing_the_terms_falls_back_to_nidria(
     doc = _client_terms(
         (await cs_client.get("/consents/expat/pending", headers=_expat_headers(expat))).json()
     )
-    assert "espace client" in doc["content"]
+    assert "[Votre dénomination légale]" in doc["content"]  # the AGENCY template, not Nidria
     assert doc["content"] != _AGENCY_CGV
-    assert (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"] is None
+    own = (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"]
+    assert own is not None and "[Votre dénomination légale]" in own  # regenerated, never None
 
 
 async def test_accepted_nidria_v1_does_not_satisfy_the_agency_v1(
@@ -559,19 +561,21 @@ async def test_patch_response_carries_the_written_terms(
     ] == _AGENCY_CGV
 
 
-async def test_patch_response_reflects_the_withdrawal(
+async def test_patch_blank_regenerates_the_template(
     cs_client: AsyncClient, consent_docs: None, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """Blanking withdraws the terms: the PATCH answers NULL (back to the
-    Nidria text), not the text it just dropped."""
+    """Lot 13/08: blanking REGENERATES the agency template (with markers) —
+    the PATCH answers that regenerated text, never NULL/Nidria."""
     headers = agent_headers(admin)
     await _accept_agent_docs(cs_client, headers)
     await _set_agency_terms(cs_client, headers, _AGENCY_CGV)
 
     cleared = await cs_client.patch("/agencies/me", headers=headers, json={"client_terms_md": ""})
     assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["client_terms_md"] is None
-    assert (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"] is None
+    body = cleared.json()["client_terms_md"]
+    assert body is not None and "[Votre dénomination légale]" in body
+    stored = (await cs_client.get("/agencies/me", headers=headers)).json()["client_terms_md"]
+    assert stored is not None and "[Votre dénomination légale]" in stored
 
 
 async def test_patch_untouching_the_terms_still_reports_them(
