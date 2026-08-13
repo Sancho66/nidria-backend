@@ -61,6 +61,13 @@ jobs:
       # PostgresContainer via conftest, so test isolation is the
       # same as serial mode. Cuts the test job from ~10min to ~5min
       # on GH's 2-core runners; larger gain locally.
+      #
+      # The worker count is MEASURED, not assumed: a 4/6/8/10/12
+      # calibration curve (minima of 3 passes, one descending) puts
+      # the optimum at exactly one worker per core, which is what
+      # `-n auto` picks. The full curve is recorded in the Makefile
+      # next to the `test` target — same flag here and there, so
+      # `make check` green == this job green.
       - run: uv run pytest tests/ -x -q -n auto
 
   openapi:

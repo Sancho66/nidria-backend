@@ -8,8 +8,11 @@ here refresh tokens just carry a throwaway jti.)
 
 import uuid
 
+import bcrypt
 import pytest
+from pydantic import ValidationError
 
+from src.core.config import BCRYPT_PRODUCTION_MINIMUM, Settings, get_settings
 from src.core.enums import Audience
 from src.core.exceptions import UnauthorizedError
 from src.core.security import (
@@ -39,6 +42,53 @@ def test_verify_password_wrong_password() -> None:
 
 def test_verify_password_garbage_hash() -> None:
     assert not verify_password("anything", "not-a-bcrypt-hash")
+
+
+# --- Password hashing work factor -------------------------------------------
+# The suite hashes at a cheap factor (BCRYPT_ROUNDS=4, see conftest) because
+# hashing was the measured number-one cost of the run. These tests exist so
+# that speed can never be bought with a silent weakening: they prove the
+# factor is wired, that production digests are unaffected, and that a weak
+# factor outside the test environment refuses to boot.
+
+
+def test_hash_uses_the_configured_work_factor() -> None:
+    """The setting must actually reach bcrypt — a factor nobody reads would
+    be a decorative knob. bcrypt encodes it in the digest: $2b$<rounds>$..."""
+    rounds = get_settings().bcrypt_rounds
+    assert hash_password("s3cret-password").split("$")[2] == f"{rounds:02d}"
+
+
+def test_verifies_a_digest_made_at_the_production_factor() -> None:
+    """Production rows carry factor-12 digests. bcrypt reads the factor FROM
+    the digest, so they keep verifying untouched while this process hashes
+    cheaper — no rehash, no migration, no locked-out user."""
+    production_digest = bcrypt.hashpw(
+        b"s3cret-password", bcrypt.gensalt(BCRYPT_PRODUCTION_MINIMUM)
+    ).decode()
+    assert production_digest.split("$")[2] == f"{BCRYPT_PRODUCTION_MINIMUM:02d}"
+    assert verify_password("s3cret-password", production_digest)
+    assert not verify_password("wrong", production_digest)
+
+
+def test_weak_work_factor_outside_tests_refuses_to_boot() -> None:
+    """THE guard. Without it, lowering the factor for the suite would be one
+    stray env var away from shipping fast, weak hashes to real users."""
+    for env in ("production", "development", "staging"):
+        with pytest.raises(ValidationError, match="below the production floor"):
+            Settings(environment=env, bcrypt_rounds=BCRYPT_PRODUCTION_MINIMUM - 1)
+
+
+def test_the_production_floor_is_the_default() -> None:
+    """A deployment that sets nothing must land on the floor, not below it."""
+    assert Settings.model_fields["bcrypt_rounds"].default == BCRYPT_PRODUCTION_MINIMUM
+    assert BCRYPT_PRODUCTION_MINIMUM >= 12
+    assert Settings(environment="production", bcrypt_rounds=BCRYPT_PRODUCTION_MINIMUM)
+
+
+def test_only_the_test_environment_may_go_cheap() -> None:
+    """The exemption is narrow and explicit: ENVIRONMENT=test, nothing else."""
+    assert Settings(environment="test", bcrypt_rounds=4).bcrypt_rounds == 4
 
 
 # --- Access tokens, per audience ---------------------------------------------

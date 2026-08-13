@@ -12,7 +12,35 @@ os.environ.setdefault("JWT_AGENT_SECRET", "test-agent-secret")
 os.environ.setdefault("JWT_EXPAT_SECRET", "test-expat-secret")
 os.environ.setdefault("JWT_REFRESH_SECRET", "test-refresh-secret")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
+# Ryuk, the testcontainers reaper: a SECOND container per xdist worker whose
+# only job is to kill ours if the process dies outright. We do not need it —
+# `postgres_container` is a `with` block, so the container is stopped on
+# normal exit AND on any exception; Ryuk only covers a hard kill (SIGKILL, a
+# CI timeout). The price of that cover is 8 extra container starts per run
+# plus a REAL race, reproduced here on an idle box: the library calls
+# `.waiting_for(...)` AFTER `.start()`, so it never waits for Ryuk to be
+# ready before reading its mapped port, and the run dies with
+#   ConnectionError: Port mapping for container <id> and port 8080 is not available
+# (measured: 6 of 8 workers lost, 1281 errors, on a machine with no other
+# suite running — a failure we had been blaming on session collisions).
+# Ported from prism-backend/tests/conftest.py, which fixed the same thing.
+# If a run IS killed hard, clean up BY LABEL, never by image — the local dev
+# database is the same postgres:16-alpine:
+#   docker ps -aq --filter label=org.testcontainers=true | xargs docker rm -f
+os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 os.environ.setdefault("ENVIRONMENT", "test")
+# Password hashing: the MEASURED number-one cost of this suite. At the
+# production factor (12) the run spent 829s across workers in bcrypt —
+# 2697 hashes at ~296ms, 24.6% of all test time — purely to prove that
+# `make_agent()` can write a password nobody attacks. Factor 4 makes the
+# same call ~1ms. NOTHING is weakened: the hashing tests still hash, still
+# verify, still reject a wrong password and a garbage digest, and
+# test_security.py additionally proves a factor-12 digest (what production
+# rows carry) still verifies while the suite runs at 4.
+# The safety net lives in Settings._refuse_weak_bcrypt: a factor below 12
+# outside ENVIRONMENT=test REFUSES to boot, so this speed-up cannot leak
+# into a real deployment. `BCRYPT_ROUNDS=12 uv run pytest` opts back in.
+os.environ.setdefault("BCRYPT_ROUNDS", "4")
 # Force-mock every external service (plain assignment, not setdefault: a
 # developer's env may flip a service to real for a live smoke test, and
 # the suite must never silently hit real APIs).

@@ -15,11 +15,18 @@ _BCRYPT_MAX_BYTES = 72
 
 
 def hash_password(plain: str) -> str:
-    digest = bcrypt.hashpw(plain.encode("utf-8")[:_BCRYPT_MAX_BYTES], bcrypt.gensalt(12))
+    # Work factor from settings (production floor enforced at boot by
+    # Settings._refuse_weak_bcrypt — a weak factor cannot reach here
+    # outside the test environment).
+    rounds = get_settings().bcrypt_rounds
+    digest = bcrypt.hashpw(plain.encode("utf-8")[:_BCRYPT_MAX_BYTES], bcrypt.gensalt(rounds))
     return digest.decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    # No `rounds` here on purpose: bcrypt reads the work factor from the
+    # digest itself, so existing rows (hashed at 12) keep verifying at 12
+    # whatever this process is configured to WRITE. No rehash, no migration.
     try:
         return bcrypt.checkpw(
             plain.encode("utf-8")[:_BCRYPT_MAX_BYTES],

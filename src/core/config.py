@@ -1,8 +1,12 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# OWASP's floor for bcrypt, and the value this app shipped with. Named here
+# so the default and the boot guard can never drift apart.
+BCRYPT_PRODUCTION_MINIMUM = 12
 
 
 class Settings(BaseSettings):
@@ -29,6 +33,15 @@ class Settings(BaseSettings):
     # Impersonation: short-lived access token, NO refresh — expiry IS the exit.
     impersonation_token_expires_minutes: int = 30
     password_reset_token_expires_minutes: int = 60
+    # Password hashing work factor (bcrypt). Each +1 doubles the cost.
+    # PRODUCTION FLOOR is BCRYPT_PRODUCTION_MINIMUM below; the test suite
+    # lowers it via BCRYPT_ROUNDS because hashing was MEASURED as the single
+    # biggest cost of the run (2697 hashes, 829s = 24.6% of worker time at
+    # factor 12). Lowering it is safe ONLY in test, so `_refuse_weak_bcrypt`
+    # refuses to boot anywhere else — the trade must never be silent.
+    # verify_password reads the factor FROM the stored digest, so rows
+    # hashed at 12 keep verifying at 12: no rehash, no migration.
+    bcrypt_rounds: int = BCRYPT_PRODUCTION_MINIMUM
     # 2FA (bloc 2): lifetime of the ephemeral login step-2 token, and the
     # server-side attempts cap per challenge (then back to step 1).
     mfa_token_expires_minutes: int = 5
@@ -254,6 +267,21 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @model_validator(mode="after")
+    def _refuse_weak_bcrypt(self) -> "Settings":
+        """A cheap hashing factor is a silent password-cracking hole. The
+        test suite is the ONLY place it is allowed (ENVIRONMENT=test), and
+        anywhere else the process refuses to start rather than run fast and
+        weak. Same posture as assert_all_routes_bound: fail loud at boot."""
+        if self.bcrypt_rounds < BCRYPT_PRODUCTION_MINIMUM and self.environment != "test":
+            raise ValueError(
+                f"BCRYPT_ROUNDS={self.bcrypt_rounds} is below the production floor "
+                f"({BCRYPT_PRODUCTION_MINIMUM}) and ENVIRONMENT={self.environment!r} is "
+                "not 'test'. Refusing to start: this would silently weaken every "
+                "password hash written from now on."
+            )
+        return self
 
 
 @lru_cache

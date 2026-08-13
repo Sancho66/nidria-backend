@@ -93,6 +93,19 @@ typecheck: ## mypy strict on src/ shared/ (same as CI)
 # roundtrip) markers for a fast loop. CI runs the WHOLE suite (its own
 # `pytest tests/` command, no filter) — the prod gate stays complete. Run the
 # targeted targets locally when you touch that area.
+#
+# `-n auto` is MEASURED, not assumed. Calibration curve on this 8-core box
+# (2026-08-13, minima of 3 passes — one descending, so a drifting machine
+# cannot fake the ranking; dirty runs excluded by foreign-container count):
+#     n=4   279.2s  +30.6%
+#     n=6   232.8s   +8.9%
+#     n=8   213.7s   MINIMUM  <- what `-n auto` picks on 8 cores
+#     n=10  216.6s   +1.4%
+#     n=12  223.2s   +4.4%
+# A flat U: past one worker per core the extra postgres containers cost more
+# in Docker-VM contention than the parallelism buys (workers are only ~20%
+# CPU-busy — this suite waits on Postgres, it is not core-bound). Same
+# `-n auto` as ci.yml, so `make check` green == CI green.
 test: ## Test suite MINUS slow seed+migration tests (testcontainers PG, parallel)
 	uv run pytest tests/ -x -q -n auto -m "not seed and not migration"
 
