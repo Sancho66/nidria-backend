@@ -16,6 +16,7 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from src.core.enums import DocumentTemplateState
 
 
 class DocumentTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -46,4 +47,19 @@ class DocumentTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     roles_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"), nullable=False
+    )
+
+    # Dans la bibliothèque, ou pas encore (lot 14/08) — voir
+    # DocumentTemplateState pour le pourquoi : le builder du provider ne peut
+    # pas s'ouvrir sans un modèle déjà matérialisé, donc on crée avant le
+    # premier geste de l'agence, et on ne montre qu'après.
+    # ORTHOGONAL à `fields_configured` : celui-là dit si les zones exigées
+    # sont TOUTES posées, et faux y est un état visible et légitime (l'agence
+    # qui reviendra finir demain). Celui-ci dit si elle a JAMAIS commencé.
+    state: Mapped[str] = mapped_column(
+        String(20),
+        default=DocumentTemplateState.DRAFT.value,
+        server_default=DocumentTemplateState.DRAFT.value,
+        nullable=False,
+        index=True,
     )

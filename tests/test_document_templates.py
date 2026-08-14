@@ -56,6 +56,12 @@ async def test_create_list_get_rename(
     assert call["external_id"] == body["id"]
     assert fake_provider.templates[call["ref"]]["pdf"] == SOURCE_PDF
 
+    # Né BROUILLON (lot 14/08) : la bibliothèque ne le montre pas encore.
+    # `get` et les routes du builder, elles, le servent — sans quoi on ne
+    # pourrait pas poser les zones du modèle qu'on vient de créer.
+    assert body["state"] == "draft"
+    assert (await client.get("/document-templates", headers=headers)).json() == []
+    await client.post(f"/document-templates/{body['id']}/builder-sync", headers=headers)
     listed = (await client.get("/document-templates", headers=headers)).json()
     assert [t["id"] for t in listed] == [body["id"]]
     got = (await client.get(f"/document-templates/{body['id']}", headers=headers)).json()
@@ -284,3 +290,95 @@ async def test_delete_refused_while_a_pending_row_references_it(
     assert r.json()["code"] == "document_template.in_use"
     assert r.json()["params"]["pending_rows"] == 2  # principal + membre
     assert str(case_id)  # le dossier vit toujours
+
+
+# --- l'état de vie : brouillon invisible, promu à la première zone ---------------------
+
+
+async def test_a_fresh_template_is_a_draft_the_agency_never_sees(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, fake_provider: FakeProvider
+) -> None:
+    """LE TÉMOIN DU LOT (14/08).
+
+    La modale « Nouveau modèle » créait le modèle avant que l'agence n'ait
+    posé la moindre zone, et fermer le builder le laissait dans sa
+    bibliothèque. On ne PEUT PAS ne rien créer : le builder embeddé du
+    provider refuse de s'ouvrir sans un document déjà matérialisé chez lui
+    (son jeton exige `template_id` ou `document_urls`) — le geste ne peut pas
+    précéder ce qui le rend possible. On peut ne rien MONTRER.
+
+    Les quatre sorties du builder (croix, Échap, clic hors modale, ONGLET
+    FERMÉ) sont toutes le même cas vu d'ici : plus aucun appel n'arrive.
+    C'est précisément pourquoi la garantie ne peut pas vivre dans le
+    navigateur — une suppression au démontage manquerait l'onglet fermé.
+    Elle vit ici : rien n'a été promu, donc rien ne se voit."""
+    headers = agent_headers(admin)
+    r = await client.post(
+        "/document-templates",
+        headers=headers,
+        data={"name": "Mandat abandonné"},
+        files={"file": ("mandat.pdf", SOURCE_PDF, "application/pdf")},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["state"] == "draft"
+    # La bibliothèque est vide : l'agence a fermé, il ne s'est rien passé.
+    assert (await client.get("/document-templates", headers=headers)).json() == []
+
+
+async def test_a_builder_closed_without_a_single_zone_leaves_nothing_visible(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, fake_provider: FakeProvider
+) -> None:
+    """Le builder autosauve : un sync peut arriver SANS qu'aucune zone n'ait
+    été posée (l'agence a ouvert, regardé, refermé). Zéro zone constatée =
+    toujours un brouillon, toujours invisible."""
+    headers = agent_headers(admin)
+    template = await _document_template(client, headers, synced=False)
+    fake_provider.signature_roles = []  # builder ouvert, rien posé
+    r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["state"] == "draft"
+    assert r.json()["fields_configured"] is False
+    assert (await client.get("/document-templates", headers=headers)).json() == []
+
+
+async def test_the_first_zone_promotes_even_when_the_lock_is_not_satisfied(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, fake_provider: FakeProvider
+) -> None:
+    """LE POINT QUI NE DOIT JAMAIS RÉGRESSER : la promotion se joue sur « au
+    moins une zone », JAMAIS sur `fields_configured`.
+
+    Deux signataires, une seule signature posée : le verrou d'envoi n'est pas
+    satisfait (`fields_configured` faux, l'ambre « Zones à configurer » dans
+    la liste) — et pourtant le modèle DOIT entrer dans la bibliothèque. C'est
+    un modèle que l'agence a commencé ; l'y cacher entre deux séances de
+    travail lui ferait croire qu'elle a tout perdu, et le balayage
+    l'emporterait pour de bon au bout de 24 h."""
+    headers = agent_headers(admin)
+    template = await _document_template(client, headers, synced=False)
+    fake_provider.default_roles = ["Signataire 1", "Signataire 2"]
+    fake_provider.signature_roles = ["Signataire 1"]  # une seule zone posée
+    r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["fields_configured"] is False  # le verrou d'envoi tient
+    assert body["state"] == "active"  # mais le modèle EXISTE pour l'agence
+    listed = (await client.get("/document-templates", headers=headers)).json()
+    assert [t["id"] for t in listed] == [template["id"]]
+
+
+async def test_a_promoted_template_never_falls_back_to_draft(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders, fake_provider: FakeProvider
+) -> None:
+    """Sens unique. Une agence qui retire toutes ses zones a un modèle actif
+    MAL CONFIGURÉ (l'ambre le dit, l'envoi le refuse) — pas un abandon. Le
+    faire retomber en brouillon le rendrait invisible et le condamnerait au
+    balayage : on effacerait son travail sur un geste d'édition."""
+    headers = agent_headers(admin)
+    template = await _document_template(client, headers, synced=True)
+    assert template["state"] == "active"
+    fake_provider.signature_roles = []  # toutes les zones retirées
+    r = await client.post(f"/document-templates/{template['id']}/builder-sync", headers=headers)
+    assert r.json()["fields_configured"] is False
+    assert r.json()["state"] == "active"
+    listed = (await client.get("/document-templates", headers=headers)).json()
+    assert [t["id"] for t in listed] == [template["id"]]

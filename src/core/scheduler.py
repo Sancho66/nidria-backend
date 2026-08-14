@@ -22,6 +22,7 @@ from src.core.config import get_settings
 from src.core.enums import JobTriggeredBy
 from src.core.job_wrapper import Pipeline, run_job
 from src.digest.digest_job import run_notification_digest
+from src.document_templates.document_templates_jobs import sweep_document_template_drafts
 from src.nurture.nurture_job import send_trial_nurture
 from src.reminders.reminders_jobs import create_auto_reminders, dispatch_due_reminders
 
@@ -36,6 +37,7 @@ JOB_REGISTRY: dict[str, Pipeline] = {
     "expire_agent_invitations": expire_agent_invitations,
     "onboarding_email": send_onboarding_emails,
     "activation_reminders": send_activation_reminders,
+    "sweep_document_template_drafts": sweep_document_template_drafts,
 }
 
 

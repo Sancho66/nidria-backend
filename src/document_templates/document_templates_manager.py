@@ -28,6 +28,7 @@ from shared.models.agent import Agent
 from shared.models.document_template import DocumentTemplate
 from src.core import storage
 from src.core.config import get_settings
+from src.core.enums import DocumentTemplateState
 from src.core.exceptions import (
     ConflictError,
     NotFoundError,
@@ -62,8 +63,12 @@ class DocumentTemplatesManager:
         return template
 
     async def list(self, agent: Agent) -> list[DocumentTemplate]:
+        """La bibliothèque : les brouillons jamais commencés n'en sont pas
+        (voir DocumentTemplateState). `get` et les deux routes du builder,
+        elles, continuent de les servir — sans quoi on ne pourrait pas poser
+        les zones du modèle qu'on vient de créer."""
         await self._guard_enabled(agent)
-        return await self.repo.list_for_agency(agent.agency_id)
+        return await self.repo.list_active_for_agency(agent.agency_id)
 
     async def get(self, agent: Agent, template_id: uuid.UUID) -> DocumentTemplate:
         await self._guard_enabled(agent)
@@ -202,6 +207,17 @@ class DocumentTemplatesManager:
         )
         template.fields_configured = clients_ok and agency_ok
         template.roles_count = len(client_roles)
+        # PROMOTION (lot 14/08) : la PREMIÈRE zone posée fait entrer le modèle
+        # dans la bibliothèque. Le critère est « au moins une zone », JAMAIS
+        # `fields_configured` — un modèle à moitié zoné est un modèle que
+        # l'agence a bel et bien commencé : il doit se voir, justement pour
+        # qu'elle puisse le finir. Attendre la complétude le rendrait invisible
+        # entre deux séances de travail.
+        # Sens unique : un modèle promu ne redevient jamais brouillon, même si
+        # l'agence retire toutes ses zones (c'est alors un modèle actif mal
+        # configuré, que l'ambre de la liste signale — pas un abandon).
+        if summary.fields_count > 0:
+            template.state = DocumentTemplateState.ACTIVE.value
         await self.db.commit()
         await self.db.refresh(template)
         return template

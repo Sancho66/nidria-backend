@@ -314,6 +314,29 @@ class SignatureLevel(StrEnum):
     QES = "qes"
 
 
+class DocumentTemplateState(StrEnum):
+    """Le modèle est-il DANS la bibliothèque de l'agence ? (lot 14/08)
+
+    `draft` à la création, et ce n'est pas un caprice : le builder embeddé du
+    provider REFUSE de s'ouvrir sans un document déjà matérialisé chez lui
+    (son jeton exige `template_id` ou `document_urls`). Le modèle doit donc
+    exister avant le premier geste de l'agence — le geste ne peut pas
+    précéder ce qui le rend possible. On le crée, mais on ne le MONTRE pas.
+
+    `active` = promu au premier builder-sync qui constate une zone posée.
+    Un brouillon jamais promu est un abandon : il ne paraît nulle part et le
+    janitor l'emporte (ligne + PDF + template provider).
+
+    À NE JAMAIS CONFONDRE avec `fields_configured`, qui dit « toutes les
+    zones exigées sont là ». `fields_configured=False` est un état LÉGITIME
+    et VISIBLE : l'agence qui a commencé son mandat et reviendra demain le
+    finir. L'état ci-dessous répond à une autre question — a-t-elle jamais
+    commencé ?"""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+
+
 class SignatureRequestStatus(StrEnum):
     """One request = ONE document sent for signature (N signers ride it).
     draft → sent at dispatch; partially_signed when ≥1 signer done;

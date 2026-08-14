@@ -50,6 +50,14 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         "cron_expression": "0 8 * * *",
     },
     {
+        "job_id": "sweep_document_template_drafts",
+        "name": "Sweep abandoned document-template drafts (>24 h)",
+        # Horaire : le TTL est en HEURES, un balayage par heure ne fait que
+        # borner le retard (au plus ~1 h après le terme) — et un brouillon
+        # abandonné ne coûte rien tant qu'il dort, il n'est vu de personne.
+        "cron_expression": "15 * * * *",
+    },
+    {
         "job_id": "expire_agent_invitations",
         "name": "Expire agent invitations (return their seats)",
         # Hourly: invitations live 7 days — the sweep only bounds how late

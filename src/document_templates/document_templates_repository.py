@@ -9,16 +9,27 @@ from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.document_template import DocumentTemplate
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.step_requirement import StepRequirement
+from src.core.enums import DocumentTemplateState
 
 
 class DocumentTemplatesRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def list_for_agency(self, agency_id: uuid.UUID) -> list[DocumentTemplate]:
+    async def list_active_for_agency(self, agency_id: uuid.UUID) -> list[DocumentTemplate]:
+        """LA bibliothèque de l'agence — les brouillons n'y sont pas.
+
+        Un brouillon est un modèle que le provider a exigé qu'on matérialise
+        avant que l'agence n'ait rien posé (voir DocumentTemplateState) : il
+        n'a jamais existé pour elle, il ne doit pas se voir. Le filtre vit ICI,
+        dans la seule requête de liste : la page bibliothèque et le sélecteur
+        d'étape passent tous deux par elle, donc ils héritent ensemble."""
         stmt = (
             select(DocumentTemplate)
-            .where(DocumentTemplate.agency_id == agency_id)
+            .where(
+                DocumentTemplate.agency_id == agency_id,
+                DocumentTemplate.state == DocumentTemplateState.ACTIVE.value,
+            )
             .order_by(DocumentTemplate.created_at)
         )
         return list((await self.db.execute(stmt)).scalars().all())
