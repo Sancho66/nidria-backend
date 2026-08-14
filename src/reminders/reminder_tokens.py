@@ -28,6 +28,13 @@ Trois conséquences de ce sens-là :
 3. UN JETON CONNU MAIS NON RÉSOLUBLE LÈVE UN 422 NOMMÉ, au figeage. Cette
    règle est bonne et reste ; elle ne doit simplement jamais être atteinte
    par un geste normal, ce que l'aperçu garantit en amont.
+
+Et une conséquence du sens INVERSE — le figeage sait QUI lira, une lecture ne
+le saurait pas. Deux jetons en vivent (lot 14/08, second passage) :
+{step_due_date} s'écrit dans la langue du destinataire, et {client_space_link}
+ne se fige QUE si cet espace est activé. Le second est le seul jeton dont la
+condition ne porte pas sur une donnée manquante mais sur un état : proposer le
+lien à qui n'a pas activé son espace, c'est envoyer un client sur un mur.
 """
 
 import re
@@ -57,6 +64,10 @@ class ReminderTokenSpec:
     label: str
     sample: str
     read_agency: Callable[[Agency], str | None] | None = None
+    # Ce jeton EXIGE une étape liée au rappel. Déclaré ici plutôt que dans une
+    # liste à côté : c'est le catalogue qui décide, et son ORDRE décide lequel
+    # est nommé le premier quand le rappel n'a pas d'étape (verdict stable).
+    needs_step: bool = False
 
     def example(self, agency: Agency | None) -> str:
         """Ce que le front montre à côté du jeton. Valeur réelle pour un
@@ -72,8 +83,31 @@ class ReminderTokenSpec:
 CATALOGUE: tuple[ReminderTokenSpec, ...] = (
     # --- le dossier : un client différent à chaque envoi, donc un spécimen.
     ReminderTokenSpec("client_name", "le nom de votre client", "Marie Dupont"),
-    ReminderTokenSpec("step_name", "l'étape concernée", "Dépôt du dossier"),
-    ReminderTokenSpec("days_left", "les jours restants sur l'étape", "5"),
+    # Le prénom seul, pour l'accroche (« Bonjour Marie, »). Gratuit : le
+    # principal est DÉJÀ lu au figeage pour {client_name}, et son prénom est
+    # NOT NULL — ce jeton ne peut pas échouer, il n'a donc aucune raison.
+    ReminderTokenSpec("client_first_name", "le prénom de votre client", "Marie"),
+    ReminderTokenSpec("step_name", "l'étape concernée", "Dépôt du dossier", needs_step=True),
+    ReminderTokenSpec("days_left", "les jours restants sur l'étape", "5", needs_step=True),
+    # L'ÉCHÉANCE FERME de l'étape (`case_step_progress.due_at`), pas le
+    # compteur estimé : {days_left} dit « il reste 5 jours », celui-ci dit
+    # « avant le 5 septembre 2026 ». La colonne est NULLABLE, donc même
+    # discipline que {days_left} — un 422 NOMMÉ au figeage plutôt qu'un trou
+    # scellé dans un message qui ne part qu'une fois. Le spécimen est en
+    # français comme les libellés ; la vraie valeur suit la langue du
+    # DESTINATAIRE (cf. `_resolve_values`).
+    ReminderTokenSpec(
+        "step_due_date", "l'échéance de l'étape", "5 septembre 2026", needs_step=True
+    ),
+    # Le lien vers l'espace client — SOUS CONDITION. Sa valeur ne dépend que
+    # de l'agence (l'URL blanche-marque), mais sa RÉSOLUBILITÉ dépend du
+    # destinataire : proposé à quelqu'un qui n'a pas activé son espace, il
+    # mène à un mur. D'où le refus nommé au figeage, jamais un lien mort.
+    ReminderTokenSpec(
+        "client_space_link",
+        "le lien vers l'espace de votre client",
+        "https://app.nidria.com/space?agency=votre-agence",
+    ),
     # --- l'agence : constante d'un envoi à l'autre, donc l'exemple est le
     # vrai. Une relance signée par l'agence doit pouvoir la nommer — le
     # canal MAIL porte déjà son nom dans l'enveloppe, mais WHATSAPP (copié-
@@ -105,6 +139,17 @@ VARIABLE_PATTERN = re.compile(r"\{(" + "|".join(spec.name for spec in CATALOGUE)
 AGENCY_TOKENS: tuple[str, ...] = tuple(
     spec.name for spec in CATALOGUE if spec.read_agency is not None
 )
+
+# Les jetons qui exigent une étape liée, DANS L'ORDRE DU CATALOGUE — c'est lui
+# qui nomme le premier refus quand le rappel n'a pas d'étape.
+STEP_TOKENS: tuple[str, ...] = tuple(spec.name for spec in CATALOGUE if spec.needs_step)
+
+
+def catalogue_index(name: str) -> int:
+    """Le rang du jeton dans le catalogue. Sert à TRIER les refus : le 422 du
+    figeage n'en nomme qu'un, et lequel ne doit pas dépendre de l'ordre dans
+    lequel le code se trouve avoir résolu les valeurs."""
+    return next(i for i, spec in enumerate(CATALOGUE) if spec.name == name)
 
 
 def agency_value(name: str, agency: Agency) -> str | None:

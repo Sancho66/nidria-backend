@@ -10,6 +10,7 @@ This is ORTHOGONAL to the frontend's static-UI i18n (createScopedI18n): that
 handles chrome at build time; this resolves runtime DB content.
 """
 
+from datetime import date
 from typing import Annotated, Literal, get_args
 
 from fastapi import Depends, Request
@@ -143,6 +144,155 @@ def case_label_for_notif(
     if client and journey:
         return f"{client} - {journey}"
     return client or journey
+
+
+# --- dates in the recipient's language (BLOC NOTIF-2) ------------------------
+#
+# A date READ BY A HUMAN is ambiguous the moment it is numeric: 03/04/2026 is
+# March 4th to an English reader and 3 April to a French one. A reminder is a
+# message to a client, so the month is SPELLED OUT and the pattern follows the
+# already-resolved recipient language — never the agency's, never the server's
+# locale (which is not set on Fly and would silently be C/POSIX).
+#
+# No babel here on purpose: the twelve months of seven languages are a flat
+# table, not a dependency. Russian months are in the GENITIVE (the only case
+# the "d MMMM yyyy" pattern ever needs); Hungarian keeps its year-first order.
+
+_MONTH_NAMES: dict[str, tuple[str, ...]] = {
+    "fr": (
+        "janvier",
+        "février",
+        "mars",
+        "avril",
+        "mai",
+        "juin",
+        "juillet",
+        "août",
+        "septembre",
+        "octobre",
+        "novembre",
+        "décembre",
+    ),
+    "en": (
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ),
+    "es": (
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ),
+    "ru": (
+        "января",
+        "февраля",
+        "марта",
+        "апреля",
+        "мая",
+        "июня",
+        "июля",
+        "августа",
+        "сентября",
+        "октября",
+        "ноября",
+        "декабря",
+    ),
+    "pt": (
+        "janeiro",
+        "fevereiro",
+        "março",
+        "abril",
+        "maio",
+        "junho",
+        "julho",
+        "agosto",
+        "setembro",
+        "outubro",
+        "novembro",
+        "dezembro",
+    ),
+    "it": (
+        "gennaio",
+        "febbraio",
+        "marzo",
+        "aprile",
+        "maggio",
+        "giugno",
+        "luglio",
+        "agosto",
+        "settembre",
+        "ottobre",
+        "novembre",
+        "dicembre",
+    ),
+    "hu": (
+        "január",
+        "február",
+        "március",
+        "április",
+        "május",
+        "június",
+        "július",
+        "augusztus",
+        "szeptember",
+        "október",
+        "november",
+        "december",
+    ),
+}
+assert set(_MONTH_NAMES) == set(SUPPORTED_LANGUAGES), (
+    "_MONTH_NAMES and SUPPORTED_LANGUAGES drifted apart"
+)
+assert all(len(m) == 12 for m in _MONTH_NAMES.values()), "a language is missing a month"
+
+_DATE_PATTERNS: dict[str, str] = {
+    "fr": "{day} {month} {year}",
+    "en": "{month} {day}, {year}",
+    "es": "{day} de {month} de {year}",
+    "ru": "{day} {month} {year} г.",
+    "pt": "{day} de {month} de {year}",
+    "it": "{day} {month} {year}",
+    "hu": "{year}. {month} {day}.",
+}
+assert set(_DATE_PATTERNS) == set(SUPPORTED_LANGUAGES), (
+    "_DATE_PATTERNS and SUPPORTED_LANGUAGES drifted apart"
+)
+
+
+def format_date_for_lang(value: date, lang: str) -> str:
+    """A calendar day written the way `lang` writes it — « 5 septembre 2026 »,
+    « September 5, 2026 », « 2026. szeptember 5. ».
+
+    `lang` is an ALREADY-RESOLVED recipient language (client or agent rules
+    above); an unsupported value falls back to DEFAULT_LANG rather than
+    raising, because a formatting detail must never break a send.
+
+    Takes a `date`, not a `datetime`: choosing the day out of an instant is
+    the caller's decision (which timezone), and it must be made where the
+    convention is known — not hidden in a formatter.
+    """
+    code = lang if lang in _MONTH_NAMES else DEFAULT_LANG
+    return _DATE_PATTERNS[code].format(
+        day=value.day, month=_MONTH_NAMES[code][value.month - 1], year=value.year
+    )
 
 
 def resolve_request_language(request: Request) -> str:

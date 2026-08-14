@@ -2,9 +2,12 @@
 request-language channel. Pure-function unit tests: no DB, fast. The
 projection wiring is exercised by the domain tests (timeline/clone)."""
 
+from datetime import date
+
 from src.core.i18n import (
     DEFAULT_LANG,
     SUPPORTED_LANGUAGES,
+    format_date_for_lang,
     resolve_i18n,
     resolve_notification_lang_agent,
     resolve_notification_lang_client,
@@ -78,3 +81,38 @@ def test_resolve_step_name_for_notif_never_empty() -> None:
     # No EN variant → falls back through fr → the scalar (never empty).
     assert resolve_step_name_for_notif({"fr": "Dépôt"}, "Dépôt", "en") == "Dépôt"
     assert resolve_step_name_for_notif({}, "Dépôt", "es") == "Dépôt"
+
+
+# --- dates in the recipient's language (BLOC NOTIF-2) ------------------------
+
+
+def test_a_date_is_written_the_way_each_language_writes_it() -> None:
+    """THE point of the formatter: 05/09/2026 is ambiguous the moment a human
+    reads it (September 5th or 5 September?). The month is spelled out and the
+    ORDER follows the language — English puts the month first, Hungarian the
+    year, Spanish and Portuguese insert their « de »."""
+    day = date(2026, 9, 5)
+    assert format_date_for_lang(day, "fr") == "5 septembre 2026"
+    assert format_date_for_lang(day, "en") == "September 5, 2026"
+    assert format_date_for_lang(day, "es") == "5 de septiembre de 2026"
+    assert format_date_for_lang(day, "pt") == "5 de setembro de 2026"
+    assert format_date_for_lang(day, "it") == "5 settembre 2026"
+    assert format_date_for_lang(day, "ru") == "5 сентября 2026 г."
+    assert format_date_for_lang(day, "hu") == "2026. szeptember 5."
+
+
+def test_every_supported_language_can_write_every_month() -> None:
+    """Adding a language to SUPPORTED_LANGUAGES without its months would be a
+    KeyError in the middle of a send. The module asserts it at import; this
+    walks the whole table so a truncated one cannot pass either."""
+    for lang in SUPPORTED_LANGUAGES:
+        rendered = {format_date_for_lang(date(2026, m, 1), lang) for m in range(1, 13)}
+        assert len(rendered) == 12  # twelve distinct months, none empty
+        assert all(text.strip() and "2026" in text for text in rendered)
+
+
+def test_an_unsupported_language_falls_back_rather_than_raising() -> None:
+    """A formatting detail must never break a send: German is not supported,
+    the date still comes out — in the platform default."""
+    assert format_date_for_lang(date(2026, 9, 5), "de") == "5 septembre 2026"
+    assert format_date_for_lang(date(2026, 9, 5), "") == "5 septembre 2026"

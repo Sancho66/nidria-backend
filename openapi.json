@@ -26628,6 +26628,9 @@
             "type": "integer",
             "title": "Roles Count"
           },
+          "state": {
+            "$ref": "#/components/schemas/DocumentTemplateState"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -26648,10 +26651,20 @@
           "fields_configured",
           "agency_countersigns",
           "roles_count",
+          "state",
           "created_at",
           "updated_at"
         ],
         "title": "DocumentTemplateResponse"
+      },
+      "DocumentTemplateState": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "active"
+        ],
+        "title": "DocumentTemplateState",
+        "description": "Le modèle est-il DANS la bibliothèque de l'agence ? (lot 14/08)\n\n`draft` à la création, et ce n'est pas un caprice : le builder embeddé du\nprovider REFUSE de s'ouvrir sans un document déjà matérialisé chez lui\n(son jeton exige `template_id` ou `document_urls`). Le modèle doit donc\nexister avant le premier geste de l'agence — le geste ne peut pas\nprécéder ce qui le rend possible. On le crée, mais on ne le MONTRE pas.\n\n`active` = promu au premier builder-sync qui constate une zone posée.\nUn brouillon jamais promu est un abandon : il ne paraît nulle part et le\njanitor l'emporte (ligne + PDF + template provider).\n\nÀ NE JAMAIS CONFONDRE avec `fields_configured`, qui dit « toutes les\nzones exigées sont là ». `fields_configured=False` est un état LÉGITIME\net VISIBLE : l'agence qui a commencé son mandat et reviendra demain le\nfinir. L'état ci-dessous répond à une autre question — a-t-elle jamais\ncommencé ?"
       },
       "DocumentTemplateUpdateRequest": {
         "properties": {
@@ -34803,6 +34816,10 @@
               }
             ],
             "title": "Scheduled At"
+          },
+          "recipient_type": {
+            "$ref": "#/components/schemas/RecipientType",
+            "default": "expat"
           }
         },
         "type": "object",
@@ -38813,7 +38830,7 @@
           "reason"
         ],
         "title": "UnresolvableToken",
-        "description": "Un jeton CONNU que le figeage refuserait. `reason` est un slug stable\n(`step_required`, `estimated_days_required`, `step_not_started`,\n`agency_field_empty`) : le front le traduit, il ne l'affiche pas brut."
+        "description": "Un jeton CONNU que le figeage refuserait. `reason` est un slug stable\n(`step_required`, `estimated_days_required`, `step_not_started`,\n`due_date_required`, `recipient_not_client`, `client_space_inactive`,\n`agency_field_empty`) : le front le traduit, il ne l'affiche pas brut."
       },
       "UnsectionedFields": {
         "properties": {

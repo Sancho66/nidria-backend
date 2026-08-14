@@ -5,11 +5,17 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
+from shared.models.expat_user import ExpatUser
 from shared.models.message_template import MessageTemplate
 from shared.models.reminder import Reminder
 from src.activity.activity_manager import ActivityManager
+from src.cases.client_space import client_space_is_active
+from src.core.config import get_settings
+from src.core.email import space_link
 from src.core.enums import (
     ActorType,
     RecipientType,
@@ -18,10 +24,17 @@ from src.core.enums import (
     StepStatus,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.core.i18n import (
+    format_date_for_lang,
+    resolve_notification_lang_agent,
+    resolve_notification_lang_client,
+)
 from src.reminders.reminder_tokens import (
     AGENCY_TOKENS,
+    STEP_TOKENS,
     VARIABLE_PATTERN,
     agency_value,
+    catalogue_index,
     render_with_examples,
     unknown_tokens,
     used_tokens,
@@ -125,12 +138,59 @@ class RemindersManager:
 
     # --- interpolation (server-side, at creation/edition) ------------------------------
 
+    async def _targeted_member(
+        self, case_id: uuid.UUID, step_progress_id: uuid.UUID | None
+    ) -> tuple[CasePerson, ExpatUser] | None:
+        """La personne que les exigences EN ATTENTE de l'étape désignent
+        SEULE, si elle a un accès utilisable (compte lié + email) — sinon
+        None, et le principal reste la voix du dossier.
+
+        UNE vérité, trois lecteurs : le dispatch (`reminders_jobs._recipient`),
+        l'écran d'approbation (« sera envoyé à… ») et le figeage, qui doit
+        écrire dans la langue de CELLE qui lira."""
+        if step_progress_id is None:
+            return None
+        requirements = await self.repo.list_step_requirements_for_progress(step_progress_id)
+        persons = await self.repo.persons_by_id_for_case(case_id)
+        person = targeted_member(requirements, persons)
+        if person is None or person.expat_user_id is None:
+            return None
+        member = await self.repo.get_expat(person.expat_user_id)
+        if member is None or not member.email:
+            return None
+        return person, member
+
+    async def _addressee(
+        self,
+        case: ClientCase,
+        step_progress_id: uuid.UUID | None,
+        recipient_type: RecipientType,
+        agency: Agency,
+    ) -> tuple[ExpatUser | None, str]:
+        """(le CLIENT qui lira ce rappel, la LANGUE dans laquelle il le lira).
+
+        Le client est None quand le destinataire n'en est pas un (un notaire,
+        le gestionnaire du dossier) : ceux-là n'ont pas d'espace client, et
+        ils lisent dans la langue de l'AGENCE — la règle du flux manuel, celle
+        que le dispatch applique déjà au prestataire. Sinon c'est le membre
+        que l'étape désigne quand elle n'en désigne qu'un, le principal
+        autrement : exactement qui recevra le mail, dans SA langue à elle."""
+        if recipient_type is not RecipientType.EXPAT:
+            return None, resolve_notification_lang_agent(agency.default_language)
+        hit = await self._targeted_member(case.id, step_progress_id)
+        client = (
+            hit[1] if hit is not None else await self.repo.get_expat(case.principal_expat_user_id)
+        )
+        assert client is not None
+        return client, resolve_notification_lang_client(client.preferred_lang)
+
     async def _resolve_values(
         self,
         case: ClientCase,
         needed: set[str],
         step_progress_id: uuid.UUID | None,
         scheduled_at: datetime,
+        recipient_type: RecipientType,
     ) -> tuple[dict[str, str], list[tuple[str, str]]]:
         """(valeurs résolues, [(jeton, raison)] non résolubles). NE LÈVE
         JAMAIS : le figeage lève à partir de ce résultat, l'aperçu le sert
@@ -143,27 +203,47 @@ class RemindersManager:
         values: dict[str, str] = {}
         failures: list[tuple[str, str]] = []
 
-        if "client_name" in needed:
+        if needed & {"client_name", "client_first_name"}:
             principal = await self.repo.get_expat(case.principal_expat_user_id)
             assert principal is not None
-            values["client_name"] = f"{principal.first_name} {principal.last_name}"
+            if "client_name" in needed:
+                values["client_name"] = f"{principal.first_name} {principal.last_name}"
+            if "client_first_name" in needed:
+                # Le PRINCIPAL, comme {client_name} — le dossier se nomme par
+                # son client, même quand le rappel part vers un proche.
+                values["client_first_name"] = principal.first_name
 
-        if needed & {"step_name", "days_left"}:
+        # L'agence sert trois choses : ses propres jetons, le slug du lien
+        # d'espace (blanche-marque) et la langue d'un destinataire qui n'est
+        # pas un client. Une seule lecture pour les trois.
+        agency: Agency | None = None
+        if needed & (set(AGENCY_TOKENS) | {"client_space_link", "step_due_date"}):
+            agency = await self.repo.get_agency(case.agency_id)
+            assert agency is not None
+
+        # Qui lira, et dans quelle langue — résolu une fois, pour la date
+        # d'échéance (sa mise en forme) comme pour le lien d'espace (son
+        # activation). Les deux jugent le destinataire RÉEL, pas le dossier.
+        client: ExpatUser | None = None
+        lang = ""
+        if agency is not None and needed & {"step_due_date", "client_space_link"}:
+            client, lang = await self._addressee(case, step_progress_id, recipient_type, agency)
+
+        if needed & set(STEP_TOKENS):
             progress = (
                 None
                 if step_progress_id is None
                 else await self.repo.get_progress_in_case(case.id, step_progress_id)
             )
             if progress is None:
-                # L'ordre du catalogue décide de la variable nommée en
-                # premier (step_name avant days_left) — verdict déterministe.
-                for name in ("step_name", "days_left"):
+                for name in STEP_TOKENS:
                     if name in needed:
                         failures.append((name, "step_required"))
             else:
                 template_step = await self.repo.get_template_step(progress.template_step_id)
                 assert template_step is not None
-                values["step_name"] = template_step.name
+                if "step_name" in needed:
+                    values["step_name"] = template_step.name
                 if "days_left" in needed:
                     started_at = await self.repo.get_step_started_at(case.id, progress.id)
                     if template_step.estimated_days is None:
@@ -173,9 +253,41 @@ class RemindersManager:
                     else:
                         elapsed = (scheduled_at.date() - started_at.date()).days
                         values["days_left"] = str(max(0, template_step.estimated_days - elapsed))
+                if "step_due_date" in needed:
+                    if progress.due_at is None:
+                        # L'échéance FERME est optionnelle sur une étape : sans
+                        # elle, ce jeton n'a rien à dire. Même discipline que
+                        # {days_left} — on refuse, on ne devine pas (le compteur
+                        # estimé est une AUTRE information, pas un repli).
+                        failures.append(("step_due_date", "due_date_required"))
+                    else:
+                        # Le JOUR de l'échéance, lu en UTC comme le compteur
+                        # jours-restants des deux faces (`_deadline_counter`) —
+                        # une même échéance ne peut pas tomber un jour dans la
+                        # timeline et la veille dans la relance.
+                        values["step_due_date"] = format_date_for_lang(
+                            progress.due_at.astimezone(UTC).date(), lang
+                        )
+
+        if "client_space_link" in needed:
+            assert agency is not None
+            if client is None:
+                # Un prestataire ou le gestionnaire n'ont pas d'espace client :
+                # le lien les mènerait à une page de connexion qu'ils ne
+                # passeront pas. On refuse plutôt que de l'écrire.
+                failures.append(("client_space_link", "recipient_not_client"))
+            elif not client_space_is_active(client):
+                # LA condition du jeton : tant que l'espace n'est pas activé,
+                # le lien mène à un mur. Même prédicat que l'exclusion des
+                # jobs de notification — l'invitation, elle, est le chemin de
+                # CE client-là, et c'est le lot activation qui la porte.
+                failures.append(("client_space_link", "client_space_inactive"))
+            else:
+                values["client_space_link"] = space_link(
+                    get_settings().frontend_url, "/space", agency.slug
+                )
 
         if needed & set(AGENCY_TOKENS):
-            agency = await self.repo.get_agency(case.agency_id)
             assert agency is not None
             for name in AGENCY_TOKENS:
                 if name not in needed:
@@ -188,6 +300,10 @@ class RemindersManager:
                 else:
                     values[name] = value
 
+        # L'ORDRE DU CATALOGUE décide lequel des refus est nommé par le 422 —
+        # pas l'ordre dans lequel ce code résout. Verdict stable, et qui le
+        # reste quand un jeton s'ajoute au milieu du catalogue.
+        failures.sort(key=lambda failure: catalogue_index(failure[0]))
         return values, failures
 
     async def _render(
@@ -196,12 +312,17 @@ class RemindersManager:
         raw: str,
         step_progress_id: uuid.UUID | None,
         scheduled_at: datetime,
+        recipient_type: RecipientType,
     ) -> str:
         """Freeze the variables into the approved text. {days_left} is
         PROJECTED AT scheduled_at (estimated_days − days between the
         step's start and the planned send date, floor 0) — the approver
         reads a text that is exact AT SEND TIME. Unsolvable variable →
         422 naming it.
+
+        `recipient_type` entre ici parce que deux jetons dépendent de QUI
+        lira : {step_due_date} s'écrit dans sa langue, {client_space_link}
+        n'existe que s'il a un espace où aller.
 
         Un jeton INCONNU ({tva}) n'est pas une erreur ici : il traverse et se
         fige verbatim, comme dans les conditions. C'est l'aperçu qui le
@@ -210,7 +331,9 @@ class RemindersManager:
         needed = set(VARIABLE_PATTERN.findall(raw))
         if not needed:
             return raw
-        values, failures = await self._resolve_values(case, needed, step_progress_id, scheduled_at)
+        values, failures = await self._resolve_values(
+            case, needed, step_progress_id, scheduled_at, recipient_type
+        )
         if failures:
             variable, reason = failures[0]
             raise ValidationError(
@@ -250,6 +373,7 @@ class RemindersManager:
                 needed,
                 payload.step_progress_id,
                 payload.scheduled_at or datetime.now(UTC),
+                payload.recipient_type,
             )
 
         # Les jetons résolus prennent leur VRAIE valeur ; ceux qui manquent
@@ -322,7 +446,9 @@ class RemindersManager:
         else:
             raise ValidationError("Either message_template_id or message_body is required.")
 
-        body = await self._render(case, raw, payload.step_progress_id, payload.scheduled_at)
+        body = await self._render(
+            case, raw, payload.step_progress_id, payload.scheduled_at, payload.recipient_type
+        )
         reminder = self.repo.add_reminder(
             case_id=case.id,
             step_progress_id=payload.step_progress_id,
@@ -396,16 +522,10 @@ class RemindersManager:
             if reminder.recipient_type == RecipientType.AGENT.value:
                 return await self.repo.get_owner_display(reminder.case_id)
             # EXPAT: the targeted member with access, else the principal.
-            if reminder.step_progress_id is not None:
-                requirements = await self.repo.list_step_requirements_for_progress(
-                    reminder.step_progress_id
-                )
-                persons = await self.repo.persons_by_id_for_case(reminder.case_id)
-                person = targeted_member(requirements, persons)
-                if person is not None and person.expat_user_id is not None:
-                    member = await self.repo.get_expat(person.expat_user_id)
-                    if member is not None and member.email:
-                        return person.full_name or f"{member.first_name} {member.last_name}"
+            hit = await self._targeted_member(reminder.case_id, reminder.step_progress_id)
+            if hit is not None:
+                person, member = hit
+                return person.full_name or f"{member.first_name} {member.last_name}"
             return await self.repo.get_principal_display(reminder.case_id)
         except Exception:  # noqa: BLE001 — display data, never a 500
             logger.exception("reminder recipient resolution failed for %s", reminder.id)
@@ -464,7 +584,9 @@ class RemindersManager:
         reminder.recipient_external_id = new_external_id
         reminder.step_progress_id = new_step_id
         reminder.message_template_id = new_template_id
-        reminder.message_body = await self._render(case, raw, new_step_id, new_scheduled_at)
+        reminder.message_body = await self._render(
+            case, raw, new_step_id, new_scheduled_at, RecipientType(new_recipient_type)
+        )
 
         if was_approved:
             # The approval covered the OLD content — re-approve.

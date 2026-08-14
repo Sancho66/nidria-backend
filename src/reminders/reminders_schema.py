@@ -54,11 +54,17 @@ class ReminderPreviewRequest(BaseModel):
     # La date d'envoi PROJETÉE : {days_left} en dépend (il compte à partir
     # d'elle, pas d'aujourd'hui). Absente → maintenant.
     scheduled_at: datetime | None = None
+    # Le destinataire prévu — deux jetons en dépendent : {step_due_date}
+    # s'écrit dans SA langue, {client_space_link} n'existe que s'il a un
+    # espace actif. Défaut `expat`, le destinataire de la modale ; sans ce
+    # champ l'aperçu flatterait le figeage sur un rappel adressé ailleurs.
+    recipient_type: RecipientType = RecipientType.EXPAT
 
 
 class UnresolvableToken(BaseModel):
     """Un jeton CONNU que le figeage refuserait. `reason` est un slug stable
     (`step_required`, `estimated_days_required`, `step_not_started`,
+    `due_date_required`, `recipient_not_client`, `client_space_inactive`,
     `agency_field_empty`) : le front le traduit, il ne l'affiche pas brut."""
 
     token: str
