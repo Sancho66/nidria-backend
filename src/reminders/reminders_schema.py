@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from src.core.enums import RecipientType, ReminderChannel
 from src.core.i18n import Language
+from src.journeys.journeys_schema import I18nBlob, JobProgress
 from src.reminders.reminder_tokens import deprecated_tokens
 
 
@@ -36,6 +37,10 @@ class MessageTemplateCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1)
+    # Les VARIANTES de langue du corps (lot traduction 14/08) — miroir des
+    # blobs de parcours : clé absente si vide, le scalaire `body` reste la
+    # source. Écrites à la main ici, ou par le job de traduction IA.
+    body_i18n: I18nBlob | None = None
     language: Language | None = None
     channel: ReminderChannel | None = None
 
@@ -47,6 +52,11 @@ class MessageTemplateUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1)
+    # Variantes : PATCH par remplacement du blob (apply_i18n_write côté
+    # manager garde le scalaire en phase avec la variante par défaut). Une
+    # variante corrigée à la main est protégée de l'IA par la mémoire de
+    # hachés — sa sortie ne correspond plus, elle n'est jamais « stale ».
+    body_i18n: I18nBlob | None = None
     language: Language | None = None
     channel: ReminderChannel | None = None
 
@@ -57,6 +67,9 @@ class MessageTemplateResponse(BaseModel):
     id: uuid.UUID
     name: str
     body: str
+    # Les variantes, servies : l'éditeur les montre, le job les remplit, et
+    # le figeage d'un rappel choisit celle de la langue du destinataire.
+    body_i18n: dict[str, str] = {}
     language: str | None = None
     channel: str | None = None
     # L'écran de gestion trie et date les modèles — servi, jamais dérivé.
@@ -73,6 +86,43 @@ class MessageTemplateResponse(BaseModel):
             DeprecatedToken(token=token, name=name, resolves_to=resolves_to, suggested=suggested)
             for token, name, resolves_to, suggested in deprecated_tokens(self.body)
         ]
+
+
+class TemplateTranslateRequest(BaseModel):
+    """POST /message-templates/{id}/translate — corps vide = toutes les
+    langues incomplètes. Décalque du contrat parcours : `include_stale`
+    retraduit aussi les variantes IA dont la source a bougé (jamais le
+    travail humain) ; `retranslate_langs` est l'écrasement CONSENTI, par
+    langue — le front confirme explicitement, le back ne le déduit jamais."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_langs: list[Language] | None = None
+    include_stale: bool = False
+    retranslate_langs: list[Language] | None = None
+
+
+class TemplateTranslationJobResponse(BaseModel):
+    """Le job async — même forme que celui des parcours (le front qui sait
+    suivre l'un suit l'autre), la cible en plus : `message_template_id`.
+    Poll GET /message-templates/translate-jobs/{id} jusqu'à
+    done | done_with_gaps | failed. Un lot = une langue."""
+
+    id: uuid.UUID
+    translation_job_id: uuid.UUID
+    message_template_id: uuid.UUID
+    status: str  # pending | running | done | done_with_gaps | failed
+    langs: list[str]
+    progress: JobProgress
+    translated_keys: int
+    points_charged: int
+    error: str | None
+    # "{lang}:template.body" des variantes à revoir ; vide hors
+    # done_with_gaps. Un {jeton} altéré par le modèle finit ICI — jamais
+    # publié en silence.
+    failed_keys: list[str] = []
+    created_at: datetime
+    updated_at: datetime
 
 
 class ReminderPreviewRequest(BaseModel):

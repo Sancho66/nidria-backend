@@ -17471,6 +17471,180 @@
         ]
       }
     },
+    "/message-templates/translate-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "reminders"
+        ],
+        "summary": "Get Template Translate Job",
+        "description": "Polling du job — scopé agence ET surface (un job de parcours répond\n404 ici). Littéral déclaré avant les routes en {template_id}.",
+        "operationId": "get_template_translate_job_message_templates_translate_jobs__job_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateTranslationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/message-templates/{template_id}/translate/estimate": {
+      "get": {
+        "tags": [
+          "reminders"
+        ],
+        "summary": "Template Translate Estimate",
+        "description": "Le chiffre honnête AVANT de lancer — même forme que l'estimation des\nparcours (items/langs/counts/points/quota), même pool de points, barème\nnourri des caractères réels du corps.",
+        "operationId": "template_translate_estimate_message_templates__template_id__translate_estimate_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Stale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslateEstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/message-templates/{template_id}/translate": {
+      "post": {
+        "tags": [
+          "reminders"
+        ],
+        "summary": "Translate Message Template",
+        "description": "LANCE la traduction async des variantes VIDES du corps (défaut), ou\nvides + obsolètes (include_stale — une variante IA dont la source a\nbougé ; le travail humain n'est jamais touché). `retranslate_langs` est\nl'écrasement CONSENTI par langue. Quota gaté AVANT le lancement ; 202 et\nle front poll /message-templates/translate-jobs/{id} pendant que\nl'agence continue de travailler.",
+        "operationId": "translate_message_template_message_templates__template_id__translate_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateTranslateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateTranslationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/message-templates/{template_id}": {
       "patch": {
         "tags": [
@@ -30629,6 +30803,20 @@
             "minLength": 1,
             "title": "Body"
           },
+          "body_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body I18N"
+          },
           "language": {
             "anyOf": [
               {
@@ -30682,6 +30870,14 @@
           "body": {
             "type": "string",
             "title": "Body"
+          },
+          "body_i18n": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Body I18N",
+            "default": {}
           },
           "language": {
             "anyOf": [
@@ -30762,6 +30958,20 @@
               }
             ],
             "title": "Body"
+          },
+          "body_i18n": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body I18N"
           },
           "language": {
             "anyOf": [
@@ -38602,6 +38812,151 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TemplateStepUpdateRequest"
+      },
+      "TemplateTranslateRequest": {
+        "properties": {
+          "target_langs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fr",
+                    "en",
+                    "es",
+                    "ru",
+                    "pt",
+                    "it",
+                    "hu"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Langs"
+          },
+          "include_stale": {
+            "type": "boolean",
+            "title": "Include Stale",
+            "default": false
+          },
+          "retranslate_langs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fr",
+                    "en",
+                    "es",
+                    "ru",
+                    "pt",
+                    "it",
+                    "hu"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retranslate Langs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TemplateTranslateRequest",
+        "description": "POST /message-templates/{id}/translate — corps vide = toutes les\nlangues incomplètes. Décalque du contrat parcours : `include_stale`\nretraduit aussi les variantes IA dont la source a bougé (jamais le\ntravail humain) ; `retranslate_langs` est l'écrasement CONSENTI, par\nlangue — le front confirme explicitement, le back ne le déduit jamais."
+      },
+      "TemplateTranslationJobResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "translation_job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Translation Job Id"
+          },
+          "message_template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Template Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "langs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Langs"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgress"
+          },
+          "translated_keys": {
+            "type": "integer",
+            "title": "Translated Keys"
+          },
+          "points_charged": {
+            "type": "integer",
+            "title": "Points Charged"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Failed Keys",
+            "default": []
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "translation_job_id",
+          "message_template_id",
+          "status",
+          "langs",
+          "progress",
+          "translated_keys",
+          "points_charged",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TemplateTranslationJobResponse",
+        "description": "Le job async — même forme que celui des parcours (le front qui sait\nsuivre l'un suit l'autre), la cible en plus : `message_template_id`.\nPoll GET /message-templates/translate-jobs/{id} jusqu'à\ndone | done_with_gaps | failed. Un lot = une langue."
       },
       "TimeSavedBlockResponse": {
         "properties": {

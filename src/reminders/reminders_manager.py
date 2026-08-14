@@ -26,6 +26,7 @@ from src.core.enums import (
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.i18n import (
+    apply_i18n_write,
     format_date_for_lang,
     resolve_i18n,
     resolve_notification_lang_agent,
@@ -126,10 +127,19 @@ class RemindersManager:
     async def create_message_template(
         self, agent: Agent, payload: MessageTemplateCreateRequest
     ) -> MessageTemplate:
+        # Variantes (lot traduction 14/08) : apply_i18n_write garde le
+        # scalaire en phase avec la variante par défaut — même idiome que les
+        # noms de parcours, une seule discipline scalaire/blob dans le produit.
+        agency = await self.repo.get_agency(agent.agency_id)
+        default_lang = (agency.default_language if agency else "fr") or "fr"
+        body, body_i18n = apply_i18n_write(
+            payload.body_i18n, payload.body, default_lang, payload.body, {}
+        )
         template = self.repo.add_message_template(
             agency_id=agent.agency_id,
             name=payload.name,
-            body=payload.body,
+            body=body or payload.body,
+            body_i18n=body_i18n,
             # Étiquettes de recherche, jamais des règles : un modèle marqué
             # « email » reste applicable à un WhatsApp.
             language=payload.language,
@@ -150,8 +160,25 @@ class RemindersManager:
         # sont NOT NULL : un `null` explicite sur eux passait la validation
         # et faisait tomber l'insert en 500. On l'ignore, comme une absence.
         patch = payload.model_dump(exclude_unset=True)
+        # Le COUPLE body/body_i18n passe par apply_i18n_write (l'idiome des
+        # parcours) : un blob écrit resynchronise le scalaire sur la variante
+        # par défaut, un scalaire écrit se reflète dans le blob. Une variante
+        # corrigée à la main ici est ensuite PROTÉGÉE de l'IA par la mémoire
+        # de hachés (sa sortie ne correspond plus — jamais « stale »).
+        if "body" in patch or "body_i18n" in patch:
+            agency = await self.repo.get_agency(agent.agency_id)
+            default_lang = (agency.default_language if agency else "fr") or "fr"
+            scalar, blob = apply_i18n_write(
+                patch.pop("body_i18n", None),
+                patch.pop("body", None),
+                default_lang,
+                template.body,
+                template.body_i18n,
+            )
+            template.body = scalar or template.body
+            template.body_i18n = blob
         for field, value in patch.items():
-            if value is None and field in ("name", "body"):
+            if value is None and field == "name":
                 continue
             setattr(template, field, value)
         await self.db.commit()
@@ -424,6 +451,39 @@ class RemindersManager:
         failures.sort(key=lambda failure: catalogue_index(failure[0]))
         return values, failures
 
+    async def _template_body_for(
+        self,
+        template: MessageTemplate,
+        case: ClientCase,
+        step_progress_id: uuid.UUID | None,
+        recipient_type: RecipientType | str,
+        recipient_external_id: uuid.UUID | None,
+    ) -> str:
+        """Le corps du modèle DANS LA LANGUE DU DESTINATAIRE — résolu au
+        FIGEAGE, parce que c'est le figeage qui décide du texte envoyé (le
+        rappel part tel qu'approuvé, invariant Eloïse) et que lui seul sait
+        QUI lira : `_addressee` est le miroir du routage du dispatch.
+
+        Volontairement PAS la chaîne d'affichage `resolve_i18n` : elle
+        intercale blob[fr] avant le scalaire, ce qui enverrait du français à
+        un destinataire anglophone d'une agence espagnole. Ici la règle est
+        celle du lot : la variante du destinataire SI elle existe, sinon la
+        SOURCE que l'agence a écrite. Aucun blocage — une variante absente
+        n'est pas une erreur, c'est le repli."""
+        blob = template.body_i18n or {}
+        if not blob:
+            return template.body
+        agency = await self.repo.get_agency(case.agency_id)
+        assert agency is not None
+        addressee = await self._addressee(
+            case,
+            step_progress_id,
+            RecipientType(recipient_type),
+            recipient_external_id,
+            agency,
+        )
+        return (blob.get(addressee.lang) or "").strip() or template.body
+
     async def _render(
         self,
         case: ClientCase,
@@ -567,7 +627,13 @@ class RemindersManager:
             )
             if template is None:
                 raise ValidationError("Message template not found in this agency.")
-            raw = template.body
+            raw = await self._template_body_for(
+                template,
+                case,
+                payload.step_progress_id,
+                payload.recipient_type,
+                payload.recipient_external_id,
+            )
         elif payload.message_body is not None:
             raw = payload.message_body
         else:
@@ -706,7 +772,11 @@ class RemindersManager:
             )
             if template is None:
                 raise ValidationError("Message template not found in this agency.")
-            raw = template.body
+            # La variante suit le destinataire ÉVENTUELLEMENT ÉDITÉ : c'est
+            # le nouveau routage qui décide de la langue, pas l'ancien.
+            raw = await self._template_body_for(
+                template, case, new_step_id, new_recipient_type, new_external_id
+            )
         else:
             raw = reminder.message_body
 

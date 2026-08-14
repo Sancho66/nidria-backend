@@ -23,6 +23,8 @@ and a persistent miss costs one field, not the lot."""
 
 import json
 import logging
+import re
+from collections import Counter
 from typing import Any
 
 import httpx
@@ -39,6 +41,9 @@ _SYSTEM_PROMPT = (
     "translate everything else faithfully, never summarize, never add content; "
     "some items may be written in ANOTHER language than the declared source: translate "
     "them to the target languages all the same, NEVER copy an item unchanged; "
+    "text wrapped in curly braces like {client_name} is an INTERPOLATION VARIABLE: "
+    "copy each one VERBATIM into every translation, never translate, rename, drop "
+    "or duplicate it; "
     "write every language in its own NATIVE SCRIPT (Cyrillic for Russian, never "
     "romanized); NEVER use em dashes or en dashes in the output; answer with STRICT JSON only, "
     'shaped {"translations": {"<key>": {"<lang>": "<text>", ...}, ...}} covering '
@@ -55,9 +60,10 @@ _RU_PROMPT_SUFFIX = (
     '{"translations": {"step.1.name": {"ru": "Подача досье в консульство"}}}.'
 )
 _STRICT_RETRY_SUFFIX = (
-    " STRICT RETRY: your previous answer copied or mistranslated these exact items. "
-    "TRANSLATE each one into every requested target language, whatever language its "
-    "source text is written in."
+    " STRICT RETRY: your previous answer copied or mistranslated these exact items, "
+    "or altered their {curly_brace} variables. TRANSLATE each one into every requested "
+    "target language, whatever language its source text is written in, and copy every "
+    "{variable} EXACTLY as written in the source."
 )
 
 
@@ -148,6 +154,17 @@ async def request_translations(
 
 _TOKEN_EDGES = ".,;:()[]\u00ab\u00bb\"'!?"
 
+# Les jetons d'interpolation ({client_name}, {step_due_date}…) : le motif
+# LARGE des catalogues (reminder_tokens/agency_tokens) — tout ce qui est
+# entre accolades sur une ligne, coquilles comprises. Une coquille aussi
+# doit survivre : le figeage la gèle verbatim, la traduction n'a pas à la
+# « réparer » ni à la perdre.
+_INTERPOLATION_TOKEN = re.compile(r"\{[^{}\n]{1,64}\}")
+
+
+def _tokens_of(text: str) -> Counter[str]:
+    return Counter(_INTERPOLATION_TOKEN.findall(text))
+
 
 def _cyrillic_ratio(value: str, source: str) -> float:
     """Cyrillic share of the ALPHABETIC characters of `value`, ignoring
@@ -180,6 +197,16 @@ def _item_error(per_key: Any, source: str, lang: str) -> str | None:
         # source) or, rarer, romanizes. The RATIO catches full echoes
         # AND half-latin mixes while tolerating protected latin terms.
         return "not Cyrillic"
+    if _tokens_of(value) != (expected := _tokens_of(source)):
+        # INVARIANT DUR (lot 14/08) : les {jetons} d'interpolation survivent
+        # VERBATIM, en multiset — traduits, renommés, perdus ou dupliqués,
+        # le message rendu au destinataire serait faux ou troué. Universel
+        # et no-op sans accolades (les contenus de parcours n'en ont pas) ;
+        # l'échec suit le rail existant — repair pass, puis failed_keys /
+        # done_with_gaps : le champ n'est JAMAIS publié en silence.
+        got = _tokens_of(value)
+        diff = sorted((expected - got) + (got - expected))
+        return f"interpolation tokens altered ({', '.join(diff) or 'count mismatch'})"
     return None
 
 

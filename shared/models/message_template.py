@@ -1,6 +1,7 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -33,6 +34,17 @@ class MessageTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    # i18n — parallel {lang: text} blob for the body, MIRROR of the journey
+    # variants (absent language = absent key, never ""). The scalar `body`
+    # stays the SOURCE the agency edits and the read fallback: at reminder
+    # freeze, the variant of the RECIPIENT's language is taken when present,
+    # the scalar otherwise. `name` is deliberately NOT translated: it is the
+    # agency's own filing label (the picker of ITS list), never sent to a
+    # client. And `language` below stays a FILING LABEL — the translation
+    # source language is the agency default, like journeys, not this tag.
+    body_i18n: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
     # ÉTIQUETTES, pas des règles. Elles servent à RETROUVER un modèle dans
     # une liste qui grandit ; elles ne filtrent ni ne contraignent quoi que
     # ce soit à la création d'un rappel (une agence garde le droit

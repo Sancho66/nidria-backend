@@ -9,7 +9,7 @@ idempotent and cheap."""
 
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,12 +18,25 @@ from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 class AiTranslationJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "ai_translation_job"
+    # RAIL ÉLARGI (lot 14/08) : le MÊME job sert deux contenus — un parcours
+    # (template_id) OU un modèle de message (message_template_id), jamais les
+    # deux, jamais aucun. Une seule table parce que c'est UNE seule infra :
+    # même barre de progression, même pool de points, même polling front.
+    __table_args__ = (
+        CheckConstraint(
+            "num_nonnulls(template_id, message_template_id) = 1",
+            name="ck_ai_translation_job_one_target",
+        ),
+    )
 
     agency_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    template_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True
+    )
+    message_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("message_template.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[str] = mapped_column(  # pending|running|done|done_with_gaps|failed
         String(20), nullable=False
@@ -56,13 +69,31 @@ class AiTranslationSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "ai_translation_source"
     __table_args__ = (
         UniqueConstraint("template_id", "content_key", "lang", name="uq_ai_translation_source_key"),
+        # Le pendant du unique ci-dessus pour les modèles de message : partiel,
+        # parce que les lignes parcours portent message_template_id NULL (et
+        # réciproquement — le CHECK garantit l'exclusivité).
+        Index(
+            "uq_ai_translation_source_message_key",
+            "message_template_id",
+            "content_key",
+            "lang",
+            unique=True,
+            postgresql_where=text("message_template_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "num_nonnulls(template_id, message_template_id) = 1",
+            name="ck_ai_translation_source_one_target",
+        ),
     )
 
     agency_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    template_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True, nullable=False
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journey_template.id", ondelete="CASCADE"), index=True
+    )
+    message_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("message_template.id", ondelete="CASCADE"), index=True
     )
     content_key: Mapped[str] = mapped_column(String(255), nullable=False)
     lang: Mapped[str] = mapped_column(String(5), nullable=False)

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -11,6 +11,7 @@ from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience, ReminderStatus
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
+from src.journeys.journeys_schema import TranslateEstimateResponse
 from src.reminders.reminders_manager import RemindersManager
 from src.reminders.reminders_schema import (
     MessageTemplateCreateRequest,
@@ -26,6 +27,13 @@ from src.reminders.reminders_schema import (
     ReminderPreviewResponse,
     ReminderResponse,
     ReminderUpdateRequest,
+    TemplateTranslateRequest,
+    TemplateTranslationJobResponse,
+)
+from src.reminders.template_translation_manager import (
+    TemplateTranslationManager,
+    execute_job,
+    job_response,
 )
 
 router = APIRouter(tags=["reminders"])
@@ -37,6 +45,17 @@ BINDINGS = [
     # reminder workers craft them.
     RouteBinding("GET", "/message-templates", Audience.AGENT),
     RouteBinding("POST", "/message-templates", Audience.AGENT, _CREATE),
+    # Traduction IA des modèles (lot 14/08) — même gate que leur écriture :
+    # traduire un modèle, c'est écrire ses variantes. Le littéral
+    # translate-jobs est déclaré avant les routes en {template_id}.
+    RouteBinding("POST", "/message-templates/{template_id}/translate", Audience.AGENT, _CREATE),
+    RouteBinding(
+        "GET",
+        "/message-templates/{template_id}/translate/estimate",
+        Audience.AGENT,
+        _CREATE,
+    ),
+    RouteBinding("GET", "/message-templates/translate-jobs/{job_id}", Audience.AGENT, _CREATE),
     RouteBinding("PATCH", "/message-templates/{template_id}", Audience.AGENT, _CREATE),
     RouteBinding("DELETE", "/message-templates/{template_id}", Audience.AGENT, _CREATE),
     # Reminders. approve = engaging the agency (reminder.approve);
@@ -75,6 +94,68 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 async def list_message_templates(agent: AgentDep, db: DbDep) -> list[MessageTemplateResponse]:
     templates = await RemindersManager(db).list_message_templates(agent)
     return [MessageTemplateResponse.model_validate(template) for template in templates]
+
+
+@router.get(
+    "/message-templates/translate-jobs/{job_id}", response_model=TemplateTranslationJobResponse
+)
+async def get_template_translate_job(
+    job_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> TemplateTranslationJobResponse:
+    """Polling du job — scopé agence ET surface (un job de parcours répond
+    404 ici). Littéral déclaré avant les routes en {template_id}."""
+    return await TemplateTranslationManager(db).get_job(agent, job_id)
+
+
+@router.get(
+    "/message-templates/{template_id}/translate/estimate",
+    response_model=TranslateEstimateResponse,
+)
+async def template_translate_estimate(
+    template_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    include_stale: bool = False,
+) -> TranslateEstimateResponse:
+    """Le chiffre honnête AVANT de lancer — même forme que l'estimation des
+    parcours (items/langs/counts/points/quota), même pool de points, barème
+    nourri des caractères réels du corps."""
+    return await TemplateTranslationManager(db).estimate(
+        agent, template_id, None, include_stale=include_stale
+    )
+
+
+@router.post(
+    "/message-templates/{template_id}/translate",
+    response_model=TemplateTranslationJobResponse,
+    status_code=202,
+)
+async def translate_message_template(
+    template_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    background: BackgroundTasks,
+    body: TemplateTranslateRequest | None = None,
+) -> TemplateTranslationJobResponse:
+    """LANCE la traduction async des variantes VIDES du corps (défaut), ou
+    vides + obsolètes (include_stale — une variante IA dont la source a
+    bougé ; le travail humain n'est jamais touché). `retranslate_langs` est
+    l'écrasement CONSENTI par langue. Quota gaté AVANT le lancement ; 202 et
+    le front poll /message-templates/translate-jobs/{id} pendant que
+    l'agence continue de travailler."""
+    target_langs = body.target_langs if body is not None else None
+    langs: list[str] | None = [str(lang) for lang in target_langs] if target_langs else None
+    include_stale = body.include_stale if body is not None else False
+    retranslate = (
+        [str(lang) for lang in body.retranslate_langs]
+        if body is not None and body.retranslate_langs
+        else None
+    )
+    job = await TemplateTranslationManager(db).start_translation(
+        agent, template_id, langs, include_stale=include_stale, retranslate_langs=retranslate
+    )
+    background.add_task(execute_job, job.id, agent, include_stale, retranslate)
+    return job_response(job)
 
 
 @router.post("/message-templates", response_model=MessageTemplateResponse, status_code=201)
