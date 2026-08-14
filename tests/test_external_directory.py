@@ -372,7 +372,7 @@ async def test_unreachable_contact_reminder_escalates_to_owner(
     await db_session.commit()
 
     stats = _run_dispatch(sync_session_local)
-    assert stats == {"due": 1, "sent": 1}
+    assert stats == {"due": 1, "sent": 1, "skipped_step_done": 0}
 
     # The mail went to the OWNER, not the contact; it wraps the original body
     # and names the contact.

@@ -10,12 +10,20 @@ them waiting across two agencies, the oldest 17 days old, ZERO ever sent
 never fired once. An agency now CHOOSES (settings, default: they leave on
 their own); the approval queue stays available to whoever wants it.
 
-The dispatch itself is untouched and stays the single send path: its
-SELECT is syntactically unable to pick a TO_APPROVE row (the WhatsApp
-mark-sent endpoint requires APPROVED too). Auto-send does not bypass the
-dispatch — it creates the row already APPROVED, so every downstream rule
-(scheduling, client prefs, escalation, the demo filter) applies
-identically.
+The dispatch stays the single send path: its SELECT is syntactically
+unable to pick a TO_APPROVE row (the WhatsApp mark-sent endpoint requires
+APPROVED too). Auto-send does not bypass the dispatch — it creates the row
+already APPROVED, so every downstream rule (scheduling, client prefs,
+escalation, the demo filter) applies identically.
+
+ONE rule was added to the dispatch on 14/08, and it is a REFUSAL to send,
+never a new send: a reminder whose target step is DONE is cancelled instead
+of being mailed. « Votre étape n'a pas progressé » on a validated step is
+false, not merely late — and since the default regime creates auto
+follow-ups already APPROVED, the dispatch is the last place able to catch a
+step validated between the creation and the send. The approval endpoints
+carry the same rule (refuse at the unit, count-and-skip in bulk); this is
+the backstop, on the only path that actually sends.
 """
 
 import logging
@@ -146,6 +154,23 @@ def _recipient(
     return owner[0], owner[1], (contact.name if contact is not None else "ce prestataire")
 
 
+def _done_step_ids(db: Session, rows: Sequence[Any]) -> set[uuid.UUID]:
+    """Among the due reminders, those pinned on a step already DONE — ONE
+    query for the whole tick (no N+1). A reminder with no linked step is
+    never concerned: nothing in it claims a step stalled."""
+    progress_ids = [r[0].step_progress_id for r in rows if r[0].step_progress_id is not None]
+    if not progress_ids:
+        return set()
+    return set(
+        db.execute(
+            select(CaseStepProgress.id).where(
+                CaseStepProgress.id.in_(progress_ids),
+                CaseStepProgress.status == StepStatus.DONE.value,
+            )
+        ).scalars()
+    )
+
+
 def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
     """Send due APPROVED reminders (mail + in_app; whatsapp is manual).
 
@@ -176,7 +201,29 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     rows = db.execute(base.with_for_update(skip_locked=True, of=Reminder)).all()
     settings = get_settings()
     sent = 0
+    # The step-done guard, resolved once for the tick (see the module header).
+    done_steps = _done_step_ids(db, rows)
+    skipped_step_done = 0
     for reminder, agency in rows:
+        if reminder.step_progress_id in done_steps:
+            # CANCELLED, not left approved: the message is false forever (a
+            # validated step does not un-validate on the next tick), and a row
+            # kept « due » would be retried at every tick — the dead queue we
+            # just got out of. The trace says WHY, so no reminder vanishes
+            # without an answer.
+            reminder.status = ReminderStatus.CANCELLED.value
+            db.add(
+                ActivityLog(
+                    case_id=reminder.case_id,
+                    actor_type=ActorType.SYSTEM.value,
+                    actor_id=None,
+                    action_type="reminder.cancelled",
+                    details={"reminder_id": str(reminder.id), "reason": "step_done"},
+                )
+            )
+            skipped_step_done += 1
+            log(f"reminder {reminder.id}: target step already done, cancelled instead of sent")
+            continue
         escalated_from: str | None = None
         email_suppressed = False
         if (
@@ -233,7 +280,11 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
         sent += 1
         log(f"sent reminder {reminder.id} via {reminder.channel}")
     db.commit()
-    return {"due": len(rows), "sent": sent}
+    # skipped_step_done always present, 0 included (same discipline as
+    # skipped_no_client_space): a key that shows up only when it fires reads
+    # like an anomaly, and « combien de relances étaient fausses » is exactly
+    # what the run history must state plainly.
+    return {"due": len(rows), "sent": sent, "skipped_step_done": skipped_step_done}
 
 
 def resolve_auto_reminder_thresholds(

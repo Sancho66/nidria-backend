@@ -28,11 +28,13 @@ from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
 from src.core import email
+from src.core.rbac.permissions import Permission
 from src.reminders.reminders_jobs import create_auto_reminders, dispatch_due_reminders
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase, MakeExternalContact
 from tests.plugins.expat_plugin import MakeExpatUser
+from tests.plugins.rbac_plugin import MakeRole
 from tests.plugins.reminder_plugin import MakeMessageTemplate, MakeReminder
 
 _NOW = datetime.now(UTC)
@@ -213,7 +215,7 @@ async def test_invariant_unapproved_reminder_never_sent_by_a_tick(
 
     stats = _run_dispatch(sync_session_local)
 
-    assert stats == {"due": 0, "sent": 0}
+    assert stats == {"due": 0, "sent": 0, "skipped_step_done": 0}
     await db_session.refresh(reminder)
     assert reminder.status == "to_approve"
     assert email.outbox == []
@@ -231,7 +233,7 @@ async def test_approved_due_is_dispatched_future_is_not(
     future = await make_reminder(case=case, status="approved", scheduled_at=_FUTURE)
 
     stats = _run_dispatch(sync_session_local)
-    assert stats == {"due": 1, "sent": 1}
+    assert stats == {"due": 1, "sent": 1, "skipped_step_done": 0}
     await db_session.refresh(due)
     await db_session.refresh(future)
     assert due.status == "sent"
@@ -250,7 +252,7 @@ async def test_approved_due_is_dispatched_future_is_not(
     assert log.actor_type == "system"
 
     # Idempotence: a second tick is a no-op.
-    assert _run_dispatch(sync_session_local) == {"due": 0, "sent": 0}
+    assert _run_dispatch(sync_session_local) == {"due": 0, "sent": 0, "skipped_step_done": 0}
     assert len(email.outbox) == 1
 
 
@@ -1592,3 +1594,248 @@ async def test_bulk_cancel_is_gated_like_the_unit_cancel(
         json={"reminder_ids": [str(uuid.uuid4())]},
     )
     assert refused.status_code == 403, refused.text
+
+
+# --- bulk approve + LA garde « étape terminée » --------------------------------------
+
+
+async def _case_with_one_step(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    agent: Agent,
+    make_client_case: MakeClientCase,
+    headers: dict[str, str],
+    *,
+    done: bool,
+) -> tuple[ClientCase, uuid.UUID]:
+    """A case running a one-step journey, that step DONE or still open."""
+    template = (await rem_client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    await rem_client.post(
+        f"/journeys/{template['id']}/steps", headers=headers, json={"name": "Passeport"}
+    )
+    case = await make_client_case(agency_id=agent.agency_id)
+    await rem_client.post(
+        f"/cases/{case.id}/journey",
+        headers=headers,
+        json={"journey_template_id": template["id"]},
+    )
+    progress_id = (
+        await db_session.execute(
+            select(CaseStepProgress.id).where(CaseStepProgress.case_id == case.id)
+        )
+    ).scalar_one()
+    if done:
+        await db_session.execute(
+            update(CaseStepProgress).where(CaseStepProgress.id == progress_id).values(status="done")
+        )
+        await db_session.commit()
+    return case, progress_id
+
+
+async def test_bulk_approve_clears_the_backlog_and_nothing_else(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le miroir de bulk-cancel : l'agence qui veut que son passif PARTE.
+    Seuls les rappels de SON agence encore `to_approve` bougent ; un déjà
+    approuvé, un envoyé, un id étranger sont ignorés — sans 404 qui
+    confirmerait leur existence."""
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    waiting = [await make_reminder(case=case, status="to_approve") for _ in range(3)]
+    already_approved = await make_reminder(case=case, status="approved")
+    already_sent = await make_reminder(case=case, status="sent")
+
+    other_agency = await make_agency()
+    other_agent = await make_agent(agency_id=other_agency.id, role=system_roles["case_manager"])
+    other_case = await make_client_case(agency_id=other_agency.id)
+    foreign = await make_reminder(case=other_case, status="to_approve")
+
+    ids = [str(r.id) for r in (*waiting, already_approved, already_sent, foreign)]
+    response = await rem_client.post(
+        "/reminders/bulk-approve",
+        headers=agent_headers(manager_agent),
+        json={"reminder_ids": ids},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"examined": 6, "affected": 3, "skipped_step_done": 0}
+
+    for reminder in waiting:
+        await db_session.refresh(reminder)
+        assert reminder.status == "approved"
+        assert reminder.approved_by_agent_id == manager_agent.id  # qui a engagé l'agence
+    await db_session.refresh(already_sent)
+    assert already_sent.status == "sent"  # un envoi ne se ré-approuve pas
+    await db_session.refresh(foreign)
+    assert foreign.status == "to_approve"  # l'autre agence, intouchée
+    assert other_agent.agency_id == other_agency.id
+
+    # La trace reste PAR rappel — pas de trou « 3 rappels sont partis ».
+    logs = (
+        (
+            await db_session.execute(
+                select(ActivityLog).where(ActivityLog.action_type == "reminder.approved")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(logs) == 3
+    assert all(log.details["bulk"] is True for log in logs)
+    assert all(log.details["approved_by"] == str(manager_agent.id) for log in logs)
+
+
+async def test_bulk_approve_skips_the_reminders_whose_step_is_done(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LES 7 CAS DU CONSTAT : une relance « votre étape n'a pas progressé »
+    sur une étape TERMINÉE est fausse, pas seulement tardive. En masse on
+    l'écarte — et on le DIT (`skipped_step_done`) : le lot de 85 ne doit pas
+    échouer en bloc parce que 7 étapes ont été validées entre-temps."""
+    headers = agent_headers(manager_agent)
+    live_case, live_step = await _case_with_one_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, done=False
+    )
+    done_case, done_step = await _case_with_one_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, done=True
+    )
+    on_live_step = await make_reminder(
+        case=live_case, status="to_approve", step_progress_id=live_step
+    )
+    unlinked = await make_reminder(case=live_case, status="to_approve")
+    on_done_step = await make_reminder(
+        case=done_case, status="to_approve", step_progress_id=done_step
+    )
+
+    response = await rem_client.post(
+        "/reminders/bulk-approve",
+        headers=headers,
+        json={"reminder_ids": [str(on_live_step.id), str(unlinked.id), str(on_done_step.id)]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"examined": 3, "affected": 2, "skipped_step_done": 1}
+
+    await db_session.refresh(on_live_step)
+    assert on_live_step.status == "approved"
+    await db_session.refresh(unlinked)
+    assert unlinked.status == "approved"  # sans étape liée, rien ne prétend qu'elle stagne
+    await db_session.refresh(on_done_step)
+    assert on_done_step.status == "to_approve"  # écartée, pas annulée : bulk-cancel la solde
+    assert on_done_step.approved_by_agent_id is None
+
+
+async def test_unit_approve_refuses_a_reminder_whose_step_is_done(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    agent_headers: AuthHeaders,
+) -> None:
+    """À l'unité, la même règle REFUSE (409) : un geste explicite mérite une
+    réponse explicite, pas un silence. Détacher l'étape rouvre la porte."""
+    headers = agent_headers(manager_agent)
+    case, done_step = await _case_with_one_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, done=True
+    )
+    reminder = await make_reminder(case=case, status="to_approve", step_progress_id=done_step)
+
+    refused = await rem_client.post(f"/reminders/{reminder.id}/approve", headers=headers)
+    assert refused.status_code == 409, refused.text
+    assert "already done" in refused.json()["detail"]
+    await db_session.refresh(reminder)
+    assert reminder.status == "to_approve"
+
+    # L'échappatoire nommée par le message : détacher l'étape.
+    unlinked = await rem_client.patch(
+        f"/reminders/{reminder.id}", headers=headers, json={"step_progress_id": None}
+    )
+    assert unlinked.status_code == 200, unlinked.text
+    approved = await rem_client.post(f"/reminders/{reminder.id}/approve", headers=headers)
+    assert approved.status_code == 200, approved.text
+
+
+async def test_dispatch_cancels_instead_of_sending_on_a_done_step(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    agent_headers: AuthHeaders,
+) -> None:
+    """LE dernier chemin. Le régime par défaut crée les relances auto déjà
+    APPROUVÉES : si l'étape est validée entre la création et l'échéance, le
+    dispatch est le seul endroit qui peut encore l'attraper. Il ANNULE plutôt
+    que d'envoyer — laisser la ligne « due » la ferait rejouer à chaque tick,
+    la file morte dont on vient de sortir."""
+    headers = agent_headers(manager_agent)
+    case, done_step = await _case_with_one_step(
+        rem_client, db_session, manager_agent, make_client_case, headers, done=True
+    )
+    false_one = await make_reminder(
+        case=case, status="approved", scheduled_at=_PAST, step_progress_id=done_step
+    )
+    still_true = await make_reminder(case=case, status="approved", scheduled_at=_PAST)
+
+    stats = _run_dispatch(sync_session_local)
+    assert stats == {"due": 2, "sent": 1, "skipped_step_done": 1}
+    assert len(email.outbox) == 1  # l'autre est bien partie
+
+    await db_session.refresh(false_one)
+    assert false_one.status == "cancelled"
+    await db_session.refresh(still_true)
+    assert still_true.status == "sent"
+
+    # Rien ne disparaît en silence : la trace dit POURQUOI.
+    log = (
+        await db_session.execute(
+            select(ActivityLog).where(ActivityLog.action_type == "reminder.cancelled")
+        )
+    ).scalar_one()
+    assert log.actor_type == "system"
+    assert log.details == {"reminder_id": str(false_one.id), "reason": "step_done"}
+
+    # Et le tick suivant ne la rejoue pas.
+    assert _run_dispatch(sync_session_local) == {"due": 0, "sent": 0, "skipped_step_done": 0}
+
+
+async def test_bulk_approve_is_gated_like_the_unit_approve_not_like_the_cancel(
+    rem_client: AsyncClient,
+    make_agent: MakeAgent,
+    make_role: MakeRole,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """La porte du lot n'est pas une porte dérobée : approuver 85, c'est
+    approuver. Un agent qui ÉCRIT et ANNULE les rappels (reminder.create)
+    mais n'a pas reminder.approve est refusé sur bulk-approve — et passe sur
+    bulk-cancel, la preuve que c'est bien la gate qui parle."""
+    viewer = await make_agent(role=system_roles["viewer"])
+    refused = await rem_client.post(
+        "/reminders/bulk-approve",
+        headers=agent_headers(viewer),
+        json={"reminder_ids": [str(uuid.uuid4())]},
+    )
+    assert refused.status_code == 403, refused.text
+
+    writer_role = await make_role(permissions=[Permission.CASE_VIEW, Permission.REMINDER_CREATE])
+    writer = await make_agent(role=writer_role)
+    body = {"reminder_ids": [str(uuid.uuid4())]}
+    assert (
+        await rem_client.post("/reminders/bulk-approve", headers=agent_headers(writer), json=body)
+    ).status_code == 403
+    assert (
+        await rem_client.post("/reminders/bulk-cancel", headers=agent_headers(writer), json=body)
+    ).status_code == 200

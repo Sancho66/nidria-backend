@@ -100,3 +100,28 @@ class ReminderBulkCancelRequest(BaseModel):
 class ReminderBulkCancelResponse(BaseModel):
     examined: int
     affected: int
+
+
+class ReminderBulkApproveRequest(BaseModel):
+    """Approbation en masse — le miroir exact de l'annulation : mêmes bornes
+    (1..500 ids explicites), même silence sur ce qui n'est pas approuvable
+    (id d'une autre agence, rappel déjà approuvé, envoyé ou annulé).
+
+    UNE règle en plus, qui n'existe pas côté annulation : un rappel dont
+    l'ÉTAPE CIBLE est terminée n'est pas approuvé. « Votre étape n'a pas
+    progressé » sur une étape validée est faux, pas seulement tardif (7 des
+    85 relances en attente chez domiciliation-bulgarie au constat du 13/08).
+    En masse on l'ignore — mais jamais en silence : `skipped_step_done` le
+    compte à part, l'écran peut le dire. À l'unité, `POST /reminders/{id}/
+    approve` REFUSE (409) : un geste explicite mérite une réponse explicite."""
+
+    reminder_ids: list[uuid.UUID] = Field(min_length=1, max_length=_BULK_MAX_IDS)
+
+
+class ReminderBulkApproveResponse(BaseModel):
+    examined: int
+    affected: int
+    # Toujours présent, 0 compris (même discipline que `skipped_no_client_space`
+    # du job auto) : une clé qui n'apparaît que quand elle se déclenche se lit
+    # comme une anomalie.
+    skipped_step_done: int

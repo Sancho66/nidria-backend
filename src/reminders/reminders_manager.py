@@ -16,6 +16,7 @@ from src.core.enums import (
     RecipientType,
     ReminderChannel,
     ReminderStatus,
+    StepStatus,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.reminders.reminders_repository import RemindersRepository
@@ -32,6 +33,18 @@ from src.usage.usage_manager import UsageManager
 logger = logging.getLogger(__name__)
 
 _VARIABLE_PATTERN = re.compile(r"\{(client_name|step_name|days_left)\}")
+
+# A reminder pinned on a step that is DONE is FALSE, not merely late: its whole
+# point is « votre étape n'a pas progressé ». The rule lives here, at the back,
+# on EVERY path that leads to a send — unit approve (refuse, below), bulk
+# approve (ignore + count), and the dispatch itself (skip + cancel, see
+# reminders_jobs). The front already filters the selection; the back must not
+# depend on it. Constat du 13/08: 7 of the 85 reminders waiting at
+# domiciliation-bulgarie aimed at a step since completed.
+_STEP_DONE_REFUSAL = (
+    "This reminder targets a step that is already done — a follow-up saying the "
+    "step has not progressed would be false. Unlink the step or cancel the reminder."
+)
 
 
 class RemindersManager:
@@ -224,6 +237,15 @@ class RemindersManager:
             raise NotFoundError("Reminder not found.")
         return reminder
 
+    async def _targets_a_done_step(self, reminder: Reminder) -> bool:
+        """True when the reminder is pinned on a step already validated. A
+        reminder without a linked step (a free note, a generic follow-up) is
+        never concerned — nothing claims a step stalled."""
+        if reminder.step_progress_id is None:
+            return False
+        progress = await self.repo.get_progress_in_case(reminder.case_id, reminder.step_progress_id)
+        return progress is not None and progress.status == StepStatus.DONE.value
+
     async def list_reminders(
         self, agent: Agent, filters: dict[str, Any], page: int, page_size: int
     ) -> tuple[list[Reminder], int]:
@@ -344,6 +366,11 @@ class RemindersManager:
         reminder = await self.get_reminder(agent, reminder_id)
         if reminder.status != ReminderStatus.TO_APPROVE.value:
             raise ConflictError("Only to_approve reminders can be approved.")
+        # One reminder, one explicit gesture → an explicit answer (409). In
+        # bulk the same rule ignores instead, and says how many (the batch of
+        # 85 must not fail because 7 of its steps got validated meanwhile).
+        if await self._targets_a_done_step(reminder):
+            raise ConflictError(_STEP_DONE_REFUSAL)
         reminder.status = ReminderStatus.APPROVED.value
         reminder.approved_by_agent_id = agent.id
         self._log(
@@ -356,6 +383,46 @@ class RemindersManager:
         await self.db.refresh(reminder)
         return reminder
 
+    async def bulk_approve(
+        self, agent: Agent, reminder_ids: list[uuid.UUID]
+    ) -> tuple[int, int, int]:
+        """Approve a batch in ONE gesture — the mirror of bulk_cancel for the
+        agency that reads its backlog and wants it to LEAVE. Same bounds, same
+        silence on what is not approvable (another agency's ids, a reminder
+        already approved / sent / cancelled): `affected` says what moved.
+
+        THE ONE ASYMMETRY: a reminder whose target step is DONE is NOT
+        approved. It is counted apart in `skipped_step_done` — ignored, never
+        in silence — because a batch of 85 must not be rejected wholesale for
+        the 7 whose step got validated in the meantime. They stay TO_APPROVE:
+        bulk-cancel is the gesture that clears them.
+
+        Each approval is logged exactly like the unit one — the trace stays
+        per-reminder, no « 85 rappels sont partis » hole in the history."""
+        rows = await self.repo.list_bulk_targets_in_agency(
+            agent.agency_id, reminder_ids, [ReminderStatus.TO_APPROVE.value]
+        )
+        done_steps = await self.repo.done_progress_ids(
+            [r.step_progress_id for r in rows if r.step_progress_id is not None]
+        )
+        approved = 0
+        skipped_step_done = 0
+        for reminder in rows:
+            if reminder.step_progress_id in done_steps:
+                skipped_step_done += 1
+                continue
+            reminder.status = ReminderStatus.APPROVED.value
+            reminder.approved_by_agent_id = agent.id
+            self._log(
+                reminder.case_id,
+                agent,
+                "reminder.approved",
+                {"reminder_id": str(reminder.id), "approved_by": str(agent.id), "bulk": True},
+            )
+            approved += 1
+        await self.db.commit()
+        return len(reminder_ids), approved, skipped_step_done
+
     async def bulk_cancel(self, agent: Agent, reminder_ids: list[uuid.UUID]) -> tuple[int, int]:
         """Cancel a batch in ONE gesture — the way out of an approval backlog
         that piled up (97 rows in prod at the 13/08 constat, the oldest 17 days
@@ -364,7 +431,7 @@ class RemindersManager:
 
         Each cancellation is logged exactly like the unit one: the trace stays
         per-reminder, no « 85 rappels ont disparu » hole in the history."""
-        rows = await self.repo.list_cancellable_in_agency(
+        rows = await self.repo.list_bulk_targets_in_agency(
             agent.agency_id,
             reminder_ids,
             [ReminderStatus.TO_APPROVE.value, ReminderStatus.APPROVED.value],

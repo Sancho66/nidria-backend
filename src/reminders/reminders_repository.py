@@ -15,6 +15,7 @@ from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplateStep
 from shared.models.message_template import MessageTemplate
 from shared.models.reminder import Reminder
+from src.core.enums import StepStatus
 
 
 class RemindersRepository:
@@ -146,11 +147,12 @@ class RemindersRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def list_cancellable_in_agency(
+    async def list_bulk_targets_in_agency(
         self, agency_id: uuid.UUID, reminder_ids: list[uuid.UUID], statuses: list[str]
     ) -> list[Reminder]:
-        """The rows a bulk cancel may touch: THIS agency's, in a cancellable
-        status. Ids of another agency simply do not come back — the caller
+        """The rows a bulk gesture may touch — cancel (to_approve, approved)
+        and approve (to_approve) share it: THIS agency's, in one of the given
+        statuses. Ids of another agency simply do not come back — the caller
         reports `affected`, never a 404 that would confirm their existence."""
         stmt = (
             select(Reminder)
@@ -163,6 +165,18 @@ class RemindersRepository:
             )
         )
         return list((await self.db.execute(stmt)).scalars())
+
+    async def done_progress_ids(self, progress_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+        """Which of these step-progress rows are DONE. ONE query for the whole
+        batch — a 500-id bulk must not become 500 round-trips. BLOCKED being a
+        read-time projection, `done` is the only stored terminal status."""
+        if not progress_ids:
+            return set()
+        stmt = select(CaseStepProgress.id).where(
+            CaseStepProgress.id.in_(progress_ids),
+            CaseStepProgress.status == StepStatus.DONE.value,
+        )
+        return set((await self.db.execute(stmt)).scalars())
 
     async def list_reminders(
         self,

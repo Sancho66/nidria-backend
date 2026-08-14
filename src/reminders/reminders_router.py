@@ -16,6 +16,8 @@ from src.reminders.reminders_schema import (
     MessageTemplateCreateRequest,
     MessageTemplateResponse,
     MessageTemplateUpdateRequest,
+    ReminderBulkApproveRequest,
+    ReminderBulkApproveResponse,
     ReminderBulkCancelRequest,
     ReminderBulkCancelResponse,
     ReminderCreateRequest,
@@ -49,6 +51,10 @@ BINDINGS = [
     # "bulk-cancel" is never read as a reminder id. Same gate as the unit
     # cancel: cancelling 85 is cancelling, not a new power.
     RouteBinding("POST", "/reminders/bulk-cancel", Audience.AGENT, _CREATE),
+    # Same literal-before-{id} rule, and the gate of the UNIT approve, not the
+    # cancel one: approving 85 is approving — reminder.approve, never a power
+    # an agent could gain just by going through the bulk door.
+    RouteBinding("POST", "/reminders/bulk-approve", Audience.AGENT, Permission.REMINDER_APPROVE),
     RouteBinding("POST", "/reminders/{reminder_id}/mark-sent", Audience.AGENT, _CREATE),
 ]
 
@@ -157,6 +163,21 @@ async def bulk_cancel_reminders(
     `affected` dit ce qui a bougé."""
     examined, affected = await RemindersManager(db).bulk_cancel(agent, body.reminder_ids)
     return ReminderBulkCancelResponse(examined=examined, affected=affected)
+
+
+@router.post("/reminders/bulk-approve", response_model=ReminderBulkApproveResponse)
+async def bulk_approve_reminders(
+    body: ReminderBulkApproveRequest, agent: AgentDep, db: DbDep
+) -> ReminderBulkApproveResponse:
+    """Approuver en masse (jusqu'à 500 ids) — le miroir de bulk-cancel pour
+    l'agence qui veut que son passif PARTE. Ids d'une autre agence ou rappels
+    qui ne sont plus `to_approve` : ignorés. Un rappel dont l'étape cible est
+    TERMINÉE n'est pas approuvé et se compte dans `skipped_step_done` : la
+    relance serait fausse, et le lot entier ne doit pas échouer pour ça."""
+    examined, affected, skipped = await RemindersManager(db).bulk_approve(agent, body.reminder_ids)
+    return ReminderBulkApproveResponse(
+        examined=examined, affected=affected, skipped_step_done=skipped
+    )
 
 
 @router.post("/reminders/{reminder_id}/approve", response_model=ReminderResponse)
