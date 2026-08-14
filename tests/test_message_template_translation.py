@@ -585,3 +585,97 @@ async def test_estimate_with_retranslate_matches_the_job_charge(
     assert job["langs"] == est["langs"]
     assert job["points_charged"] == 2 * POINTS_PER_CALL
     assert job["template_id"] is None and job["message_template_id"] == tid
+
+
+# --- l'édition manuelle des variantes (complément 14/08) ----------------------------
+
+
+async def test_partial_blob_patch_never_wipes_a_sibling_language(
+    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+) -> None:
+    """LE défaut que le complément ferme : le PATCH du blob était un
+    remplacement — deux langues éditées successivement s'écrasaient. C'est
+    désormais une FUSION par langue : clé présente écrite, valeur vide
+    effacée, clé absente intouchée."""
+    headers = agent_headers(admin)
+    tid = await _template(client, headers)
+
+    first = await client.patch(
+        f"/message-templates/{tid}",
+        headers=headers,
+        json={"body_i18n": {"es": "Hola {client_name}."}},
+    )
+    assert first.status_code == 200, first.text
+    second = await client.patch(
+        f"/message-templates/{tid}",
+        headers=headers,
+        json={"body_i18n": {"en": "Hello {client_name}."}},
+    )
+    assert second.status_code == 200, second.text
+    blob = second.json()["body_i18n"]
+    # La seconde édition n'a PAS emporté la première.
+    assert blob["es"] == "Hola {client_name}." and blob["en"] == "Hello {client_name}."
+
+    # La valeur vide EFFACE — et elle seule.
+    cleared = await client.patch(
+        f"/message-templates/{tid}", headers=headers, json={"body_i18n": {"es": ""}}
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert "es" not in cleared.json()["body_i18n"]
+    assert cleared.json()["body_i18n"]["en"] == "Hello {client_name}."
+    # Le corps source n'a jamais bougé pendant tout ça.
+    assert cleared.json()["body"] == SOURCE_BODY
+
+
+async def test_a_hand_written_variant_is_born_locked(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    fake_provider: dict[str, Any],
+) -> None:
+    """Écrite à la main via le PATCH partiel, la variante ressort
+    VERROUILLÉE sans geste supplémentaire : pas de trace IA, donc ni le
+    remplissage global ni include_stale ne la touchent — seul le
+    consentement explicite par langue l'écrase."""
+    headers = agent_headers(admin)
+    tid = await _template(client, headers)
+    hand = "Hola {client_name}, ¿alguna novedad? (escrito a mano)"
+    assert (
+        await client.patch(
+            f"/message-templates/{tid}", headers=headers, json={"body_i18n": {"es": hand}}
+        )
+    ).status_code == 200
+
+    # 1. La traduction GLOBALE remplit les autres langues, pas celle-là.
+    assert (
+        await client.post(f"/message-templates/{tid}/translate", headers=headers, json={})
+    ).status_code == 202
+    db_session.expire_all()
+    template = await db_session.get(MessageTemplate, uuid.UUID(tid))
+    assert template is not None
+    assert template.body_i18n["es"] == hand
+    assert template.body_i18n["en"].startswith("[en] ")
+
+    # 2. include_stale non plus : sans trace IA, elle n'est jamais « stale ».
+    started = await client.post(
+        f"/message-templates/{tid}/translate", headers=headers, json={"include_stale": True}
+    )
+    assert started.status_code in (202, 409)  # 409 = plus rien à envoyer, tant mieux
+    db_session.expire_all()
+    template = await db_session.get(MessageTemplate, uuid.UUID(tid))
+    assert template is not None
+    assert template.body_i18n["es"] == hand
+
+    # 3. Seul le consentement EXPLICITE par langue l'écrase.
+    assert (
+        await client.post(
+            f"/message-templates/{tid}/translate",
+            headers=headers,
+            json={"retranslate_langs": ["es"]},
+        )
+    ).status_code == 202
+    db_session.expire_all()
+    template = await db_session.get(MessageTemplate, uuid.UUID(tid))
+    assert template is not None
+    assert template.body_i18n["es"].startswith("[es] ")

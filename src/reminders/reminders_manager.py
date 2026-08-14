@@ -168,12 +168,31 @@ class RemindersManager:
         if "body" in patch or "body_i18n" in patch:
             agency = await self.repo.get_agency(agent.agency_id)
             default_lang = (agency.default_language if agency else "fr") or "fr"
+            blob_patch = patch.pop("body_i18n", None)
+            scalar_in = patch.pop("body", None)
+            # ÉCRITURE PARTIELLE PAR LANGUE (complément 14/08) : le blob du
+            # PATCH est une FUSION, jamais un remplacement — deux langues
+            # éditées successivement ne s'écrasent pas. Clé présente = la
+            # variante s'écrit ; valeur vide = elle s'efface ; clé absente =
+            # intouchée. C'est une divergence ASSUMÉE d'avec les parcours
+            # (remplacement complet) : ici l'agence édite langue par langue
+            # dans un éditeur, pas blob par blob.
+            #
+            # Précédence quand `body` et `body_i18n[défaut]` arrivent
+            # ensemble : la clé la plus SPÉCIFIQUE gagne — le scalaire pose
+            # la variante par défaut d'abord, le blob peut la préciser.
+            merged: dict[str, str] | None = None
+            if blob_patch is not None:
+                merged = dict(template.body_i18n or {})
+                if scalar_in:
+                    merged[default_lang] = scalar_in
+                for lang, value in blob_patch.items():
+                    if value and value.strip():
+                        merged[lang] = value.strip()
+                    else:
+                        merged.pop(lang, None)
             scalar, blob = apply_i18n_write(
-                patch.pop("body_i18n", None),
-                patch.pop("body", None),
-                default_lang,
-                template.body,
-                template.body_i18n,
+                merged, scalar_in, default_lang, template.body, template.body_i18n
             )
             template.body = scalar or template.body
             template.body_i18n = blob

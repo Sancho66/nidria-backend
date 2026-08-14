@@ -52,10 +52,13 @@ class MessageTemplateUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1)
-    # Variantes : PATCH par remplacement du blob (apply_i18n_write côté
-    # manager garde le scalaire en phase avec la variante par défaut). Une
-    # variante corrigée à la main est protégée de l'IA par la mémoire de
-    # hachés — sa sortie ne correspond plus, elle n'est jamais « stale ».
+    # Variantes : PATCH par FUSION PARTIELLE, langue par langue (complément
+    # 14/08) — clé présente = écrite, valeur vide = effacée, clé absente =
+    # intouchée ; deux langues éditées successivement ne s'écrasent jamais.
+    # Le scalaire reste en phase avec la variante par défaut. Une variante
+    # écrite ou corrigée à la main ressort VERROUILLÉE sans geste
+    # supplémentaire : pas de trace IA (ou une sortie qui a dérivé) = jamais
+    # retraduite, sauf `retranslate_langs` explicite.
     body_i18n: I18nBlob | None = None
     language: Language | None = None
     channel: ReminderChannel | None = None
