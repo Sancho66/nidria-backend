@@ -89,7 +89,14 @@ async def test_every_profile_field_is_a_token_resolved_on_the_client_screen(
         client, admin.agency_id, make_expat_user, make_client_case, expat_headers
     )
     assert "{" not in content and "}" not in content
-    for value in LEGAL_PROFILE.values():
+    for name, value in LEGAL_PROFILE.items():
+        if name == "country":
+            # LE SEUL jeton dont la valeur RENDUE diffère de la valeur
+            # STOCKÉE (lot « le pays », 14/08) : la colonne tient un code ISO,
+            # le client lit un NOM, dans la langue du document. Un texte légal
+            # nomme un pays, il n'imprime pas un code.
+            assert "(France)" in content and "(FR)" not in content
+            continue
         assert value in content
     # Le nom commercial reste résolu comme avant (non-régression).
     agency_name = (await client.get("/agencies/me", headers=headers)).json()["name"]

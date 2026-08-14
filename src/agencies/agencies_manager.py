@@ -52,6 +52,7 @@ from src.consents.consents_seed import (
 )
 from src.core import storage
 from src.core.config import get_settings
+from src.core.countries import normalize as normalize_country
 from src.core.currencies import default_currency_for_language
 from src.core.email import PendingEmail, send_email
 from src.core.email_templates import agent_invitation_email, password_reset_email
@@ -234,6 +235,26 @@ class AgenciesManager:
             if raw not in seen:
                 seen.append(raw)
         return seen
+
+    @staticmethod
+    def _validate_country(country: str | None) -> str | None:
+        """ISO 3166-1 alpha-2 RÉEL, casse normalisée (« fr » → « FR »), sinon
+        422 nommé. None = champ absent du PATCH, donc inchangé.
+
+        La garde vit AU BACK et non à l'écran : l'API est appelable par un
+        client tiers, et la valeur finit dans un texte légal servi — un
+        « ZZ » accepté s'y lirait tel quel. Même forme que _validate_sectors
+        (un vocabulaire contrôlé, un code d'erreur nommé)."""
+        if country is None:
+            return None
+        code = normalize_country(country)
+        if code is None:
+            raise ValidationError(
+                f"Unknown ISO 3166-1 alpha-2 country code {country!r}.",
+                code="agency.country_invalid",
+                params={"country": country.strip()},
+            )
+        return code
 
     async def create_agency(self, superadmin: Agent, payload: AgencyCreateRequest) -> AgencyCreated:
         """Create an agency + its first admin ATOMICALLY, then stage one
@@ -1098,6 +1119,11 @@ class AgenciesManager:
             # default reconverts NOTHING and is always allowed — the old
             # cost.currency_change_forbidden guard is gone.
             agency.currency = payload.currency
+        # Le pays est une valeur CONTRÔLÉE, pas deux caractères : validé et
+        # normalisé avant tout (une casse refusée à l'écriture plutôt qu'un
+        # code muet dans un texte légal). Levé ici, donc AVANT toute mutation :
+        # un PATCH au pays invalide ne doit rien écrire du tout.
+        country = self._validate_country(payload.country)
         # Legal identity (lot 13/08). Capture what the template WOULD produce
         # from the current profile BEFORE mutating — so regeneration can tell
         # an untouched template from an edited one. None = leave untouched.
@@ -1118,7 +1144,9 @@ class AgenciesManager:
             # il régénère le modèle non encore validé (segment « joignable »).
             "contact_phone",
         ):
-            value = getattr(payload, field)
+            # Le pays entre par sa garde (ISO + casse normalisée) ; ses
+            # voisines sont des textes libres, bornés au schéma.
+            value = country if field == "country" else getattr(payload, field)
             if value is not None and getattr(agency, field) != value:
                 setattr(agency, field, value)
                 legal_changed = True

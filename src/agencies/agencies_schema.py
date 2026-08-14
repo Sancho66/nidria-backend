@@ -507,6 +507,11 @@ class AgencyUpdateRequest(BaseModel):
     address: str | None = Field(default=None, max_length=255)
     city: str | None = Field(default=None, max_length=100)
     postal_code: str | None = Field(default=None, max_length=20)
+    # ISO 3166-1 alpha-2, casse indifférente à l'envoi (« fr » est stocké
+    # « FR »). La liste de référence est vérifiée dans le manager, qui refuse
+    # un code inexistant par un 422 nommé `agency.country_invalid` — la
+    # longueur seule laissait passer « ZZ », qu'un client lisait ensuite tel
+    # quel dans les conditions générées.
     country: str | None = Field(default=None, max_length=2)
     contact_email: NormalizedEmailStr | None = None
     # Volontairement PAS de validation de format : les numéros

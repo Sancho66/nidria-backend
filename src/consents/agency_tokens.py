@@ -30,6 +30,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from shared.models.agency import Agency
+from src.core.countries import country_name
+from src.core.i18n import DEFAULT_LANG
+
+# THE language the client documents are WRITTEN IN — the canonical Nidria
+# texts (consents_texts) and the generated agency model (agency_template) are
+# both French prose. It is what a rendered value is localized into: a country
+# name inside a French sentence is French. The day those texts come in several
+# languages, this is the knob the renderers take from their document instead
+# of from here — hence the `lang` parameter carried down to `_value`.
+DOCUMENT_LANG = DEFAULT_LANG
 
 # What a token LOOKS like when we hunt one to SIGNAL: anything brace-wrapped
 # on a single line. Deliberately WIDER than the catalogue names, so a typo
@@ -47,6 +57,11 @@ class TokenSpec:
     name: str
     label: str
     read: Callable[[Agency], str | None]
+    # Applied to the read value AT RENDER, with the document's language:
+    # what is STORED and what is READ are not the same string. Only the
+    # country needs one today — the column holds a code, the document owes
+    # its reader a name.
+    localize: Callable[[str, str], str | None] | None = None
 
 
 CATALOGUE: tuple[TokenSpec, ...] = (
@@ -63,9 +78,11 @@ CATALOGUE: tuple[TokenSpec, ...] = (
     TokenSpec("address", "votre adresse", lambda agency: agency.address),
     TokenSpec("postal_code", "votre code postal", lambda agency: agency.postal_code),
     TokenSpec("city", "votre ville", lambda agency: agency.city),
-    # Stored ISO 3166-1 alpha-2: renders «FR», exactly as the generated
-    # identity sentence already does.
-    TokenSpec("country", "votre pays", lambda agency: agency.country),
+    # Stored ISO 3166-1 alpha-2, RENDERED as the country's name in the
+    # language of the document: a client reads « Paraguay », never « PY ».
+    # Case-insensitive by construction, so a row holding a lowercase « fr »
+    # renders « France » without waiting for a data fix.
+    TokenSpec("country", "votre pays", lambda agency: agency.country, localize=country_name),
     TokenSpec("contact_email", "votre email de contact", lambda agency: agency.contact_email),
     TokenSpec("contact_phone", "votre téléphone de contact", lambda agency: agency.contact_phone),
 )
@@ -73,13 +90,18 @@ CATALOGUE: tuple[TokenSpec, ...] = (
 _BY_NAME: dict[str, TokenSpec] = {spec.name: spec for spec in CATALOGUE}
 
 
-def _value(spec: TokenSpec, agency: Agency) -> str | None:
-    """The trimmed value if it carries content, else None (« non renseigné »)."""
+def _value(spec: TokenSpec, agency: Agency, lang: str = DOCUMENT_LANG) -> str | None:
+    """The trimmed value if it carries content, else None (« non renseigné »),
+    localized for the tokens that own a renderer. An empty field stays empty:
+    localization dresses a value, it never invents one."""
     raw = spec.read(agency)
-    return raw.strip() if raw and raw.strip() else None
+    value = raw.strip() if raw and raw.strip() else None
+    if value is not None and spec.localize is not None:
+        return spec.localize(value, lang)
+    return value
 
 
-def resolve(content: str, agency: Agency) -> str:
+def resolve(content: str, agency: Agency, lang: str = DOCUMENT_LANG) -> str:
     """Every KNOWN token replaced by its current value; everything else left
     exactly as written. THE read-time resolution — the client screen, the
     pending payloads and the edition preview all go through here, so they
@@ -87,7 +109,7 @@ def resolve(content: str, agency: Agency) -> str:
     for spec in CATALOGUE:
         placeholder = "{" + spec.name + "}"
         if placeholder in content:
-            content = content.replace(placeholder, _value(spec, agency) or "")
+            content = content.replace(placeholder, _value(spec, agency, lang) or "")
     return content
 
 
@@ -122,7 +144,9 @@ def unfilled_tokens(agency: Agency, *contents: str | None) -> list[str]:
     ]
 
 
-def token_values(agency: Agency) -> list[tuple[str, str, str | None]]:
+def token_values(agency: Agency, lang: str = DOCUMENT_LANG) -> list[tuple[str, str, str | None]]:
     """The catalogue as (name, label, current value) — what the contract
-    serves so the front guesses no list. None = « non renseigné »."""
-    return [(spec.name, spec.label, _value(spec, agency)) for spec in CATALOGUE]
+    serves so the front guesses no list. None = « non renseigné ». The value
+    is the RENDERED one (the country as its name), because the point of the
+    list is to show the agency what its clients read."""
+    return [(spec.name, spec.label, _value(spec, agency, lang)) for spec in CATALOGUE]

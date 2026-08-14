@@ -22,6 +22,8 @@ inside the text shown to the client.
 """
 
 from shared.models.agency import Agency
+from src.consents.agency_tokens import DOCUMENT_LANG
+from src.core.countries import country_name
 
 # Shown at edition (Settings), NEVER inside the client-facing document.
 RESPONSIBILITY_DISCLAIMER = (
@@ -57,13 +59,17 @@ def missing_legal_fields(agency: Agency) -> list[str]:
 
 
 def _address(agency: Agency) -> str | None:
+    """The seat as an ADDRESS LINE, so its last part is a country NAME in the
+    language of the document — « Asunción, Paraguay », not « Asunción, PY ».
+    The column keeps the ISO code (what a selector and a filter want); only
+    this rendering resolves it, which also covers a legacy lowercase code."""
     present = [
         part
         for part in (
             _f(agency.address),
             _f(agency.postal_code),
             _f(agency.city),
-            _f(agency.country),
+            country_name(agency.country, DOCUMENT_LANG),
         )
         if part
     ]
