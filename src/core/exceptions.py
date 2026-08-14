@@ -26,6 +26,15 @@ Naming convention:
   ("not_found", "conflict", "validation_error"…): the pre-i18n
   behaviour, migrated domain by domain (wave 1: imports, journeys,
   cases; the rest keeps the category default until its wave).
+
+EVERY subclass declares its OWN `code`. That is not a style rule, it is a
+guard: on 2026-07-17, `TooManyRequestsError` was inserted BETWEEN
+`ValidationError`'s `status_code` and its `code` line, and silently adopted
+it — for 28 days a 422 answered "internal_error" while a 429 answered
+"validation_error". Nothing broke visibly (no consumer reads a dotless
+code), which is exactly why it survived. `test_error_codes` now refuses a
+subclass that inherits the internal_error default, and refuses two
+subclasses sharing a code.
 """
 
 from typing import Any
@@ -89,11 +98,12 @@ class UnsupportedMediaTypeError(NidriaError):
 
 class ValidationError(NidriaError):
     status_code = 422
+    code = "validation_error"
 
 
 class TooManyRequestsError(NidriaError):
     status_code = 429
-    code = "validation_error"
+    code = "too_many_requests"
 
 
 class UpstreamError(NidriaError):

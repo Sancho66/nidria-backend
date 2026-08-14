@@ -19,6 +19,11 @@ from httpx import AsyncClient
 from shared.models.agent import Agent
 from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
+from src.core.exceptions import (
+    NidriaError,
+    TooManyRequestsError,
+    ValidationError,
+)
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.journey_plugin import MakeJourneyTemplate
 
@@ -175,3 +180,78 @@ async def test_import_mapping_invalid_import_stage_params(
         "missing_columns": ["Ghost"],
         "missing_identity": ["last_name"],
     }
+
+
+# --- l'invariant du catalogue de catégories (correctif 14/08) -------------------------
+#
+# Le 17/07, `TooManyRequestsError` a été inséré ENTRE le `status_code` et le
+# `code` de `ValidationError` et a adopté sa ligne. Pendant 28 jours un 422
+# a répondu « internal_error » et un 429 « validation_error ». Rien n'a
+# cassé visiblement — aucun consommateur ne lit un code sans point — donc
+# rien ne l'a signalé. Les témoins ci-dessous rendent la répétition
+# impossible : ils raisonnent sur les CLASSES, pas sur un endpoint.
+#
+# ILS DISTINGUENT DEUX CHOSES, et cette nuance est le fond du sujet :
+#   — le CATALOGUE de catégories (les classes de `src.core.exceptions`) doit
+#     couvrir chaque statut par un code propre et distinct ;
+#   — une erreur de DOMAINE qui hérite d'une catégorie (par ex.
+#     `SignatureCreditsInsufficientError(ConflictError)`) n'a AUCUNE raison
+#     de redéclarer un code de classe : elle passe le sien par instance
+#     (`signatures.credits_insufficient`) et hérite `conflict` comme repli.
+#     C'est le patron décrit par le docstring du module, pas un défaut.
+# Ce qui est INTERDIT dans les deux cas, c'est de finir sur `internal_error` :
+# une erreur métier qui se déclare panne serveur ment sur sa nature.
+
+
+def _error_classes() -> list[type[NidriaError]]:
+    """Toutes les sous-classes déclarées de NidriaError, récursivement."""
+    seen: list[type[NidriaError]] = []
+
+    def walk(cls: type[NidriaError]) -> None:
+        for sub in cls.__subclasses__():
+            if sub not in seen:
+                seen.append(sub)
+                walk(sub)
+
+    walk(NidriaError)
+    return seen
+
+
+def test_no_error_class_falls_back_to_internal_error() -> None:
+    """L'invariant central. Une classe dont le `code` vaut encore le défaut
+    de NidriaError répond « internal_error » sur une erreur métier — c'est
+    exactement ce que l'insertion du 17/07 a produit, sans bruit."""
+    guilty = [cls.__name__ for cls in _error_classes() if cls.code == NidriaError.code]
+    assert guilty == [], (
+        f"ces classes répondent encore {NidriaError.code!r} : {guilty}. "
+        "Une ligne `code = ...` a probablement été absorbée par une classe voisine."
+    )
+
+
+def test_the_category_catalogue_has_no_duplicate_code() -> None:
+    """Dans le CATALOGUE lui-même, deux catégories partageant un code
+    rendraient deux natures d'erreur indiscernables — et c'est le cas jumeau
+    de l'accident : la ligne COPIÉE au lieu d'être déplacée, que le témoin
+    précédent laisserait passer. Les sous-classes de domaine sont hors sujet
+    ici : partager la catégorie de son parent est leur fonctionnement normal."""
+    catalogue = [
+        cls
+        for cls in _error_classes()
+        if cls.__module__ == NidriaError.__module__ and "code" in cls.__dict__
+    ]
+    codes: dict[str, str] = {}
+    for cls in catalogue:
+        code = cls.__dict__["code"]
+        assert code not in codes, f"{cls.__name__} et {codes[code]} partagent le code {code!r}"
+        codes[code] = cls.__name__
+
+
+def test_the_two_codes_that_were_swapped_match_their_http_status() -> None:
+    """LA NORME TRANCHE, pas le docstring ni l'existant : 422 = entité non
+    traitable, 429 = trop de requêtes. Épinglé nommément parce que ce sont
+    les deux qui ont dérivé."""
+    assert (ValidationError.status_code, ValidationError.code) == (422, "validation_error")
+    assert (TooManyRequestsError.status_code, TooManyRequestsError.code) == (
+        429,
+        "too_many_requests",
+    )
