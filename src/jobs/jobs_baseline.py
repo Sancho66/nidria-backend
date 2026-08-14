@@ -43,6 +43,13 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         "cron_expression": "*/5 * * * *",
     },
     {
+        "job_id": "activation_reminders",
+        "name": "Activation reminders (J+3 / J+7 on an unactivated client space)",
+        # Quotidien : le calendrier est en JOURS, un balayage par jour suffit
+        # (et une invitation ratée d'un tick rattrape au suivant).
+        "cron_expression": "0 8 * * *",
+    },
+    {
         "job_id": "expire_agent_invitations",
         "name": "Expire agent invitations (return their seats)",
         # Hourly: invitations live 7 days — the sweep only bounds how late

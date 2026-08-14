@@ -382,7 +382,7 @@ def _dossier(journey_name: str | None, lang: str) -> str:
 
 _CASE_ACTIVATION = {
     "fr": {
-        "subject": "Nidria : {agency} vous a ouvert un espace de suivi",
+        "subject": "{agency} vous a ouvert un espace de suivi",
         "title": "{agency} vous a ouvert un espace de suivi",
         "intro": (
             "{agency} vient d'ouvrir {dossier}. Activez votre espace personnel pour en suivre "
@@ -392,7 +392,7 @@ _CASE_ACTIVATION = {
         "expires": "Ce lien expire dans {days} jours.",
     },
     "en": {
-        "subject": "Nidria: {agency} opened a tracking space for you",
+        "subject": "{agency} opened a tracking space for you",
         "title": "{agency} opened a tracking space for you",
         "intro": (
             "{agency} has just opened {dossier}. Activate your personal space to follow its "
@@ -402,7 +402,7 @@ _CASE_ACTIVATION = {
         "expires": "This link expires in {days} days.",
     },
     "es": {
-        "subject": "Nidria: {agency} le abrió un espacio de seguimiento",
+        "subject": "{agency} le abrió un espacio de seguimiento",
         "title": "{agency} le abrió un espacio de seguimiento",
         "intro": (
             "{agency} acaba de abrir {dossier}. Active su espacio personal para seguir su avance, "
@@ -412,7 +412,7 @@ _CASE_ACTIVATION = {
         "expires": "Este enlace caduca en {days} días.",
     },
     "ru": {
-        "subject": "Nidria: {agency} открыло для вас пространство отслеживания",
+        "subject": "{agency} открыло для вас пространство отслеживания",
         "title": "{agency} открыло для вас пространство отслеживания",
         "intro": (
             "{agency} только что открыло {dossier}. Активируйте личный кабинет, чтобы следить за "
@@ -422,7 +422,7 @@ _CASE_ACTIVATION = {
         "expires": "Эта ссылка действительна {days} дней.",
     },
     "pt": {
-        "subject": "Nidria: {agency} abriu-lhe um espaço de acompanhamento",
+        "subject": "{agency} abriu-lhe um espaço de acompanhamento",
         "title": "{agency} abriu-lhe um espaço de acompanhamento",
         "intro": (
             "{agency} acaba de abrir {dossier}. Ative o seu espaço pessoal para acompanhar o seu "
@@ -432,7 +432,7 @@ _CASE_ACTIVATION = {
         "expires": "Este link expira em {days} dias.",
     },
     "it": {
-        "subject": "Nidria: {agency} ti ha aperto uno spazio di monitoraggio",
+        "subject": "{agency} ti ha aperto uno spazio di monitoraggio",
         "title": "{agency} ti ha aperto uno spazio di monitoraggio",
         "intro": (
             "{agency} ha appena aperto {dossier}. Attiva il tuo spazio personale per seguirne "
@@ -442,7 +442,7 @@ _CASE_ACTIVATION = {
         "expires": "Questo link scade tra {days} giorni.",
     },
     "hu": {
-        "subject": "Nidria: A(z) {agency} követési felületet nyitott Önnek",
+        "subject": "A(z) {agency} követési felületet nyitott Önnek",
         "title": "A(z) {agency} követési felületet nyitott Önnek",
         "intro": (
             "A(z) {agency} megnyitotta: {dossier}. Aktiválja személyes felületét, és "
@@ -455,7 +455,7 @@ _CASE_ACTIVATION = {
 
 _NEW_CASE = {
     "fr": {
-        "subject": "Nidria : Un nouveau dossier vous attend",
+        "subject": "Un nouveau dossier vous attend",
         "title": "Un nouveau dossier vous attend",
         "intro": (
             "{agency} vient d'ouvrir {dossier}. Connectez-vous à votre espace pour le consulter."
@@ -463,19 +463,19 @@ _NEW_CASE = {
         "button": "Accéder à mon espace",
     },
     "en": {
-        "subject": "Nidria: A new case is waiting for you",
+        "subject": "A new case is waiting for you",
         "title": "A new case is waiting for you",
         "intro": "{agency} has just opened {dossier}. Log in to your space to view it.",
         "button": "Open my space",
     },
     "es": {
-        "subject": "Nidria: Un nuevo expediente le espera",
+        "subject": "Un nuevo expediente le espera",
         "title": "Un nuevo expediente le espera",
         "intro": "{agency} acaba de abrir {dossier}. Inicie sesión en su espacio para consultarlo.",
         "button": "Acceder a mi espacio",
     },
     "ru": {
-        "subject": "Nidria: Вас ждёт новое дело",
+        "subject": "Вас ждёт новое дело",
         "title": "Вас ждёт новое дело",
         "intro": (
             "{agency} только что открыло {dossier}. Войдите в свой кабинет, чтобы ознакомиться "
@@ -484,19 +484,19 @@ _NEW_CASE = {
         "button": "Открыть мой кабинет",
     },
     "pt": {
-        "subject": "Nidria: Um novo processo aguarda-o",
+        "subject": "Um novo processo aguarda-o",
         "title": "Um novo processo aguarda-o",
         "intro": "{agency} acaba de abrir {dossier}. Inicie sessão no seu espaço para o consultar.",
         "button": "Aceder ao meu espaço",
     },
     "it": {
-        "subject": "Nidria: Una nuova pratica ti aspetta",
+        "subject": "Una nuova pratica ti aspetta",
         "title": "Una nuova pratica ti aspetta",
         "intro": "{agency} ha appena aperto {dossier}. Accedi al tuo spazio per consultarla.",
         "button": "Accedere al mio spazio",
     },
     "hu": {
-        "subject": "Nidria: Új ügy várja Önt",
+        "subject": "Új ügy várja Önt",
         "title": "Új ügy várja Önt",
         "intro": (
             "A(z) {agency} megnyitotta: {dossier}. Jelentkezzen be a felületére a megtekintéséhez."
@@ -535,6 +535,106 @@ def _pending_block(pending_items: list[tuple[str, int]] | None, lang: str) -> st
         intro
         + "\n"
         + "\n".join(line.format(step=step, count=count) for step, count in pending_items)
+    )
+
+
+# ACTIVATION REMINDER (lot 14/08). Nobody ever re-told an invited client that
+# their space was waiting: six of one agency's clients sat on a dead link for
+# five weeks. Sent at J+3 then J+7, then never again — a third would be
+# harassment, not a service.
+_ACTIVATION_REMINDER = {
+    "fr": {
+        "subject": "{agency} : votre espace vous attend toujours",
+        "title": "Votre espace n'est pas encore activé",
+        "intro": (
+            "{agency} vous a ouvert un espace pour suivre {dossier}. Il n'a pas encore été "
+            "activé. Quelques secondes suffisent, et vous verrez l'avancement en temps réel."
+        ),
+        "button": "Activer mon espace",
+        "expires": "Ce lien expire dans {days} jours.",
+    },
+    "en": {
+        "subject": "{agency}: your space is still waiting for you",
+        "title": "Your space is not active yet",
+        "intro": (
+            "{agency} opened a space for you to follow {dossier}. It has not been activated "
+            "yet. It only takes a few seconds, and you will see the progress in real time."
+        ),
+        "button": "Activate my space",
+        "expires": "This link expires in {days} days.",
+    },
+    "es": {
+        "subject": "{agency}: su espacio sigue esperándole",
+        "title": "Su espacio aún no está activado",
+        "intro": (
+            "{agency} le abrió un espacio para seguir {dossier}. Todavía no lo ha activado. "
+            "Bastan unos segundos y verá el avance en tiempo real."
+        ),
+        "button": "Activar mi espacio",
+        "expires": "Este enlace expira en {days} días.",
+    },
+    "ru": {
+        "subject": "{agency}: ваше пространство всё ещё ждёт вас",
+        "title": "Пространство ещё не активировано",
+        "intro": (
+            "{agency} открыло для вас пространство, чтобы следить за {dossier}. Оно ещё не "
+            "активировано. Это займёт несколько секунд, и вы увидите ход дела в реальном "
+            "времени."
+        ),
+        "button": "Активировать пространство",
+        "expires": "Ссылка действует ещё {days} дней.",
+    },
+    "pt": {
+        "subject": "{agency}: o seu espaço continua à sua espera",
+        "title": "O seu espaço ainda não está ativado",
+        "intro": (
+            "{agency} abriu-lhe um espaço para acompanhar {dossier}. Ainda não foi ativado. "
+            "Bastam alguns segundos e verá o avanço em tempo real."
+        ),
+        "button": "Ativar o meu espaço",
+        "expires": "Este link expira dentro de {days} dias.",
+    },
+    "it": {
+        "subject": "{agency}: il tuo spazio ti aspetta ancora",
+        "title": "Il tuo spazio non è ancora attivo",
+        "intro": (
+            "{agency} ti ha aperto uno spazio per seguire {dossier}. Non è ancora stato "
+            "attivato. Bastano pochi secondi e vedrai l'avanzamento in tempo reale."
+        ),
+        "button": "Attiva il mio spazio",
+        "expires": "Questo link scade tra {days} giorni.",
+    },
+    "hu": {
+        "subject": "{agency}: a felülete még várja Önt",
+        "title": "A felülete még nincs aktiválva",
+        "intro": (
+            "A(z) {agency} felületet nyitott Önnek, hogy kövesse {dossier}. Még nem "
+            "aktiválta. Néhány másodperc az egész, és valós időben látja az előrehaladást."
+        ),
+        "button": "Felület aktiválása",
+        "expires": "Ez a link {days} nap múlva lejár.",
+    },
+}
+
+
+def activation_reminder_email(
+    agency_name: str,
+    link: str,
+    days_left: int,
+    journey_name: str | None = None,
+    lang: str = "fr",
+) -> EmailContent:
+    """« Vous n'avez pas encore activé votre espace » — J+3 puis J+7. Même
+    lien que l'invitation (il vit encore), même marque : l'agence devant."""
+    s = _pick(_ACTIVATION_REMINDER, lang)
+    return _render(
+        subject=s["subject"].format(agency=agency_name),
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
+        button_label=s["button"],
+        button_url=link,
+        validity=s["expires"].format(days=days_left),
+        lang=lang,
     )
 
 
@@ -592,43 +692,43 @@ def new_case_email(
 # The agency-written message body is passed through untouched.
 _REMINDER = {
     "fr": {
-        "subject": "Nidria : Rappel de {agency}",
+        "subject": "Rappel de {agency}",
         "title": "Rappel",
         "intro": "{agency} vous envoie un rappel concernant votre dossier :",
         "button": "Accéder à mon espace",
     },
     "en": {
-        "subject": "Nidria: Reminder from {agency}",
+        "subject": "Reminder from {agency}",
         "title": "Reminder",
         "intro": "{agency} sends you a reminder about your case:",
         "button": "Open my space",
     },
     "es": {
-        "subject": "Nidria: Recordatorio de {agency}",
+        "subject": "Recordatorio de {agency}",
         "title": "Recordatorio",
         "intro": "{agency} le envía un recordatorio sobre su expediente:",
         "button": "Acceder a mi espacio",
     },
     "ru": {
-        "subject": "Nidria: Напоминание от {agency}",
+        "subject": "Напоминание от {agency}",
         "title": "Напоминание",
         "intro": "{agency} отправляет вам напоминание по вашему делу:",
         "button": "Открыть мой кабинет",
     },
     "pt": {
-        "subject": "Nidria: Lembrete de {agency}",
+        "subject": "Lembrete de {agency}",
         "title": "Lembrete",
         "intro": "{agency} envia-lhe um lembrete sobre o seu processo:",
         "button": "Aceder ao meu espaço",
     },
     "it": {
-        "subject": "Nidria: Promemoria da {agency}",
+        "subject": "Promemoria da {agency}",
         "title": "Promemoria",
         "intro": "{agency} ti invia un promemoria sulla tua pratica:",
         "button": "Accedere al mio spazio",
     },
     "hu": {
-        "subject": "Nidria: Emlékeztető a(z) {agency} részéről",
+        "subject": "Emlékeztető a(z) {agency} részéről",
         "title": "Emlékeztető",
         "intro": "A(z) {agency} emlékeztetőt küld Önnek az ügyével kapcsolatban:",
         "button": "Belépés a felületemre",

@@ -89,3 +89,16 @@ def auto_reminders_require_approval(agency: Agency | None) -> bool:
     `true` → they are created already approved and the dispatch sends them."""
     stored = ((agency.settings if agency else None) or {}).get(AUTO_REMINDERS_REQUIRE_APPROVAL_KEY)
     return stored is True
+
+
+# ACTIVATION REMINDERS (lot 14/08) — même registre que le réglage des relances
+# automatiques : une clé de `agency.settings`, servie et écrite typée. Par
+# DÉFAUT ACTIVÉ : une agence qui n'a rien réglé veut évidemment que ses clients
+# entrent dans leur espace.
+ACTIVATION_REMINDERS_ENABLED_KEY = "activation_reminders_enabled"
+
+
+def activation_reminders_enabled(agency: Agency | None) -> bool:
+    """False seulement si l'agence l'a explicitement coupé."""
+    stored = ((agency.settings if agency else None) or {}).get(ACTIVATION_REMINDERS_ENABLED_KEY)
+    return stored is not False

@@ -130,6 +130,13 @@ class ActivateRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
+class ActivateResendRequest(BaseModel):
+    """Le jeton PÉRIMÉ que le client a sous les yeux : c'est lui la preuve
+    d'invitation, donc la seule chose à fournir."""
+
+    token: str
+
+
 class ActivateResponse(BaseModel):
     """Either a fresh token pair (account just activated, logged in) or
     `already_active=True` with no tokens (2nd invitation of an existing

@@ -63,3 +63,9 @@ class CaseInvitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ACTIVATION REMINDERS (lot 14/08): the last stage sent — 0 none, 3 = J+3,
+    # 7 = J+7, then never again (we do not harass). Monotonic, so the sweep is
+    # idempotent by comparison and a missed tick catches up without doubling.
+    activation_reminder_stage: Mapped[int] = mapped_column(
+        default=0, server_default=text("0"), nullable=False
+    )

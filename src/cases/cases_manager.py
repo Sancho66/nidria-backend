@@ -48,7 +48,14 @@ from src.cases.cases_schema import (
 from src.cases.client_space import client_space_state
 from src.client_profiles.client_profiles_manager import profile_divergences
 from src.core.config import get_settings
-from src.core.email import PendingEmail, normalize_email, send_email, space_link
+from src.core.email import (
+    PendingEmail,
+    normalize_email,
+    send_email,
+    send_prepared,
+    sender_as_agency,
+    space_link,
+)
 from src.core.email_templates import expat_activation_email, new_case_email
 from src.core.enums import ActorType, CasePersonKind, ClientSpaceState, InvitationStatus
 from src.core.exceptions import (
@@ -157,14 +164,17 @@ class CasesManager:
     def _log(
         self,
         case_id: uuid.UUID,
-        agent: Agent,
+        agent: Agent | None,
         action_type: str,
         details: dict[str, Any] | None = None,
     ) -> None:
+        """`agent=None` = the act was NOT an agency gesture (a client asking
+        for a new activation link from an expired one): the trace says SYSTEM
+        rather than crediting an agent who did nothing."""
         self.activity.log_action(
             case_id=case_id,
-            actor_type=ActorType.AGENT,
-            actor_id=agent.id,
+            actor_type=ActorType.AGENT if agent is not None else ActorType.SYSTEM,
+            actor_id=agent.id if agent is not None else None,
             action_type=action_type,
             details=details,
         )
@@ -412,7 +422,7 @@ class CasesManager:
     # --- read ---------------------------------------------------------------------
 
     async def _journey_name(
-        self, agent: Agent, case: ClientCase, lang: str, agency_default: str
+        self, agent: Agent | None, case: ClientCase, lang: str, agency_default: str
     ) -> str | None:
         """The case's journey name resolved in `lang` (the invite email's
         recipient language), or None when the case has no journey (the
@@ -420,7 +430,7 @@ class CasesManager:
         if case.journey_template_id is None:
             return None
         template = await JourneysRepository(self.db).get_template_in_agency(
-            agent.agency_id, case.journey_template_id
+            agent.agency_id if agent is not None else case.agency_id, case.journey_template_id
         )
         if template is None:
             return None
@@ -1084,7 +1094,7 @@ class CasesManager:
         )
         await self.db.commit()
         if mail is not None:
-            await asyncio.to_thread(send_email, *mail)  # best-effort, after commit
+            await asyncio.to_thread(send_prepared, mail)  # best-effort, after commit
         reloaded = await self.repo.get_person(case.id, person.id)
         assert reloaded is not None
         return self._person_response(
@@ -1152,12 +1162,12 @@ class CasesManager:
 
     async def _prepare_member_invite(
         self,
-        agent: Agent,
+        agent: Agent | None,
         case: ClientCase,
         email: str,
         expat: ExpatUser,
         action_type: str = "case.member_invited",
-    ) -> tuple[str, str, str, str]:
+    ) -> tuple[str, str, str, str, str]:
         """Persist the member's case_invitation (in the current tx) and build
         its mail — same infra as the principal: an activation link for a NEW
         account, a 'a dossier awaits you' mail for an existing (activated) one.
@@ -1175,7 +1185,9 @@ class CasesManager:
             expires_at=datetime.now(UTC) + timedelta(days=settings.case_invitation_expires_days),
         )
         self._log(case.id, agent, action_type, {"email": email})
-        agency = await self.repo.get_agency(agent.agency_id)
+        agency = await self.repo.get_agency(
+            agent.agency_id if agent is not None else case.agency_id
+        )
         agency_name = agency.name if agency else "Votre agence"
         agency_slug = agency.slug if agency else None
         lang = resolve_notification_lang_client(expat.preferred_lang)
@@ -1204,7 +1216,10 @@ class CasesManager:
                 lang,
                 pending_items=pending_items,
             )
-        return email, content.subject, content.text, content.html
+        # L'expéditeur AFFICHÉ est l'agence : le client reconnaît son
+        # interlocuteur, pas notre outil (même inversion que sur l'écran de
+        # consentement et les conditions).
+        return email, content.subject, content.text, content.html, sender_as_agency(agency_name)
 
     async def update_person(
         self,
@@ -1231,7 +1246,7 @@ class CasesManager:
         # transfer the read history to another account — an access transfer
         # disguised as a field edit → 409, remove the access then re-invite.
         # Empty or identical email: a clean no-op.
-        invite_mail: tuple[str, str, str, str] | None = None
+        invite_mail: tuple[str, str, str, str, str] | None = None
         invitation_resent = False
         if provided.get("email"):
             new_email = provided["email"]
@@ -1337,7 +1352,7 @@ class CasesManager:
         pending = await progress.recompute_active(case, before)
         await self.db.commit()
         if invite_mail is not None:
-            await asyncio.to_thread(send_email, *invite_mail)  # best-effort, after commit
+            await asyncio.to_thread(send_prepared, invite_mail)  # best-effort, after commit
         await progress.send_pending(pending)
         # expire_on_commit=False + identity map: this person was first loaded
         # WITH expat_user=None, and a selectinload never overwrites an
@@ -1415,7 +1430,7 @@ class CasesManager:
         # Resend outage must not 502 an action whose DB effect already landed —
         # the state flips to PENDING and the agent can retry after the cooldown.
         try:
-            await asyncio.to_thread(send_email, *invite_mail)
+            await asyncio.to_thread(send_prepared, invite_mail)
         except Exception:
             logger.warning(
                 "invitation resend mail failed (case %s, token rotated)", case.id, exc_info=True
@@ -1431,6 +1446,32 @@ class CasesManager:
         )
         response.invitation_resent = True
         return response
+
+    async def rotate_client_invitation(
+        self, case: ClientCase, expat: ExpatUser, email: str
+    ) -> tuple[str, str, str, str, str] | None:
+        """Kill the live tokens of (case, email) and mint a NEW invitation —
+        the gesture behind « ce lien a expiré, recevez-en un nouveau ». Returns
+        the mail to send AFTER commit, or None when the cooldown is still
+        running (the caller answers the same 200 either way: a public endpoint
+        must not become a send channel).
+
+        Same cooldown window and same rotation as the agent-side resend, and
+        the SAME mail builder — the client's self-service link cannot drift
+        from the one an agent sends."""
+        last_sent = (
+            await self.db.execute(
+                select(func.max(CaseInvitation.created_at)).where(
+                    CaseInvitation.case_id == case.id, CaseInvitation.email == email
+                )
+            )
+        ).scalar_one_or_none()
+        if last_sent is not None and datetime.now(UTC) - last_sent < RESEND_COOLDOWN:
+            return None
+        await self._cancel_pending_invitations(case.id, email)
+        return await self._prepare_member_invite(
+            None, case, email, expat, action_type="case.invitation_resent_by_client"
+        )
 
     async def delete_person(self, agent: Agent, case_id: uuid.UUID, person_id: uuid.UUID) -> None:
         case = await self._get_case(agent, case_id)

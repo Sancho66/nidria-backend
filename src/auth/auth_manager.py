@@ -15,6 +15,7 @@ from shared.models.mfa import MfaTotp
 from src.auth.auth_repository import AuthRepository
 from src.auth.auth_schema import (
     ActivateResponse,
+    MessageResponse,
     MfaEnableResponse,
     MfaRequiredResponse,
     MfaSetupResponse,
@@ -22,7 +23,7 @@ from src.auth.auth_schema import (
     TokenPairResponse,
 )
 from src.core.config import get_settings
-from src.core.email import normalize_email, send_email
+from src.core.email import normalize_email, send_email, send_prepared
 from src.core.email_templates import password_reset_email
 from src.core.enums import ActorType, Audience, InvitationStatus
 from src.core.exceptions import (
@@ -226,12 +227,14 @@ class AuthManager:
     async def activate_expat(self, token: str, password: str) -> ActivateResponse:
         invitation = await self.repo.get_case_invitation_by_token(token)
         now = datetime.now(UTC)
-        if (
-            invitation is None
-            or invitation.status != InvitationStatus.PENDING
-            or invitation.expires_at <= now
-        ):
-            raise BadRequestError("Invalid or expired invitation token.")
+        if invitation is None or invitation.status != InvitationStatus.PENDING:
+            raise BadRequestError("Invalid invitation token.", code="invitation.invalid")
+        if invitation.expires_at <= now:
+            # NAMED, deliberately: « lien expiré » and « lien inconnu » are not
+            # the same event for the person in front of the screen — the first
+            # has a one-click fix (resend), the second has none. A 24-byte token
+            # existing or not is no secret worth the six clients this cost.
+            raise BadRequestError("This activation link has expired.", code="invitation.expired")
 
         expat = await self.repo.get_expat_by_email(invitation.email)
         if expat is None:
@@ -265,6 +268,43 @@ class AuthManager:
         pair = self.issue_token_pair(expat.id, Audience.EXPAT)
         await self.db.commit()
         return ActivateResponse(access_token=pair.access_token, refresh_token=pair.refresh_token)
+
+    async def resend_activation(self, token: str) -> MessageResponse:
+        """« Ce lien a expiré, recevez-en un nouveau » — public by nature: the
+        expired link IS the proof of invitation, so the client repairs it alone
+        instead of waiting for an agent to think of it (six of Nicolas\'s
+        clients waited five weeks).
+
+        ALWAYS the same 200, whatever happens (unknown token, already active,
+        cooldown running): a public endpoint must never become a probe, nor a
+        send channel. The rotation, the cooldown and the mail itself are the
+        AGENT-side ones, reused — the two paths cannot drift."""
+        generic = MessageResponse(
+            detail="If this invitation exists, a new activation link is on its way."
+        )
+        invitation = await self.repo.get_case_invitation_by_token(token)
+        if invitation is None or invitation.status == InvitationStatus.ACCEPTED:
+            return generic
+        case = await self.db.get(ClientCase, invitation.case_id)
+        if case is None or case.deleted_at is not None:
+            return generic
+        expat = await self.repo.get_expat_by_email(invitation.email)
+        if expat is None or expat.activated_at is not None:
+            # Already active: their path is /space/login, not a new token.
+            return generic
+        from src.cases.cases_manager import CasesManager
+
+        mail = await CasesManager(self.db).rotate_client_invitation(case, expat, invitation.email)
+        if mail is None:
+            return generic  # cooldown: silence, not an error
+        await self.db.commit()
+        # Best-effort after commit (house rule): the token IS rotated, so a
+        # Resend outage must not 500 an act whose DB effect already landed.
+        try:
+            await asyncio.to_thread(send_prepared, mail)
+        except Exception:
+            logger.warning("activation resend mail failed (case %s)", case.id, exc_info=True)
+        return generic
 
     # --- password reset ------------------------------------------------------------------
 

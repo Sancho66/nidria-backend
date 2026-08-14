@@ -62,7 +62,7 @@ async def test_reminder_mail_carries_its_agency(
     assert stats["sent"] == 1
     [sent] = email.outbox
     assert sent.to == "client-a@example.com"
-    assert sent.subject == "Nidria : Rappel de Agence Alpha"
+    assert sent.subject == "Rappel de Agence Alpha"
     assert "Agence Alpha vous envoie un rappel concernant votre dossier" in sent.body
     assert "?agency=agence-alpha" in sent.body  # branded client-space link
     assert "Pensez au passeport." in sent.body  # the agency-written body, untouched
@@ -93,10 +93,10 @@ async def test_two_agencies_two_contexts(
     assert stats["sent"] == 2
     by_body = {("Rappel A." in m.body): m for m in email.outbox}
     mail_a, mail_b = by_body[True], by_body[False]
-    assert mail_a.subject == "Nidria : Rappel de Agence Alpha"
+    assert mail_a.subject == "Rappel de Agence Alpha"
     assert "?agency=agence-alpha" in mail_a.body
     assert "Agence Beta" not in mail_a.subject and "agence-beta" not in mail_a.body
-    assert mail_b.subject == "Nidria : Rappel de Agence Beta"
+    assert mail_b.subject == "Rappel de Agence Beta"
     assert "?agency=agence-beta" in mail_b.body
     assert "Rappel B." in mail_b.body
 
@@ -118,5 +118,5 @@ async def test_recipient_language_follows_the_client_rule(
     )
     _dispatch(sync_session_local)
     [sent] = email.outbox
-    assert sent.subject == "Nidria: Напоминание от Agence Alpha"
+    assert sent.subject == "Напоминание от Agence Alpha"
     assert "Не забудьте паспорт." in sent.body

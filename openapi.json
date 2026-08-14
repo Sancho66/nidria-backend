@@ -490,6 +490,7 @@
           "auth"
         ],
         "summary": "Expat Activate",
+        "description": "400 `invitation.expired` (le lien a vécu) ou `invitation.invalid` (jeton\ninconnu ou déjà consommé) — deux messages distincts parce que le premier a\nun correctif en un clic et le second non.",
         "operationId": "expat_activate_auth_expat_activate_post",
         "requestBody": {
           "content": {
@@ -508,6 +509,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActivateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/expat/activate/resend": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Expat Activate Resend",
+        "description": "« Ce lien a expiré, recevez-en un nouveau » : le lien périmé sert de\npreuve d'invitation. TOUJOURS la même réponse (jeton inconnu, compte déjà\nactif, cooldown en cours) — un endpoint public ne devient ni une sonde ni\nun canal d'envoi.",
+        "operationId": "expat_activate_resend_auth_expat_activate_resend_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivateResendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -18511,6 +18554,20 @@
         ],
         "title": "ActivateRequest"
       },
+      "ActivateResendRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "ActivateResendRequest",
+        "description": "Le jeton PÉRIMÉ que le client a sous les yeux : c'est lui la preuve\nd'invitation, donc la seule chose à fournir."
+      },
       "ActivateResponse": {
         "properties": {
           "already_active": {
@@ -19557,6 +19614,11 @@
             "type": "boolean",
             "title": "Auto Reminders Require Approval",
             "default": false
+          },
+          "activation_reminders_enabled": {
+            "type": "boolean",
+            "title": "Activation Reminders Enabled",
+            "default": true
           }
         },
         "type": "object",
@@ -19753,6 +19815,17 @@
               }
             ],
             "title": "Auto Reminders Require Approval"
+          },
+          "activation_reminders_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activation Reminders Enabled"
           },
           "default_language": {
             "anyOf": [

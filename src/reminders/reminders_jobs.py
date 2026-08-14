@@ -51,7 +51,7 @@ from shared.models.reminder import Reminder
 from shared.models.step_case_requirement import StepCaseRequirement
 from src.cases.client_space import client_space_is_active
 from src.core.config import get_settings
-from src.core.email import send_email, space_link
+from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import (
     auto_reminder_body,
     reminder_digest_email,
@@ -266,7 +266,8 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
 
     # (case, recipient address, recipient type) → the mail they share.
     groups: dict[tuple[uuid.UUID, str, str], dict[str, Any]] = {}
-    solo: list[tuple[Reminder, str, Any, dict[str, Any]]] = []  # (reminder, to, content, extra)
+    # (reminder, to, content, extra, agency name for the From)
+    solo: list[tuple[Reminder, str, Any, dict[str, Any], str]] = []
     silent: list[Reminder] = []  # in-app, or email suppressed by the agency pref
 
     for reminder, agency in rows:
@@ -319,7 +320,7 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
             # FK is KEPT as provenance: the auto-pass idempotence matches
             # on it — a rewritten line still blocks its threshold.
             reminder.recipient_type = RecipientType.AGENT.value
-            solo.append((reminder, to, content, {"escalated_from": escalated_from}))
+            solo.append((reminder, to, content, {"escalated_from": escalated_from}, agency.name))
             continue
         if reminder.auto_threshold_days is None:
             # HAND-WRITTEN: its body is the agency's own text, never merged.
@@ -329,7 +330,13 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
                 else None
             )
             solo.append(
-                (reminder, to, reminder_email(agency.name, reminder.message_body, link, lang), {})
+                (
+                    reminder,
+                    to,
+                    reminder_email(agency.name, reminder.message_body, link, lang),
+                    {},
+                    agency.name,
+                )
             )
             continue
         group = groups.setdefault(
@@ -358,7 +365,11 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
                 link,
                 lang,
             )
-        send_email(to, content.subject, content.text, content.html)
+        # L'expéditeur AFFICHÉ est l'agence : le client reconnaît son
+        # interlocuteur (même correction que sur les invitations, 14/08).
+        send_email(
+            to, content.subject, content.text, content.html, sender=sender_as_agency(agency.name)
+        )
         emails += 1
         extra = {"grouped": len(members)} if len(members) > 1 else {}
         for member in members:
@@ -366,8 +377,10 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
         if len(members) > 1:
             log(f"grouped {len(members)} reminders into one mail to {to}")
 
-    for reminder, to, content, extra in solo:
-        send_email(to, content.subject, content.text, content.html)
+    for reminder, to, content, extra, agency_name in solo:
+        send_email(
+            to, content.subject, content.text, content.html, sender=sender_as_agency(agency_name)
+        )
         emails += 1
         _record(reminder, extra)
 

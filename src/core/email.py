@@ -94,6 +94,26 @@ def space_link(frontend_url: str, path: str, agency_slug: str | None) -> str:
     return url
 
 
+def send_prepared(mail: tuple[str, str, str, str, str]) -> None:
+    """Send a mail prepared BEFORE the commit (the house pattern for
+    invitations): (to, subject, text, html, sender)."""
+    to, subject, text, html, sender = mail
+    send_email(to, subject, text, html, sender=sender)
+
+
+def sender_as_agency(agency_name: str) -> str:
+    """« Domiciliation Bulgarie <no-reply@nidria.com> » — the DISPLAY name is
+    the agency the client knows; the address stays our verified domain (Resend
+    signs it, and Gmail appends its own « via nidria.com »). Quotes and
+    backslashes are stripped: an unquoted comma in a display name splits the
+    header into two recipients."""
+    settings = get_settings()
+    configured = settings.email_from
+    address = configured[configured.index("<") :] if "<" in configured else f"<{configured}>"
+    safe = agency_name.replace('"', "").replace("\\", "").strip()
+    return f'"{safe}" {address}' if safe else configured
+
+
 def send_email(
     to: str,
     subject: str,

@@ -74,7 +74,10 @@ from src.core.exceptions import (
 )
 from src.core.i18n import resolve_notification_lang_agent
 from src.core.images import process_cover, process_logo
-from src.core.notification_prefs import AUTO_REMINDERS_REQUIRE_APPROVAL_KEY
+from src.core.notification_prefs import (
+    ACTIVATION_REMINDERS_ENABLED_KEY,
+    AUTO_REMINDERS_REQUIRE_APPROVAL_KEY,
+)
 from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.rbac.consent_gate import active_documents_by_type
 from src.core.security import hash_password
@@ -1081,6 +1084,11 @@ class AgenciesManager:
             agency.settings = {
                 **(agency.settings or {}),
                 AUTO_REMINDERS_REQUIRE_APPROVAL_KEY: payload.auto_reminders_require_approval,
+            }
+        if payload.activation_reminders_enabled is not None:
+            agency.settings = {
+                **(agency.settings or {}),
+                ACTIVATION_REMINDERS_ENABLED_KEY: payload.activation_reminders_enabled,
             }
         if payload.default_language is not None:
             agency.default_language = payload.default_language

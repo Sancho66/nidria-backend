@@ -409,6 +409,9 @@ class AgencyResponse(BaseModel):
     # relances automatiques — un rappel écrit à la main passe toujours par
     # l'approbation. Rempli sur GET/PATCH/validate /me.
     auto_reminders_require_approval: bool = False
+    # LES RELANCES D'ACTIVATION (lot 14/08) : true = un client invité qui n'a
+    # pas activé reçoit un rappel à J+3 puis J+7 (puis plus rien). Défaut true.
+    activation_reminders_enabled: bool = True
 
 
 class AgencyCreateRequest(BaseModel):
@@ -480,6 +483,8 @@ class AgencyUpdateRequest(BaseModel):
     notification_prefs: ClientNotificationPrefsPatch | None = None
     # Le régime des relances AUTOMATIQUES (lot 13/08). None = inchangé.
     auto_reminders_require_approval: bool | None = None
+    # Les relances d'activation (lot 14/08). None = inchangé.
+    activation_reminders_enabled: bool | None = None
     # i18n fallback language for this agency's content (validated fr/en/es).
     default_language: Language | None = None
     # ISO 4217 code for internal cost tracking. Strict: an EXACT uppercase code

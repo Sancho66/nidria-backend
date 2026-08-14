@@ -9,6 +9,7 @@ from shared.models.expat_user import ExpatUser
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import (
     ActivateRequest,
+    ActivateResendRequest,
     ActivateResponse,
     AgentMeResponse,
     ChangePasswordRequest,
@@ -54,6 +55,10 @@ BINDINGS = [
     RouteBinding("POST", "/auth/agent/forgot-password", Audience.PUBLIC),
     RouteBinding("POST", "/auth/agent/reset-password", Audience.PUBLIC),
     RouteBinding("POST", "/auth/expat/activate", Audience.PUBLIC),
+    # Le lien expiré se répare tout seul : PUBLIC par nature (le client n'a pas
+    # de compte à activer, c'est justement le problème). Borné par le cooldown
+    # de renvoi, et toujours la même réponse.
+    RouteBinding("POST", "/auth/expat/activate/resend", Audience.PUBLIC),
     RouteBinding("POST", "/auth/expat/login", Audience.PUBLIC),
     RouteBinding("POST", "/auth/expat/refresh", Audience.PUBLIC),
     RouteBinding("POST", "/auth/expat/logout", Audience.EXPAT),
@@ -205,7 +210,19 @@ async def agent_reset_password(body: ResetPasswordRequest, db: DbDep) -> Message
 
 @router.post("/expat/activate", response_model=ActivateResponse)
 async def expat_activate(body: ActivateRequest, db: DbDep) -> ActivateResponse:
+    """400 `invitation.expired` (le lien a vécu) ou `invitation.invalid` (jeton
+    inconnu ou déjà consommé) — deux messages distincts parce que le premier a
+    un correctif en un clic et le second non."""
     return await AuthManager(db).activate_expat(body.token, body.password)
+
+
+@router.post("/expat/activate/resend", response_model=MessageResponse)
+async def expat_activate_resend(body: ActivateResendRequest, db: DbDep) -> MessageResponse:
+    """« Ce lien a expiré, recevez-en un nouveau » : le lien périmé sert de
+    preuve d'invitation. TOUJOURS la même réponse (jeton inconnu, compte déjà
+    actif, cooldown en cours) — un endpoint public ne devient ni une sonde ni
+    un canal d'envoi."""
+    return await AuthManager(db).resend_activation(body.token)
 
 
 @router.post("/expat/login", response_model=TokenPairResponse | MfaRequiredResponse)
