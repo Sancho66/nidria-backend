@@ -1,7 +1,6 @@
 import logging
-import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,20 +18,29 @@ from src.core.enums import (
     StepStatus,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.reminders.reminder_tokens import (
+    AGENCY_TOKENS,
+    VARIABLE_PATTERN,
+    agency_value,
+    render_with_examples,
+    unknown_tokens,
+    used_tokens,
+)
 from src.reminders.reminders_repository import RemindersRepository
 from src.reminders.reminders_schema import (
     MessageTemplateCreateRequest,
     MessageTemplateUpdateRequest,
     ReminderCreateRequest,
+    ReminderPreviewRequest,
+    ReminderPreviewResponse,
     ReminderResponse,
     ReminderUpdateRequest,
+    UnresolvableToken,
 )
 from src.reminders.reminders_targeting import targeted_member
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
-
-_VARIABLE_PATTERN = re.compile(r"\{(client_name|step_name|days_left)\}")
 
 # A reminder pinned on a step that is DONE is FALSE, not merely late: its whole
 # point is « votre étape n'a pas progressé ». The rule lives here, at the back,
@@ -77,7 +85,13 @@ class RemindersManager:
         self, agent: Agent, payload: MessageTemplateCreateRequest
     ) -> MessageTemplate:
         template = self.repo.add_message_template(
-            agency_id=agent.agency_id, name=payload.name, body=payload.body
+            agency_id=agent.agency_id,
+            name=payload.name,
+            body=payload.body,
+            # Étiquettes de recherche, jamais des règles : un modèle marqué
+            # « email » reste applicable à un WhatsApp.
+            language=payload.language,
+            channel=payload.channel.value if payload.channel is not None else None,
         )
         await self.db.commit()
         await self.db.refresh(template)
@@ -89,7 +103,14 @@ class RemindersManager:
         template = await self.repo.get_message_template_in_agency(agent.agency_id, template_id)
         if template is None:
             raise NotFoundError("Message template not found.")
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        # `exclude_unset` distingue ABSENT (inchangé) de `null` (effacé) —
+        # c'est ce qui permet de RETIRER une étiquette. Mais `name` et `body`
+        # sont NOT NULL : un `null` explicite sur eux passait la validation
+        # et faisait tomber l'insert en 500. On l'ignore, comme une absence.
+        patch = payload.model_dump(exclude_unset=True)
+        for field, value in patch.items():
+            if value is None and field in ("name", "body"):
+                continue
             setattr(template, field, value)
         await self.db.commit()
         await self.db.refresh(template)
@@ -104,6 +125,71 @@ class RemindersManager:
 
     # --- interpolation (server-side, at creation/edition) ------------------------------
 
+    async def _resolve_values(
+        self,
+        case: ClientCase,
+        needed: set[str],
+        step_progress_id: uuid.UUID | None,
+        scheduled_at: datetime,
+    ) -> tuple[dict[str, str], list[tuple[str, str]]]:
+        """(valeurs résolues, [(jeton, raison)] non résolubles). NE LÈVE
+        JAMAIS : le figeage lève à partir de ce résultat, l'aperçu le sert
+        tel quel. UNE seule résolution pour les deux, donc l'aperçu ne peut
+        pas flatter ce que le figeage produira — même doctrine que l'aperçu
+        des conditions générales.
+
+        Les raisons sont des slugs stables, pas des phrases : le front les
+        traduit, il ne les affiche pas brutes."""
+        values: dict[str, str] = {}
+        failures: list[tuple[str, str]] = []
+
+        if "client_name" in needed:
+            principal = await self.repo.get_expat(case.principal_expat_user_id)
+            assert principal is not None
+            values["client_name"] = f"{principal.first_name} {principal.last_name}"
+
+        if needed & {"step_name", "days_left"}:
+            progress = (
+                None
+                if step_progress_id is None
+                else await self.repo.get_progress_in_case(case.id, step_progress_id)
+            )
+            if progress is None:
+                # L'ordre du catalogue décide de la variable nommée en
+                # premier (step_name avant days_left) — verdict déterministe.
+                for name in ("step_name", "days_left"):
+                    if name in needed:
+                        failures.append((name, "step_required"))
+            else:
+                template_step = await self.repo.get_template_step(progress.template_step_id)
+                assert template_step is not None
+                values["step_name"] = template_step.name
+                if "days_left" in needed:
+                    started_at = await self.repo.get_step_started_at(case.id, progress.id)
+                    if template_step.estimated_days is None:
+                        failures.append(("days_left", "estimated_days_required"))
+                    elif started_at is None:
+                        failures.append(("days_left", "step_not_started"))
+                    else:
+                        elapsed = (scheduled_at.date() - started_at.date()).days
+                        values["days_left"] = str(max(0, template_step.estimated_days - elapsed))
+
+        if needed & set(AGENCY_TOKENS):
+            agency = await self.repo.get_agency(case.agency_id)
+            assert agency is not None
+            for name in AGENCY_TOKENS:
+                if name not in needed:
+                    continue
+                value = agency_value(name, agency)
+                if value is None:
+                    # Un champ d'agence vide gèlerait un TROU dans un message
+                    # envoyé une fois — même refus qu'une variable de dossier.
+                    failures.append((name, "agency_field_empty"))
+                else:
+                    values[name] = value
+
+        return values, failures
+
     async def _render(
         self,
         case: ClientCase,
@@ -115,41 +201,73 @@ class RemindersManager:
         PROJECTED AT scheduled_at (estimated_days − days between the
         step's start and the planned send date, floor 0) — the approver
         reads a text that is exact AT SEND TIME. Unsolvable variable →
-        422 naming it."""
-        needed = set(_VARIABLE_PATTERN.findall(raw))
+        422 naming it.
+
+        Un jeton INCONNU ({tva}) n'est pas une erreur ici : il traverse et se
+        fige verbatim, comme dans les conditions. C'est l'aperçu qui le
+        signale À L'ÉDITION (`preview_reminder`), avant que le texte ne soit
+        pris — un message parti ne se rattrape pas."""
+        needed = set(VARIABLE_PATTERN.findall(raw))
         if not needed:
             return raw
-        values: dict[str, str] = {}
-
-        if "client_name" in needed:
-            principal = await self.repo.get_expat(case.principal_expat_user_id)
-            assert principal is not None
-            values["client_name"] = f"{principal.first_name} {principal.last_name}"
-
-        if needed & {"step_name", "days_left"}:
-            if step_progress_id is None:
-                variable = "step_name" if "step_name" in needed else "days_left"
-                raise ValidationError(f"{{{variable}}} requires a linked step (step_progress_id).")
-            progress = await self.repo.get_progress_in_case(case.id, step_progress_id)
-            assert progress is not None  # validated by callers
-            template_step = await self.repo.get_template_step(progress.template_step_id)
-            assert template_step is not None
-            values["step_name"] = template_step.name
-            if "days_left" in needed:
-                if template_step.estimated_days is None:
-                    raise ValidationError(
-                        "{days_left} requires the linked step to have estimated_days."
-                    )
-                started_at = await self.repo.get_step_started_at(case.id, progress.id)
-                if started_at is None:
-                    raise ValidationError("{days_left} requires the linked step to be started.")
-                elapsed = (scheduled_at.date() - started_at.date()).days
-                values["days_left"] = str(max(0, template_step.estimated_days - elapsed))
+        values, failures = await self._resolve_values(case, needed, step_progress_id, scheduled_at)
+        if failures:
+            variable, reason = failures[0]
+            raise ValidationError(
+                f"{{{variable}}} cannot be resolved ({reason}).",
+                code="reminder.variable_unresolvable",
+                params={"variable": variable, "reason": reason},
+            )
 
         rendered = raw
         for key, value in values.items():
             rendered = rendered.replace(f"{{{key}}}", value)
         return rendered
+
+    async def preview_reminder(
+        self, agent: Agent, payload: ReminderPreviewRequest
+    ) -> ReminderPreviewResponse:
+        """« Ce que votre client lira », calculé sur le BROUILLON — la MÊME
+        résolution que le figeage, donc l'aperçu ne peut pas mentir.
+
+        Avec un dossier en face : les vraies valeurs. Sans (un modèle de
+        message, une modale encore vide) : les spécimens du catalogue. Les
+        jetons inconnus sont nommés ici parce qu'ils seront GELÉS verbatim,
+        et les non-résolubles parce qu'ils lèveraient un 422 au figeage — un
+        refus ne doit jamais surprendre au moment d'enregistrer."""
+        agency = await self.repo.get_agency(agent.agency_id)
+        unknown = unknown_tokens(payload.content)
+        needed = set(used_tokens(payload.content))
+
+        values: dict[str, str] = {}
+        failures: list[tuple[str, str]] = []
+        if payload.case_id is not None and needed:
+            case = await self.repo.get_case_in_agency(agent.agency_id, payload.case_id)
+            if case is None:
+                raise NotFoundError("Case not found.", code="case.not_found")
+            values, failures = await self._resolve_values(
+                case,
+                needed,
+                payload.step_progress_id,
+                payload.scheduled_at or datetime.now(UTC),
+            )
+
+        # Les jetons résolus prennent leur VRAIE valeur ; ceux qui manquent
+        # (pas de dossier, ou non résolubles) retombent sur leur spécimen,
+        # pour que l'agence lise toujours une phrase entière et pas un trou.
+        rendered = payload.content
+        for name, value in values.items():
+            rendered = rendered.replace("{" + name + "}", value)
+        rendered = render_with_examples(rendered, agency)
+
+        return ReminderPreviewResponse(
+            rendered=rendered,
+            unknown_tokens=unknown,
+            unresolvable_tokens=[
+                UnresolvableToken(token="{" + name + "}", name=name, reason=reason)
+                for name, reason in failures
+            ],
+        )
 
     # --- reminder creation -----------------------------------------------------------------
 

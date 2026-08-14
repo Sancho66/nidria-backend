@@ -320,6 +320,30 @@ class ClientTermsPreviewResponse(BaseModel):
     unfilled_tokens: list[str] = []
 
 
+class ReminderTokenInfo(BaseModel):
+    """UN jeton des messages de relance, tel que la modale « Programmer un
+    rappel » en a besoin. Même forme que AgencyTokenInfo à UN champ près, et
+    ce champ dit toute la différence entre les deux systèmes.
+
+    Les conditions résolvent à la LECTURE, donc leur catalogue sert la VALEUR
+    COURANTE. Une relance est interpolée AU FIGEAGE et part une fois, donc son
+    catalogue sert un EXEMPLE : quand l'agence écrit, il n'y a pas forcément
+    de client en face, et il y en aura un différent à chaque envoi. Le
+    catalogue vit dans `reminders.reminder_tokens`."""
+
+    # Insérable tel quel, accolades comprises.
+    token: str
+    # Le nom du catalogue — sert de clé i18n au front (7 locales).
+    name: str
+    # Libellé FR humain, repli servi pour un front qui précède ce jeton.
+    label: str
+    # Ce que le jeton VAUDRA à l'envoi, montré comme spécimen (« Marie
+    # Dupont »). Pour les jetons d'AGENCE, qui ne varient pas d'un envoi à
+    # l'autre, c'est la valeur réelle de l'agence — avec un spécimen en repli
+    # si le champ est vide. Jamais None : un exemple vide n'apprend rien.
+    example: str
+
+
 class AgencyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -400,6 +424,11 @@ class AgencyResponse(BaseModel):
     # reads a blank there. Subset of missing_legal_fields that the text
     # actually depends on.
     client_terms_unfilled_tokens: list[str] = []
+    # LES VARIABLES DE RELANCE, SERVIES (lot 14/08) — le front ne devine
+    # aucune liste, exactement comme pour client_terms_tokens : le catalogue,
+    # son libellé humain et un EXEMPLE de ce que chaque jeton vaudra à
+    # l'envoi. Filled on GET/PATCH/validate /me.
+    reminder_tokens: list[ReminderTokenInfo] = []
     # EFFECTIVE client notification prefs (defaults merged) — the front
     # displays THIS and drops its CLIENT_DEFAULTS mirror (lot digest).
     notification_prefs: dict[str, str] | None = None

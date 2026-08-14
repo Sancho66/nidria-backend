@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
+from shared.models.agency import Agency
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
@@ -87,6 +88,11 @@ class RemindersRepository:
 
     async def get_template_step(self, step_id: uuid.UUID) -> JourneyTemplateStep | None:
         return await self.db.get(JourneyTemplateStep, step_id)
+
+    async def get_agency(self, agency_id: uuid.UUID) -> Agency | None:
+        """L'agence du dossier — porteuse des jetons {agency_name},
+        {contact_email}, {contact_phone} d'une relance."""
+        return await self.db.get(Agency, agency_id)
 
     async def get_step_started_at(
         self, case_id: uuid.UUID, progress_id: uuid.UUID

@@ -4,16 +4,29 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.enums import RecipientType, ReminderChannel
+from src.core.i18n import Language
 
 
 class MessageTemplateCreateRequest(BaseModel):
+    """`language` et `channel` sont des ÉTIQUETTES pour retrouver un modèle
+    dans une liste qui grandit — jamais des règles : elles ne filtrent ni ne
+    contraignent la création d'un rappel. None = non étiqueté."""
+
     name: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1)
+    language: Language | None = None
+    channel: ReminderChannel | None = None
 
 
 class MessageTemplateUpdateRequest(BaseModel):
+    """PATCH partiel. Une étiquette se RETIRE en envoyant `null`
+    explicitement — d'où `exclude_unset` côté manager, qui distingue
+    « absent » (inchangé) de « null » (effacé)."""
+
     name: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1)
+    language: Language | None = None
+    channel: ReminderChannel | None = None
 
 
 class MessageTemplateResponse(BaseModel):
@@ -22,6 +35,47 @@ class MessageTemplateResponse(BaseModel):
     id: uuid.UUID
     name: str
     body: str
+    language: str | None = None
+    channel: str | None = None
+    # L'écran de gestion trie et date les modèles — servi, jamais dérivé.
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReminderPreviewRequest(BaseModel):
+    """Le BROUILLON en cours d'écriture (jamais persisté ici). `case_id`
+    optionnel : avec lui l'aperçu rend les VRAIES valeurs, sans lui les
+    spécimens du catalogue — écrire un modèle de message n'exige pas
+    d'avoir un client sous la main."""
+
+    content: str = Field(min_length=1, max_length=20_000)
+    case_id: uuid.UUID | None = None
+    step_progress_id: uuid.UUID | None = None
+    # La date d'envoi PROJETÉE : {days_left} en dépend (il compte à partir
+    # d'elle, pas d'aujourd'hui). Absente → maintenant.
+    scheduled_at: datetime | None = None
+
+
+class UnresolvableToken(BaseModel):
+    """Un jeton CONNU que le figeage refuserait. `reason` est un slug stable
+    (`step_required`, `estimated_days_required`, `step_not_started`,
+    `agency_field_empty`) : le front le traduit, il ne l'affiche pas brut."""
+
+    token: str
+    name: str
+    reason: str
+
+
+class ReminderPreviewResponse(BaseModel):
+    """Ce que le client lira, plus les deux signaux d'ÉDITION."""
+
+    rendered: str
+    # Jetons que personne ne résout : ils seront GELÉS TELS QUELS dans le
+    # message envoyé. Nommés ici parce qu'après le figeage il est trop tard.
+    unknown_tokens: list[str] = []
+    # Jetons connus qui feraient lever un 422 `reminder.variable_unresolvable`
+    # à l'enregistrement. Servis pour que ce refus ne surprenne jamais.
+    unresolvable_tokens: list[UnresolvableToken] = []
 
 
 class ReminderCreateRequest(BaseModel):

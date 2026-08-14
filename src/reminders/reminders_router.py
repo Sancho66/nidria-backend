@@ -22,6 +22,8 @@ from src.reminders.reminders_schema import (
     ReminderBulkCancelResponse,
     ReminderCreateRequest,
     ReminderListResponse,
+    ReminderPreviewRequest,
+    ReminderPreviewResponse,
     ReminderResponse,
     ReminderUpdateRequest,
 )
@@ -56,6 +58,10 @@ BINDINGS = [
     # an agent could gain just by going through the bulk door.
     RouteBinding("POST", "/reminders/bulk-approve", Audience.AGENT, Permission.REMINDER_APPROVE),
     RouteBinding("POST", "/reminders/{reminder_id}/mark-sent", Audience.AGENT, _CREATE),
+    # « Ce que votre client lira » : rend un BROUILLON, n'ecrit rien. Meme
+    # regle littéral-avant-{id} que bulk-*, et meme gate que l'ecriture dont
+    # il est l'apercu — voir l'apercu des conditions, meme forme.
+    RouteBinding("POST", "/reminders/preview", Audience.AGENT, _CREATE),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -152,6 +158,21 @@ async def update_reminder(
     manager = RemindersManager(db)
     reminder = await manager.update_reminder(agent, reminder_id, body)
     return await manager.to_response(reminder)
+
+
+@router.post("/reminders/preview", response_model=ReminderPreviewResponse)
+async def preview_reminder(
+    body: ReminderPreviewRequest, agent: AgentDep, db: DbDep
+) -> ReminderPreviewResponse:
+    """« Ce que votre client lira » — le BROUILLON rendu par la MÊME
+    résolution que le figeage (variables comprises), plus les jetons inconnus
+    (qui seront gelés verbatim) et les non-résolubles (qui feraient lever un
+    422 à l'enregistrement). Rien n'est écrit.
+
+    Segment LITTÉRAL, déclaré avec bulk-cancel/bulk-approve et avant les
+    POST en /reminders/{reminder_id}/… — « preview » ne peut jamais être lu
+    comme un identifiant de rappel."""
+    return await RemindersManager(db).preview_reminder(agent, body)
 
 
 @router.post("/reminders/bulk-cancel", response_model=ReminderBulkCancelResponse)

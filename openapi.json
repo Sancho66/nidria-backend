@@ -17869,6 +17869,53 @@
         }
       }
     },
+    "/reminders/preview": {
+      "post": {
+        "tags": [
+          "reminders"
+        ],
+        "summary": "Preview Reminder",
+        "description": "« Ce que votre client lira » — le BROUILLON rendu par la MÊME\nrésolution que le figeage (variables comprises), plus les jetons inconnus\n(qui seront gelés verbatim) et les non-résolubles (qui feraient lever un\n422 à l'enregistrement). Rien n'est écrit.\n\nSegment LITTÉRAL, déclaré avec bulk-cancel/bulk-approve et avant les\nPOST en /reminders/{reminder_id}/… — « preview » ne peut jamais être lu\ncomme un identifiant de rappel.",
+        "operationId": "preview_reminder_reminders_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/reminders/bulk-cancel": {
       "post": {
         "tags": [
@@ -19594,6 +19641,14 @@
             },
             "type": "array",
             "title": "Client Terms Unfilled Tokens",
+            "default": []
+          },
+          "reminder_tokens": {
+            "items": {
+              "$ref": "#/components/schemas/ReminderTokenInfo"
+            },
+            "type": "array",
+            "title": "Reminder Tokens",
             "default": []
           },
           "notification_prefs": {
@@ -30531,6 +30586,36 @@
             "type": "string",
             "minLength": 1,
             "title": "Body"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fr",
+                  "en",
+                  "es",
+                  "ru",
+                  "pt",
+                  "it",
+                  "hu"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReminderChannel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -30538,7 +30623,8 @@
           "name",
           "body"
         ],
-        "title": "MessageTemplateCreateRequest"
+        "title": "MessageTemplateCreateRequest",
+        "description": "`language` et `channel` sont des ÉTIQUETTES pour retrouver un modèle\ndans une liste qui grandit — jamais des règles : elles ne filtrent ni ne\ncontraignent la création d'un rappel. None = non étiqueté."
       },
       "MessageTemplateResponse": {
         "properties": {
@@ -30554,13 +30640,47 @@
           "body": {
             "type": "string",
             "title": "Body"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
           "id",
           "name",
-          "body"
+          "body",
+          "created_at",
+          "updated_at"
         ],
         "title": "MessageTemplateResponse"
       },
@@ -30590,10 +30710,41 @@
               }
             ],
             "title": "Body"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fr",
+                  "en",
+                  "es",
+                  "ru",
+                  "pt",
+                  "it",
+                  "hu"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReminderChannel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
-        "title": "MessageTemplateUpdateRequest"
+        "title": "MessageTemplateUpdateRequest",
+        "description": "PATCH partiel. Une étiquette se RETIRE en envoyant `null`\nexplicitement — d'où `exclude_unset` côté manager, qui distingue\n« absent » (inchangé) de « null » (effacé)."
       },
       "MfaCodeRequest": {
         "properties": {
@@ -34609,6 +34760,88 @@
         ],
         "title": "ReminderListResponse"
       },
+      "ReminderPreviewRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "step_progress_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Progress Id"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ReminderPreviewRequest",
+        "description": "Le BROUILLON en cours d'écriture (jamais persisté ici). `case_id`\noptionnel : avec lui l'aperçu rend les VRAIES valeurs, sans lui les\nspécimens du catalogue — écrire un modèle de message n'exige pas\nd'avoir un client sous la main."
+      },
+      "ReminderPreviewResponse": {
+        "properties": {
+          "rendered": {
+            "type": "string",
+            "title": "Rendered"
+          },
+          "unknown_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Tokens",
+            "default": []
+          },
+          "unresolvable_tokens": {
+            "items": {
+              "$ref": "#/components/schemas/UnresolvableToken"
+            },
+            "type": "array",
+            "title": "Unresolvable Tokens",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "rendered"
+        ],
+        "title": "ReminderPreviewResponse",
+        "description": "Ce que le client lira, plus les deux signaux d'ÉDITION."
+      },
       "ReminderResponse": {
         "properties": {
           "id": {
@@ -34752,6 +34985,35 @@
         ],
         "title": "ReminderStatus",
         "description": "Mandatory manual approval: TO_APPROVE → APPROVED → SENT,\nor CANCELLED. No send ever happens before APPROVED."
+      },
+      "ReminderTokenInfo": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "example": {
+            "type": "string",
+            "title": "Example"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "name",
+          "label",
+          "example"
+        ],
+        "title": "ReminderTokenInfo",
+        "description": "UN jeton des messages de relance, tel que la modale « Programmer un\nrappel » en a besoin. Même forme que AgencyTokenInfo à UN champ près, et\nce champ dit toute la différence entre les deux systèmes.\n\nLes conditions résolvent à la LECTURE, donc leur catalogue sert la VALEUR\nCOURANTE. Une relance est interpolée AU FIGEAGE et part une fois, donc son\ncatalogue sert un EXEMPLE : quand l'agence écrit, il n'y a pas forcément\nde client en face, et il y en aura un différent à chaque envoi. Le\ncatalogue vit dans `reminders.reminder_tokens`."
       },
       "ReminderUpdateRequest": {
         "properties": {
@@ -38528,6 +38790,30 @@
           "trial_ends_at"
         ],
         "title": "TrialResponse"
+      },
+      "UnresolvableToken": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "name",
+          "reason"
+        ],
+        "title": "UnresolvableToken",
+        "description": "Un jeton CONNU que le figeage refuserait. `reason` est un slug stable\n(`step_required`, `estimated_days_required`, `step_not_started`,\n`agency_field_empty`) : le front le traduit, il ne l'affiche pas brut."
       },
       "UnsectionedFields": {
         "properties": {

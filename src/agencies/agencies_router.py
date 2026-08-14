@@ -33,6 +33,7 @@ from src.agencies.agencies_schema import (
     LifetimeAccessResponse,
     MemberDeactivationResponse,
     OnboardingResponse,
+    ReminderTokenInfo,
     RoleResponse,
     SeatTypeUpdateRequest,
     SignatureCreditGrantRequest,
@@ -57,6 +58,7 @@ from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.referral.referral_manager import ReferralManager
 from src.referral.referral_schema import ReferrerViewResponse
+from src.reminders.reminder_tokens import token_values as reminder_token_values
 from src.signatures.flags import signatures_effectively_enabled
 
 router = APIRouter(prefix="/agencies", tags=["agencies"])
@@ -334,6 +336,15 @@ async def _fill_client_documents(
     texts = (response.client_terms_md, response.client_privacy_md)
     response.client_terms_unknown_tokens = unknown_tokens(*texts)
     response.client_terms_unfilled_tokens = unfilled_tokens(agency, *texts)
+    # LES VARIABLES DE RELANCE (lot 14/08), servies au même endroit et sous la
+    # même forme que celles des conditions — un seul endroit à lire pour le
+    # front. La différence est dans le CHAMP : `example` et non `value`, parce
+    # qu'une relance est interpolée au figeage et part une fois (cf.
+    # ReminderTokenInfo). Aucun appel DB : le catalogue est en code.
+    response.reminder_tokens = [
+        ReminderTokenInfo(token="{" + name + "}", name=name, label=label, example=example)
+        for name, label, example in reminder_token_values(agency)
+    ]
     # Le régime des relances automatiques, lu depuis `settings` par LA fonction
     # que le job lit aussi — l'écran et l'envoi ne peuvent pas diverger.
     response.auto_reminders_require_approval = auto_reminders_require_approval(agency)
