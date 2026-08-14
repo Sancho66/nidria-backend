@@ -215,7 +215,7 @@ async def test_invariant_unapproved_reminder_never_sent_by_a_tick(
 
     stats = _run_dispatch(sync_session_local)
 
-    assert stats == {"due": 0, "sent": 0, "skipped_step_done": 0}
+    assert stats == {"due": 0, "sent": 0, "emails": 0, "skipped_step_done": 0}
     await db_session.refresh(reminder)
     assert reminder.status == "to_approve"
     assert email.outbox == []
@@ -233,7 +233,7 @@ async def test_approved_due_is_dispatched_future_is_not(
     future = await make_reminder(case=case, status="approved", scheduled_at=_FUTURE)
 
     stats = _run_dispatch(sync_session_local)
-    assert stats == {"due": 1, "sent": 1, "skipped_step_done": 0}
+    assert stats == {"due": 1, "sent": 1, "emails": 1, "skipped_step_done": 0}
     await db_session.refresh(due)
     await db_session.refresh(future)
     assert due.status == "sent"
@@ -252,7 +252,12 @@ async def test_approved_due_is_dispatched_future_is_not(
     assert log.actor_type == "system"
 
     # Idempotence: a second tick is a no-op.
-    assert _run_dispatch(sync_session_local) == {"due": 0, "sent": 0, "skipped_step_done": 0}
+    assert _run_dispatch(sync_session_local) == {
+        "due": 0,
+        "sent": 0,
+        "emails": 0,
+        "skipped_step_done": 0,
+    }
     assert len(email.outbox) == 1
 
 
@@ -1790,7 +1795,8 @@ async def test_dispatch_cancels_instead_of_sending_on_a_done_step(
     still_true = await make_reminder(case=case, status="approved", scheduled_at=_PAST)
 
     stats = _run_dispatch(sync_session_local)
-    assert stats == {"due": 2, "sent": 1, "skipped_step_done": 1}
+    # `emails` = ce qui est VRAIMENT parti, `sent` = les rappels marqués envoyés.
+    assert stats == {"due": 2, "sent": 1, "emails": 1, "skipped_step_done": 1}
     assert len(email.outbox) == 1  # l'autre est bien partie
 
     await db_session.refresh(false_one)
@@ -1808,7 +1814,12 @@ async def test_dispatch_cancels_instead_of_sending_on_a_done_step(
     assert log.details == {"reminder_id": str(false_one.id), "reason": "step_done"}
 
     # Et le tick suivant ne la rejoue pas.
-    assert _run_dispatch(sync_session_local) == {"due": 0, "sent": 0, "skipped_step_done": 0}
+    assert _run_dispatch(sync_session_local) == {
+        "due": 0,
+        "sent": 0,
+        "emails": 0,
+        "skipped_step_done": 0,
+    }
 
 
 async def test_bulk_approve_is_gated_like_the_unit_approve_not_like_the_cancel(
@@ -1839,3 +1850,203 @@ async def test_bulk_approve_is_gated_like_the_unit_approve_not_like_the_cancel(
     assert (
         await rem_client.post("/reminders/bulk-cancel", headers=agent_headers(writer), json=body)
     ).status_code == 200
+
+
+# --- LOT A : un email par (client, dossier), pas par rappel (13/08) ----------------
+#
+# Constat : six relances automatiques du même dossier partaient en six emails
+# dans la même minute, vers la même personne. Le dispatch tient déjà son lot
+# (`rows`) — il collecte désormais avant d'envoyer.
+
+
+async def _case_with_steps(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    agent: Agent,
+    make_client_case: MakeClientCase,
+    headers: dict[str, str],
+    step_names: list[str],
+) -> tuple[ClientCase, list[str]]:
+    """Un dossier avec un parcours de N étapes — renvoie (dossier, progress ids)."""
+    template = (await rem_client.post("/journeys", headers=headers, json={"name": "T"})).json()
+    for name in step_names:
+        await rem_client.post(
+            f"/journeys/{template['id']}/steps", headers=headers, json={"name": name}
+        )
+    case = await make_client_case(agency_id=agent.agency_id)
+    timeline = (
+        await rem_client.post(
+            f"/cases/{case.id}/journey",
+            headers=headers,
+            json={"journey_template_id": template["id"]},
+        )
+    ).json()
+    return case, [step["id"] for step in timeline]
+
+
+_SIX = [
+    "Informations relatives à la création",
+    "Préparation des documents administratifs",
+    "Validation et signature des documents",
+    "Enregistrement au registre du commerce",
+    "Validation du numéro de la société",
+    "Validation du numéro de TVA",
+]
+
+
+async def test_six_reminders_same_client_leave_as_one_mail_listing_the_steps(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le cas de Jorgé Cifuentes, gravé : six étapes en retard du même dossier
+    = UN email qui les liste, et six rappels marqués envoyés."""
+    headers = agent_headers(manager_agent)
+    case, progress_ids = await _case_with_steps(
+        rem_client, db_session, manager_agent, make_client_case, headers, _SIX
+    )
+    for progress_id, name in zip(progress_ids, _SIX, strict=True):
+        await make_reminder(
+            case=case,
+            status="approved",
+            scheduled_at=_PAST,
+            step_progress_id=progress_id,
+            auto_threshold_days=20,
+            message_body=f"Relance automatique : l'étape « {name} » n'a pas progressé.",
+        )
+
+    stats = _run_dispatch(sync_session_local)
+    # Le compte reste vrai des DEUX côtés : 6 rappels envoyés, 1 email posté.
+    assert stats["sent"] == 6
+    assert stats["emails"] == 1
+    assert len(email.outbox) == 1
+
+    body = email.outbox[0].body
+    assert "Plusieurs étapes de votre dossier" in body
+    for name in _SIX:
+        assert f"· {name}" in body  # la LISTE, pas six paragraphes
+    assert body.count("Relance automatique") == 0  # le texte unitaire ne se répète pas
+
+    # Traçabilité intacte : chaque rappel a son statut et sa ligne d'activité.
+    reminders = (
+        (await db_session.execute(select(Reminder).where(Reminder.case_id == case.id)))
+        .scalars()
+        .all()
+    )
+    assert {r.status for r in reminders} == {"sent"}
+    logs = (
+        (
+            await db_session.execute(
+                select(ActivityLog).where(ActivityLog.action_type == "reminder.sent")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(logs) == 6
+    assert all(log.details["grouped"] == 6 for log in logs)
+
+
+async def test_a_single_reminder_keeps_the_exact_text_it_had(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le cas normal ne dégrade pas : un seul rappel garde son texte, sans
+    intro de liste et sans puce."""
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    await make_reminder(
+        case=case,
+        status="approved",
+        scheduled_at=_PAST,
+        auto_threshold_days=20,
+        message_body="Relance automatique : l'étape « Visa » n'a pas progressé.",
+    )
+    stats = _run_dispatch(sync_session_local)
+    assert stats["sent"] == 1 and stats["emails"] == 1
+    body = email.outbox[0].body
+    assert "Relance automatique : l'étape « Visa » n'a pas progressé." in body
+    assert "Plusieurs étapes" not in body
+    assert "· " not in body
+
+
+async def test_two_distinct_clients_get_two_mails(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+) -> None:
+    for index in range(2):
+        expat = await make_expat_user(email=f"client{index}@example.com")
+        case = await make_client_case(
+            agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+        )
+        for _ in range(2):
+            await make_reminder(
+                case=case, status="approved", scheduled_at=_PAST, auto_threshold_days=20
+            )
+
+    stats = _run_dispatch(sync_session_local)
+    assert stats["sent"] == 4
+    assert stats["emails"] == 2  # un par personne, jamais un mail commun
+    assert {mail.to for mail in email.outbox} == {"client0@example.com", "client1@example.com"}
+
+
+async def test_two_cases_of_the_same_client_get_two_mails(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+) -> None:
+    """Verdict du point 3 : la maille est le DOSSIER. Mélanger deux dossiers
+    dans un mail rendrait la liste ambiguë (« quelle étape de quel dossier ? »)
+    alors que le lien, lui, mène à l'espace."""
+    expat = await make_expat_user(email="deux-dossiers@example.com")
+    for _ in range(2):
+        case = await make_client_case(
+            agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+        )
+        for _ in range(2):
+            await make_reminder(
+                case=case, status="approved", scheduled_at=_PAST, auto_threshold_days=20
+            )
+
+    stats = _run_dispatch(sync_session_local)
+    assert stats["sent"] == 4
+    assert stats["emails"] == 2  # un par dossier
+    assert {mail.to for mail in email.outbox} == {"deux-dossiers@example.com"}
+
+
+async def test_a_hand_written_reminder_is_never_merged(
+    rem_client: AsyncClient,
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_reminder: MakeReminder,
+) -> None:
+    """Le texte d'un rappel écrit à la main est celui de l'AGENCE : il part
+    tel quel, dans son propre email, même si une relance auto vise la même
+    personne au même tick."""
+    case = await make_client_case(agency_id=manager_agent.agency_id)
+    await make_reminder(
+        case=case, status="approved", scheduled_at=_PAST, message_body="Mon texte à moi."
+    )
+    await make_reminder(case=case, status="approved", scheduled_at=_PAST, auto_threshold_days=20)
+    stats = _run_dispatch(sync_session_local)
+    assert stats["sent"] == 2 and stats["emails"] == 2
+    assert any("Mon texte à moi." in mail.body for mail in email.outbox)

@@ -54,6 +54,7 @@ from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import (
     auto_reminder_body,
+    reminder_digest_email,
     reminder_email,
     reminder_escalation_email,
 )
@@ -171,12 +172,49 @@ def _done_step_ids(db: Session, rows: Sequence[Any]) -> set[uuid.UUID]:
     )
 
 
+def _step_names_by_reminder(db: Session, reminders: list[Reminder]) -> dict[uuid.UUID, str]:
+    """Step name per reminder — what the GROUPED mail lists. Same scalar name
+    the individual body already carries (`auto_reminder_body(step.name, …)`),
+    so grouping never renames anything."""
+    progress_ids = [r.step_progress_id for r in reminders if r.step_progress_id is not None]
+    if not progress_ids:
+        return {}
+    by_progress = {
+        progress_id: name
+        for progress_id, name in db.execute(
+            select(CaseStepProgress.id, JourneyTemplateStep.name)
+            .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
+            .where(CaseStepProgress.id.in_(progress_ids))
+        ).all()
+    }
+    return {
+        reminder.id: by_progress[reminder.step_progress_id]
+        for reminder in reminders
+        if reminder.step_progress_id in by_progress
+    }
+
+
 def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
     """Send due APPROVED reminders (mail + in_app; whatsapp is manual).
 
     FOR UPDATE SKIP LOCKED: two overlapping ticks — or a manual trigger
     during a tick — never process the same row twice.
-    """
+
+    ONE MAIL PER (case, recipient), not per reminder (lot 13/08). The tick
+    already holds its whole batch in `rows`, so grouping needs no queue and no
+    rewrite: the loop below still DECIDES row by row (step-done guard, agency
+    pref, escalation), it just collects instead of sending, and the sending
+    pass then writes one mail per group. Six stalled steps of one dossier =
+    one mail listing six steps, where the client used to get six mails in the
+    same minute.
+
+    WHAT IS NEVER GROUPED: a hand-written reminder (its body is the AGENCY's
+    own text — merging two of them would betray what was approved), and an
+    escalation (its body wraps a named provider). Both keep one mail each.
+
+    THE COUNT STAYS TRUE: every reminder is marked SENT and logged
+    individually, group or not — `sent` counts REMINDERS, the new `emails`
+    counts what actually left."""
     now = datetime.now(UTC)
     # Join ClientCase + deleted_at IS NULL: a soft-deleted case never
     # dispatches — its APPROVED reminders are skipped at SELECT time, so
@@ -201,9 +239,36 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     rows = db.execute(base.with_for_update(skip_locked=True, of=Reminder)).all()
     settings = get_settings()
     sent = 0
+    emails = 0
     # The step-done guard, resolved once for the tick (see the module header).
     done_steps = _done_step_ids(db, rows)
     skipped_step_done = 0
+
+    def _record(reminder: Reminder, extra: dict[str, Any]) -> None:
+        """Mark SENT + log — per reminder, always, grouped or not."""
+        nonlocal sent
+        reminder.status = ReminderStatus.SENT.value
+        details: dict[str, Any] = {"reminder_id": str(reminder.id), "channel": reminder.channel}
+        details.update(extra)
+        db.add(
+            ActivityLog(
+                case_id=reminder.case_id,
+                actor_type=ActorType.SYSTEM.value,
+                actor_id=None,
+                action_type="reminder.escalated"
+                if extra.get("escalated_from")
+                else "reminder.sent",
+                details=details,
+            )
+        )
+        sent += 1
+        log(f"sent reminder {reminder.id} via {reminder.channel}")
+
+    # (case, recipient address, recipient type) → the mail they share.
+    groups: dict[tuple[uuid.UUID, str, str], dict[str, Any]] = {}
+    solo: list[tuple[Reminder, str, Any, dict[str, Any]]] = []  # (reminder, to, content, extra)
+    silent: list[Reminder] = []  # in-app, or email suppressed by the agency pref
+
     for reminder, agency in rows:
         if reminder.step_progress_id in done_steps:
             # CANCELLED, not left approved: the message is false forever (a
@@ -224,8 +289,6 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
             skipped_step_done += 1
             log(f"reminder {reminder.id}: target step already done, cancelled instead of sent")
             continue
-        escalated_from: str | None = None
-        email_suppressed = False
         if (
             reminder.channel == ReminderChannel.MAIL.value
             and reminder.recipient_type == RecipientType.EXPAT.value
@@ -233,58 +296,99 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
         ):
             # La pref de l'agence coupe l'EMAIL client, jamais le rappel :
             # le cycle de vie continue (SENT + trace), l'agence garde tout.
-            email_suppressed = True
-        elif reminder.channel == ReminderChannel.MAIL.value:
-            recipient = _recipient(db, reminder, agency)
-            if recipient is None:
-                # No reachable recipient AND no owner to escalate to — the
-                # only case left approved (loud log, never a silent drop).
-                log(f"reminder {reminder.id}: no reachable recipient nor owner, left approved")
-                continue
-            to, lang, escalated_from = recipient
-            if escalated_from is not None:
-                # Unreachable external → the reminder REMONTE to the case owner.
-                content = reminder_escalation_email(
-                    agency.name, escalated_from, reminder.message_body, lang
-                )
-                # Record that it now targets the owner (agent). The external
-                # FK is KEPT as provenance: the auto-pass idempotence matches
-                # on it — a rewritten line still blocks its threshold.
-                reminder.recipient_type = RecipientType.AGENT.value
-            else:
-                # The BRANDED client-space link — expat recipients only.
-                link = (
-                    space_link(settings.frontend_url, "/space", agency.slug)
-                    if reminder.recipient_type == RecipientType.EXPAT.value
-                    else None
-                )
-                content = reminder_email(agency.name, reminder.message_body, link, lang)
-            send_email(to, content.subject, content.text, content.html)
-        # IN_APP: the SENT reminder itself IS the notification read by
-        # the expat space (no notifications table).
-        reminder.status = ReminderStatus.SENT.value
-        details: dict[str, Any] = {"reminder_id": str(reminder.id), "channel": reminder.channel}
+            silent.append(reminder)
+            continue
+        if reminder.channel != ReminderChannel.MAIL.value:
+            # IN_APP: the SENT reminder itself IS the notification read by
+            # the expat space (no notifications table).
+            silent.append(reminder)
+            continue
+        recipient = _recipient(db, reminder, agency)
+        if recipient is None:
+            # No reachable recipient AND no owner to escalate to — the
+            # only case left approved (loud log, never a silent drop).
+            log(f"reminder {reminder.id}: no reachable recipient nor owner, left approved")
+            continue
+        to, lang, escalated_from = recipient
         if escalated_from is not None:
-            details["escalated_from"] = escalated_from
-        if email_suppressed:
-            details["email_suppressed"] = True  # la pref agence a coupe l'email
-        db.add(
-            ActivityLog(
-                case_id=reminder.case_id,
-                actor_type=ActorType.SYSTEM.value,
-                actor_id=None,
-                action_type="reminder.escalated" if escalated_from else "reminder.sent",
-                details=details,
+            # Unreachable external → the reminder REMONTE to the case owner.
+            content = reminder_escalation_email(
+                agency.name, escalated_from, reminder.message_body, lang
             )
+            # Record that it now targets the owner (agent). The external
+            # FK is KEPT as provenance: the auto-pass idempotence matches
+            # on it — a rewritten line still blocks its threshold.
+            reminder.recipient_type = RecipientType.AGENT.value
+            solo.append((reminder, to, content, {"escalated_from": escalated_from}))
+            continue
+        if reminder.auto_threshold_days is None:
+            # HAND-WRITTEN: its body is the agency's own text, never merged.
+            link = (
+                space_link(settings.frontend_url, "/space", agency.slug)
+                if reminder.recipient_type == RecipientType.EXPAT.value
+                else None
+            )
+            solo.append(
+                (reminder, to, reminder_email(agency.name, reminder.message_body, link, lang), {})
+            )
+            continue
+        group = groups.setdefault(
+            (reminder.case_id, to, reminder.recipient_type),
+            {"lang": lang, "agency": agency, "reminders": []},
         )
-        sent += 1
-        log(f"sent reminder {reminder.id} via {reminder.channel}")
+        group["reminders"].append(reminder)
+
+    for (_case_id, to, recipient_type), group in groups.items():
+        members: list[Reminder] = group["reminders"]
+        agency = group["agency"]
+        lang = group["lang"]
+        link = (
+            space_link(settings.frontend_url, "/space", agency.slug)
+            if recipient_type == RecipientType.EXPAT.value
+            else None
+        )
+        if len(members) == 1:
+            # THE NORMAL CASE, byte for byte what it was before grouping.
+            content = reminder_email(agency.name, members[0].message_body, link, lang)
+        else:
+            names = _step_names_by_reminder(db, members)
+            content = reminder_digest_email(
+                agency.name,
+                [names.get(member.id, member.message_body) for member in members],
+                link,
+                lang,
+            )
+        send_email(to, content.subject, content.text, content.html)
+        emails += 1
+        extra = {"grouped": len(members)} if len(members) > 1 else {}
+        for member in members:
+            _record(member, dict(extra))
+        if len(members) > 1:
+            log(f"grouped {len(members)} reminders into one mail to {to}")
+
+    for reminder, to, content, extra in solo:
+        send_email(to, content.subject, content.text, content.html)
+        emails += 1
+        _record(reminder, extra)
+
+    for reminder in silent:
+        _record(
+            reminder,
+            {"email_suppressed": True} if reminder.channel == ReminderChannel.MAIL.value else {},
+        )
+
     db.commit()
     # skipped_step_done always present, 0 included (same discipline as
     # skipped_no_client_space): a key that shows up only when it fires reads
     # like an anomaly, and « combien de relances étaient fausses » is exactly
-    # what the run history must state plainly.
-    return {"due": len(rows), "sent": sent, "skipped_step_done": skipped_step_done}
+    # what the run history must state plainly. `emails` is the new honest
+    # pair of `sent`: reminders sent vs mails actually posted.
+    return {
+        "due": len(rows),
+        "sent": sent,
+        "emails": emails,
+        "skipped_step_done": skipped_step_done,
+    }
 
 
 def resolve_auto_reminder_thresholds(
@@ -354,8 +458,9 @@ def _steps_with_all_requirements_met(db: Session, rows: Sequence[Any]) -> set[An
 
 
 def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> dict[str, Any]:
-    """Auto follow-ups on stalled steps — created TO_APPROVE, never more:
-    the system proposes, a human approves. TWO passes on the SAME clock
+    """Auto follow-ups on stalled steps. Created APPROVED by default since the
+    13/08 lot (the agency may still ask to validate each one:
+    settings["auto_reminders_require_approval"]). TWO passes on the SAME clock
     (step_progress.updated_at as the last-movement proxy): the client one
     (principal/member), and since P2 the PROVIDER one — every external
     participant of a stalled step gets its own proposed follow-up, in the

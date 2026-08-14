@@ -215,7 +215,7 @@ async def test_trigger_manual_creates_run_and_dispatches(
     assert body["status"] == "success"
     assert body["triggered_by"] == "manual"
     assert body["triggered_by_agent_id"] == str(admin.id)
-    assert body["stats"] == {"due": 1, "sent": 1, "skipped_step_done": 0}
+    assert body["stats"] == {"due": 1, "sent": 1, "emails": 1, "skipped_step_done": 0}
     assert len(email.outbox) == 1
 
     run_row = (await db_session.execute(select(JobRun))).scalar_one()

@@ -729,6 +729,43 @@ def auto_reminder_body(step_name: str, days: int, lang: str = "fr") -> str:
     return template.format(step=step_name, days=days)
 
 
+# GROUPED reminders (lot 13/08). When several AUTOMATIC follow-ups of the same
+# case reach the same person in one dispatch tick, they leave as ONE mail: an
+# intro, then the LIST of the steps — not six near-identical paragraphs. The
+# single-reminder case keeps its exact text (`reminder_email`): the rare case
+# must never degrade the normal one.
+_REMINDER_DIGEST = {
+    "fr": "Plusieurs étapes de votre dossier n'ont pas progressé et attendent votre action :",
+    "en": "Several steps of your case have not progressed and are waiting for you:",
+    "es": "Varias etapas de su expediente no han avanzado y esperan su acción:",
+    "ru": "Несколько этапов вашего дела не продвинулись и ждут ваших действий:",
+    "pt": "Várias etapas do seu processo não avançaram e aguardam a sua ação:",
+    "it": "Diverse fasi della tua pratica non sono avanzate e attendono un tuo intervento:",
+    "hu": "Az ügyének több lépése nem haladt előre, és Önre vár:",
+}
+
+
+def reminder_digest_email(
+    agency_name: str, step_names: list[str], space_link: str | None, lang: str = "fr"
+) -> EmailContent:
+    """ONE mail for SEVERAL stalled steps of the same case, same recipient.
+    Same chrome and same subject as a single reminder — only the body becomes
+    an intro plus a list, so the reader sees one message about their case
+    instead of six alerts in the same minute."""
+    s = _pick(_REMINDER, lang)
+    intro_multi = _REMINDER_DIGEST.get(lang, _REMINDER_DIGEST["fr"])
+    listed = "\n".join(f"· {name}" for name in step_names)
+    return _render(
+        subject=s["subject"].format(agency=agency_name),
+        title=s["title"],
+        intro=s["intro"].format(agency=agency_name),
+        body_text=f"{intro_multi}\n\n{listed}",
+        button_label=s["button"] if space_link else None,
+        button_url=space_link,
+        lang=lang,
+    )
+
+
 def _pick(catalog: dict[str, dict[str, str]], lang: str) -> dict[str, str]:
     """Select a template's strings for `lang`, falling back to FR. `lang` is
     already the resolved recipient language (BLOC NOTIF-1)."""

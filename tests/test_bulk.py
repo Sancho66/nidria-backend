@@ -357,7 +357,7 @@ async def test_soft_deleted_case_invisible_everywhere(
     # 6. THE SCHEDULER — no mail dispatched, no auto follow-up created.
     email.outbox.clear()
     dispatch_stats = _run_dispatch(sync_session_local)
-    assert dispatch_stats == {"due": 0, "sent": 0, "skipped_step_done": 0}
+    assert dispatch_stats == {"due": 0, "sent": 0, "emails": 0, "skipped_step_done": 0}
     assert email.outbox == []
     auto_stats = _run_auto(sync_session_local)
     assert auto_stats["created"] == 0
