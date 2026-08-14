@@ -948,3 +948,57 @@ async def test_monthly_reset_starts_a_clean_counter(
         )
     ).scalar_one()
     assert job.status == "done"
+
+
+# --- l'estimation et le job chiffrent LE MÊME travail (correctif 14/08) ------------------------
+
+
+async def test_estimate_with_retranslate_matches_the_job_charge(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    fake_provider: dict[str, Any],
+) -> None:
+    """Le pendant PARCOURS du témoin posé côté modèles de message : le
+    paramètre existait ici, mais rien ne prouvait que l'estimation et le
+    job chiffrent le même périmètre quand une langue verrouillée est
+    re-cochée. Gravé : mêmes langues annoncées et exécutées, formule de
+    l'estimation appliquée à ce périmètre exact, débit couvrant chaque
+    langue re-cochée."""
+    from src.ai import quota
+
+    headers = agent_headers(admin)
+    tid = await _template_with_content(client, headers)
+    assert (
+        await client.post(f"/journeys/{tid}/translate", headers=headers, json={})
+    ).status_code == 202  # tout traduire d'abord
+
+    est = (
+        await client.get(
+            f"/journeys/{tid}/translate/estimate?retranslate_langs=es&retranslate_langs=ru",
+            headers=headers,
+        )
+    ).json()
+    assert est["langs"] == ["es", "ru"]
+    assert est["items"] > 0
+    source_chars = sum(
+        len(text) for text in ("Résidence D7", "Dépôt du dossier")
+    )  # les deux entrées du gabarit de ce fichier
+    assert est["estimated_points"] == quota.estimate_points(source_chars, est["items"], 2)
+
+    started = await client.post(
+        f"/journeys/{tid}/translate",
+        headers=headers,
+        json={"retranslate_langs": ["es", "ru"]},
+    )
+    assert started.status_code == 202, started.text
+    job = (
+        await client.get(
+            f"/journeys/translate-jobs/{started.json()['translation_job_id']}",
+            headers=headers,
+        )
+    ).json()
+    assert job["langs"] == est["langs"]
+    assert job["points_charged"] == 2 * POINTS_PER_CALL
+    # Le schéma UNIQUE à deux cibles : ici c'est le parcours qui est rempli.
+    assert job["template_id"] == tid and job["message_template_id"] is None

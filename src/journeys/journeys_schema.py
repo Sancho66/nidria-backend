@@ -170,12 +170,19 @@ class JobProgress(BaseModel):
 
 class TranslationJobResponse(BaseModel):
     """An async translation job — progress.done/progress.total IS the
-    progress bar; poll GET /journeys/translate-jobs/{id} until
-    done|done_with_gaps|failed. One lot = one language."""
+    progress bar; poll the surface's translate-jobs endpoint until
+    done|done_with_gaps|failed. One lot = one language.
+
+    ONE schema, TWO optional targets (décision 14/08) : un job vise un
+    parcours (`template_id`) OU un modèle de message
+    (`message_template_id`) — exactement une des deux clés est non nulle,
+    le miroir du CHECK en table. Le front se type sur CE schéma et
+    n'entretient pas deux formes ; le discriminant est la clé remplie."""
 
     id: uuid.UUID
     translation_job_id: uuid.UUID  # alias of id (the ticket's name)
-    template_id: uuid.UUID
+    template_id: uuid.UUID | None = None
+    message_template_id: uuid.UUID | None = None
     # done = 0 residue ; done_with_gaps = good fields written, some keys
     # need manual review (see failed_keys) ; failed = nothing written
     # (parsing/network/upstream — a true failure).

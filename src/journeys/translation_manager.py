@@ -153,6 +153,7 @@ def job_response(job: AiTranslationJob) -> TranslationJobResponse:
         id=job.id,
         translation_job_id=job.id,
         template_id=job.template_id,
+        message_template_id=job.message_template_id,
         status=job.status,
         langs=list(job.langs or []),
         progress=JobProgress(done=job.progress_done, total=job.progress_total),

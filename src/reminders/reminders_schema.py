@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from src.core.enums import RecipientType, ReminderChannel
 from src.core.i18n import Language
-from src.journeys.journeys_schema import I18nBlob, JobProgress
+from src.journeys.journeys_schema import I18nBlob
 from src.reminders.reminder_tokens import deprecated_tokens
 
 
@@ -100,29 +100,6 @@ class TemplateTranslateRequest(BaseModel):
     target_langs: list[Language] | None = None
     include_stale: bool = False
     retranslate_langs: list[Language] | None = None
-
-
-class TemplateTranslationJobResponse(BaseModel):
-    """Le job async — même forme que celui des parcours (le front qui sait
-    suivre l'un suit l'autre), la cible en plus : `message_template_id`.
-    Poll GET /message-templates/translate-jobs/{id} jusqu'à
-    done | done_with_gaps | failed. Un lot = une langue."""
-
-    id: uuid.UUID
-    translation_job_id: uuid.UUID
-    message_template_id: uuid.UUID
-    status: str  # pending | running | done | done_with_gaps | failed
-    langs: list[str]
-    progress: JobProgress
-    translated_keys: int
-    points_charged: int
-    error: str | None
-    # "{lang}:template.body" des variantes à revoir ; vide hors
-    # done_with_gaps. Un {jeton} altéré par le modèle finit ICI — jamais
-    # publié en silence.
-    failed_keys: list[str] = []
-    created_at: datetime
-    updated_at: datetime
 
 
 class ReminderPreviewRequest(BaseModel):

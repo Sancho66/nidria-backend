@@ -48,6 +48,7 @@ from src.journeys.journeys_schema import (
     JobProgress,
     LangTranslationCounts,
     TranslateEstimateResponse,
+    TranslationJobResponse,
 )
 from src.journeys.translation_manager import (
     DONE,
@@ -60,7 +61,6 @@ from src.journeys.translation_manager import (
     send_langs,
 )
 from src.reminders.reminders_repository import RemindersRepository
-from src.reminders.reminders_schema import TemplateTranslationJobResponse
 from src.usage.usage_manager import UsageManager
 
 logger = logging.getLogger(__name__)
@@ -70,11 +70,15 @@ logger = logging.getLogger(__name__)
 BODY_KEY = "template.body"
 
 
-def job_response(job: AiTranslationJob) -> TemplateTranslationJobResponse:
+def job_response(job: AiTranslationJob) -> TranslationJobResponse:
+    """LE schéma unique des jobs (décision 14/08) : deux cibles
+    optionnelles, exactement une remplie — ici `message_template_id`,
+    `template_id` restant nul. Le front n'entretient qu'une forme."""
     assert job.message_template_id is not None  # garanti par le CHECK en base
-    return TemplateTranslationJobResponse(
+    return TranslationJobResponse(
         id=job.id,
         translation_job_id=job.id,
+        template_id=None,
         message_template_id=job.message_template_id,
         status=job.status,
         langs=list(job.langs or []),
@@ -227,7 +231,7 @@ class TemplateTranslationManager:
         await self.db.refresh(job)
         return job
 
-    async def get_job(self, agent: Agent, job_id: uuid.UUID) -> TemplateTranslationJobResponse:
+    async def get_job(self, agent: Agent, job_id: uuid.UUID) -> TranslationJobResponse:
         """Lecture de polling — scopée agence, et scopée SURFACE : un job de
         parcours interrogé ici répond 404, les deux guichets ne se répondent
         pas l'un pour l'autre."""

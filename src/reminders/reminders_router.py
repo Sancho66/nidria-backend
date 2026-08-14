@@ -9,9 +9,10 @@ from shared.models.agent import Agent
 from src.auth.auth_schema import MessageResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience, ReminderStatus
+from src.core.i18n import Language
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
-from src.journeys.journeys_schema import TranslateEstimateResponse
+from src.journeys.journeys_schema import TranslateEstimateResponse, TranslationJobResponse
 from src.reminders.reminders_manager import RemindersManager
 from src.reminders.reminders_schema import (
     MessageTemplateCreateRequest,
@@ -28,7 +29,6 @@ from src.reminders.reminders_schema import (
     ReminderResponse,
     ReminderUpdateRequest,
     TemplateTranslateRequest,
-    TemplateTranslationJobResponse,
 )
 from src.reminders.template_translation_manager import (
     TemplateTranslationManager,
@@ -96,12 +96,10 @@ async def list_message_templates(agent: AgentDep, db: DbDep) -> list[MessageTemp
     return [MessageTemplateResponse.model_validate(template) for template in templates]
 
 
-@router.get(
-    "/message-templates/translate-jobs/{job_id}", response_model=TemplateTranslationJobResponse
-)
+@router.get("/message-templates/translate-jobs/{job_id}", response_model=TranslationJobResponse)
 async def get_template_translate_job(
     job_id: uuid.UUID, agent: AgentDep, db: DbDep
-) -> TemplateTranslationJobResponse:
+) -> TranslationJobResponse:
     """Polling du job — scopé agence ET surface (un job de parcours répond
     404 ici). Littéral déclaré avant les routes en {template_id}."""
     return await TemplateTranslationManager(db).get_job(agent, job_id)
@@ -116,18 +114,26 @@ async def template_translate_estimate(
     agent: AgentDep,
     db: DbDep,
     include_stale: bool = False,
+    retranslate_langs: Annotated[list[Language] | None, Query()] = None,
 ) -> TranslateEstimateResponse:
     """Le chiffre honnête AVANT de lancer — même forme que l'estimation des
     parcours (items/langs/counts/points/quota), même pool de points, barème
-    nourri des caractères réels du corps."""
+    nourri des caractères réels du corps. `retranslate_langs` suit le MODE
+    de la modale : une langue consentie à la régénération entre dans le
+    chiffre — sans quoi l'estimation annoncerait zéro pendant que le job
+    facture (correctif 14/08, signalé par le front)."""
     return await TemplateTranslationManager(db).estimate(
-        agent, template_id, None, include_stale=include_stale
+        agent,
+        template_id,
+        None,
+        include_stale=include_stale,
+        retranslate_langs=[str(lang) for lang in retranslate_langs] if retranslate_langs else None,
     )
 
 
 @router.post(
     "/message-templates/{template_id}/translate",
-    response_model=TemplateTranslationJobResponse,
+    response_model=TranslationJobResponse,
     status_code=202,
 )
 async def translate_message_template(
@@ -136,7 +142,7 @@ async def translate_message_template(
     db: DbDep,
     background: BackgroundTasks,
     body: TemplateTranslateRequest | None = None,
-) -> TemplateTranslationJobResponse:
+) -> TranslationJobResponse:
     """LANCE la traduction async des variantes VIDES du corps (défaut), ou
     vides + obsolètes (include_stale — une variante IA dont la source a
     bougé ; le travail humain n'est jamais touché). `retranslate_langs` est

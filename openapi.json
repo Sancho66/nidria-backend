@@ -17502,7 +17502,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TemplateTranslationJobResponse"
+                  "$ref": "#/components/schemas/TranslationJobResponse"
                 }
               }
             }
@@ -17526,7 +17526,7 @@
           "reminders"
         ],
         "summary": "Template Translate Estimate",
-        "description": "Le chiffre honnête AVANT de lancer — même forme que l'estimation des\nparcours (items/langs/counts/points/quota), même pool de points, barème\nnourri des caractères réels du corps.",
+        "description": "Le chiffre honnête AVANT de lancer — même forme que l'estimation des\nparcours (items/langs/counts/points/quota), même pool de points, barème\nnourri des caractères réels du corps. `retranslate_langs` suit le MODE\nde la modale : une langue consentie à la régénération entre dans le\nchiffre — sans quoi l'estimation annoncerait zéro pendant que le job\nfacture (correctif 14/08, signalé par le front).",
         "operationId": "template_translate_estimate_message_templates__template_id__translate_estimate_get",
         "security": [
           {
@@ -17552,6 +17552,34 @@
               "type": "boolean",
               "default": false,
               "title": "Include Stale"
+            }
+          },
+          {
+            "name": "retranslate_langs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "fr",
+                      "en",
+                      "es",
+                      "ru",
+                      "pt",
+                      "it",
+                      "hu"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Retranslate Langs"
             }
           }
         ],
@@ -17627,7 +17655,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TemplateTranslationJobResponse"
+                  "$ref": "#/components/schemas/TranslationJobResponse"
                 }
               }
             }
@@ -38872,92 +38900,6 @@
         "title": "TemplateTranslateRequest",
         "description": "POST /message-templates/{id}/translate — corps vide = toutes les\nlangues incomplètes. Décalque du contrat parcours : `include_stale`\nretraduit aussi les variantes IA dont la source a bougé (jamais le\ntravail humain) ; `retranslate_langs` est l'écrasement CONSENTI, par\nlangue — le front confirme explicitement, le back ne le déduit jamais."
       },
-      "TemplateTranslationJobResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "translation_job_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Translation Job Id"
-          },
-          "message_template_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Message Template Id"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "langs": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Langs"
-          },
-          "progress": {
-            "$ref": "#/components/schemas/JobProgress"
-          },
-          "translated_keys": {
-            "type": "integer",
-            "title": "Translated Keys"
-          },
-          "points_charged": {
-            "type": "integer",
-            "title": "Points Charged"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "failed_keys": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Failed Keys",
-            "default": []
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "translation_job_id",
-          "message_template_id",
-          "status",
-          "langs",
-          "progress",
-          "translated_keys",
-          "points_charged",
-          "error",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "TemplateTranslationJobResponse",
-        "description": "Le job async — même forme que celui des parcours (le front qui sait\nsuivre l'un suit l'autre), la cible en plus : `message_template_id`.\nPoll GET /message-templates/translate-jobs/{id} jusqu'à\ndone | done_with_gaps | failed. Un lot = une langue."
-      },
       "TimeSavedBlockResponse": {
         "properties": {
           "items": {
@@ -39123,9 +39065,28 @@
             "title": "Translation Job Id"
           },
           "template_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Template Id"
+          },
+          "message_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Template Id"
           },
           "status": {
             "type": "string",
@@ -39183,7 +39144,6 @@
         "required": [
           "id",
           "translation_job_id",
-          "template_id",
           "status",
           "langs",
           "progress",
@@ -39194,7 +39154,7 @@
           "updated_at"
         ],
         "title": "TranslationJobResponse",
-        "description": "An async translation job — progress.done/progress.total IS the\nprogress bar; poll GET /journeys/translate-jobs/{id} until\ndone|done_with_gaps|failed. One lot = one language."
+        "description": "An async translation job — progress.done/progress.total IS the\nprogress bar; poll the surface's translate-jobs endpoint until\ndone|done_with_gaps|failed. One lot = one language.\n\nONE schema, TWO optional targets (décision 14/08) : un job vise un\nparcours (`template_id`) OU un modèle de message\n(`message_template_id`) — exactement une des deux clés est non nulle,\nle miroir du CHECK en table. Le front se type sur CE schéma et\nn'entretient pas deux formes ; le discriminant est la clé remplie."
       },
       "TrialExtendRequest": {
         "properties": {

@@ -506,6 +506,7 @@ async def test_response_models_render_with_their_exact_keys(
     assert set(job_payload) == {
         "id",
         "translation_job_id",
+        "template_id",  # le schéma UNIQUE à deux cibles : nul ici
         "message_template_id",
         "status",
         "langs",
@@ -530,3 +531,57 @@ async def test_response_models_render_with_their_exact_keys(
         "quota_limit",
         "month",
     }
+
+
+# --- l'estimation et le job chiffrent LE MÊME travail (correctif 14/08) -------------
+
+
+async def test_estimate_with_retranslate_matches_the_job_charge(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    fake_provider: dict[str, Any],
+) -> None:
+    """Le mensonge signalé par le front : modèle entièrement traduit, une
+    langue re-cochée — l'estimation annonçait zéro (le paramètre n'était
+    même pas accepté) pendant que le job facturait. L'invariant gravé :
+    l'estimation chiffre EXACTEMENT le travail que le job exécute — mêmes
+    langues, même formule sur ce périmètre — et le job débite bien ces
+    langues-là, pas une de moins."""
+    from src.ai import quota
+
+    headers = agent_headers(admin)
+    tid = await _template(client, headers)
+    assert (
+        await client.post(f"/message-templates/{tid}/translate", headers=headers, json={})
+    ).status_code == 202  # tout traduire d'abord : plus rien de vide
+
+    est = (
+        await client.get(
+            f"/message-templates/{tid}/translate/estimate"
+            "?retranslate_langs=es&retranslate_langs=ru",
+            headers=headers,
+        )
+    ).json()
+    assert est["items"] == 1
+    assert est["langs"] == ["es", "ru"]
+    assert est["estimated_points"] == quota.estimate_points(len(SOURCE_BODY), 1, 2)
+    assert est["estimated_points"] > 0
+
+    started = await client.post(
+        f"/message-templates/{tid}/translate",
+        headers=headers,
+        json={"retranslate_langs": ["es", "ru"]},
+    )
+    assert started.status_code == 202, started.text
+    job = (
+        await client.get(
+            f"/message-templates/translate-jobs/{started.json()['translation_job_id']}",
+            headers=headers,
+        )
+    ).json()
+    # Le job exécute LE périmètre annoncé — pas une langue de plus ou de
+    # moins — et le débit couvre chacune de ces langues.
+    assert job["langs"] == est["langs"]
+    assert job["points_charged"] == 2 * POINTS_PER_CALL
+    assert job["template_id"] is None and job["message_template_id"] == tid
