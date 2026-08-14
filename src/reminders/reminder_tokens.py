@@ -63,11 +63,28 @@ class ReminderTokenSpec:
     name: str
     label: str
     sample: str
+    # La FAMILLE du jeton — une clé i18n, jamais un libellé : le front traduit
+    # le titre, le back nomme la famille. Requise, donc aucun jeton ne peut
+    # entrer au catalogue sans dire à quel groupe il appartient.
+    #
+    # C'est le titre du groupe qui porte la distinction que l'exemple ne peut
+    # pas porter : dans le cas courant (aucun membre ciblé), {recipient_name}
+    # et {case_client_name} rendent LA MÊME valeur. Seul « la personne qui
+    # reçoit » / « le titulaire du dossier » les sépare à l'écriture.
+    group: str
     read_agency: Callable[[Agency], str | None] | None = None
     # Ce jeton EXIGE une étape liée au rappel. Déclaré ici plutôt que dans une
     # liste à côté : c'est le catalogue qui décide, et son ORDRE décide lequel
     # est nommé le premier quand le rappel n'a pas d'étape (verdict stable).
     needs_step: bool = False
+    # Ce jeton dépend du DESTINATAIRE — son nom, sa langue, son espace — et pas
+    # du seul dossier. Ce drapeau évite les requêtes de résolution du
+    # destinataire quand aucun jeton ne les réclame.
+    needs_recipient: bool = False
+    # Jeton DÉPRÉCIÉ : il continue de se résoudre (les textes déjà écrits par
+    # les agences ne cassent pas) mais il n'est PLUS SERVI au catalogue, donc
+    # la liste d'insertion ne le propose plus. Voir DEPRECATED_ALIASES.
+    deprecated: bool = False
 
     def example(self, agency: Agency | None) -> str:
         """Ce que le front montre à côté du jeton. Valeur réelle pour un
@@ -81,14 +98,76 @@ class ReminderTokenSpec:
 
 
 CATALOGUE: tuple[ReminderTokenSpec, ...] = (
-    # --- le dossier : un client différent à chaque envoi, donc un spécimen.
-    ReminderTokenSpec("client_name", "le nom de votre client", "Marie Dupont"),
-    # Le prénom seul, pour l'accroche (« Bonjour Marie, »). Gratuit : le
-    # principal est DÉJÀ lu au figeage pour {client_name}, et son prénom est
-    # NOT NULL — ce jeton ne peut pas échouer, il n'a donc aucune raison.
-    ReminderTokenSpec("client_first_name", "le prénom de votre client", "Marie"),
-    ReminderTokenSpec("step_name", "l'étape concernée", "Dépôt du dossier", needs_step=True),
-    ReminderTokenSpec("days_left", "les jours restants sur l'étape", "5", needs_step=True),
+    # --- QUI LIT ce message. Le jeton des formules d'adresse (« Bonjour
+    # Marie, »), et le seul correct pour ça : une relance ne part pas toujours
+    # au titulaire du dossier. Elle peut partir au membre que l'étape désigne
+    # (routage du 18/07), à un prestataire, ou au gestionnaire par escalade.
+    ReminderTokenSpec(
+        "recipient_name",
+        "le nom de la personne qui reçoit ce message",
+        "Marie Dupont",
+        group="recipient",
+        needs_recipient=True,
+    ),
+    ReminderTokenSpec(
+        "recipient_first_name",
+        "le prénom de la personne qui reçoit ce message",
+        "Marie",
+        group="recipient",
+        needs_recipient=True,
+    ),
+    # --- LE TITULAIRE du dossier, quel que soit le destinataire. Ce n'est pas
+    # un doublon du précédent : « le dossier de Jean Dupont attend votre
+    # retour » écrit à un notaire est le cas d'usage NORMAL — le prestataire a
+    # besoin de savoir de quel dossier on lui parle.
+    #
+    # Pourquoi pas « case_owner » : dans ce code, `owner` désigne déjà l'AGENT
+    # propriétaire du dossier (`client_case.owner_agent_id`). Réutiliser le mot
+    # pour l'expatrié aurait été une collision qui finit par mordre.
+    ReminderTokenSpec(
+        "case_client_name", "le nom du titulaire du dossier", "Jean Dupont", group="case_client"
+    ),
+    ReminderTokenSpec(
+        "case_client_first_name",
+        "le prénom du titulaire du dossier",
+        "Jean",
+        group="case_client",
+    ),
+    # --- LES DEUX DÉPRÉCIÉS. « client » ne disait pas DE QUEL humain il
+    # s'agissait, et c'est exactement le bug : une relance adressée à Marie
+    # commençait par « Bonjour Jean ». Ils gardent leur sens historique (le
+    # titulaire) pour ne casser aucun texte déjà écrit, mais ils ne sont plus
+    # proposés à l'écriture. Une agence qui veut saluer son lecteur prend
+    # {recipient_first_name} ; une qui veut nommer le dossier prend
+    # {case_client_name}.
+    ReminderTokenSpec(
+        "client_name",
+        "le nom de votre client (déprécié)",
+        "Jean Dupont",
+        group="case_client",
+        deprecated=True,
+    ),
+    ReminderTokenSpec(
+        "client_first_name",
+        "le prénom de votre client (déprécié)",
+        "Jean",
+        group="case_client",
+        deprecated=True,
+    ),
+    # Le nom de l'étape est TRADUIT en base (`journey_template_step.name_i18n`)
+    # depuis le bloc i18n : il se résout donc dans la langue du destinataire,
+    # comme la date d'échéance juste en dessous.
+    ReminderTokenSpec(
+        "step_name",
+        "l'étape concernée",
+        "Dépôt du dossier",
+        group="step",
+        needs_step=True,
+        needs_recipient=True,
+    ),
+    ReminderTokenSpec(
+        "days_left", "les jours restants sur l'étape", "5", group="step", needs_step=True
+    ),
     # L'ÉCHÉANCE FERME de l'étape (`case_step_progress.due_at`), pas le
     # compteur estimé : {days_left} dit « il reste 5 jours », celui-ci dit
     # « avant le 5 septembre 2026 ». La colonne est NULLABLE, donc même
@@ -97,37 +176,57 @@ CATALOGUE: tuple[ReminderTokenSpec, ...] = (
     # français comme les libellés ; la vraie valeur suit la langue du
     # DESTINATAIRE (cf. `_resolve_values`).
     ReminderTokenSpec(
-        "step_due_date", "l'échéance de l'étape", "5 septembre 2026", needs_step=True
-    ),
-    # Le lien vers l'espace client — SOUS CONDITION. Sa valeur ne dépend que
-    # de l'agence (l'URL blanche-marque), mais sa RÉSOLUBILITÉ dépend du
-    # destinataire : proposé à quelqu'un qui n'a pas activé son espace, il
-    # mène à un mur. D'où le refus nommé au figeage, jamais un lien mort.
-    ReminderTokenSpec(
-        "client_space_link",
-        "le lien vers l'espace de votre client",
-        "https://app.nidria.com/space?agency=votre-agence",
+        "step_due_date",
+        "l'échéance de l'étape",
+        "5 septembre 2026",
+        group="step",
+        needs_step=True,
+        needs_recipient=True,
     ),
     # --- l'agence : constante d'un envoi à l'autre, donc l'exemple est le
     # vrai. Une relance signée par l'agence doit pouvoir la nommer — le
     # canal MAIL porte déjà son nom dans l'enveloppe, mais WHATSAPP (copié-
     # collé par l'agent) et IN_APP n'ont que le corps du message.
-    ReminderTokenSpec("agency_name", "le nom de votre agence", "Votre agence", lambda a: a.name),
+    ReminderTokenSpec(
+        "agency_name",
+        "le nom de votre agence",
+        "Votre agence",
+        group="agency",
+        read_agency=lambda a: a.name,
+    ),
     ReminderTokenSpec(
         "contact_email",
         "votre email de contact",
         "contact@votre-agence.fr",
-        lambda a: a.contact_email,
+        group="agency",
+        read_agency=lambda a: a.contact_email,
     ),
     ReminderTokenSpec(
         "contact_phone",
         "votre téléphone de contact",
         "+33 1 23 45 67 89",
-        lambda a: a.contact_phone,
+        group="agency",
+        read_agency=lambda a: a.contact_phone,
+    ),
+    # --- le lien vers l'espace client — SOUS CONDITION. Sa valeur ne dépend que
+    # de l'agence (l'URL blanche-marque), mais sa RÉSOLUBILITÉ dépend du
+    # destinataire : proposé à quelqu'un qui n'a pas activé son espace, il mène
+    # à un mur. D'où le refus nommé au figeage, jamais un lien mort.
+    ReminderTokenSpec(
+        "client_space_link",
+        "le lien vers l'espace de votre client",
+        "https://app.nidria.com/space?agency=votre-agence",
+        group="link",
+        needs_recipient=True,
     ),
 )
 
 _BY_NAME: dict[str, ReminderTokenSpec] = {spec.name: spec for spec in CATALOGUE}
+
+# Les familles, DANS L'ORDRE DU CATALOGUE et sans doublon — ce sont elles que le
+# front traduit en titres de groupe. Dérivées, jamais réécrites à la main : une
+# famille nouvelle apparaît par la seule addition d'un jeton qui la porte.
+GROUPS: tuple[str, ...] = tuple(dict.fromkeys(spec.group for spec in CATALOGUE))
 
 # Les noms que le moteur d'interpolation sait résoudre — dérivés du
 # catalogue, JAMAIS réécrits à la main : ajouter un jeton au catalogue suffit
@@ -143,6 +242,47 @@ AGENCY_TOKENS: tuple[str, ...] = tuple(
 # Les jetons qui exigent une étape liée, DANS L'ORDRE DU CATALOGUE — c'est lui
 # qui nomme le premier refus quand le rappel n'a pas d'étape.
 STEP_TOKENS: tuple[str, ...] = tuple(spec.name for spec in CATALOGUE if spec.needs_step)
+
+# Les jetons qui exigent de savoir QUI LIT. Leur présence seule déclenche la
+# résolution du destinataire (nom, langue, espace) — sinon on ne la paie pas.
+RECIPIENT_TOKENS: tuple[str, ...] = tuple(spec.name for spec in CATALOGUE if spec.needs_recipient)
+
+# Un jeton déprécié → le jeton canonique qui porte sa valeur. Le figeage résout
+# le canonique et RECOPIE : une seule logique, deux orthographes. C'est ce qui
+# permet de retirer un nom ambigu du catalogue sans réécrire les textes que les
+# agences ont déjà enregistrés.
+DEPRECATED_ALIASES: dict[str, str] = {
+    "client_name": "case_client_name",
+    "client_first_name": "case_client_first_name",
+}
+assert set(DEPRECATED_ALIASES) == {spec.name for spec in CATALOGUE if spec.deprecated}, (
+    "tout jeton déprécié doit désigner son canonique, et réciproquement"
+)
+assert all(target in {spec.name for spec in CATALOGUE} for target in DEPRECATED_ALIASES.values()), (
+    "un alias déprécié pointe un jeton qui n'existe pas au catalogue"
+)
+
+
+# Ce qu'une agence VOULAIT probablement dire en écrivant un jeton déprécié :
+# saluer celui qui lit. Volontairement DISTINCT de DEPRECATED_ALIASES, qui dit
+# ce que le jeton VAUT (le titulaire du dossier). Les deux ne coïncident pas —
+# c'est exactement le malentendu qu'on répare, et c'est pourquoi le
+# remplacement ne peut pas être automatique : changer {client_name} en
+# {recipient_name} CHANGE la valeur rendue. L'agence tranche, en connaissance
+# de cause.
+DEPRECATED_SUGGESTIONS: dict[str, str] = {
+    "client_name": "recipient_name",
+    "client_first_name": "recipient_first_name",
+}
+assert set(DEPRECATED_SUGGESTIONS) == set(DEPRECATED_ALIASES), (
+    "tout jeton déprécié doit proposer une alternative, et réciproquement"
+)
+
+
+def canonical_names(names: set[str]) -> set[str]:
+    """Les noms à RÉSOUDRE pour satisfaire `names` : un alias déprécié est
+    remplacé par son canonique."""
+    return {DEPRECATED_ALIASES.get(name, name) for name in names}
 
 
 def catalogue_index(name: str) -> int:
@@ -162,10 +302,18 @@ def agency_value(name: str, agency: Agency) -> str | None:
     return value.strip() if value and value.strip() else None
 
 
-def token_values(agency: Agency | None) -> list[tuple[str, str, str]]:
+def token_values(agency: Agency | None) -> list[tuple[str, str, str, str]]:
     """Le catalogue comme (name, label, example) — ce que le contrat sert
-    pour que le front ne devine aucune liste."""
-    return [(spec.name, spec.label, spec.example(agency)) for spec in CATALOGUE]
+    pour que le front ne devine aucune liste.
+
+    Les jetons DÉPRÉCIÉS en sont absents : ils se résolvent encore (aucun texte
+    d'agence ne casse) mais on cesse de les proposer. C'est toute la différence
+    entre retirer un jeton et le déprécier."""
+    return [
+        (spec.name, spec.label, spec.example(agency), spec.group)
+        for spec in CATALOGUE
+        if not spec.deprecated
+    ]
 
 
 def unknown_tokens(content: str | None) -> list[str]:
@@ -179,6 +327,38 @@ def unknown_tokens(content: str | None) -> list[str]:
         if name not in _BY_NAME and name not in seen:
             seen.append(name)
     return ["{" + name + "}" for name in seen]
+
+
+def deprecated_tokens(content: str | None) -> list[tuple[str, str, str, str]]:
+    """Les jetons DÉPRÉCIÉS employés par un texte, comme
+    (token, name, resolves_to, suggested) — le TROISIÈME signal d'édition,
+    à côté des inconnus et des non-résolubles.
+
+    Il existe parce que ces jetons sont devenus INVISIBLES : plus servis au
+    catalogue (donc absents de la liste d'insertion) et pas signalés comme
+    inconnus (puisqu'ils sont résolus). Sans ce signal, une agence garderait
+    « Bonjour {client_name} » sans jamais apprendre qu'il nomme le titulaire
+    du dossier et pas forcément la personne qui recevra le message.
+
+    On ne réécrit rien à sa place : `resolves_to` dit ce que le jeton VAUT
+    aujourd'hui (renommage sans changement de valeur), `suggested` ce qu'elle
+    voulait probablement dire (saluer son lecteur). Le second CHANGE la valeur
+    rendue — c'est un choix, pas une correction."""
+    if not content:
+        return []
+    seen: list[str] = []
+    for name in VARIABLE_PATTERN.findall(content):
+        if name in DEPRECATED_ALIASES and name not in seen:
+            seen.append(name)
+    return [
+        (
+            "{" + name + "}",
+            name,
+            "{" + DEPRECATED_ALIASES[name] + "}",
+            "{" + DEPRECATED_SUGGESTIONS[name] + "}",
+        )
+        for name in seen
+    ]
 
 
 def used_tokens(content: str | None) -> list[str]:

@@ -26256,6 +26256,35 @@
         "title": "DeadlineCounter",
         "description": "Resolved days-remaining counter for a step, computed backend-side\nso both faces read the same number. `target_date` is the firm\n`due_at` if set (source=\"deadline\"), else started_at + estimated_days\n(source=\"estimated\"), else null (source=null → no gauge). The\ngreen/orange/red thresholds are a FRONT decision on `days_remaining`\n(negative = overdue)."
       },
+      "DeprecatedToken": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "resolves_to": {
+            "type": "string",
+            "title": "Resolves To"
+          },
+          "suggested": {
+            "type": "string",
+            "title": "Suggested"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "name",
+          "resolves_to",
+          "suggested"
+        ],
+        "title": "DeprecatedToken",
+        "description": "Un jeton DÉPRÉCIÉ trouvé dans un texte en cours d'écriture.\n\nIl se résout encore — aucun texte d'agence ne casse — mais il nomme le\nTITULAIRE du dossier, pas forcément la personne qui recevra le message.\nD'où ce signal : le manque doit être VISIBLE plutôt que silencieux, et\nl'agence corrige en connaissance de cause. Personne ne réécrit à sa place.\n\nLes deux propositions ne sont PAS interchangeables :\n- `resolves_to` : ce que le jeton vaut aujourd'hui — un renommage sans le\n  moindre changement de valeur (le titulaire reste nommé) ;\n- `suggested` : ce que l'agence voulait probablement dire — saluer son\n  lecteur. Celui-ci CHANGE la valeur rendue, c'est un choix, pas une\n  correction ; le front doit le présenter comme tel."
+      },
       "DirectoryContactCreateRequest": {
         "properties": {
           "name": {
@@ -30685,6 +30714,15 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "deprecated_tokens": {
+            "items": {
+              "$ref": "#/components/schemas/DeprecatedToken"
+            },
+            "type": "array",
+            "title": "Deprecated Tokens",
+            "description": "Les jetons dépréciés que CE modèle emploie — dérivé du corps, aucune\nrequête. Servi sur la liste comme sur l'édition : une agence doit\npouvoir repérer ses modèles à revoir sans les ouvrir un par un.",
+            "readOnly": true
           }
         },
         "type": "object",
@@ -30693,7 +30731,8 @@
           "name",
           "body",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "deprecated_tokens"
         ],
         "title": "MessageTemplateResponse"
       },
@@ -34820,6 +34859,18 @@
           "recipient_type": {
             "$ref": "#/components/schemas/RecipientType",
             "default": "expat"
+          },
+          "recipient_external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient External Id"
           }
         },
         "type": "object",
@@ -34849,6 +34900,14 @@
             },
             "type": "array",
             "title": "Unresolvable Tokens",
+            "default": []
+          },
+          "deprecated_tokens": {
+            "items": {
+              "$ref": "#/components/schemas/DeprecatedToken"
+            },
+            "type": "array",
+            "title": "Deprecated Tokens",
             "default": []
           }
         },
@@ -35013,6 +35072,10 @@
             "type": "string",
             "title": "Name"
           },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
           "label": {
             "type": "string",
             "title": "Label"
@@ -35026,6 +35089,7 @@
         "required": [
           "token",
           "name",
+          "group",
           "label",
           "example"
         ],

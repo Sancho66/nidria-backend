@@ -342,8 +342,10 @@ async def _fill_client_documents(
     # qu'une relance est interpolée au figeage et part une fois (cf.
     # ReminderTokenInfo). Aucun appel DB : le catalogue est en code.
     response.reminder_tokens = [
-        ReminderTokenInfo(token="{" + name + "}", name=name, label=label, example=example)
-        for name, label, example in reminder_token_values(agency)
+        ReminderTokenInfo(
+            token="{" + name + "}", name=name, label=label, example=example, group=group
+        )
+        for name, label, example, group in reminder_token_values(agency)
     ]
     # Le régime des relances automatiques, lu depuis `settings` par LA fonction
     # que le job lit aussi — l'écran et l'envoi ne peuvent pas diverger.

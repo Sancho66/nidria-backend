@@ -335,6 +335,12 @@ class ReminderTokenInfo(BaseModel):
     token: str
     # Le nom du catalogue — sert de clé i18n au front (7 locales).
     name: str
+    # La FAMILLE du jeton, clé i18n elle aussi (`recipient`, `case_client`,
+    # `step`, `agency`, `link`) : elle groupe la liste d'insertion. Le titre du
+    # groupe porte ce que l'exemple ne peut pas porter — sans membre ciblé,
+    # {recipient_name} et {case_client_name} rendent la MÊME valeur, et seul
+    # « la personne qui reçoit » / « le titulaire du dossier » les sépare.
+    group: str
     # Libellé FR humain, repli servi pour un front qui précède ce jeton.
     label: str
     # Ce que le jeton VAUDRA à l'envoi, montré comme spécimen (« Marie

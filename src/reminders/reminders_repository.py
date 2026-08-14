@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
+from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
@@ -57,15 +58,24 @@ class RemindersRepository:
         return f"{row[0]} {row[1]}" if row is not None else None
 
     async def get_owner_display(self, case_id: uuid.UUID) -> str | None:
-        from shared.models.agent import Agent as AgentModel
-
         stmt = (
-            select(AgentModel.first_name, AgentModel.last_name)
-            .join(ClientCase, ClientCase.owner_agent_id == AgentModel.id)
+            select(Agent.first_name, Agent.last_name)
+            .join(ClientCase, ClientCase.owner_agent_id == Agent.id)
             .where(ClientCase.id == case_id)
         )
         row = (await self.db.execute(stmt)).first()
         return f"{row[0]} {row[1]}" if row is not None else None
+
+    async def get_owner_agent(self, case_id: uuid.UUID) -> Agent | None:
+        """L'agent propriétaire du dossier, en entier — `get_owner_display`
+        au-dessus n'en rend que le libellé, et le figeage a besoin du prénom
+        seul (un rappel escaladé vers le gestionnaire le salue par son nom)."""
+        stmt = (
+            select(Agent)
+            .join(ClientCase, ClientCase.owner_agent_id == Agent.id)
+            .where(ClientCase.id == case_id)
+        )
+        return (await self.db.execute(stmt)).scalars().first()
 
     async def get_expat(self, expat_id: uuid.UUID) -> ExpatUser | None:
         return await self.db.get(ExpatUser, expat_id)

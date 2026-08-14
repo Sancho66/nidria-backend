@@ -16,14 +16,18 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
+from shared.models.case_step_requirement import CaseStepRequirement
 from shared.models.client_case import ClientCase
+from shared.models.journey import JourneyTemplateStep
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
 from src.core.config import get_settings
+from src.reminders.reminder_tokens import CATALOGUE, GROUPS
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase
 from tests.plugins.expat_plugin import MakeExpatUser
@@ -74,25 +78,33 @@ async def test_the_catalogue_is_served_with_labels_and_EXAMPLES(
     tokens = {t["name"]: t for t in served["reminder_tokens"]}
 
     assert set(tokens) == {
-        "client_name",
+        # QUI LIT — les jetons des formules d'adresse.
+        "recipient_name",
+        "recipient_first_name",
+        # LE TITULAIRE du dossier, quel que soit le lecteur.
+        "case_client_name",
+        "case_client_first_name",
         "step_name",
         "days_left",
-        # Les jetons d'AGENCE, ajoutés par ce lot : une relance signée par
-        # l'agence doit pouvoir la nommer.
+        # Les jetons d'AGENCE : une relance signée par l'agence doit pouvoir
+        # la nommer.
         "agency_name",
         "contact_email",
         "contact_phone",
-        # Les trois du second passage : un gratuit, deux SOUS CONDITION (voir
-        # la section dédiée en bas de fichier).
-        "client_first_name",
         "step_due_date",
         "client_space_link",
     }
+    # Les DÉPRÉCIÉS ne sont plus proposés — ils se résolvent encore (le test
+    # dédié plus bas le grave), mais on cesse de pousser un nom ambigu.
+    assert "client_name" not in tokens
+    assert "client_first_name" not in tokens
     # Insérable tel quel, accolades comprises (un jeton retapé est un jeton perdu).
-    assert tokens["client_name"]["token"] == "{client_name}"
-    assert tokens["client_name"]["label"] == "le nom de votre client"
-    # SPÉCIMEN pour ce qui varie d'un envoi à l'autre…
-    assert tokens["client_name"]["example"] == "Marie Dupont"
+    assert tokens["recipient_name"]["token"] == "{recipient_name}"
+    assert tokens["recipient_name"]["label"] == "le nom de la personne qui reçoit ce message"
+    # Deux spécimens DIFFÉRENTS : c'est ce qui rend la distinction visible à
+    # l'écriture. Marie lit le message, Jean est le titulaire du dossier.
+    assert tokens["recipient_name"]["example"] == "Marie Dupont"
+    assert tokens["case_client_name"]["example"] == "Jean Dupont"
     # …VALEUR RÉELLE pour ce qui n'en dépend pas : l'agence lit son propre nom.
     agency = await db_session.get(Agency, manager_agent.agency_id)
     assert agency is not None
@@ -229,7 +241,7 @@ async def test_preview_without_a_case_renders_the_examples(
         json={"content": "Bonjour {client_name}, de la part de {agency_name}."},
     )
     assert preview.status_code == 200, preview.text
-    assert preview.json()["rendered"] == f"Bonjour Marie Dupont, de la part de {agency.name}."
+    assert preview.json()["rendered"] == f"Bonjour Jean Dupont, de la part de {agency.name}."
     assert preview.json()["unknown_tokens"] == []
     assert preview.json()["unresolvable_tokens"] == []
 
@@ -247,7 +259,7 @@ async def test_preview_names_the_unknown_tokens_before_the_freeze(
     assert preview.status_code == 200, preview.text
     body = preview.json()
     assert body["unknown_tokens"] == ["{tva}", "{client_nam}"]
-    assert "{tva}" in body["rendered"] and "Marie Dupont" in body["rendered"]
+    assert "{tva}" in body["rendered"] and "Jean Dupont" in body["rendered"]
 
 
 async def test_preview_with_a_case_renders_the_REAL_values(
@@ -534,7 +546,7 @@ async def test_a_template_is_never_resolved_as_such(
         "/reminders/preview", headers=headers, json={"content": created.json()["body"]}
     )
     assert preview.status_code == 200, preview.text
-    assert preview.json()["rendered"] == f"Bonjour Marie Dupont, de la part de {agency.name}."
+    assert preview.json()["rendered"] == f"Bonjour Jean Dupont, de la part de {agency.name}."
 
 
 # ── LES TROIS JETONS DU SECOND PASSAGE (14/08) ────────────────────────────────
@@ -900,3 +912,611 @@ async def test_the_preview_judges_the_recipient_it_is_given(
     assert [t["reason"] for t in for_provider.json()["unresolvable_tokens"]] == [
         "recipient_not_client"
     ]
+
+
+# ── QUI NOMME QUI (14/08, second passage) ─────────────────────────────────────
+#
+# LE BUG RÉPARÉ ICI : une relance routée vers un MEMBRE du dossier commençait
+# par le nom du TITULAIRE. « Bonjour Jean » envoyé à Marie — l'agence se
+# ridiculise devant son client, et rien dans le produit ne l'en avertissait.
+#
+# La cause n'était pas une erreur de résolution mais un mot ambigu :
+# {client_name} ne disait pas DE QUEL humain il s'agissait. Deux jetons le
+# remplacent, chacun explicite :
+#
+#   {recipient_name} / {recipient_first_name}  → QUI LIT ce message
+#   {case_client_name} / {case_client_first_name} → LE TITULAIRE du dossier
+#
+# Les deux existent parce que les DEUX usages sont légitimes : on salue son
+# lecteur, et on nomme le dossier dont on parle (« le dossier de Jean Dupont
+# attend votre retour », écrit à un notaire, est le cas NORMAL).
+
+
+@pytest_asyncio.fixture
+async def case_read_by_a_member(
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    make_case_person,
+    client: AsyncClient,
+    agent_headers: AuthHeaders,
+    db_session: AsyncSession,
+) -> tuple[ClientCase, str]:
+    """Un dossier dont l'étape en cours ne réclame plus rien qu'à MARIE, un
+    membre avec son propre accès — le routage du 18/07 envoie donc la relance
+    à elle, pas au titulaire Jean. Retourne (dossier, id du progrès d'étape).
+
+    C'est le montage exact où le bug se voyait."""
+    headers = agent_headers(manager_agent)
+    holder = await make_expat_user(first_name="Jean", last_name="Dupont")
+    case = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=holder.id
+    )
+    member_account = await make_expat_user(
+        first_name="Marie", last_name="Martin", preferred_lang="es"
+    )
+    member = await make_case_person(
+        case=case, full_name="Marie Martin", expat_user_id=member_account.id
+    )
+
+    template = (await client.post("/journeys", headers=headers, json={"name": "P"})).json()
+    step = (
+        await client.post(
+            f"/journeys/{template['id']}/steps",
+            headers=headers,
+            json={"name": "Dépôt du passeport", "estimated_days": 15},
+        )
+    ).json()
+    await client.post(
+        f"/journeys/{template['id']}/steps/{step['id']}/requirements",
+        headers=headers,
+        json={"kind": "document", "reference": "passeport", "scope": "principal"},
+    )
+    timeline = (
+        await client.post(
+            f"/cases/{case.id}/journey",
+            headers=headers,
+            json={"journey_template_id": template["id"]},
+        )
+    ).json()
+    progress_id = str(timeline[0]["id"])
+    # Les exigences concrètes se matérialisent au DÉMARRAGE de l'étape.
+    started = await client.patch(
+        f"/cases/{case.id}/steps/{progress_id}", headers=headers, json={"status": "in_progress"}
+    )
+    assert started.status_code == 200, started.text
+    # On repointe l'exigence sur Marie : l'étape ne réclame plus qu'à elle.
+    await db_session.execute(
+        update(CaseStepRequirement)
+        .where(CaseStepRequirement.case_step_progress_id == uuid.UUID(progress_id))
+        .values(person_id=member.id)
+    )
+    await db_session.commit()
+    return case, progress_id
+
+
+async def _post_to_member(
+    client: AsyncClient, agent: Agent, headers: AuthHeaders, case_id, progress_id: str, body: str
+):
+    return await client.post(
+        f"/cases/{case_id}/reminders",
+        headers=headers(agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "expat",
+            "step_progress_id": progress_id,
+            "message_body": body,
+        },
+    )
+
+
+async def test_the_recipient_token_names_THE_PERSON_WHO_READS(
+    client: AsyncClient,
+    manager_agent: Agent,
+    case_read_by_a_member: tuple[ClientCase, str],
+    agent_headers: AuthHeaders,
+) -> None:
+    """LE TEST DU BUG. La relance part à Marie : elle doit lire son nom, pas
+    celui de Jean. Avant ce lot, ce message commençait par « Bonjour Jean »."""
+    case, progress_id = case_read_by_a_member
+    created = await _post_to_member(
+        client,
+        manager_agent,
+        agent_headers,
+        case.id,
+        progress_id,
+        "Bonjour {recipient_first_name}, il nous manque une pièce. — {recipient_name}",
+    )
+    assert created.status_code == 201, created.text
+    # Le prénom vient du COMPTE, le nom affiché de la personne du dossier :
+    # deux sources, la même que l'écran d'approbation pour le second.
+    assert (
+        created.json()["message_body"] == "Bonjour Marie, il nous manque une pièce. — Marie Martin"
+    )
+    # Et l'écran d'approbation annonce la même personne — jamais un écart
+    # entre ce que l'agence lit et ce que le client recevra.
+    assert created.json()["resolved_recipient"] == "Marie Martin"
+
+
+async def test_the_holder_stays_nameable_in_a_message_read_by_someone_else(
+    client: AsyncClient,
+    manager_agent: Agent,
+    case_read_by_a_member: tuple[ClientCase, str],
+    agent_headers: AuthHeaders,
+) -> None:
+    """L'autre moitié, et la raison d'être des DEUX jetons : nommer le dossier
+    dont on parle reste légitime quand on écrit à quelqu'un d'autre."""
+    case, progress_id = case_read_by_a_member
+    created = await _post_to_member(
+        client,
+        manager_agent,
+        agent_headers,
+        case.id,
+        progress_id,
+        "Bonjour {recipient_first_name}, le dossier de {case_client_name} avance.",
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["message_body"] == "Bonjour Marie, le dossier de Jean Dupont avance."
+
+
+async def test_the_recipient_token_names_the_external_provider(
+    client: AsyncClient,
+    manager_agent: Agent,
+    case_with_client: ClientCase,
+    make_external_contact,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le destinataire n'est pas toujours un client. Écrit à un notaire, le
+    message le salue LUI et nomme le dossier — les deux jetons dans la même
+    phrase, chacun sur son humain. C'est l'usage qui interdisait de faire de
+    {client_name} un simple alias du destinataire."""
+    contact = await make_external_contact(
+        case=case_with_client, name="Maître Ada Roux", email="ada@etude.fr"
+    )
+    created = await client.post(
+        f"/cases/{case_with_client.id}/reminders",
+        headers=agent_headers(manager_agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "external",
+            "recipient_external_id": str(contact.id),
+            "message_body": (
+                "{recipient_name}, le dossier de {case_client_name} attend votre retour."
+            ),
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert (
+        created.json()["message_body"]
+        == "Maître Ada Roux, le dossier de Jean Martin attend votre retour."
+    )
+
+
+async def test_a_provider_has_no_first_name_so_the_token_uses_the_name_he_has(
+    client: AsyncClient,
+    manager_agent: Agent,
+    case_with_client: ClientCase,
+    make_external_contact,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Un contact externe n'a QU'UN champ nom. {recipient_first_name} retombe
+    dessus plutôt que de découper « Maître Ada Roux » au petit bonheur : la
+    phrase reste correcte, et rien n'est deviné."""
+    contact = await make_external_contact(
+        case=case_with_client, name="Maître Ada Roux", email="ada@etude.fr"
+    )
+    created = await client.post(
+        f"/cases/{case_with_client.id}/reminders",
+        headers=agent_headers(manager_agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "external",
+            "recipient_external_id": str(contact.id),
+            "message_body": "Bonjour {recipient_first_name}.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["message_body"] == "Bonjour Maître Ada Roux."
+
+
+async def test_without_a_targeted_member_the_recipient_IS_the_holder(
+    client: AsyncClient,
+    manager_agent: Agent,
+    case_with_client: ClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Le cas de loin le plus courant, et la non-régression : sans étape qui
+    désigne quelqu'un, le destinataire EST le titulaire — les deux jetons
+    disent alors la même chose, et c'est normal."""
+    created = await _post(
+        client,
+        manager_agent,
+        agent_headers,
+        case_with_client.id,
+        "{recipient_name} / {case_client_name} / {recipient_first_name}",
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["message_body"] == "Jean Martin / Jean Martin / Jean"
+
+
+# --- la dépréciation : on ne casse aucun texte déjà écrit ---------------------------
+
+
+async def test_the_deprecated_tokens_still_resolve_and_still_name_the_HOLDER(
+    client: AsyncClient,
+    manager_agent: Agent,
+    case_read_by_a_member: tuple[ClientCase, str],
+    agent_headers: AuthHeaders,
+) -> None:
+    """LA PROMESSE DE LA DÉPRÉCIATION. {client_name} garde EXACTEMENT le sens
+    qu'il avait — le titulaire — même sur le montage où le bug se voyait. En
+    faire un alias du destinataire aurait réécrit en silence le sens des textes
+    adressés aux prestataires, où nommer le titulaire est tout l'objet.
+
+    Conséquence assumée : un texte déjà enregistré avec {client_name} n'est pas
+    réparé tout seul. L'agence bascule sur {recipient_first_name}."""
+    case, progress_id = case_read_by_a_member
+    created = await _post_to_member(
+        client,
+        manager_agent,
+        agent_headers,
+        case.id,
+        progress_id,
+        "{client_name} — {client_first_name}",
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["message_body"] == "Jean Dupont — Jean"  # le TITULAIRE, inchangé
+
+
+async def test_a_deprecated_token_is_never_reported_as_unknown(
+    client: AsyncClient, manager_agent: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Déprécié ≠ inconnu. Le jeton disparaît de la liste d'insertion, mais
+    l'agence qui l'a déjà dans son texte ne doit pas voir surgir un
+    avertissement « personne ne résout ceci » : il est résolu."""
+    preview = await client.post(
+        "/reminders/preview",
+        headers=agent_headers(manager_agent),
+        json={"content": "Bonjour {client_name}, et {inconnu}."},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["unknown_tokens"] == ["{inconnu}"]
+    assert "Jean Dupont" in preview.json()["rendered"]
+
+
+# ── {step_name} DANS LA LANGUE DU DESTINATAIRE ────────────────────────────────
+#
+# Les noms d'étapes SONT traduits en base (journey_template_step.name_i18n,
+# bloc i18n). Le figeage connaissait la langue du destinataire depuis le lot
+# précédent mais rendait quand même le scalaire — le seul jeton à l'ignorer.
+
+
+async def _step_named(
+    client: AsyncClient,
+    agent: Agent,
+    headers: AuthHeaders,
+    case_id: uuid.UUID,
+    db_session: AsyncSession,
+    name_i18n: dict[str, str],
+) -> str:
+    """Une étape dont le nom est traduit, posée sur le dossier."""
+    h = headers(agent)
+    template = (await client.post("/journeys", headers=h, json={"name": "P"})).json()
+    step = (
+        await client.post(
+            f"/journeys/{template['id']}/steps", headers=h, json={"name": "Dépôt du dossier"}
+        )
+    ).json()
+    await db_session.execute(
+        update(JourneyTemplateStep)
+        .where(JourneyTemplateStep.id == uuid.UUID(step["id"]))
+        .values(name_i18n=name_i18n)
+    )
+    await db_session.commit()
+    timeline = (
+        await client.post(
+            f"/cases/{case_id}/journey", headers=h, json={"journey_template_id": template["id"]}
+        )
+    ).json()
+    return str(timeline[0]["id"])
+
+
+async def test_the_step_name_is_frozen_in_the_language_of_the_recipient(
+    client: AsyncClient,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    db_session: AsyncSession,
+) -> None:
+    """Le nom d'étape suit le lecteur, comme la date d'échéance à côté de lui.
+    Une agence francophone, un client hispanophone : le client lit l'espagnol
+    que l'agence a saisi, pas le français."""
+    expat = await make_expat_user(first_name="Ana", last_name="Ruiz", preferred_lang="es")
+    case = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+    )
+    progress_id = await _step_named(
+        client,
+        manager_agent,
+        agent_headers,
+        case.id,
+        db_session,
+        {"fr": "Dépôt du dossier", "es": "Presentación del expediente"},
+    )
+    created = await client.post(
+        f"/cases/{case.id}/reminders",
+        headers=agent_headers(manager_agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "expat",
+            "step_progress_id": progress_id,
+            "message_body": "Etapa: {step_name}.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["message_body"] == "Etapa: Presentación del expediente."
+
+
+async def test_the_step_name_falls_back_to_the_agency_language_then_the_scalar(
+    client: AsyncClient,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    agent_headers: AuthHeaders,
+    db_session: AsyncSession,
+) -> None:
+    """La chaîne de replis, gravée : langue du lecteur → langue de l'agence →
+    le libellé saisi. Jamais un vide, jamais une clé brute — un nom d'étape
+    manquant dans une relance serait pire qu'un nom dans la mauvaise langue."""
+    # Le client lit le russe ; l'étape n'est traduite qu'en fr (agence) et es.
+    expat = await make_expat_user(first_name="Ivan", last_name="Petrov", preferred_lang="ru")
+    case = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+    )
+    progress_id = await _step_named(
+        client,
+        manager_agent,
+        agent_headers,
+        case.id,
+        db_session,
+        {"fr": "Dépôt du dossier", "es": "Presentación del expediente"},
+    )
+    fell_back = await client.post(
+        f"/cases/{case.id}/reminders",
+        headers=agent_headers(manager_agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "expat",
+            "step_progress_id": progress_id,
+            "message_body": "{step_name}",
+        },
+    )
+    assert fell_back.status_code == 201, fell_back.text
+    assert fell_back.json()["message_body"] == "Dépôt du dossier"  # la langue de l'agence
+
+    # Blob VIDE : on retombe sur le scalaire, qui est NOT NULL. (Un dossier ne
+    # porte qu'UN parcours — d'où un second dossier plutôt qu'un second
+    # assignement, qui serait refusé.)
+    other = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+    )
+    bare_id = await _step_named(client, manager_agent, agent_headers, other.id, db_session, {})
+    bare = await client.post(
+        f"/cases/{other.id}/reminders",
+        headers=agent_headers(manager_agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "expat",
+            "step_progress_id": bare_id,
+            "message_body": "{step_name}",
+        },
+    )
+    assert bare.status_code == 201, bare.text
+    assert bare.json()["message_body"] == "Dépôt du dossier"
+
+
+async def test_a_provider_reads_the_step_name_in_the_AGENCY_language(
+    client: AsyncClient,
+    manager_agent: Agent,
+    make_client_case: MakeClientCase,
+    make_expat_user: MakeExpatUser,
+    make_external_contact,
+    agent_headers: AuthHeaders,
+    db_session: AsyncSession,
+) -> None:
+    """Le pendant de la date d'échéance : le prestataire lit la langue de
+    l'agence, jamais celle du client. Les deux jetons de langue tirent du même
+    destinataire, ils ne peuvent pas diverger."""
+    expat = await make_expat_user(first_name="Ana", last_name="Ruiz", preferred_lang="es")
+    case = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+    )
+    contact = await make_external_contact(case=case, name="Maître Ada Roux", email="ada@etude.fr")
+    progress_id = await _step_named(
+        client,
+        manager_agent,
+        agent_headers,
+        case.id,
+        db_session,
+        {"fr": "Dépôt du dossier", "es": "Presentación del expediente"},
+    )
+    created = await client.post(
+        f"/cases/{case.id}/reminders",
+        headers=agent_headers(manager_agent),
+        json={
+            "channel": "mail",
+            "scheduled_at": _FUTURE.isoformat(),
+            "recipient_type": "external",
+            "recipient_external_id": str(contact.id),
+            "step_progress_id": progress_id,
+            "message_body": "Étape : {step_name}.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["message_body"] == "Étape : Dépôt du dossier."
+
+
+# --- le troisième signal d'édition : le jeton déprécié se DÉNONCE ------------------
+#
+# Retiré de la liste ET résolu, un jeton déprécié devient INVISIBLE : absent du
+# catalogue servi, absent des inconnus (il est résolu), absent des
+# non-résolubles (il ne refuse rien). Une agence garderait « Bonjour
+# {client_name} » sans jamais apprendre qu'il nomme le titulaire. D'où ce
+# signal — le seul des trois qui ne dénonce ni une erreur ni un refus, mais un
+# MALENTENDU.
+
+
+async def test_the_preview_denounces_a_deprecated_token_and_offers_BOTH_ways_out(
+    client: AsyncClient, manager_agent: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Les deux sorties ne sont PAS interchangeables, et c'est pourquoi le
+    contrat en sert deux : `resolves_to` garde la valeur (le titulaire),
+    `suggested` la CHANGE (le lecteur). Un remplacement en un clic qui
+    choisirait tout seul trancherait à la place de l'agence."""
+    preview = await client.post(
+        "/reminders/preview",
+        headers=agent_headers(manager_agent),
+        json={"content": "Bonjour {client_name}, et encore {client_name}. {client_first_name}"},
+    )
+    assert preview.status_code == 200, preview.text
+    flagged = preview.json()["deprecated_tokens"]
+    # Ordre de lecture, sans doublon — même idiome que les jetons inconnus.
+    assert [t["token"] for t in flagged] == ["{client_name}", "{client_first_name}"]
+    assert flagged[0] == {
+        "token": "{client_name}",
+        "name": "client_name",
+        "resolves_to": "{case_client_name}",  # même valeur : le titulaire
+        "suggested": "{recipient_name}",  # ce qu'on voulait dire : le lecteur
+    }
+    # Et il n'est ni inconnu, ni non-résoluble : il rend une valeur.
+    assert preview.json()["unknown_tokens"] == []
+    assert preview.json()["unresolvable_tokens"] == []
+    assert "Jean Dupont" in preview.json()["rendered"]
+
+
+async def test_a_text_free_of_deprecated_tokens_says_so(
+    client: AsyncClient, manager_agent: Agent, agent_headers: AuthHeaders
+) -> None:
+    """La clé est TOUJOURS présente, liste vide comprise — une clé qui
+    n'apparaît que quand elle se déclenche se lit comme une anomalie (même
+    discipline que `skipped_step_done` du lot précédent)."""
+    preview = await client.post(
+        "/reminders/preview",
+        headers=agent_headers(manager_agent),
+        json={"content": "Bonjour {recipient_first_name}."},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["deprecated_tokens"] == []
+
+
+async def test_a_message_template_carries_the_same_signal_without_being_opened(
+    client: AsyncClient, manager_agent: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Servi sur le MODÈLE lui-même, à la création comme à la liste : une
+    agence doit repérer les modèles à revoir sans les ouvrir un par un. Dérivé
+    du corps, aucune requête de plus."""
+    headers = agent_headers(manager_agent)
+    created = await client.post(
+        "/message-templates",
+        headers=headers,
+        json={"name": "À revoir", "body": "Bonjour {client_name}, votre dossier avance."},
+    )
+    assert created.status_code == 201, created.text
+    assert [t["name"] for t in created.json()["deprecated_tokens"]] == ["client_name"]
+    assert created.json()["deprecated_tokens"][0]["suggested"] == "{recipient_name}"
+
+    clean = await client.post(
+        "/message-templates",
+        headers=headers,
+        json={"name": "À jour", "body": "Bonjour {recipient_first_name}."},
+    )
+    assert clean.status_code == 201, clean.text
+    assert clean.json()["deprecated_tokens"] == []
+
+    # La liste porte le signal, donc l'écran de gestion peut badger ses lignes.
+    listed = {
+        t["name"]: t["deprecated_tokens"]
+        for t in (await client.get("/message-templates", headers=headers)).json()
+    }
+    assert [t["token"] for t in listed["À revoir"]] == ["{client_name}"]
+    assert listed["À jour"] == []
+
+
+async def test_the_signal_follows_an_edit_in_both_directions(
+    client: AsyncClient, manager_agent: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Dérivé, jamais stocké : il apparaît quand l'agence introduit le jeton et
+    DISPARAÎT quand elle le corrige — sinon l'avertissement survivrait à sa
+    propre correction, ce qui apprendrait à l'ignorer."""
+    headers = agent_headers(manager_agent)
+    template_id = (
+        await client.post(
+            "/message-templates", headers=headers, json={"name": "T", "body": "Bonjour."}
+        )
+    ).json()["id"]
+
+    regressed = await client.patch(
+        f"/message-templates/{template_id}",
+        headers=headers,
+        json={"body": "Bonjour {client_name}."},
+    )
+    assert regressed.status_code == 200, regressed.text
+    assert [t["name"] for t in regressed.json()["deprecated_tokens"]] == ["client_name"]
+
+    fixed = await client.patch(
+        f"/message-templates/{template_id}",
+        headers=headers,
+        json={"body": "Bonjour {recipient_name}."},
+    )
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["deprecated_tokens"] == []
+
+
+# --- les familles : ce que l'exemple ne peut pas dire ------------------------------
+
+
+async def test_every_served_token_carries_its_FAMILY(
+    client: AsyncClient, manager_agent: Agent, agent_headers: AuthHeaders
+) -> None:
+    """Le titre du groupe porte la distinction que l'exemple ne peut pas
+    porter : sans membre ciblé, {recipient_name} et {case_client_name} rendent
+    LA MÊME valeur, et seul « la personne qui reçoit » / « le titulaire du
+    dossier » les sépare à l'écriture.
+
+    Le contrat sert une CLÉ i18n, jamais un titre — le front traduit."""
+    served = (await client.get("/agencies/me", headers=agent_headers(manager_agent))).json()
+    tokens = {t["name"]: t for t in served["reminder_tokens"]}
+
+    assert tokens["recipient_name"]["group"] == "recipient"
+    assert tokens["recipient_first_name"]["group"] == "recipient"
+    assert tokens["case_client_name"]["group"] == "case_client"
+    assert tokens["case_client_first_name"]["group"] == "case_client"
+    assert tokens["step_name"]["group"] == "step"
+    assert tokens["days_left"]["group"] == "step"
+    assert tokens["step_due_date"]["group"] == "step"
+    assert tokens["agency_name"]["group"] == "agency"
+    assert tokens["contact_email"]["group"] == "agency"
+    assert tokens["contact_phone"]["group"] == "agency"
+    assert tokens["client_space_link"]["group"] == "link"
+
+    # Aucun jeton sans famille, et les familles arrivent GROUPÉES dans l'ordre
+    # du catalogue — le front n'a rien à retrier pour construire ses sections.
+    order = [t["group"] for t in served["reminder_tokens"]]
+    assert all(order), "un jeton servi sans famille"
+    assert list(dict.fromkeys(order)) == ["recipient", "case_client", "step", "agency", "link"]
+    assert order == sorted(order, key=lambda g: list(dict.fromkeys(order)).index(g))
+
+
+def test_the_five_families_are_derived_from_the_catalogue_not_hand_written() -> None:
+    """GROUPS n'est pas une liste tenue à la main à côté : une famille nouvelle
+    apparaît par la seule addition d'un jeton qui la porte. C'est la même règle
+    que VARIABLE_PATTERN et STEP_TOKENS — le catalogue est LA source."""
+    assert GROUPS == ("recipient", "case_client", "step", "agency", "link")
+    assert {spec.group for spec in CATALOGUE} == set(GROUPS)

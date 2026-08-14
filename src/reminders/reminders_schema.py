@@ -1,10 +1,32 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from src.core.enums import RecipientType, ReminderChannel
 from src.core.i18n import Language
+from src.reminders.reminder_tokens import deprecated_tokens
+
+
+class DeprecatedToken(BaseModel):
+    """Un jeton DÉPRÉCIÉ trouvé dans un texte en cours d'écriture.
+
+    Il se résout encore — aucun texte d'agence ne casse — mais il nomme le
+    TITULAIRE du dossier, pas forcément la personne qui recevra le message.
+    D'où ce signal : le manque doit être VISIBLE plutôt que silencieux, et
+    l'agence corrige en connaissance de cause. Personne ne réécrit à sa place.
+
+    Les deux propositions ne sont PAS interchangeables :
+    - `resolves_to` : ce que le jeton vaut aujourd'hui — un renommage sans le
+      moindre changement de valeur (le titulaire reste nommé) ;
+    - `suggested` : ce que l'agence voulait probablement dire — saluer son
+      lecteur. Celui-ci CHANGE la valeur rendue, c'est un choix, pas une
+      correction ; le front doit le présenter comme tel."""
+
+    token: str
+    name: str
+    resolves_to: str
+    suggested: str
 
 
 class MessageTemplateCreateRequest(BaseModel):
@@ -41,6 +63,17 @@ class MessageTemplateResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def deprecated_tokens(self) -> list[DeprecatedToken]:
+        """Les jetons dépréciés que CE modèle emploie — dérivé du corps, aucune
+        requête. Servi sur la liste comme sur l'édition : une agence doit
+        pouvoir repérer ses modèles à revoir sans les ouvrir un par un."""
+        return [
+            DeprecatedToken(token=token, name=name, resolves_to=resolves_to, suggested=suggested)
+            for token, name, resolves_to, suggested in deprecated_tokens(self.body)
+        ]
+
 
 class ReminderPreviewRequest(BaseModel):
     """Le BROUILLON en cours d'écriture (jamais persisté ici). `case_id`
@@ -59,6 +92,10 @@ class ReminderPreviewRequest(BaseModel):
     # espace actif. Défaut `expat`, le destinataire de la modale ; sans ce
     # champ l'aperçu flatterait le figeage sur un rappel adressé ailleurs.
     recipient_type: RecipientType = RecipientType.EXPAT
+    # Le prestataire visé, quand le destinataire est `external` : c'est lui que
+    # {recipient_name} nomme. Absent, l'aperçu retombe sur le spécimen sans
+    # rien refuser — la modale peut n'avoir pas encore tranché.
+    recipient_external_id: uuid.UUID | None = None
 
 
 class UnresolvableToken(BaseModel):
@@ -82,6 +119,10 @@ class ReminderPreviewResponse(BaseModel):
     # Jetons connus qui feraient lever un 422 `reminder.variable_unresolvable`
     # à l'enregistrement. Servis pour que ce refus ne surprenne jamais.
     unresolvable_tokens: list[UnresolvableToken] = []
+    # Jetons DÉPRÉCIÉS employés par le texte : ils rendent bien une valeur, mais
+    # pas forcément celle que l'agence croit. Le seul des trois signaux qui ne
+    # dénonce ni une erreur ni un refus — un malentendu.
+    deprecated_tokens: list[DeprecatedToken] = []
 
 
 class ReminderCreateRequest(BaseModel):

@@ -1,5 +1,6 @@
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,21 +27,27 @@ from src.core.enums import (
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.i18n import (
     format_date_for_lang,
+    resolve_i18n,
     resolve_notification_lang_agent,
     resolve_notification_lang_client,
 )
 from src.reminders.reminder_tokens import (
     AGENCY_TOKENS,
+    DEPRECATED_ALIASES,
+    RECIPIENT_TOKENS,
     STEP_TOKENS,
     VARIABLE_PATTERN,
     agency_value,
+    canonical_names,
     catalogue_index,
+    deprecated_tokens,
     render_with_examples,
     unknown_tokens,
     used_tokens,
 )
 from src.reminders.reminders_repository import RemindersRepository
 from src.reminders.reminders_schema import (
+    DeprecatedToken,
     MessageTemplateCreateRequest,
     MessageTemplateUpdateRequest,
     ReminderCreateRequest,
@@ -66,6 +73,28 @@ _STEP_DONE_REFUSAL = (
     "This reminder targets a step that is already done — a follow-up saying the "
     "step has not progressed would be false. Unlink the step or cancel the reminder."
 )
+
+
+@dataclass(frozen=True)
+class _Addressee:
+    """QUI lira ce rappel — miroir du routage du dispatch, résolu UNE fois pour
+    tous les jetons qui en dépendent (son nom, sa langue, son espace).
+
+    `client` n'est rempli que si le destinataire est un client, c'est-à-dire
+    s'il a un espace où aller : un prestataire ou le gestionnaire ont un nom et
+    une langue, pas d'espace.
+
+    `undecided` distingue « pas encore choisi » de « introuvable ». L'aperçu
+    peut travailler sur un brouillon dont le prestataire n'est pas tranché : on
+    ne résout pas, mais on ne refuse pas non plus — le spécimen prend le
+    relais. Au FIGEAGE ce cas n'existe pas (`_validate_recipient` exige l'id
+    avant tout rendu), donc un nom absent y est une vraie impossibilité."""
+
+    display_name: str | None
+    first_name: str | None
+    lang: str
+    client: ExpatUser | None
+    undecided: bool = False
 
 
 class RemindersManager:
@@ -165,24 +194,62 @@ class RemindersManager:
         case: ClientCase,
         step_progress_id: uuid.UUID | None,
         recipient_type: RecipientType,
+        recipient_external_id: uuid.UUID | None,
         agency: Agency,
-    ) -> tuple[ExpatUser | None, str]:
-        """(le CLIENT qui lira ce rappel, la LANGUE dans laquelle il le lira).
+    ) -> _Addressee:
+        """Le destinataire RÉEL du rappel — celui que le dispatch servira.
 
-        Le client est None quand le destinataire n'en est pas un (un notaire,
-        le gestionnaire du dossier) : ceux-là n'ont pas d'espace client, et
-        ils lisent dans la langue de l'AGENCE — la règle du flux manuel, celle
-        que le dispatch applique déjà au prestataire. Sinon c'est le membre
-        que l'étape désigne quand elle n'en désigne qu'un, le principal
-        autrement : exactement qui recevra le mail, dans SA langue à elle."""
-        if recipient_type is not RecipientType.EXPAT:
-            return None, resolve_notification_lang_agent(agency.default_language)
+        Trois routes, les mêmes que `reminders_jobs._recipient` :
+        - EXTERNAL : le contact du dossier, dans la langue de l'AGENCE (la
+          règle du flux manuel : un prestataire ne lit pas dans la langue du
+          client) ;
+        - AGENT : le gestionnaire, par escalade — le dispatch réécrit
+          `recipient_type` sur la ligne, donc une édition ultérieure repasse
+          bien par ici ;
+        - EXPAT : le membre que l'étape désigne quand elle n'en désigne qu'un
+          (routage du 18/07), le principal sinon, dans SA langue à elle."""
+        if recipient_type is RecipientType.EXTERNAL:
+            lang = resolve_notification_lang_agent(agency.default_language)
+            if recipient_external_id is None:
+                return _Addressee(None, None, lang, None, undecided=True)
+            contact = await self.repo.get_external_contact_in_case(case.id, recipient_external_id)
+            if contact is None:
+                return _Addressee(None, None, lang, None)
+            # Un contact externe n'a QU'UN nom (« Maître Dupont »), et c'est
+            # aussi la bonne façon de l'aborder : le prénom retombe dessus
+            # plutôt que de découper une chaîne au petit bonheur.
+            return _Addressee(contact.name, contact.name, lang, None)
+
+        if recipient_type is RecipientType.AGENT:
+            lang = resolve_notification_lang_agent(agency.default_language)
+            owner = await self.repo.get_owner_agent(case.id)
+            if owner is None:
+                return _Addressee(None, None, lang, None)
+            return _Addressee(
+                f"{owner.first_name} {owner.last_name}".strip(), owner.first_name, lang, None
+            )
+
         hit = await self._targeted_member(case.id, step_progress_id)
-        client = (
-            hit[1] if hit is not None else await self.repo.get_expat(case.principal_expat_user_id)
+        if hit is not None:
+            person, member = hit
+            # Le nom affiché suit l'écran d'approbation (« sera envoyé à… ») :
+            # le nom porté par la personne du dossier d'abord, le compte
+            # ensuite. Le prénom, lui, vient du compte — c'est le seul champ
+            # qui en soit vraiment un.
+            return _Addressee(
+                person.full_name or f"{member.first_name} {member.last_name}".strip(),
+                member.first_name,
+                resolve_notification_lang_client(member.preferred_lang),
+                member,
+            )
+        principal = await self.repo.get_expat(case.principal_expat_user_id)
+        assert principal is not None
+        return _Addressee(
+            f"{principal.first_name} {principal.last_name}".strip(),
+            principal.first_name,
+            resolve_notification_lang_client(principal.preferred_lang),
+            principal,
         )
-        assert client is not None
-        return client, resolve_notification_lang_client(client.preferred_lang)
 
     async def _resolve_values(
         self,
@@ -191,6 +258,7 @@ class RemindersManager:
         step_progress_id: uuid.UUID | None,
         scheduled_at: datetime,
         recipient_type: RecipientType,
+        recipient_external_id: uuid.UUID | None,
     ) -> tuple[dict[str, str], list[tuple[str, str]]]:
         """(valeurs résolues, [(jeton, raison)] non résolubles). NE LÈVE
         JAMAIS : le figeage lève à partir de ce résultat, l'aperçu le sert
@@ -203,33 +271,52 @@ class RemindersManager:
         values: dict[str, str] = {}
         failures: list[tuple[str, str]] = []
 
-        if needed & {"client_name", "client_first_name"}:
+        # Un alias déprécié se résout PAR son canonique : une seule logique,
+        # deux orthographes. La recopie vers l'alias se fait tout en bas.
+        canonical = canonical_names(needed)
+
+        if canonical & {"case_client_name", "case_client_first_name"}:
             principal = await self.repo.get_expat(case.principal_expat_user_id)
             assert principal is not None
-            if "client_name" in needed:
-                values["client_name"] = f"{principal.first_name} {principal.last_name}"
-            if "client_first_name" in needed:
-                # Le PRINCIPAL, comme {client_name} — le dossier se nomme par
-                # son client, même quand le rappel part vers un proche.
-                values["client_first_name"] = principal.first_name
+            if "case_client_name" in canonical:
+                values["case_client_name"] = f"{principal.first_name} {principal.last_name}"
+            if "case_client_first_name" in canonical:
+                values["case_client_first_name"] = principal.first_name
 
         # L'agence sert trois choses : ses propres jetons, le slug du lien
         # d'espace (blanche-marque) et la langue d'un destinataire qui n'est
         # pas un client. Une seule lecture pour les trois.
         agency: Agency | None = None
-        if needed & (set(AGENCY_TOKENS) | {"client_space_link", "step_due_date"}):
+        if canonical & (set(AGENCY_TOKENS) | set(RECIPIENT_TOKENS)):
             agency = await self.repo.get_agency(case.agency_id)
             assert agency is not None
 
-        # Qui lira, et dans quelle langue — résolu une fois, pour la date
-        # d'échéance (sa mise en forme) comme pour le lien d'espace (son
-        # activation). Les deux jugent le destinataire RÉEL, pas le dossier.
-        client: ExpatUser | None = None
-        lang = ""
-        if agency is not None and needed & {"step_due_date", "client_space_link"}:
-            client, lang = await self._addressee(case, step_progress_id, recipient_type, agency)
+        # QUI lira, et dans quelle langue — résolu une fois pour les cinq
+        # jetons qui en dépendent : son nom, son prénom, le nom de l'étape et
+        # la date d'échéance (leur langue), le lien d'espace (son activation).
+        addressee = _Addressee(None, None, "", None)
+        if agency is not None and canonical & set(RECIPIENT_TOKENS):
+            addressee = await self._addressee(
+                case, step_progress_id, recipient_type, recipient_external_id, agency
+            )
+        lang = addressee.lang
 
-        if needed & set(STEP_TOKENS):
+        for name, value in (
+            ("recipient_name", addressee.display_name),
+            ("recipient_first_name", addressee.first_name),
+        ):
+            if name not in canonical:
+                continue
+            if value:
+                values[name] = value
+            elif not addressee.undecided:
+                # Le destinataire est désigné mais introuvable (contact effacé,
+                # dossier sans gestionnaire) : écrire « Bonjour  » serait pire
+                # qu'un refus. Au figeage ce cas est théorique — la validation
+                # du destinataire précède tout rendu.
+                failures.append((name, "recipient_unresolvable"))
+
+        if canonical & set(STEP_TOKENS):
             progress = (
                 None
                 if step_progress_id is None
@@ -237,14 +324,28 @@ class RemindersManager:
             )
             if progress is None:
                 for name in STEP_TOKENS:
-                    if name in needed:
+                    if name in canonical:
                         failures.append((name, "step_required"))
             else:
                 template_step = await self.repo.get_template_step(progress.template_step_id)
                 assert template_step is not None
-                if "step_name" in needed:
-                    values["step_name"] = template_step.name
-                if "days_left" in needed:
+                if "step_name" in canonical:
+                    # Le nom d'étape est TRADUIT en base (bloc i18n) : il se
+                    # rend dans la langue du destinataire, repli sur la langue
+                    # de l'agence puis sur le scalaire — jamais un vide, jamais
+                    # une clé brute. (Le scalaire est NOT NULL, donc la chaîne
+                    # de replis se termine toujours sur du texte.)
+                    assert agency is not None
+                    values["step_name"] = (
+                        resolve_i18n(
+                            template_step.name_i18n,
+                            lang,
+                            agency.default_language,
+                            template_step.name,
+                        )
+                        or template_step.name
+                    )
+                if "days_left" in canonical:
                     started_at = await self.repo.get_step_started_at(case.id, progress.id)
                     if template_step.estimated_days is None:
                         failures.append(("days_left", "estimated_days_required"))
@@ -253,7 +354,7 @@ class RemindersManager:
                     else:
                         elapsed = (scheduled_at.date() - started_at.date()).days
                         values["days_left"] = str(max(0, template_step.estimated_days - elapsed))
-                if "step_due_date" in needed:
+                if "step_due_date" in canonical:
                     if progress.due_at is None:
                         # L'échéance FERME est optionnelle sur une étape : sans
                         # elle, ce jeton n'a rien à dire. Même discipline que
@@ -269,14 +370,14 @@ class RemindersManager:
                             progress.due_at.astimezone(UTC).date(), lang
                         )
 
-        if "client_space_link" in needed:
+        if "client_space_link" in canonical:
             assert agency is not None
-            if client is None:
+            if addressee.client is None:
                 # Un prestataire ou le gestionnaire n'ont pas d'espace client :
                 # le lien les mènerait à une page de connexion qu'ils ne
                 # passeront pas. On refuse plutôt que de l'écrire.
                 failures.append(("client_space_link", "recipient_not_client"))
-            elif not client_space_is_active(client):
+            elif not client_space_is_active(addressee.client):
                 # LA condition du jeton : tant que l'espace n'est pas activé,
                 # le lien mène à un mur. Même prédicat que l'exclusion des
                 # jobs de notification — l'invitation, elle, est le chemin de
@@ -287,10 +388,10 @@ class RemindersManager:
                     get_settings().frontend_url, "/space", agency.slug
                 )
 
-        if needed & set(AGENCY_TOKENS):
+        if canonical & set(AGENCY_TOKENS):
             assert agency is not None
             for name in AGENCY_TOKENS:
-                if name not in needed:
+                if name not in canonical:
                     continue
                 value = agency_value(name, agency)
                 if value is None:
@@ -299,6 +400,23 @@ class RemindersManager:
                     failures.append((name, "agency_field_empty"))
                 else:
                     values[name] = value
+
+        # Les alias dépréciés reçoivent la valeur de leur canonique : le texte
+        # que l'agence a enregistré il y a trois semaines rend exactement comme
+        # avant, sans qu'une seule ligne de résolution soit dupliquée.
+        for alias, target in DEPRECATED_ALIASES.items():
+            if alias in needed and target in values:
+                values[alias] = values[target]
+
+        # Un refus nomme le jeton que l'agence a ÉCRIT, pas le canonique
+        # interne qu'elle ne connaît pas. (Aucun canonique aliasé ne peut
+        # échouer aujourd'hui — le titulaire du dossier existe toujours ; la
+        # règle est là pour le jour où un alias pointera un jeton qui refuse.)
+        alias_of = {target: alias for alias, target in DEPRECATED_ALIASES.items()}
+        failures = [
+            (alias_of[name], reason) if name not in needed and name in alias_of else (name, reason)
+            for name, reason in failures
+        ]
 
         # L'ORDRE DU CATALOGUE décide lequel des refus est nommé par le 422 —
         # pas l'ordre dans lequel ce code résout. Verdict stable, et qui le
@@ -313,6 +431,7 @@ class RemindersManager:
         step_progress_id: uuid.UUID | None,
         scheduled_at: datetime,
         recipient_type: RecipientType,
+        recipient_external_id: uuid.UUID | None,
     ) -> str:
         """Freeze the variables into the approved text. {days_left} is
         PROJECTED AT scheduled_at (estimated_days − days between the
@@ -320,9 +439,10 @@ class RemindersManager:
         reads a text that is exact AT SEND TIME. Unsolvable variable →
         422 naming it.
 
-        `recipient_type` entre ici parce que deux jetons dépendent de QUI
-        lira : {step_due_date} s'écrit dans sa langue, {client_space_link}
-        n'existe que s'il a un espace où aller.
+        Le DESTINATAIRE entre ici parce que cinq jetons en dépendent :
+        {recipient_name} et {recipient_first_name} le nomment, {step_name} et
+        {step_due_date} s'écrivent dans sa langue, {client_space_link} n'existe
+        que s'il a un espace où aller.
 
         Un jeton INCONNU ({tva}) n'est pas une erreur ici : il traverse et se
         fige verbatim, comme dans les conditions. C'est l'aperçu qui le
@@ -332,7 +452,7 @@ class RemindersManager:
         if not needed:
             return raw
         values, failures = await self._resolve_values(
-            case, needed, step_progress_id, scheduled_at, recipient_type
+            case, needed, step_progress_id, scheduled_at, recipient_type, recipient_external_id
         )
         if failures:
             variable, reason = failures[0]
@@ -374,6 +494,7 @@ class RemindersManager:
                 payload.step_progress_id,
                 payload.scheduled_at or datetime.now(UTC),
                 payload.recipient_type,
+                payload.recipient_external_id,
             )
 
         # Les jetons résolus prennent leur VRAIE valeur ; ceux qui manquent
@@ -390,6 +511,12 @@ class RemindersManager:
             unresolvable_tokens=[
                 UnresolvableToken(token="{" + name + "}", name=name, reason=reason)
                 for name, reason in failures
+            ],
+            deprecated_tokens=[
+                DeprecatedToken(
+                    token=token, name=name, resolves_to=resolves_to, suggested=suggested
+                )
+                for token, name, resolves_to, suggested in deprecated_tokens(payload.content)
             ],
         )
 
@@ -447,7 +574,12 @@ class RemindersManager:
             raise ValidationError("Either message_template_id or message_body is required.")
 
         body = await self._render(
-            case, raw, payload.step_progress_id, payload.scheduled_at, payload.recipient_type
+            case,
+            raw,
+            payload.step_progress_id,
+            payload.scheduled_at,
+            payload.recipient_type,
+            payload.recipient_external_id,
         )
         reminder = self.repo.add_reminder(
             case_id=case.id,
@@ -585,7 +717,12 @@ class RemindersManager:
         reminder.step_progress_id = new_step_id
         reminder.message_template_id = new_template_id
         reminder.message_body = await self._render(
-            case, raw, new_step_id, new_scheduled_at, RecipientType(new_recipient_type)
+            case,
+            raw,
+            new_step_id,
+            new_scheduled_at,
+            RecipientType(new_recipient_type),
+            new_external_id,
         )
 
         if was_approved:
