@@ -374,6 +374,10 @@ class AgencyResponse(BaseModel):
     postal_code: str | None = None
     country: str | None = None
     contact_email: str | None = None
+    # Le téléphone rejoint l'identité légale (décision Alexandre 13/08) : même
+    # rang que contact_email — servi ici, écrit au PATCH, jeton
+    # {contact_phone}, segment « joignable au … » du modèle généré.
+    contact_phone: str | None = None
     # The responsibility mention, served at EDITION only — NEVER inside the
     # text shown to a client. Constant, so the front always has it.
     client_terms_disclaimer: str = RESPONSIBILITY_DISCLAIMER
@@ -500,6 +504,11 @@ class AgencyUpdateRequest(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20)
     country: str | None = Field(default=None, max_length=2)
     contact_email: NormalizedEmailStr | None = None
+    # Volontairement PAS de validation de format : les numéros
+    # internationaux, extensions et notations locales sont trop divers pour
+    # qu'un motif refuse mieux qu'il ne casse. Bornage seul, comme les
+    # téléphones déjà stockés côté clients (external_contact, client_profile).
+    contact_phone: str | None = Field(default=None, max_length=50)
 
     @field_validator("currency")
     @classmethod

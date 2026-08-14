@@ -70,6 +70,20 @@ class AdminRepository:
             .scalar_subquery()
         )
 
+    def _owner(self, column: Any) -> ScalarSelect[Any]:
+        """One column of the agency's OWNER — its first internal agent, the
+        SAME definition the onboarding mail uses (`is_external` false, oldest
+        `created_at`). Correlated scalar subquery folded into the page query:
+        never a per-row lookup, whatever the page size."""
+        return (
+            select(column)
+            .where(Agent.agency_id == Agency.id, Agent.is_external.is_(False))
+            .order_by(Agent.created_at)
+            .limit(1)
+            .correlate(Agency)
+            .scalar_subquery()
+        )
+
     def _onboarding_complete(self) -> Any:
         """SQL predicate: the 3 gestures are done — built from the SAME
         definitions as onboarding_gestures, as correlated EXISTS so it filters
@@ -114,6 +128,12 @@ class AdminRepository:
         members_count = self._members_count().label("members_count")
         seats_used = self._seats_used().label("seats_used")
         last_login_at = self._last_login().label("last_login_at")
+        # Le contact du propriétaire — de quoi RAPPELER l'agence. Deux
+        # sous-requêtes corrélées dans le même batch (le nom est recomposé en
+        # Python : concaténer en SQL rendrait le NULL contagieux).
+        owner_first_name = self._owner(Agent.first_name).label("owner_first_name")
+        owner_last_name = self._owner(Agent.last_name).label("owner_last_name")
+        owner_email = self._owner(Agent.email).label("owner_email")
         # "Parrainé par" (referral lot): the referrer's NAME, one scalar
         # subquery in the same batch — never a per-row query.
         referrer = aliased(Agency)
@@ -159,6 +179,15 @@ class AdminRepository:
             last_login_at,
             referred_by,
             signature_credits_available,
+            owner_first_name,
+            owner_last_name,
+            owner_email,
+            Agency.contact_phone,
+            Agency.utm_source,
+            Agency.utm_medium,
+            Agency.utm_campaign,
+            Agency.referrer,
+            Agency.acquisition_captured_at,
         )
         count_stmt = select(func.count()).select_from(Agency)
 

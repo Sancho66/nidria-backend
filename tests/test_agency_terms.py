@@ -203,6 +203,9 @@ async def test_missing_legal_fields_are_served_and_shrink_when_filled(
         "postal_code",
         "country",
         "contact_email",
+        # Le téléphone rejoint l'identité légale (lot acquisition 13/08) :
+        # même rang que contact_email, donc même signalement quand il manque.
+        "contact_phone",
     }
     after = (
         await client.patch("/agencies/me", headers=headers, json={"registration_number": "RCS 1"})

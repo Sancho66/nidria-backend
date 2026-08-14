@@ -45,10 +45,10 @@ def alert_outbox(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def alert_on(monkeypatch: pytest.MonkeyPatch):
-    """Hors production l'alerte est MUETTE par défaut (la garde du lot
-    onboarding, réutilisée telle quelle) — on l'arme explicitement."""
+    """Hors production l'alerte est MUETTE par défaut — on l'arme
+    explicitement, par SON interrupteur (plus celui de l'onboarding)."""
     settings = get_settings()
-    monkeypatch.setattr(settings, "onboarding_email_enabled", True)
+    monkeypatch.setattr(settings, "signup_alert_enabled", True)
     monkeypatch.setattr(settings, "signup_alert_recipients", list(RECIPIENTS))
     return settings
 
@@ -98,7 +98,7 @@ async def test_recipients_come_from_config_not_from_code(
 ) -> None:
     """Ajouter un collègue demain = une variable d'env, pas un déploiement."""
     settings = get_settings()
-    monkeypatch.setattr(settings, "onboarding_email_enabled", True)
+    monkeypatch.setattr(settings, "signup_alert_enabled", True)
     monkeypatch.setattr(settings, "signup_alert_recipients", ["seule@nidria-interne.test"])
     assert (await _signup(client)).status_code == 200
     assert [m["to"] for m in alert_outbox] == ["seule@nidria-interne.test"]
@@ -108,7 +108,7 @@ async def test_empty_recipient_list_sends_nothing(
     client: AsyncClient, alert_outbox: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = get_settings()
-    monkeypatch.setattr(settings, "onboarding_email_enabled", True)
+    monkeypatch.setattr(settings, "signup_alert_enabled", True)
     monkeypatch.setattr(settings, "signup_alert_recipients", [])
     assert (await _signup(client)).status_code == 200
     assert alert_outbox == []
@@ -153,10 +153,11 @@ async def test_no_alert_for_an_excluded_test_account(
 async def test_the_exclusion_list_is_the_onboarding_one(
     client: AsyncClient, alert_outbox: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pas un second système : on ajoute un motif à la variable de
-    l'onboarding et l'alerte l'honore aussitôt."""
+    """La définition de « compte de test » reste PARTAGÉE : on ajoute un
+    motif à la variable de l'onboarding et l'alerte l'honore aussitôt. C'est
+    ELLE, la définition unique — pas l'interrupteur, qui est séparé."""
     settings = get_settings()
-    monkeypatch.setattr(settings, "onboarding_email_enabled", True)
+    monkeypatch.setattr(settings, "signup_alert_enabled", True)
     monkeypatch.setattr(settings, "signup_alert_recipients", list(RECIPIENTS))
     monkeypatch.setattr(settings, "onboarding_email_excluded_patterns", ["@agence.io"])
     assert (await _signup(client)).status_code == 200
@@ -169,7 +170,7 @@ async def test_muted_outside_production_by_default(
     """Un seed local de 20 agences n'envoie AUCUN mail sans que personne
     n'ait à penser à un drapeau."""
     settings = get_settings()
-    monkeypatch.setattr(settings, "onboarding_email_enabled", None)  # = dérive de l'env
+    monkeypatch.setattr(settings, "signup_alert_enabled", None)  # = dérive de l'env
     monkeypatch.setattr(settings, "signup_alert_recipients", list(RECIPIENTS))
     assert (await _signup(client)).status_code == 200
     assert alert_outbox == []
@@ -283,3 +284,53 @@ async def test_source_names_the_sponsor_when_the_signup_was_referred(
     assert (await _signup(client, referral_code="PARRAIN1")).status_code == 200
     body = alert_outbox[0]["body"]
     assert "parrainage par" in body and sponsor.slug in body
+
+
+# --- les deux interrupteurs sont INDÉPENDANTS -----------------------------------------
+
+
+async def test_muting_the_onboarding_mail_does_not_mute_the_alert(
+    client: AsyncClient, alert_outbox: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le couplage d'origine : couper le mail de bienvenue de l'agence rendait
+    l'équipe AVEUGLE aux inscriptions. Deux décisions sans rapport ne doivent
+    pas tenir au même levier."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "onboarding_email_enabled", False)  # onboarding COUPÉ
+    monkeypatch.setattr(settings, "signup_alert_enabled", True)  # alerte ARMÉE
+    monkeypatch.setattr(settings, "signup_alert_recipients", list(RECIPIENTS))
+
+    assert (await _signup(client)).status_code == 200
+    assert sorted(m["to"] for m in alert_outbox) == sorted(RECIPIENTS)
+
+
+async def test_muting_the_alert_does_not_depend_on_the_onboarding_switch(
+    client: AsyncClient, alert_outbox: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Et réciproquement : couper l'alerte n'emprunte rien à l'onboarding."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "onboarding_email_enabled", True)  # onboarding ARMÉ
+    monkeypatch.setattr(settings, "signup_alert_enabled", False)  # alerte COUPÉE
+    monkeypatch.setattr(settings, "signup_alert_recipients", list(RECIPIENTS))
+
+    assert (await _signup(client)).status_code == 200
+    assert alert_outbox == []
+
+
+async def test_production_default_is_on_for_both_without_any_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ce que la prod fait AUJOURD'HUI : aucune des deux variables n'est posée
+    sur Fly, donc les deux dérivent de l'environnement et valent true."""
+    from src.agencies.onboarding_email_job import mail_enabled
+    from src.signup.signup_alert import alert_enabled
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "onboarding_email_enabled", None)
+    monkeypatch.setattr(settings, "signup_alert_enabled", None)
+    monkeypatch.setattr(settings, "environment", "production")
+    assert alert_enabled(settings) is True
+    assert mail_enabled(settings) is True
+    monkeypatch.setattr(settings, "environment", "development")
+    assert alert_enabled(settings) is False
+    assert mail_enabled(settings) is False

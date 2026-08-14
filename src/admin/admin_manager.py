@@ -19,6 +19,12 @@ from src.agencies.agencies_manager import (
 from src.usage.usage_manager import classify_usage_state
 
 
+def _full_name(first: str | None, last: str | None) -> str | None:
+    """« Prénom Nom » à partir de ce qui existe — None si les deux manquent."""
+    parts = [p.strip() for p in (first, last) if p and p.strip()]
+    return " ".join(parts) or None
+
+
 def _status(
     trial_ends_at: datetime | None,
     converted_at: datetime | None,
@@ -114,6 +120,17 @@ class AdminManager:
             members_count=r.members_count,
             created_at=r.created_at,
             referred_by=r.referred_by,
+            # Le nom recomposé en PYTHON, pas en SQL : une concaténation SQL
+            # rend le NULL contagieux (un nom de famille vide effacerait le
+            # prénom). None quand l'agence n'a aucun agent interne.
+            owner_name=_full_name(r.owner_first_name, r.owner_last_name),
+            owner_email=r.owner_email,
+            contact_phone=r.contact_phone,
+            utm_source=r.utm_source,
+            utm_medium=r.utm_medium,
+            utm_campaign=r.utm_campaign,
+            referrer=r.referrer,
+            acquisition_captured_at=r.acquisition_captured_at,
             onboarding=onboarding_gestures(
                 journey_at=journey_at,
                 premier_dossier=milestones.get("premier_dossier_cree"),

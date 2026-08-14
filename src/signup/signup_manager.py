@@ -37,6 +37,40 @@ from src.signup.signup_schema import (
     SignupVerifyRequest,
 )
 
+# --- Acquisition : première touche gagnante ---------------------------------
+# La même doctrine que le front, tenue côté serveur : ce qui a été capturé le
+# PLUS TÔT l'emporte. Un visiteur arrivé par la campagne, puis revenu sur un
+# /signup nu, ne s'efface pas lui-même — y compris s'il redemande un code (la
+# re-demande supprime la vérification précédente, on en RÉCUPÈRE la source
+# avant de la jeter).
+
+_ACQUISITION_FIELDS = ("utm_source", "utm_medium", "utm_campaign", "referrer")
+
+
+def _acquisition_of(source: object) -> dict[str, str | None]:
+    """Les 4 champs d'un payload OU d'une ligne de vérification (même noms)."""
+    return {name: getattr(source, name, None) for name in _ACQUISITION_FIELDS}
+
+
+def _has_acquisition(values: dict[str, str | None]) -> bool:
+    return any(v for v in values.values())
+
+
+def _first_touch(
+    previous: dict[str, str | None],
+    previous_at: datetime | None,
+    incoming: dict[str, str | None],
+    now: datetime,
+) -> tuple[dict[str, str | None], datetime | None]:
+    """(valeurs retenues, date de première touche). Une capture creuse ne
+    remplace jamais une vraie, et ne pose pas de date."""
+    if _has_acquisition(previous):
+        return previous, previous_at or now
+    if _has_acquisition(incoming):
+        return incoming, now
+    return incoming, None
+
+
 logger = logging.getLogger(__name__)
 
 CODE_EXPIRES_MINUTES = 15
@@ -91,7 +125,21 @@ class SignupManager:
             )
             send_email(email, content.subject, content.text, content.html)
             return
-        # One LIVE verification per email: the re-request kills the old.
+        # One LIVE verification per email: the re-request kills the old — but
+        # NOT its acquisition: the first touch is carried over before the row
+        # is dropped, otherwise "renvoyez-moi le code" would erase the source.
+        prior = (
+            await self.db.execute(
+                select(SignupVerification).where(SignupVerification.email == email)
+            )
+        ).scalar_one_or_none()
+        now = datetime.now(UTC)
+        acquisition, captured_at = _first_touch(
+            _acquisition_of(prior) if prior else dict.fromkeys(_ACQUISITION_FIELDS),
+            prior.acquisition_captured_at if prior else None,
+            _acquisition_of(payload),
+            now,
+        )
         await self.db.execute(delete(SignupVerification).where(SignupVerification.email == email))
         code = _generate_code()
         self.db.add(
@@ -99,7 +147,9 @@ class SignupManager:
                 email=email,
                 lang=payload.lang,
                 code_hash=_hash_code(code),
-                expires_at=datetime.now(UTC) + timedelta(minutes=CODE_EXPIRES_MINUTES),
+                expires_at=now + timedelta(minutes=CODE_EXPIRES_MINUTES),
+                acquisition_captured_at=captured_at,
+                **acquisition,
             )
         )
         await self.db.commit()
@@ -179,6 +229,18 @@ class SignupManager:
             sectors=sectors,
             sectors_onboarding_required=False,
         )
+        # L'acquisition portée jusqu'à l'agence : ce qui a été capturé à
+        # l'étape 1 (la première touche) l'emporte sur ce que le POST final
+        # rapporte ; l'étape 3 n'est qu'un filet si l'onglet a été rechargé.
+        acquisition, captured_at = _first_touch(
+            _acquisition_of(row),
+            row.acquisition_captured_at,
+            _acquisition_of(payload),
+            now,
+        )
+        for field, value in acquisition.items():
+            setattr(agency, field, value)
+        agency.acquisition_captured_at = captured_at
         # The verification is spent in the SAME transaction as the creation.
         await self.db.delete(row)
         pair = AuthManager(self.db).issue_token_pair(admin.id, Audience.AGENT)

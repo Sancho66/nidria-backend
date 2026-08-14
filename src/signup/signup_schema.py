@@ -1,10 +1,44 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.email import NormalizedEmailStr
 from src.core.i18n import Language
 
+# --- Acquisition ------------------------------------------------------------
+# La source d'une inscription est PÉRISSABLE : elle n'existe que dans l'URL
+# d'arrivée et le referrer, et disparaît au premier clic. Le front la capture
+# à l'atterrissage sur /signup ; ces champs sont le contrat qui lui permet de
+# l'émettre. Optionnels partout : une inscription directe reste valide.
+# Bornés ET assainis côté back aussi — c'est une entrée PUBLIQUE non
+# authentifiée, la validation du front n'est pas une garantie.
+_ACQUISITION_MAX = 200
 
-class SignupRequest(BaseModel):
+
+def _clean_acquisition(value: str | None) -> str | None:
+    """Sauts de ligne aplatis, espaces réduits, bornage dur, vide → None (un
+    champ creux ne doit pas bloquer une vraie capture plus tard)."""
+    if value is None:
+        return None
+    flat = " ".join(value.split())
+    return flat[:_ACQUISITION_MAX] or None
+
+
+class AcquisitionFields(BaseModel):
+    """Les quatre champs, mixés dans LES DEUX étapes d'inscription : l'étape 1
+    est la première touche (celle qui compte), l'étape 3 est le filet si le
+    visiteur a rechargé entre-temps."""
+
+    utm_source: str | None = Field(default=None, max_length=_ACQUISITION_MAX)
+    utm_medium: str | None = Field(default=None, max_length=_ACQUISITION_MAX)
+    utm_campaign: str | None = Field(default=None, max_length=_ACQUISITION_MAX)
+    referrer: str | None = Field(default=None, max_length=_ACQUISITION_MAX)
+
+    @field_validator("utm_source", "utm_medium", "utm_campaign", "referrer", mode="before")
+    @classmethod
+    def _sanitize(cls, v: str | None) -> str | None:
+        return _clean_acquisition(v)
+
+
+class SignupRequest(AcquisitionFields):
     """Stage 1: the email to verify. `website` is the HONEYPOT (hidden
     field): humans leave it empty, bots fill it — non-empty = silent 200,
     nothing created. `turnstile_token` is required only when the
@@ -41,7 +75,7 @@ class SignupVerifyResponse(BaseModel):
     completion_token: str
 
 
-class SignupCompleteRequest(BaseModel):
+class SignupCompleteRequest(AcquisitionFields):
     model_config = ConfigDict(extra="forbid")
 
     completion_token: str = Field(min_length=16, max_length=64)

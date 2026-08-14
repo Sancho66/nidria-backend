@@ -26,3 +26,12 @@ class SignupVerification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completion_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     completion_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Acquisition capturée dès l'ÉTAPE 1 (la première touche) et reportée sur
+    # l'agence à l'étape 3 : l'inscription se termine trois écrans plus loin,
+    # sur des URL qui ne portent plus rien. Première touche gagnante, comme
+    # côté front — ce qui arrive ici en premier n'est jamais écrasé.
+    utm_source: Mapped[str | None] = mapped_column(String(200))
+    utm_medium: Mapped[str | None] = mapped_column(String(200))
+    utm_campaign: Mapped[str | None] = mapped_column(String(200))
+    referrer: Mapped[str | None] = mapped_column(String(200))
+    acquisition_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

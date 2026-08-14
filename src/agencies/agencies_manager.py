@@ -1105,6 +1105,10 @@ class AgenciesManager:
             "postal_code",
             "country",
             "contact_email",
+            # Le téléphone suit EXACTEMENT le même chemin que ses voisines :
+            # écrit ici, il compte comme un changement d'identité légale, donc
+            # il régénère le modèle non encore validé (segment « joignable »).
+            "contact_phone",
         ):
             value = getattr(payload, field)
             if value is not None and getattr(agency, field) != value:

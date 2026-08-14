@@ -41,6 +41,7 @@ _LEGAL_FIELDS: tuple[str, ...] = (
     "postal_code",
     "country",
     "contact_email",
+    "contact_phone",
 )
 
 
@@ -86,9 +87,18 @@ def _identity_block(agency: Agency) -> str:
     address = _address(agency)
     if address:
         segments.append(f"dont le siège est situé {address}")
+    # UN SEUL segment « joignable », qui porte l'email, le téléphone ou les
+    # deux. Deux segments séparés donneraient « joignable à x@y, joignable au
+    # 01… » — grammatical mais bègue. L'omission par segment est intacte : le
+    # segment disparaît entièrement quand les deux champs sont vides.
     email = _f(agency.contact_email)
-    if email:
+    phone = _f(agency.contact_phone)
+    if email and phone:
+        segments.append(f"joignable à {email} et au {phone}")
+    elif email:
         segments.append(f"joignable à {email}")
+    elif phone:
+        segments.append(f"joignable au {phone}")
     if not segments:
         return "{agency_name}"
     return "{agency_name}, " + ", ".join(segments)

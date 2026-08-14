@@ -10,10 +10,14 @@ BEST-EFFORT, always: `notify_signup` swallows everything. A mail provider
 outage must never cost a signup — the account is already committed when we
 get here, and the caller has a token to return.
 
-THE GUARDS ARE NOT REDEFINED HERE. `mail_enabled` and `is_excluded_address`
-are imported from the onboarding job, so "test account" has exactly ONE
-definition in the codebase; adding an internal domain still means editing one
-env var and nothing else.
+THE "TEST ACCOUNT" DEFINITION IS NOT REDEFINED HERE: `is_excluded_address` is
+imported from the onboarding job, so both mails exclude exactly the same
+addresses and adding an internal domain is still one env var.
+
+The ON/OFF SWITCH, however, is our own (`signup_alert_enabled`). Sharing the
+onboarding one meant that muting the agency's welcome mail would silently
+blind the team to every new signup — two unrelated decisions on one lever.
+Same idiom, separate lever.
 """
 
 import asyncio
@@ -25,13 +29,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
-from src.agencies.onboarding_email_job import is_excluded_address, mail_enabled
+from src.agencies.onboarding_email_job import is_excluded_address
 from src.core.config import Settings, get_settings
 from src.core.email import send_email
 
 logger = logging.getLogger(__name__)
 
 _UNKNOWN = "inconnue"
+
+
+def alert_enabled(settings: Settings) -> bool:
+    """`bool | None` like every other switch here: None = derive from the
+    environment (production only), True/False force it. A local seed of 20
+    agencies therefore sends ZERO alerts without anyone remembering a flag."""
+    if settings.signup_alert_enabled is not None:
+        return settings.signup_alert_enabled
+    return settings.environment.strip().lower() == "production"
 
 
 def _fmt_when(moment: datetime) -> str:
@@ -43,12 +56,28 @@ def _fmt_when(moment: datetime) -> str:
 
 
 async def _describe_source(db: AsyncSession, agency: Agency) -> str:
-    """The ONLY acquisition signal the signup captures today is the referral
-    code (`referral_code` on the form → `referred_by_agency_id`). There is no
-    UTM and no referrer anywhere in the signup path, so for every other route
-    we say `inconnue` rather than guess: a wrong source is worse than none.
-    Capturing UTMs needs a front lot (read them on /signup, carry them to the
-    POST, store them on the agency)."""
+    """D'OÙ vient l'inscription — l'information la plus utile de ce mail.
+
+    Ordre de préférence : la campagne (UTM, capturée à l'arrivée sur /signup
+    et portée jusqu'ici), puis le referrer nu, puis le parrainage, puis
+    `inconnue`. On ne devine JAMAIS : une source fausse est pire qu'absente,
+    et une inscription directe est un fait, pas un trou."""
+    campaign = [
+        f"{label} {value.strip()}"
+        for label, value in (
+            ("source", agency.utm_source),
+            ("support", agency.utm_medium),
+            ("campagne", agency.utm_campaign),
+        )
+        if value and value.strip()
+    ]
+    if campaign:
+        described = " · ".join(campaign)
+        if agency.referrer and agency.referrer.strip():
+            described += f" (venu de {agency.referrer.strip()})"
+        return described
+    if agency.referrer and agency.referrer.strip():
+        return f"venu de {agency.referrer.strip()}"
     if agency.referred_by_agency_id is None:
         return _UNKNOWN
     sponsor = (
@@ -98,11 +127,12 @@ async def notify_signup(db: AsyncSession, agency: Agency, admin: Agent) -> bool:
         recipients = _recipients(settings)
         if not recipients:
             return False
-        # The three guards of the onboarding lot, reused verbatim.
-        if not mail_enabled(settings):
+        if not alert_enabled(settings):
             return False
         if agency.is_internal:
             return False
+        # THE shared definition of "test account" — the onboarding job's own
+        # matcher, on its own config list. One list, both mails.
         if is_excluded_address(admin.email, settings):
             return False
 

@@ -60,6 +60,27 @@ class AdminAgencyRow(BaseModel):
     # Referral lot: the referrer agency's name (Eric sees who referred
     # whom); None when the agency came in without a code.
     referred_by: str | None = None
+    # --- Rappeler l'agence (lot acquisition 13/08) -------------------------
+    # LE besoin d'origine de l'alerte de signup : « rappeler l'agence
+    # rapidement ». Le propriétaire = le PREMIER agent interne de l'agence,
+    # exactement la définition qu'utilise le mail d'onboarding. Servi ici
+    # plutôt que sur une route de détail : GET /admin/agencies/{id} n'existe
+    # pas, et la fiche du front se construit de la ligne.
+    # PAS d'owner_phone : `agent` n'a AUCUNE colonne téléphone, le servir
+    # serait publier un champ éternellement NULL. Le manque est comblé par
+    # `contact_phone` ci-dessous, qui rejoint l'identité légale de l'agence.
+    owner_name: str | None = None
+    owner_email: str | None = None
+    contact_phone: str | None = None
+    # --- D'où vient l'inscription ------------------------------------------
+    # NULL partout sur le parc d'avant ce lot : la source est PÉRISSABLE, on
+    # ne peut pas la reconstituer après coup. Le front distingue « pas de
+    # source » de « pas collectée » grâce à acquisition_captured_at.
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    referrer: str | None = None
+    acquisition_captured_at: datetime | None = None
 
 
 class AdminAgenciesResponse(BaseModel):

@@ -184,6 +184,10 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     postal_code: Mapped[str | None] = mapped_column(String(20))
     country: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2
     contact_email: Mapped[str | None] = mapped_column(String(255))
+    # Le téléphone rejoint l'identité légale (décision Alexandre 13/08) : à
+    # côté de contact_email, même cycle de vie — écrit sur PATCH /agencies/me,
+    # jeton {contact_phone}, segment « joignable au … » du modèle généré.
+    contact_phone: Mapped[str | None] = mapped_column(String(50))
     # The agency VALIDATED (relu) its generated terms — the « J'ai vérifié »
     # gesture. NULL = generated but not yet reviewed → the dashboard task and
     # the onboarding step nudge the agency. Distinct from « generated »: the
@@ -200,6 +204,20 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # that mail goes TO the agency at J+10 min, this one goes to the team
     # immediately. One flag each, so replaying one never suppresses the other.
     signup_alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # --- Acquisition (lot 13/08) -------------------------------------------
+    # D'OÙ vient l'inscription. Colonnes plates et non un JSONB : ce n'est pas
+    # un champ « spécifique à l'agence » (règle 6) mais un jeu FIXE et connu,
+    # servi tel quel dans AdminAgencyRow et destiné à être filtré/compté par
+    # campagne — même statut que referral_code, l'autre signal d'acquisition.
+    # Bornés à 200 comme à l'entrée : c'est du texte public non authentifié.
+    utm_source: Mapped[str | None] = mapped_column(String(200))
+    utm_medium: Mapped[str | None] = mapped_column(String(200))
+    utm_campaign: Mapped[str | None] = mapped_column(String(200))
+    referrer: Mapped[str | None] = mapped_column(String(200))
+    # La PREMIÈRE TOUCHE, distincte de created_at : le délai entre l'arrivée
+    # sur /signup et la création du compte est un signal en soi.
+    acquisition_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def has_logo(self) -> bool:

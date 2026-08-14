@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # Eric's 3-minute walkthrough. FRENCH whatever the recipient language
     # (his decision): the mail is translated, the video is not.
     onboarding_video_url: str = "https://youtu.be/ciyXd7KZpnU"
+    # Own kill switch, same idiom as `onboarding_email_enabled` (bool | None:
+    # None = derive from the environment, production only). SEPARATE on
+    # purpose: muting the agency's welcome mail must never silently blind the
+    # team to new signups, nor the reverse. What the two mails DO share is the
+    # exclusion list below — that, and not the switch, is the single
+    # definition of "test account".
+    signup_alert_enabled: bool | None = None
     # INTERNAL signup alert (demande Eric 13/08) — NOT the onboarding mail:
     # that one goes TO the agency at J+10 min, this one goes to US, at once,
     # so a signup can be traced and called back the same day. Recipients are

@@ -67,6 +67,7 @@ CATALOGUE: tuple[TokenSpec, ...] = (
     # identity sentence already does.
     TokenSpec("country", "votre pays", lambda agency: agency.country),
     TokenSpec("contact_email", "votre email de contact", lambda agency: agency.contact_email),
+    TokenSpec("contact_phone", "votre téléphone de contact", lambda agency: agency.contact_phone),
 )
 
 _BY_NAME: dict[str, TokenSpec] = {spec.name: spec for spec in CATALOGUE}

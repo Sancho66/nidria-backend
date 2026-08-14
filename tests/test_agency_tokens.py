@@ -28,13 +28,17 @@ LEGAL_PROFILE = {
     "city": "Paris",
     "country": "FR",
     "contact_email": "contact@acme.fr",
+    # Dixième jeton (lot acquisition 13/08) : le téléphone rejoint l'identité
+    # légale, donc le catalogue et « tous les jetons » l'incluent.
+    "contact_phone": "+33 1 02 03 04 05",
 }
 
 # Un texte qui utilise TOUS les jetons du catalogue.
 ALL_TOKENS_TEXT = (
     "# Conditions de {agency_name}\n\n"
     "Éditeur : {legal_name}, {legal_form}, immatriculée {registration_number}, "
-    "siège {address} {postal_code} {city} ({country}), contact {contact_email}.\n"
+    "siège {address} {postal_code} {city} ({country}), contact {contact_email} "
+    "ou {contact_phone}.\n"
 )
 
 
