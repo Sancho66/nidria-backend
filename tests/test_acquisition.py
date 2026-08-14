@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.rbac import Role
+from shared.models.signup import SignupVerification
 from src.consents.agency_template import generate_client_privacy, generate_client_terms
 from src.consents.agency_tokens import resolve, token_values, unfilled_tokens
 from src.core import ratelimit
@@ -90,6 +91,11 @@ async def _agency(db: AsyncSession) -> Agency:
     return (await db.execute(select(Agency).where(Agency.slug.like("neo%")))).scalars().one()
 
 
+async def _verification_captured_at(db: AsyncSession):
+    db.expire_all()
+    return (await db.execute(select(SignupVerification.acquisition_captured_at))).scalars().one()
+
+
 async def _admin_row(client: AsyncClient, headers: dict[str, str], agency_id: uuid.UUID) -> dict:
     body = (await client.get("/admin/agencies?page_size=100", headers=headers)).json()
     return next(r for r in body["items"] if r["id"] == str(agency_id))
@@ -148,15 +154,37 @@ async def test_asking_for_a_new_code_does_not_erase_the_source(
     assert (await _agency(db_session)).utm_source == "newsletter"
 
 
-async def test_a_direct_signup_stays_valid_and_carries_nothing(
+async def test_a_direct_signup_is_dated_even_carrying_nothing(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Une inscription directe est un FAIT, pas un trou — et pas une erreur."""
+    """Une inscription directe est un FAIT, pas un trou — et pas une erreur.
+    Elle est donc DATÉE : « une date, aucune UTM » est l'état « accès direct »,
+    que le front sait afficher. Sans la date, une arrivée nue serait
+    indistinguable d'une agence d'avant le lot (NULL partout)."""
     assert (await _request(client)).status_code == 200
     assert (await _complete(client)).status_code == 200
     agency = await _agency(db_session)
     assert agency.utm_source is None
-    assert agency.acquisition_captured_at is None
+    assert agency.utm_medium is None
+    assert agency.utm_campaign is None
+    assert agency.referrer is None
+    assert agency.acquisition_captured_at is not None
+    assert agency.acquisition_captured_at <= agency.created_at
+
+
+async def test_the_direct_date_is_the_arrival_not_the_late_source(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """La date ne bouge plus une fois posée : l'étape 1 nue la pose, le filet
+    de l'étape 3 apporte la source SANS redater — c'est l'arrivée sur /signup
+    qu'on mesure, pas la valeur retenue."""
+    assert (await _request(client)).status_code == 200
+    stamped = await _verification_captured_at(db_session)
+    assert stamped is not None
+    assert (await _complete(client, **CAMPAIGN)).status_code == 200
+    agency = await _agency(db_session)
+    assert agency.utm_source == "newsletter"
+    assert agency.acquisition_captured_at == stamped
 
 
 async def test_the_public_entry_is_bounded_and_sanitized(

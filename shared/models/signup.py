@@ -29,7 +29,10 @@ class SignupVerification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Acquisition capturée dès l'ÉTAPE 1 (la première touche) et reportée sur
     # l'agence à l'étape 3 : l'inscription se termine trois écrans plus loin,
     # sur des URL qui ne portent plus rien. Première touche gagnante, comme
-    # côté front — ce qui arrive ici en premier n'est jamais écrasé.
+    # côté front — ce qui arrive ici en premier n'est jamais écrasé. La date
+    # est posée à l'étape 1 même si les quatre champs sont vides (accès
+    # direct) : sans elle, une arrivée nue serait indistinguable d'une
+    # inscription d'avant le lot.
     utm_source: Mapped[str | None] = mapped_column(String(200))
     utm_medium: Mapped[str | None] = mapped_column(String(200))
     utm_campaign: Mapped[str | None] = mapped_column(String(200))

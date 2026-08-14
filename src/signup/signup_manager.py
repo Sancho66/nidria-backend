@@ -61,14 +61,16 @@ def _first_touch(
     previous_at: datetime | None,
     incoming: dict[str, str | None],
     now: datetime,
-) -> tuple[dict[str, str | None], datetime | None]:
-    """(valeurs retenues, date de première touche). Une capture creuse ne
-    remplace jamais une vraie, et ne pose pas de date."""
+) -> tuple[dict[str, str | None], datetime]:
+    """(valeurs retenues, date de la première capture). Une capture creuse ne
+    remplace jamais une vraie — mais elle DATE quand même : « une date, aucune
+    UTM » est l'état « accès direct », un FAIT, que le NULL du parc d'avant le
+    lot ne sait pas dire. La date est celle de la PREMIÈRE capture et ne bouge
+    plus : elle marque l'arrivée sur /signup, pas la valeur retenue."""
+    captured_at = previous_at or now
     if _has_acquisition(previous):
-        return previous, previous_at or now
-    if _has_acquisition(incoming):
-        return incoming, now
-    return incoming, None
+        return previous, captured_at
+    return incoming, captured_at
 
 
 logger = logging.getLogger(__name__)

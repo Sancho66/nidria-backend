@@ -216,7 +216,10 @@ class Agency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     utm_campaign: Mapped[str | None] = mapped_column(String(200))
     referrer: Mapped[str | None] = mapped_column(String(200))
     # La PREMIÈRE TOUCHE, distincte de created_at : le délai entre l'arrivée
-    # sur /signup et la création du compte est un signal en soi.
+    # sur /signup et la création du compte est un signal en soi. Posée dès
+    # qu'une capture arrive, MÊME creuse : « une date, aucune UTM » = accès
+    # direct, un fait ; NULL = jamais collecté (parc d'avant le lot, agences
+    # créées par le wizard superadmin). Le front branche sur cette distinction.
     acquisition_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
