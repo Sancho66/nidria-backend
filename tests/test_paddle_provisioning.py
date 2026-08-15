@@ -323,7 +323,8 @@ async def test_boot_check_flags_missing_and_mismatched_ids() -> None:
 
 
 def test_declared_grid_matches_the_public_pricing() -> None:
-    """The declaration IS the grid (2026-07 + reader seats 08/08) — one
+    """The declaration IS the grid (2026-07, Agence amendée 15/08 — décision
+    Eric : 169/mois, 1690/an par la dérivation maison 2-mois-offerts) — one
     place to read it. Reader (rotation 09/08): 12.99/mois, 119.88/an
     (9.99 × 12), NET. Indépendant (lot 09/08): 49/490 base, siège 50/500 —
     Indépendant + 1 siège = Cabinet = 99 exactement, la marche-proposition."""
@@ -335,8 +336,8 @@ def test_declared_grid_matches_the_public_pricing() -> None:
         "seat_independant_annuel": 50_000,
         "cabinet_mensuel": 9_900,
         "cabinet_annuel": 99_000,
-        "agence_mensuel": 12_900,
-        "agence_annuel": 129_000,
+        "agence_mensuel": 16_900,
+        "agence_annuel": 169_000,
         "seat_cabinet_mensuel": 3_500,
         "seat_cabinet_annuel": 35_000,
         "seat_agence_mensuel": 2_500,

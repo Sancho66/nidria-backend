@@ -988,8 +988,8 @@ def _paddle_prices_payload() -> list[dict[str, Any]]:
     amounts = {
         "cabinet_mensuel": "9900",
         "cabinet_annuel": "99000",
-        "agence_mensuel": "12900",
-        "agence_annuel": "129000",
+        "agence_mensuel": "16900",
+        "agence_annuel": "169000",
         "seat_cabinet_mensuel": "3500",
         "seat_cabinet_annuel": "35000",
         "seat_agence_mensuel": "2500",
@@ -1026,8 +1026,8 @@ async def test_catalog_prices_block_served_from_one_long_cached_call(
         "annual": {"base": "990", "seat": "350"},
     }
     assert catalog["agence"] == {
-        "monthly": {"base": "129", "seat": "25"},
-        "annual": {"base": "1290", "seat": "250"},
+        "monthly": {"base": "169", "seat": "25"},
+        "annual": {"base": "1690", "seat": "250"},
     }
     # LONG cache: a second read costs zero extra Paddle call (immutable
     # prices — a rotation means new ids, new env, fresh cache).

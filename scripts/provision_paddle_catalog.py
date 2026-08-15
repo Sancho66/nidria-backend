@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.billing.catalog_provisioning import (  # noqa: E402
+    _stable_key,
     align_names,
     align_quantity_bounds,
     align_tax_mode,
@@ -70,6 +71,18 @@ async def main() -> int:
         ),
     )
     parser.add_argument(
+        "--preview-checkout",
+        metavar="PLAN_CYCLE",
+        help=(
+            "PROOF gesture (sandbox): create a DRAFT checkout transaction "
+            "for the given stable key (e.g. agence_mensuel) exactly as the "
+            "product checkout does, and print its totals — the evidence "
+            "that the price the checkout serves is the declared one. Reads "
+            "the price id from the CURRENT remote catalog by stable key "
+            "(never from env), so it proves the post-rotation state."
+        ),
+    )
+    parser.add_argument(
         "--rotate-prices",
         action="store_true",
         help=(
@@ -104,6 +117,34 @@ async def main() -> int:
             )
         for line in patched:
             print(f"  PATCHED {line}")
+        return 0
+
+    if args.preview_checkout:
+        key = args.preview_checkout
+        print(f"Paddle env: {settings.paddle_env} | mode: PREVIEW CHECKOUT ({key})")
+        if settings.paddle_env != "sandbox":
+            # Une transaction draft LIVE apparaîtrait dans le back-office
+            # d'une vraie boutique : la preuve se joue en bac à sable.
+            print("  REFUSED: preview-checkout is a sandbox-only proof gesture.")
+            return 1
+        client = PaddleClient()
+        remote = {k: p for p in await client.list_prices() if (k := _stable_key(p))}
+        price = remote.get(key)
+        if price is None:
+            print(f"  price {key!r} not found in the remote catalog.")
+            return 1
+        transaction = await client.create_transaction(
+            items=[{"price_id": price["id"], "quantity": 1}],
+            custom_data={"proof": "preview-checkout"},
+        )
+        unit = (price.get("unit_price") or {}).get("amount")
+        totals = ((transaction.get("details") or {}).get("totals")) or {}
+        print(f"  price_id : {price['id']}  (unit {unit}c, declared for {key})")
+        print(f"  txn      : {transaction.get('id')}  status={transaction.get('status')}")
+        print(
+            f"  totals   : subtotal={totals.get('subtotal')}c  tax={totals.get('tax')}c  "
+            f"total={totals.get('total')}c  ({totals.get('currency_code')})"
+        )
         return 0
 
     if args.rotate_prices:

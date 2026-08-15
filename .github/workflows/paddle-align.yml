@@ -26,10 +26,11 @@ on:
           declared products/prices — lot lecteur; flow-* = seat-flow proof)
         required: true
         type: choice
-        options: [dry-run, execute, align-quantity, align-tax-mode, align-names, rotate-prices, flow-list, flow-push]
+        options: [dry-run, execute, align-quantity, align-tax-mode, align-names, rotate-prices, preview-checkout, flow-list, flow-push]
       flow_args:
         description: >-
-          flow-push only: args for paddle_seat_flow_proof.py, e.g.
+          flow-push: args for paddle_seat_flow_proof.py; preview-checkout:
+          the stable key to preview (e.g. agence_mensuel). flow-push e.g.
           "--subscription sub_x --plan cabinet --cycle mensuel
           --quantity 3 --revert-quantity 2 --execute"
         required: false
@@ -59,6 +60,9 @@ jobs:
               uv run python scripts/paddle_seat_flow_proof.py --list ;;
             flow-push)
               uv run python scripts/paddle_seat_flow_proof.py ${{ inputs.flow_args }} ;;
+            preview-checkout)
+              # flow_args porte la STABLE KEY a previsualiser (ex. agence_mensuel)
+              uv run python scripts/provision_paddle_catalog.py --preview-checkout ${{ inputs.flow_args }} ;;
             dry-run)
               uv run python scripts/provision_paddle_catalog.py ;;
             *)
