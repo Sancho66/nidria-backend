@@ -335,8 +335,8 @@ async def test_plan_change_quote_serves_the_whole_grid(
     assert faces[("cabinet", "mensuel")]["total_recurring"] == "99.00"
     assert faces[("cabinet", "annuel")]["total_recurring"] == "990.00"
     assert faces[("cabinet", "annuel")]["monthly_equivalent"] == "82.50"
-    assert faces[("agence", "mensuel")]["total_recurring"] == "129.00"
-    assert faces[("agence", "annuel")]["monthly_equivalent"] == "107.50"
+    assert faces[("agence", "mensuel")]["total_recurring"] == "169.00"
+    assert faces[("agence", "annuel")]["monthly_equivalent"] == "140.83"
 
 
 async def test_plan_change_quote_serves_the_offer_rule(

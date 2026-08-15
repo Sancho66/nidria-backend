@@ -90,8 +90,12 @@ def _reader_seat(cycle_key: str, interval: str, cents: int, label: str) -> Price
     )
 
 
-# Grid 2026-07: Cabinet 99 €/mois (annuel 990), Agence 129 €/mois (annuel
-# 1290); extra seats 35/25 €/mois (annuel 350/250). Cabinet includes 3
+# Grid 2026-07, amendée 15/08 (décision Eric) : Cabinet 99 €/mois (annuel
+# 990), Agence 169 €/mois (annuel 1690 — la dérivation maison, 2 mois
+# offerts : annuel = 10 × mensuel) ; extra seats 35/25 €/mois (annuel
+# 350/250). L'Agence était à 129/1290 depuis la grille 2026-07 ; le
+# changement passe par --rotate-prices (un montant Paddle est immuable par
+# principe — le gel founding en dépend), jamais un PATCH. Cabinet includes 3
 # seats, Agence 6 (SEATS_INCLUDED_BY_PLAN + the public grid) — the price
 # NAMES say it because a name can appear on a client invoice (micro-lot
 # 08/08: the Agence labels wrongly said 3; align with --align-names).
@@ -106,8 +110,8 @@ PRICES: tuple[PriceSpec, ...] = (
     _seat("independant", "annuel", "year", 50_000, "Indépendant — siège supplémentaire (annuel)"),
     _base("cabinet", "mensuel", "month", 9_900, "Cabinet — mensuel (3 sièges inclus)"),
     _base("cabinet", "annuel", "year", 99_000, "Cabinet — annuel (3 sièges inclus)"),
-    _base("agence", "mensuel", "month", 12_900, "Agence — mensuel (6 sièges inclus)"),
-    _base("agence", "annuel", "year", 129_000, "Agence — annuel (6 sièges inclus)"),
+    _base("agence", "mensuel", "month", 16_900, "Agence — mensuel (6 sièges inclus)"),
+    _base("agence", "annuel", "year", 169_000, "Agence — annuel (6 sièges inclus)"),
     _seat("cabinet", "mensuel", "month", 3_500, "Cabinet — siège supplémentaire (mensuel)"),
     _seat("cabinet", "annuel", "year", 35_000, "Cabinet — siège supplémentaire (annuel)"),
     _seat("agence", "mensuel", "month", 2_500, "Agence — siège supplémentaire (mensuel)"),
