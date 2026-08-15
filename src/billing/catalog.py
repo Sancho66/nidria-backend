@@ -104,18 +104,18 @@ PRICES: tuple[PriceSpec, ...] = (
     # live) : 49/mois, 490/an (2 mois offerts), 1 siège gestionnaire
     # inclus ; le siège additionnel à 50 (500/an) pour qu'Indépendant + 1
     # = Cabinet = 99 exactement — la marche est une proposition.
-    _base("independant", "mensuel", "month", 4_900, "Indépendant — mensuel (1 siège inclus)"),
-    _base("independant", "annuel", "year", 49_000, "Indépendant — annuel (1 siège inclus)"),
-    _seat("independant", "mensuel", "month", 5_000, "Indépendant — siège supplémentaire (mensuel)"),
-    _seat("independant", "annuel", "year", 50_000, "Indépendant — siège supplémentaire (annuel)"),
-    _base("cabinet", "mensuel", "month", 9_900, "Cabinet — mensuel (3 sièges inclus)"),
-    _base("cabinet", "annuel", "year", 99_000, "Cabinet — annuel (3 sièges inclus)"),
-    _base("agence", "mensuel", "month", 16_900, "Agence — mensuel (6 sièges inclus)"),
-    _base("agence", "annuel", "year", 169_000, "Agence — annuel (6 sièges inclus)"),
-    _seat("cabinet", "mensuel", "month", 3_500, "Cabinet — siège supplémentaire (mensuel)"),
-    _seat("cabinet", "annuel", "year", 35_000, "Cabinet — siège supplémentaire (annuel)"),
-    _seat("agence", "mensuel", "month", 2_500, "Agence — siège supplémentaire (mensuel)"),
-    _seat("agence", "annuel", "year", 25_000, "Agence — siège supplémentaire (annuel)"),
+    _base("independant", "mensuel", "month", 4_900, "Indépendant - mensuel (1 siège inclus)"),
+    _base("independant", "annuel", "year", 49_000, "Indépendant - annuel (1 siège inclus)"),
+    _seat("independant", "mensuel", "month", 5_000, "Indépendant - siège supplémentaire (mensuel)"),
+    _seat("independant", "annuel", "year", 50_000, "Indépendant - siège supplémentaire (annuel)"),
+    _base("cabinet", "mensuel", "month", 9_900, "Cabinet - mensuel (3 sièges inclus)"),
+    _base("cabinet", "annuel", "year", 99_000, "Cabinet - annuel (3 sièges inclus)"),
+    _base("agence", "mensuel", "month", 16_900, "Agence - mensuel (6 sièges inclus)"),
+    _base("agence", "annuel", "year", 169_000, "Agence - annuel (6 sièges inclus)"),
+    _seat("cabinet", "mensuel", "month", 3_500, "Cabinet - siège supplémentaire (mensuel)"),
+    _seat("cabinet", "annuel", "year", 35_000, "Cabinet - siège supplémentaire (annuel)"),
+    _seat("agence", "mensuel", "month", 2_500, "Agence - siège supplémentaire (mensuel)"),
+    _seat("agence", "annuel", "year", 25_000, "Agence - siège supplémentaire (annuel)"),
     # Reader grid (rotation 09/08, décision Alex — à confirmer Eric):
     # 12.99 EUR/month, 119.88 EUR/year (9.99 × 12) — NET amounts like
     # everything here (tax external). Was 13.99/131.88 (arbitrage 07/08);
