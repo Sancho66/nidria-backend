@@ -322,7 +322,49 @@ _AGENT_INVITATION = {
 }
 
 
-def password_reset_email(reset_link: str, expires_minutes: int, lang: str = "fr") -> EmailContent:
+# Explicit audience labels; callers supply both action and login URLs.
+_CLIENT_ENTRY = {
+    "fr": {
+        "login": "Accéder à mon espace client",
+        "reset": "Réinitialiser le mot de passe de mon espace client",
+        "activate": "Activer mon espace client",
+    },
+    "en": {
+        "login": "Open my client space",
+        "reset": "Reset my client space password",
+        "activate": "Activate my client space",
+    },
+    "es": {
+        "login": "Acceder a mi espacio de cliente",
+        "reset": "Restablecer la contraseña de mi espacio de cliente",
+        "activate": "Activar mi espacio de cliente",
+    },
+    "hu": {
+        "login": "Belépés az ügyfélfelületemre",
+        "reset": "Ügyfélfelületem jelszavának visszaállítása",
+        "activate": "Ügyfélfelületem aktiválása",
+    },
+    "it": {
+        "login": "Accedere al mio spazio cliente",
+        "reset": "Reimpostare la password del mio spazio cliente",
+        "activate": "Attivare il mio spazio cliente",
+    },
+    "pt": {
+        "login": "Aceder ao meu espaço de cliente",
+        "reset": "Repor a palavra-passe do meu espaço de cliente",
+        "activate": "Ativar o meu espaço de cliente",
+    },
+    "ru": {
+        "login": "Войти в мой клиентский кабинет",
+        "reset": "Сбросить пароль моего клиентского кабинета",
+        "activate": "Активировать мой клиентский кабинет",
+    },
+}
+
+
+def password_reset_email(
+    reset_link: str, expires_minutes: int, lang: str = "fr", *, login_link: str | None = None
+) -> EmailContent:
     """Rendered in the recipient language. Long invitation windows read in
     hours ("24 heures", onboarding); the classic 60-minute reset in minutes."""
     s = _pick(_PASSWORD_RESET, lang)
@@ -334,9 +376,10 @@ def password_reset_email(reset_link: str, expires_minutes: int, lang: str = "fr"
         subject=s["subject"],
         title=s["title"],
         intro=s["intro"],
-        button_label=s["button"],
+        button_label=_pick(_CLIENT_ENTRY, lang)["reset"] if login_link else s["button"],
         button_url=reset_link,
         validity=validity,
+        extra_buttons=[(_pick(_CLIENT_ENTRY, lang)["login"], login_link)] if login_link else (),
         lang=lang,
     )
 
@@ -645,6 +688,8 @@ def expat_activation_email(
     journey_name: str | None = None,
     lang: str = "fr",
     pending_items: list[tuple[str, int]] | None = None,
+    *,
+    login_link: str | None = None,
 ) -> EmailContent:
     """Client activation invite, rendered in the recipient language. The
     intro carries the journey name (resolved) or the neutral fallback.
@@ -657,9 +702,10 @@ def expat_activation_email(
         title=s["title"].format(agency=agency_name),
         intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
         body_text=_pending_block(pending_items, lang),
-        button_label=s["button"],
+        button_label=_pick(_CLIENT_ENTRY, lang)["activate"],
         button_url=link,
         validity=s["expires"].format(days=expires_days),
+        extra_buttons=[(_pick(_CLIENT_ENTRY, lang)["login"], login_link)] if login_link else (),
         lang=lang,
     )
 
@@ -680,7 +726,7 @@ def new_case_email(
         title=s["title"].format(agency=agency_name),
         intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
         body_text=_pending_block(pending_items, lang),
-        button_label=s["button"],
+        button_label=_pick(_CLIENT_ENTRY, lang)["login"],
         button_url=login_link,
         lang=lang,
     )

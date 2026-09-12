@@ -343,7 +343,12 @@ class AuthManager:
                 agency = await self.db.get(Agency, actor.agency_id)
                 lang = resolve_notification_lang_agent(agency.default_language if agency else None)
             content = password_reset_email(
-                reset_link, settings.password_reset_token_expires_minutes, lang
+                reset_link,
+                settings.password_reset_token_expires_minutes,
+                lang,
+                login_link=(
+                    f"{settings.frontend_url}/space/login" if audience is Audience.EXPAT else None
+                ),
             )
             await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
             logger.info("forgot-password: reset mail sent audience=%s to=%s", audience.value, email)

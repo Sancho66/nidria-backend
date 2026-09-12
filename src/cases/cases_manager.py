@@ -383,7 +383,12 @@ class CasesManager:
                 settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
             )
             content = expat_activation_email(
-                agency_name, link, settings.case_invitation_expires_days, journey_name, lang
+                agency_name,
+                link,
+                settings.case_invitation_expires_days,
+                journey_name,
+                lang,
+                login_link=space_link(settings.frontend_url, "/space/login", agency_slug),
             )
         else:
             content = new_case_email(
@@ -1207,6 +1212,7 @@ class CasesManager:
                 journey_name,
                 lang,
                 pending_items=pending_items,
+                login_link=space_link(settings.frontend_url, "/space/login", agency_slug),
             )
         else:
             content = new_case_email(
