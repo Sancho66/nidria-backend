@@ -106,17 +106,22 @@ typecheck: ## mypy strict on src/ shared/ (same as CI)
 # in Docker-VM contention than the parallelism buys (workers are only ~20%
 # CPU-busy — this suite waits on Postgres, it is not core-bound). Same
 # `-n auto` as ci.yml, so `make check` green == CI green.
+# `python -m pytest`, never the `pytest` console script: the mandatory guard
+# plugin (`-p tests.network_guard` in pyproject addopts) is imported BEFORE
+# pytest adds the rootdir to sys.path, so only the module form (cwd on
+# sys.path) can resolve the `tests` package — the same form CI runs
+# (scripts/test_ci_isolated.sh).
 test: ## Test suite MINUS slow seed+migration tests (testcontainers PG, parallel)
-	uv run pytest tests/ -x -q -n auto -m "not seed and not migration"
+	uv run python -m pytest tests/ -x -q -n auto -m "not seed and not migration"
 
 test-seeds: ## ONLY the slow library-seed tests (run when touching seed code)
-	uv run pytest tests/ -q -n auto -m seed
+	uv run python -m pytest tests/ -q -n auto -m seed
 
 test-migrations: ## ONLY the slow alembic-roundtrip tests (run when touching migrations)
-	uv run pytest tests/ -q -n auto -m migration
+	uv run python -m pytest tests/ -q -n auto -m migration
 
 test-cov: ## Test suite with coverage on src/
-	uv run pytest tests/ -q -n auto --cov=src
+	uv run python -m pytest tests/ -q -n auto --cov=src
 
 # check-fast: lint + types only, NO database — the quick per-lot gate (seconds).
 # Catches lint/format/type regressions before each commit; run `check` (below)
