@@ -220,7 +220,7 @@ async def test_activated_converts_via_the_single_gesture(
     agency = await _agency(db_session, aid)
     assert agency.converted_at == occurred  # Paddle's clock, not ours
     assert agency.plan == "cabinet" and agency.billing_cycle == "mensuel"
-    assert agency.seat_price_eur == 35
+    assert agency.seat_price_eur == 50
     assert agency.billing_mode == "paddle" and agency.billing_status == "active"
     assert agency.paddle_subscription_id == "sub_123"
     assert agency.paddle_customer_id == "ctm_123"
@@ -670,17 +670,17 @@ def _paddle_subscription_payload(*, scheduled_cancel: str | None = None) -> dict
         "items": [
             {
                 "quantity": 1,
-                "price": {"id": PRICE_IDS["cabinet_mensuel"], "unit_price": {"amount": "9900"}},
+                "price": {"id": PRICE_IDS["cabinet_mensuel"], "unit_price": {"amount": "15000"}},
             },
             {
                 "quantity": 2,
                 "price": {
                     "id": PRICE_IDS["seat_cabinet_mensuel"],
-                    "unit_price": {"amount": "3500"},
+                    "unit_price": {"amount": "5000"},
                 },
             },
         ],
-        "next_transaction": {"details": {"totals": {"grand_total": "16900"}}},
+        "next_transaction": {"details": {"totals": {"grand_total": "25000"}}},
     }
 
 
@@ -717,9 +717,9 @@ def _mock_subscription_reads(monkeypatch: pytest.MonkeyPatch):
             # The re-subscription scenario switches to the annual agency plan.
             payload["items"][0]["price"] = {
                 "id": PRICE_IDS["agence_annuel"],
-                "unit_price": {"amount": "169000"},
+                "unit_price": {"amount": "299000"},
             }
-            payload["next_transaction"]["details"]["totals"]["grand_total"] = "169000"
+            payload["next_transaction"]["details"]["totals"]["grand_total"] = "299000"
         return payload
 
     get_sub = AsyncMock(side_effect=subscription)
@@ -777,10 +777,10 @@ async def test_subscription_state_is_assembled_from_one_cached_call(
     assert state["plan"] == "cabinet" and state["billing_cycle"] == "mensuel"
     assert state["billing_status"] == "active" and state["currency"] == "EUR"
     assert state["seats_billed"] == 0  # 1 member, 3 included — derived live
-    assert state["base_unit_price"] == "99"  # money as strings, from Paddle items
-    assert state["seat_unit_price"] == "35"
+    assert state["base_unit_price"] == "150"  # money as strings, from Paddle items
+    assert state["seat_unit_price"] == "50"
     assert state["next_billed_at"].startswith("2026-08-12")
-    assert state["next_payment_amount"] == "169"
+    assert state["next_payment_amount"] == "250"
     assert state["scheduled_cancel_at"] is None
 
     # Second read within the TTL: served from the cache, ONE Paddle call.
@@ -937,7 +937,7 @@ async def test_resubscription_activated_relinks_without_reemitting(
     assert agency.past_due_since is None
     assert agency.converted_at == first_converted_at  # history, untouched
     assert agency.plan == "agence" and agency.billing_cycle == "annuel"  # facts refreshed
-    assert agency.seat_price_eur == 25
+    assert agency.seat_price_eur == 30
     emitted = (
         await db_session.execute(
             select(func.count())
@@ -1033,16 +1033,16 @@ async def test_shared_customer_collision_is_200_alert_zero_write(
 
 
 def _paddle_prices_payload() -> list[dict[str, Any]]:
-    """The 8 catalog prices as GET /prices returns them (2026-07 grid)."""
+    """The 8 catalog prices as GET /prices returns them (2026-09 grid)."""
     amounts = {
-        "cabinet_mensuel": "9900",
-        "cabinet_annuel": "99000",
-        "agence_mensuel": "16900",
-        "agence_annuel": "169000",
-        "seat_cabinet_mensuel": "3500",
-        "seat_cabinet_annuel": "35000",
-        "seat_agence_mensuel": "2500",
-        "seat_agence_annuel": "25000",
+        "cabinet_mensuel": "15000",
+        "cabinet_annuel": "150000",
+        "agence_mensuel": "29900",
+        "agence_annuel": "299000",
+        "seat_cabinet_mensuel": "5000",
+        "seat_cabinet_annuel": "50000",
+        "seat_agence_mensuel": "3000",
+        "seat_agence_annuel": "30000",
     }
     return [
         {"id": PRICE_IDS[key], "unit_price": {"amount": amount, "currency_code": "EUR"}}
@@ -1071,12 +1071,12 @@ async def test_catalog_prices_block_served_from_one_long_cached_call(
     assert catalog["currency"] == "EUR"
     # Unit prices as STRINGS (the costs rule everywhere), the whole grid.
     assert catalog["cabinet"] == {
-        "monthly": {"base": "99", "seat": "35"},
-        "annual": {"base": "990", "seat": "350"},
+        "monthly": {"base": "150", "seat": "50"},
+        "annual": {"base": "1500", "seat": "500"},
     }
     assert catalog["agence"] == {
-        "monthly": {"base": "169", "seat": "25"},
-        "annual": {"base": "1690", "seat": "250"},
+        "monthly": {"base": "299", "seat": "30"},
+        "annual": {"base": "2990", "seat": "300"},
     }
     # LONG cache: a second read costs zero extra Paddle call (immutable
     # prices — a rotation means new ids, new env, fresh cache).
@@ -1133,7 +1133,7 @@ async def test_trial_409_carries_the_plan_card_material(
     params = body["params"]
     assert set(params) == {"trial_ends_at", "checkout_enabled", "catalog_prices"}
     assert params["checkout_enabled"] is True  # open in this harness
-    assert params["catalog_prices"]["cabinet"]["monthly"] == {"base": "99", "seat": "35"}
+    assert params["catalog_prices"]["cabinet"]["monthly"] == {"base": "150", "seat": "50"}
 
 
 # --- kill switch d'offre : BILLING_CHECKOUT_ENABLED ------------------------------------
@@ -1260,7 +1260,7 @@ def _sub_payload_with_seats(seat_qty: int) -> dict[str, Any]:
     items: list[dict[str, Any]] = [
         {
             "quantity": 1,
-            "price": {"id": PRICE_IDS["cabinet_mensuel"], "unit_price": {"amount": "9900"}},
+            "price": {"id": PRICE_IDS["cabinet_mensuel"], "unit_price": {"amount": "15000"}},
         }
     ]
     if seat_qty:
@@ -1269,7 +1269,7 @@ def _sub_payload_with_seats(seat_qty: int) -> dict[str, Any]:
                 "quantity": seat_qty,
                 "price": {
                     "id": PRICE_IDS["seat_cabinet_mensuel"],
-                    "unit_price": {"amount": "3500"},
+                    "unit_price": {"amount": "5000"},
                 },
             }
         )

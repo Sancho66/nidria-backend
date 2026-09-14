@@ -39,7 +39,16 @@ class ProvisioningReport:
 
 
 def _stable_key(obj: dict[str, Any]) -> str | None:
-    return ((obj.get("custom_data") or {}).get("stable_key")) or None
+    """The declaration identity of a Paddle object — None for a RETIRED
+    price (superseded by a rotation but kept active because a live
+    subscription still bills on it): it keeps its stable_key for the
+    subscription-side reads (billing_manager._kept_price_ids) yet must
+    never match the declaration again, or two active prices would claim
+    one key."""
+    custom = obj.get("custom_data") or {}
+    if custom.get("retired"):
+        return None
+    return custom.get("stable_key") or None
 
 
 def _price_divergences(spec: PriceSpec, remote: dict[str, Any]) -> list[str]:
@@ -174,13 +183,17 @@ async def rotate_prices(*, client: PaddleClient) -> tuple[list[str], dict[str, s
     AMOUNT CHANGE (rotation lecteur 09/08): a Paddle amount is immutable by
     principle (the founding freeze depends on it), so a new grid means NEW
     prices. For every matched price whose amount diverges from the
-    declaration: CREATE the declared price (same stable_key — free once the
-    old one leaves the active listing), then ARCHIVE the old one (never a
-    deletion, history stays). Non-amount divergences are NOT rotated (they
+    declaration: CREATE the declared price (same stable_key), then RETIRE
+    the old one — ARCHIVED when no live subscription bills on it, kept
+    ACTIVE and flagged custom_data.retired when one does (règle 14/09,
+    grille 2026-09: a running subscription keeps its price, and a price a
+    client is billed on is never archived under them). Either way the old
+    price leaves the declaration matching (see _stable_key). Never a
+    deletion, history stays. Non-amount divergences are NOT rotated (they
     have their own align gestures). Returns (report lines, fresh
     stable_key → price_id mapping for the env paste — rotated AND kept)."""
     remote_products = {k: p for p in await client.list_products() if (k := _stable_key(p))}
-    remote_prices = {k: p for p in await client.list_prices() if (k := _stable_key(p))}
+    remote_prices = {k: p for k, p in _active_declared_prices(await client.list_prices())}
     lines: list[str] = []
     price_ids: dict[str, str] = {}
     for spec in PRICES:
@@ -196,9 +209,17 @@ async def rotate_prices(*, client: PaddleClient) -> tuple[list[str], dict[str, s
         if product is None:
             lines.append(f"{spec.stable_key}: product {spec.product_key} missing — SKIPPED")
             continue
-        # Archive FIRST so the stable_key never matches two active prices,
-        # then create the successor with the declared amount.
-        await client.archive_price(remote["id"])
+        # Retire FIRST so the stable_key never matches two declared
+        # prices, then create the successor with the declared amount.
+        live = await client.list_live_subscriptions(price_id=remote["id"])
+        if live:
+            await client.update_price_custom_data(
+                remote["id"], {"stable_key": spec.stable_key, "retired": "true"}
+            )
+            fate = f"KEPT ACTIVE, retired — {len(live)} live subscription(s) bill on it"
+        else:
+            await client.archive_price(remote["id"])
+            fate = "archived"
         created = await client.create_price(
             product_id=product["id"],
             name=spec.name,
@@ -212,10 +233,16 @@ async def rotate_prices(*, client: PaddleClient) -> tuple[list[str], dict[str, s
         )
         price_ids[spec.stable_key] = created["id"]
         lines.append(
-            f"ROTATED {spec.stable_key}: {remote['id']} ({unit.get('amount')}c, archived) "
+            f"ROTATED {spec.stable_key}: {remote['id']} ({unit.get('amount')}c, {fate}) "
             f"-> {created['id']} ({spec.amount_cents}c)"
         )
     return lines, price_ids
+
+
+def _active_declared_prices(prices: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+    """(stable_key, price) for the active prices that still carry the
+    declaration identity — retired ones drop out here."""
+    return [(k, p) for p in prices if (k := _stable_key(p))]
 
 
 async def align_names(*, client: PaddleClient) -> list[str]:

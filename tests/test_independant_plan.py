@@ -1,21 +1,22 @@
-"""Lot 09/08 — le plan INDÉPENDANT (49/490, 1 siège gestionnaire inclus,
-siège additionnel à 50/500, lecteurs au SKU transverse).
+"""Lot 09/08 — le plan INDÉPENDANT (1 siège gestionnaire inclus, siège
+additionnel au tarif catalogue, lecteurs au SKU transverse). Grille
+2026-09 (14/09): 99/990 base, siège 70/700.
 
-The price is engineered so that Indépendant + 1 manager = Cabinet = 99
-exactly — the step up is a PROPOSAL served by the quote, never a wall.
+Since the 14/09 grid Indépendant + 1 manager (169) costs MORE than Cabinet
+(150): the step up is a PROPOSAL the quote serves, never a wall.
 
 Covers, against the real app:
-(a) the quote on an Indépendant agency: 1 extra manager at 50.00, a reader
+(a) the quote on an Indépendant agency: 1 extra manager at 70.00, a reader
     at the transverse rate, the annual equivalent — and the PROPOSED
-    switch (upgrade_alternative: stay 99.00 vs Cabinet 99.00, 3 included);
+    switch (upgrade_alternative: stay 169.00 vs Cabinet 150.00, 3 included);
 (b) transition a (trial → Indépendant): the checkout bills against the
     TARGET plan's included tier — a 3-seat trial pays 2 seats at entry
     (the latent trial-tier bug, fixed and pinned for cabinet too);
 (c) transition b (Cabinet → Indépendant, downgrade): the mirror re-derives
-    (included 1) — 3 managers cost 49 + 2×50, the sync pushes 2 seats;
-(d) transition c (Indépendant → Cabinet, the wanted path): the 50 € seats
+    (included 1) — 3 managers cost 99 + 2×70, the sync pushes 2 seats;
+(d) transition c (Indépendant → Cabinet, the wanted path): the 70 € seats
     resorb into the 3 included — the seat line leaves the push;
-(e) the annual grid (490 base, 500 seat) with the per-type discount.
+(e) the annual grid (990 base, 700 seat) with the per-type discount.
 """
 
 import json
@@ -118,8 +119,8 @@ async def test_independant_quote_serves_the_proposed_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The commercial heart: pricing the 2nd manager on Indépendant serves
-    BOTH paths — stay = 49 + 50 = 99.00, switch = Cabinet 99.00 with 3
-    included. Same price, one more seat: Cabinet becomes the evidence, the
+    BOTH paths — stay = 99 + 70 = 169.00, switch = Cabinet 150.00 with 3
+    included. Cheaper AND one more seat: Cabinet becomes the evidence, the
     quote never blocks."""
     await _convert(client, superadmin, agent_headers, admin.agency_id)
     from src.billing.billing_manager import BillingManager as BM
@@ -133,17 +134,17 @@ async def test_independant_quote_serves_the_proposed_switch(
         "requested": 1,
         "from_included": 0,  # the single included seat is worn by the admin
         "to_bill": 1,
-        "unit_price": "50.00",
-        "recurring_add": "50.00",
-        # (600 − 500) / 600 → 17 % — the per-type REAL discount, computed
+        "unit_price": "70.00",
+        "recurring_add": "70.00",
+        # (840 − 700) / 840 → 17 % — the per-type REAL discount, computed
         "annual_discount_percent": 17,
     }
-    assert body["total_recurring_add"] == "50.00"
+    assert body["total_recurring_add"] == "70.00"
     assert body["upgrade_alternative"] == {
         "plan": "cabinet",
         "included_managers": 3,
-        "stay_total_recurring": "99.00",  # 49 + 50 : the engineered equality
-        "switch_total_recurring": "99.00",  # Cabinet base, 2 managers on 3 included
+        "stay_total_recurring": "169.00",  # 99 + 70
+        "switch_total_recurring": "150.00",  # Cabinet base, 2 managers on 3 included
     }
 
 
@@ -171,12 +172,12 @@ async def test_independant_quote_with_reader_and_no_switch_below_included(
     mixed = await _quote(client, agent_headers(admin), {"manager": 1, "reader": 1})
     assert mixed.status_code == 200, mixed.text
     body = mixed.json()
-    assert body["total_recurring_add"] == "62.99"  # 50.00 + 12.99
+    assert body["total_recurring_add"] == "82.99"  # 70.00 + 12.99
     assert body["upgrade_alternative"] == {
         "plan": "cabinet",
         "included_managers": 3,
-        "stay_total_recurring": "111.99",  # 49 + 50 + 12.99
-        "switch_total_recurring": "111.99",  # 99 + 12.99 — readers cancel out
+        "stay_total_recurring": "181.99",  # 99 + 70 + 12.99
+        "switch_total_recurring": "162.99",  # 150 + 12.99 — readers ride on both
     }
 
 
@@ -187,20 +188,20 @@ async def test_independant_annual_grid(
     superadmin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    """Annual: 490 base (2 months off, the house mechanics), seat 500/an —
-    the equality holds annually too (490 + 500 = 990 = Cabinet annuel)."""
+    """Annual: 990 base (2 months off, the house mechanics), seat 700/an —
+    the proposal holds annually too (990 + 700 = 1690 vs Cabinet 1500)."""
     await _convert(client, superadmin, agent_headers, admin.agency_id, cycle="annuel")
 
     quoted = await _quote(client, agent_headers(admin), {"manager": 1})
     assert quoted.status_code == 200, quoted.text
     body = quoted.json()
-    assert body["manager"]["unit_price"] == "500.00"
+    assert body["manager"]["unit_price"] == "700.00"
     assert body["manager"]["annual_discount_percent"] is None  # annual cycle
     assert body["upgrade_alternative"] == {
         "plan": "cabinet",
         "included_managers": 3,
-        "stay_total_recurring": "990.00",  # 490 + 500
-        "switch_total_recurring": "990.00",  # Cabinet annuel
+        "stay_total_recurring": "1690.00",  # 990 + 700
+        "switch_total_recurring": "1500.00",  # Cabinet annuel
     }
 
 
@@ -261,9 +262,9 @@ async def test_plan_changes_rederive_the_seat_mirror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cabinet → Indépendant (downgrade): 3 managers re-derive against 1
-    included — the push carries seat_independant ×2 (49 + 2×50 = 149: the
+    included — the push carries seat_independant ×2 (99 + 2×70 = 239: the
     screen's comparison stops the client, never a refusal). Indépendant →
-    Cabinet (the wanted path): the 50 € seats RESORB into the 3 included —
+    Cabinet (the wanted path): the 70 € seats RESORB into the 3 included —
     the seat line leaves the push entirely."""
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
@@ -280,6 +281,11 @@ async def test_plan_changes_rederive_the_seat_mirror(
         )
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    # The push reads the live items first (rotation doctrine: a line the
+    # subscription already carries keeps ITS price id); none here → env ids.
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_subscription", AsyncMock(return_value={"items": []})
+    )
     headers = agent_headers(admin)
 
     seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
@@ -290,12 +296,12 @@ async def test_plan_changes_rederive_the_seat_mirror(
     agency.plan = "independant"
     await db_session.commit()
     seats = (await client.get("/agencies/me", headers=headers)).json()["subscription"]["seats"]
-    assert seats["included"] == 1 and seats["billed"] == 2  # 49 + 2×50 = 149
+    assert seats["included"] == 1 and seats["billed"] == 2  # 99 + 2×70 = 239
     await BillingManager(db_session).sync_seat_quantity(admin.agency_id, increase=True)
     items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
     assert items == {"pri_base_ind_m": 1, "pri_seat_ind_m": 2}
 
-    # UPGRADE (c): back to Cabinet — the 50 € seats resorb, the seat line
+    # UPGRADE (c): back to Cabinet — the 70 € seats resorb, the seat line
     # leaves the push (absent item = 0, the mirror's way).
     push.reset_mock()
     agency.plan = "cabinet"
@@ -333,18 +339,19 @@ async def test_plan_change_quote_serves_the_whole_grid(
     assert len(body["options"]) == 6  # jamais six appels côté front
 
     faces = {(o["plan"], o["billing_cycle"]): o for o in body["options"]}
-    # Indépendant: 1 inclus → 2 sièges à 50 (le downgrade coûteux, dit).
-    assert faces[("independant", "mensuel")]["total_recurring"] == "149.00"
+    # Indépendant: 1 inclus → 2 sièges à 70 (le downgrade coûteux, dit).
+    assert faces[("independant", "mensuel")]["total_recurring"] == "239.00"
     assert faces[("independant", "mensuel")]["manager_seats_billed"] == 2
     assert faces[("independant", "mensuel")]["monthly_equivalent"] is None
-    assert faces[("independant", "annuel")]["total_recurring"] == "1490.00"
-    assert faces[("independant", "annuel")]["monthly_equivalent"] == "124.17"
+    assert faces[("independant", "annuel")]["total_recurring"] == "2390.00"
+    assert faces[("independant", "annuel")]["monthly_equivalent"] == "199.17"
     # Cabinet: 3 inclus → rien de facturé, la face courante.
-    assert faces[("cabinet", "mensuel")]["total_recurring"] == "99.00"
-    assert faces[("cabinet", "annuel")]["total_recurring"] == "990.00"
-    assert faces[("cabinet", "annuel")]["monthly_equivalent"] == "82.50"
-    assert faces[("agence", "mensuel")]["total_recurring"] == "169.00"
-    assert faces[("agence", "annuel")]["monthly_equivalent"] == "140.83"
+    assert faces[("cabinet", "mensuel")]["total_recurring"] == "150.00"
+    assert faces[("cabinet", "annuel")]["total_recurring"] == "1500.00"
+    assert faces[("cabinet", "annuel")]["monthly_equivalent"] == "125.00"
+    assert faces[("agence", "mensuel")]["total_recurring"] == "299.00"
+    assert faces[("agence", "annuel")]["total_recurring"] == "2990.00"
+    assert faces[("agence", "annuel")]["monthly_equivalent"] == "249.17"
 
 
 async def test_plan_change_quote_serves_the_offer_rule(
@@ -423,7 +430,7 @@ async def test_plan_change_executes_in_one_patch_both_directions(
 ) -> None:
     """Le geste qui manquait : plan ET cycle en UN update Paddle, prorata
     immédiat, l'état local écrit APRÈS Paddle. Descente Cabinet →
-    Indépendant (3 gestionnaires → 2 sièges à 50), puis remontée (les
+    Indépendant (3 gestionnaires → 2 sièges à 70), puis remontée (les
     sièges se résorbent : la ligne quitte l'envoi)."""
     await _paddle_agency(db_session, admin.agency_id, plan="cabinet", cycle="mensuel")
     for i in range(2):  # 3 managers
@@ -445,7 +452,7 @@ async def test_plan_change_executes_in_one_patch_both_directions(
         "billing_cycle": "mensuel",
         "manager_seats_billed": 2,
         "reader_seats": 0,
-        "total_recurring": "149.00",
+        "total_recurring": "239.00",
     }
     push.assert_awaited_once()
     assert push.await_args.kwargs["proration_billing_mode"] == "prorated_immediately"
@@ -456,7 +463,7 @@ async def test_plan_change_executes_in_one_patch_both_directions(
     await db_session.refresh(agency)
     assert agency.plan == "independant" and agency.billing_cycle == "mensuel"
 
-    # Remontée : les sièges à 50 se résorbent dans les 3 inclus.
+    # Remontée : les sièges à 70 se résorbent dans les 3 inclus.
     push.reset_mock()
     up = await client.post(
         "/billing/plan-change",
@@ -464,7 +471,7 @@ async def test_plan_change_executes_in_one_patch_both_directions(
         json={"target_plan": "cabinet", "billing_cycle": "mensuel"},
     )
     assert up.status_code == 200, up.text
-    assert up.json()["total_recurring"] == "99.00"
+    assert up.json()["total_recurring"] == "150.00"
     items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
     assert items == {"pri_base_cab_m": 1}  # la ligne siège a disparu
 
@@ -489,7 +496,7 @@ async def test_plan_change_switches_the_cycle_in_the_same_gesture(
     )
     assert switched.status_code == 200, switched.text
     assert switched.json()["billing_cycle"] == "annuel"
-    assert switched.json()["total_recurring"] == "990.00"
+    assert switched.json()["total_recurring"] == "1500.00"
     items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
     assert items == {"pri_base_cab_a": 1}
     agency = await db_session.get(Agency, admin.agency_id)

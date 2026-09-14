@@ -166,6 +166,24 @@ def _seat_quantities_from_items(items: list[dict[str, Any]]) -> tuple[int, int]:
     return manager, reader
 
 
+def _kept_price_ids(subscription: dict[str, Any]) -> dict[str, str]:
+    """stable_key → price id for the items ALREADY on the subscription.
+    A running subscription KEEPS its prices across a price rotation (lot
+    pricing 14/09): the archived price keeps billing at its amount, and
+    Paddle accepts a PATCH that carries it (proven sandbox 14/09). Pushing
+    the env's fresh id for a line the subscription already has would
+    REPRICE the client silently — the exact thing a rotation must never
+    do. Lines the subscription does not have yet come from the env (the
+    current grid), like any new purchase."""
+    kept: dict[str, str] = {}
+    for item in subscription.get("items", []):
+        price = item.get("price") or {}
+        key = (price.get("custom_data") or {}).get("stable_key")
+        if key and price.get("id"):
+            kept[str(key)] = str(price["id"])
+    return kept
+
+
 class BillingManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -332,6 +350,13 @@ class BillingManager:
         if pool > 0 and reader_price is None:
             logger.error("paddle reader price id missing; seat sync skipped for %s", agency.slug)
             return
+        # The subscription's OWN price ids win over the env's (rotation
+        # doctrine, see _kept_price_ids); the read is the same cached GET
+        # the management page uses.
+        kept = _kept_price_ids(await self._fetch_subscription(agency.paddle_subscription_id))
+        base_price = kept.get(_price_key(agency.plan, agency.billing_cycle), base_price)
+        seat_price = kept.get(_seat_price_key(agency.plan, agency.billing_cycle), seat_price)
+        reader_price = kept.get(_reader_price_key(agency.billing_cycle), reader_price)
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:
             items.append({"price_id": seat_price, "quantity": usage.billed})
@@ -1108,6 +1133,12 @@ class BillingManager:
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
+        # Same rotation doctrine as sync_seat_quantity: the lines the
+        # subscription already carries keep THEIR price ids.
+        kept = _kept_price_ids(await self._fetch_subscription(agency.paddle_subscription_id))
+        base_price = kept.get(_price_key(agency.plan, agency.billing_cycle), base_price)
+        seat_price = kept.get(_seat_price_key(agency.plan, agency.billing_cycle), seat_price)
+        reader_price = kept.get(_reader_price_key(agency.billing_cycle), reader_price)
         items: list[dict[str, Any]] = [{"price_id": base_price, "quantity": 1}]
         if usage.billed > 0:
             items.append({"price_id": seat_price, "quantity": usage.billed})
@@ -1467,7 +1498,7 @@ class BillingManager:
                 )
         # THE PROPOSED STEP UP (lot independant): an Indépendant agency
         # pricing a manager beyond its single included seat gets BOTH
-        # paths chiffrés — stay (49 + 50×n) vs Cabinet (99, 3 included),
+        # paths chiffrés — stay (base + seat×n) vs Cabinet (base, 3 included),
         # readers identical on both sides. A proposal, never a wall.
         upgrade = None
         if (

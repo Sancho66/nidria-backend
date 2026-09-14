@@ -90,6 +90,11 @@ async def test_deactivation_pushes_paddle_down_and_manual_is_noop(
     aid = admin.agency_id
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    # The push reads the live items first (rotation doctrine: a line the
+    # subscription already carries keeps ITS price id); none here → env ids.
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_subscription", AsyncMock(return_value={"items": []})
+    )
     price_ids = {"cabinet_mensuel": "pri_b", "seat_cabinet_mensuel": "pri_s"}
     monkeypatch.setenv("PADDLE_ENV", "sandbox")
     monkeypatch.setenv("PADDLE_API_KEY", "test-api-key")

@@ -218,7 +218,7 @@ async def test_superadmin_patch_poses_the_conversion(
 
     agency = await db_session.get(Agency, admin.agency_id)
     assert agency is not None
-    assert agency.seat_price_eur == 25  # derived from the plan
+    assert agency.seat_price_eur == 30  # derived from the plan (catalog seat rate)
     assert agency.converted_at is not None  # stamped when absent
     assert str(agency.price_locked_until) == "2028-07-07"
 

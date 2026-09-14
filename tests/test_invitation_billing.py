@@ -97,6 +97,11 @@ async def _paddle_activate(db: AsyncSession, agency_id: uuid.UUID) -> None:
 def _mock_push(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    # The push reads the live items first (rotation doctrine: a line the
+    # subscription already carries keeps ITS price id); none here → env ids.
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_subscription", AsyncMock(return_value={"items": []})
+    )
     return push
 
 

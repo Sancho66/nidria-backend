@@ -1,4 +1,4 @@
-"""The DECLARED Paddle catalog — the single declarative truth (grid 2026-07).
+"""The DECLARED Paddle catalog — the single declarative truth (grid 2026-09).
 
 Paddle holds the EXECUTION truth; scripts/provision_paddle_catalog.py
 reconciles the two, idempotently, matching by STABLE KEY (posed as
@@ -90,32 +90,63 @@ def _reader_seat(cycle_key: str, interval: str, cents: int, label: str) -> Price
     )
 
 
-# Grid 2026-07, amendée 15/08 (décision Eric) : Cabinet 99 €/mois (annuel
-# 990), Agence 169 €/mois (annuel 1690 — la dérivation maison, 2 mois
-# offerts : annuel = 10 × mensuel) ; extra seats 35/25 €/mois (annuel
-# 350/250). L'Agence était à 129/1290 depuis la grille 2026-07 ; le
-# changement passe par --rotate-prices (un montant Paddle est immuable par
-# principe — le gel founding en dépend), jamais un PATCH. Cabinet includes 3
-# seats, Agence 6 (SEATS_INCLUDED_BY_PLAN + the public grid) — the price
-# NAMES say it because a name can appear on a client invoice (micro-lot
-# 08/08: the Agence labels wrongly said 3; align with --align-names).
+# The house annual rule: a yearly price bills 10 months (2 months free) —
+# annual = ANNUAL_MONTHS_BILLED × monthly, for every plan base and every
+# manager seat. Declared ONCE here so the yearly amounts are DERIVED, never
+# typed a second time (the reader SKU has its own rule below).
+ANNUAL_MONTHS_BILLED = 10
+
+
+def _annual(monthly_cents: int) -> int:
+    return monthly_cents * ANNUAL_MONTHS_BILLED
+
+
+# Grid 2026-09 (décision Eric + Alexandre 14/09/2026), monthly EUR net:
+# Indépendant 99 (was 49), manager seat 70 (was 50); Cabinet 150 (was 99),
+# seat 50 (was 35); Agence 299 (was 169), seat 30 (was 25). Annual by the
+# rule above: 990 / 1500 / 2990 bases, 700 / 500 / 300 seats. Reader grid
+# and included tiers (1 / 3 / 6, SEATS_INCLUDED_BY_PLAN) unchanged. Every
+# amount change goes through --rotate-prices (a Paddle amount is immutable
+# by principle — the founding freeze depends on it), never a PATCH: a
+# running subscription keeps its (archived) price and its amount, a new
+# checkout serves this grid. History: Agence 129 (2026-07) → 169 (15/08);
+# Indépendant 49/50 and Cabinet 99/35 since their creation (09/08, 2026-07).
+# Cabinet includes 3 seats, Agence 6 — the price NAMES say it because a
+# name can appear on a client invoice (align with --align-names).
+MONTHLY_CENTS: dict[str, int] = {
+    "independant": 9_900,
+    "seat_independant": 7_000,
+    "cabinet": 15_000,
+    "seat_cabinet": 5_000,
+    "agence": 29_900,
+    "seat_agence": 3_000,
+}
+
+
+def _base_pair(plan: str, label: str, included: str) -> tuple[PriceSpec, PriceSpec]:
+    """The monthly base and its DERIVED annual twin, from the one declared amount."""
+    monthly = MONTHLY_CENTS[plan]
+    return (
+        _base(plan, "mensuel", "month", monthly, f"{label} - mensuel ({included})"),
+        _base(plan, "annuel", "year", _annual(monthly), f"{label} - annuel ({included})"),
+    )
+
+
+def _seat_pair(plan: str, label: str) -> tuple[PriceSpec, PriceSpec]:
+    monthly = MONTHLY_CENTS[f"seat_{plan}"]
+    return (
+        _seat(plan, "mensuel", "month", monthly, f"{label} - siège supplémentaire (mensuel)"),
+        _seat(plan, "annuel", "year", _annual(monthly), f"{label} - siège supplémentaire (annuel)"),
+    )
+
+
 PRICES: tuple[PriceSpec, ...] = (
-    # Indépendant (lot 09/08, décision Alex — mot d'Eric requis avant le
-    # live) : 49/mois, 490/an (2 mois offerts), 1 siège gestionnaire
-    # inclus ; le siège additionnel à 50 (500/an) pour qu'Indépendant + 1
-    # = Cabinet = 99 exactement — la marche est une proposition.
-    _base("independant", "mensuel", "month", 4_900, "Indépendant - mensuel (1 siège inclus)"),
-    _base("independant", "annuel", "year", 49_000, "Indépendant - annuel (1 siège inclus)"),
-    _seat("independant", "mensuel", "month", 5_000, "Indépendant - siège supplémentaire (mensuel)"),
-    _seat("independant", "annuel", "year", 50_000, "Indépendant - siège supplémentaire (annuel)"),
-    _base("cabinet", "mensuel", "month", 9_900, "Cabinet - mensuel (3 sièges inclus)"),
-    _base("cabinet", "annuel", "year", 99_000, "Cabinet - annuel (3 sièges inclus)"),
-    _base("agence", "mensuel", "month", 16_900, "Agence - mensuel (6 sièges inclus)"),
-    _base("agence", "annuel", "year", 169_000, "Agence - annuel (6 sièges inclus)"),
-    _seat("cabinet", "mensuel", "month", 3_500, "Cabinet - siège supplémentaire (mensuel)"),
-    _seat("cabinet", "annuel", "year", 35_000, "Cabinet - siège supplémentaire (annuel)"),
-    _seat("agence", "mensuel", "month", 2_500, "Agence - siège supplémentaire (mensuel)"),
-    _seat("agence", "annuel", "year", 25_000, "Agence - siège supplémentaire (annuel)"),
+    *_base_pair("independant", "Indépendant", "1 siège inclus"),
+    *_seat_pair("independant", "Indépendant"),
+    *_base_pair("cabinet", "Cabinet", "3 sièges inclus"),
+    *_base_pair("agence", "Agence", "6 sièges inclus"),
+    *_seat_pair("cabinet", "Cabinet"),
+    *_seat_pair("agence", "Agence"),
     # Reader grid (rotation 09/08, décision Alex — à confirmer Eric):
     # 12.99 EUR/month, 119.88 EUR/year (9.99 × 12) — NET amounts like
     # everything here (tax external). Was 13.99/131.88 (arbitrage 07/08);

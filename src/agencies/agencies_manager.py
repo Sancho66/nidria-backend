@@ -43,6 +43,7 @@ from src.agencies.agencies_schema import (
 from src.agencies.demo_case_seed import seed_demo_case
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
+from src.billing.catalog import MONTHLY_CENTS
 from src.consents.agency_template import generate_client_privacy, generate_client_terms
 from src.consents.agency_tokens import resolve, unfilled_tokens, unknown_tokens
 from src.consents.consents_seed import (
@@ -95,11 +96,11 @@ _EMAIL_TAKEN = "This email already has an agent account."
 # Without an active subscription (trial, no plan, lifetime without plan,
 # dead paddle sub) the 3-seat trial limit holds unchanged.
 # SEAT_PRICES_EUR feeds the DEPRECATED informational seat_price_eur column
-# only — la vérité tarifaire vit chez Paddle (PRICE_IDS).
+# only — la vérité tarifaire vit chez Paddle (PRICE_IDS). Derived from the
+# declared catalog (lot pricing 14/09): no amount is typed outside it.
 SEAT_PRICES_EUR = {
-    SubscriptionPlan.INDEPENDANT.value: 50,
-    SubscriptionPlan.CABINET.value: 35,
-    SubscriptionPlan.AGENCE.value: 25,
+    plan.value: MONTHLY_CENTS[f"seat_{plan.value}"] // 100
+    for plan in (SubscriptionPlan.INDEPENDANT, SubscriptionPlan.CABINET, SubscriptionPlan.AGENCE)
 }
 # Grid nidria.com/#tarifs (2026-07). THE single truth for included seats —
 # the former agency.seats_included column is DROPPED (a per-row copy of a

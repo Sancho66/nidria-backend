@@ -4,8 +4,8 @@ The basket (panier d'invitations) never computes a price front-side; this
 endpoint serves the whole arithmetic, READ-ONLY, from the DECLARED catalog:
 
 (a) the exact Nicolas case: +2 managers (1 covered by the included tier)
-    and +5 readers (3 on free pool seats, 2 to buy) → 60.98, with the
-    annual line (49.15, −19 %) — rotated reader grid 09/08;
+    and +5 readers (3 on free pool seats, 2 to buy) → 75.98, with the
+    annual line (61.65, −19 %) — grid 2026-09 (14/09), reader grid 09/08;
 (b) nothing free: every requested seat is priced, and the gesture proves
     ZERO Paddle traffic and ZERO writes;
 (c) trial: the SAME named 409 as add/remove (tranché 08/08 — a quote
@@ -107,9 +107,9 @@ async def test_nicolas_case_exact_figures(
             "requested": 2,
             "from_included": 1,
             "to_bill": 1,
-            "unit_price": "35.00",
-            "recurring_add": "35.00",
-            # (420 − 350) / 420 → 17 % : the REAL per-type discount, computed
+            "unit_price": "50.00",
+            "recurring_add": "50.00",
+            # (600 − 500) / 600 → 17 % : the REAL per-type discount, computed
             "annual_discount_percent": 17,
         },
         "reader": {
@@ -120,14 +120,14 @@ async def test_nicolas_case_exact_figures(
             "recurring_add": "25.98",
             "annual_discount_percent": 23,  # (155.88 − 119.88) / 155.88
         },
-        "total_recurring_add": "60.98",
-        # annual: (35000 + 2 × 11988) / 12 = 4914.67c → 49.15 ; discount
-        # (60.98 − 49.15) / 60.98 → 19 % ; saved_per_year: exact cents
-        # (60.98 × 12 = 731.76) − 589.76 = 142.00 — no rounding drift.
+        "total_recurring_add": "75.98",
+        # annual: (50000 + 2 × 11988) / 12 = 6164.67c → 61.65 ; discount
+        # (75.98 − 61.65) / 75.98 → 19 % ; saved_per_year: exact cents
+        # (75.98 × 12 = 911.76) − 739.76 = 172.00 — no rounding drift.
         "annual_equivalent": {
-            "total_recurring_add": "49.15",
+            "total_recurring_add": "61.65",
             "discount_percent": 19,
-            "saved_per_year": "142.00",
+            "saved_per_year": "172.00",
         },
         # Manual agency: no debit-today figure, no cycle date — the front
         # shows the composition and the phrase, never a wall.
@@ -184,7 +184,7 @@ async def test_quote_without_free_seats_prices_all_and_touches_nothing(
         "requested": 0,
         "from_included": 0,
         "to_bill": 0,
-        "unit_price": "35.00",
+        "unit_price": "50.00",
         "recurring_add": "0.00",
         "annual_discount_percent": 17,
     }
@@ -247,7 +247,7 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
     agent_headers: AuthHeaders,
 ) -> None:
     """On an ANNUAL cycle the recurring amounts ARE the annual rates
-    (350.00 / 119.88) and the annual_equivalent line does not exist —
+    (500.00 / 119.88) and the annual_equivalent line does not exist —
     there is nothing to upsell."""
     await _convert(client, superadmin, agent_headers, admin.agency_id, cycle="annuel")
 
@@ -259,8 +259,8 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
         "requested": 3,
         "from_included": 2,  # 1 manager on 3 included: 2 seats of headroom
         "to_bill": 1,
-        "unit_price": "350.00",
-        "recurring_add": "350.00",
+        "unit_price": "500.00",
+        "recurring_add": "500.00",
         "annual_discount_percent": None,  # annual cycle: nothing to sell
     }
     assert body["reader"] == {
@@ -271,7 +271,7 @@ async def test_annual_cycle_serves_annual_rates_without_equivalent_line(
         "recurring_add": "119.88",
         "annual_discount_percent": None,
     }
-    assert body["total_recurring_add"] == "469.88"
+    assert body["total_recurring_add"] == "619.88"
     assert body["annual_equivalent"] is None
 
 

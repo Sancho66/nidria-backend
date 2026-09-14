@@ -173,6 +173,25 @@ class PaddleClient:
         client invoice; amounts stay immutable by principle."""
         return await self._request("PATCH", f"/prices/{price_id}", {"name": name})
 
+    async def list_live_subscriptions(self, *, price_id: str) -> list[dict[str, Any]]:
+        """Subscriptions ALIVE (active, past_due, trialing, paused — never
+        canceled) that carry this price — the rotation's question before
+        it archives anything (lot pricing 14/09: a price a live
+        subscription still bills on stays ACTIVE)."""
+        return await self._request_page(
+            f"/subscriptions?per_page=200&price_id={price_id}"
+            "&status=active,past_due,trialing,paused"
+        )
+
+    async def update_price_custom_data(
+        self, price_id: str, custom_data: dict[str, str]
+    ) -> dict[str, Any]:
+        """PATCH ONLY custom_data — how a superseded price that must stay
+        active (still billed by a live subscription) is marked `retired`,
+        so the declaration matching skips it while the price keeps its
+        stable_key for the subscription-side reads."""
+        return await self._request("PATCH", f"/prices/{price_id}", {"custom_data": custom_data})
+
     async def archive_price(self, price_id: str) -> dict[str, Any]:
         """PATCH status=archived — the retirement half of a PRICE ROTATION
         (--rotate-prices): an archived price leaves every active listing

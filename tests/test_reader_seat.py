@@ -288,6 +288,11 @@ async def test_grouped_addition_is_one_paddle_call(
     await _paddle_activate(db_session, admin.agency_id)
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    # The push reads the live items first (rotation doctrine: a line the
+    # subscription already carries keeps ITS price id); none here → env ids.
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_subscription", AsyncMock(return_value={"items": []})
+    )
 
     response = await client.post(
         "/billing/seats/add", headers=agent_headers(admin), json={"reader": 7}
@@ -323,6 +328,11 @@ async def test_grouped_removal_guards_then_one_call(
     await _add_readers(db_session, admin.agency_id, system_roles["viewer"], 2)
     push = AsyncMock(return_value={})
     monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    # The push reads the live items first (rotation doctrine: a line the
+    # subscription already carries keeps ITS price id); none here → env ids.
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "get_subscription", AsyncMock(return_value={"items": []})
+    )
 
     # The pool follows roster + attente (the agency face can never strand
     # an occupant) — but the INVARIANT BELT stays on this superadmin-only

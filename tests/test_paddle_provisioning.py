@@ -89,6 +89,21 @@ class FakePaddle:
         price["status"] = "archived"
         return price
 
+    # Live subscriptions by price id — what the rotation asks before
+    # archiving (règle 14/09). Empty by default: nothing billed.
+    live_subscriptions: dict[str, list[dict[str, Any]]] = {}
+
+    async def list_live_subscriptions(self, *, price_id: str) -> list[dict[str, Any]]:
+        return list(self.live_subscriptions.get(price_id, []))
+
+    async def update_price_custom_data(
+        self, price_id: str, custom_data: dict[str, str]
+    ) -> dict[str, Any]:
+        self.patch_calls = getattr(self, "patch_calls", 0) + 1
+        price = next(p for p in self.prices if p["id"] == price_id)
+        price["custom_data"] = dict(custom_data)
+        return price
+
     async def update_price_name(self, price_id: str, name: str) -> dict[str, Any]:
         self.patch_calls = getattr(self, "patch_calls", 0) + 1
         price = next(p for p in self.prices if p["id"] == price_id)
@@ -260,6 +275,54 @@ async def test_rotate_prices_creates_new_and_archives_old() -> None:
     assert lines2 == [] and price_ids2 == price_ids
 
 
+async def test_rotate_prices_keeps_a_price_a_live_subscription_bills_on() -> None:
+    """Règle 14/09 (grille 2026-09): a divergent price that a LIVE
+    subscription still bills on is NOT archived — it stays active, flagged
+    custom_data.retired (same stable_key kept for the subscription-side
+    reads), and leaves the declaration matching so the successor alone
+    answers to the key. A divergent price nobody bills on is archived as
+    before. Second run: nothing to rotate, the retired price invisible."""
+    from src.billing.catalog_provisioning import rotate_prices
+
+    paddle = FakePaddle()
+    for key, name in PRODUCTS.items():
+        await paddle.create_product(name=name, custom_data={"stable_key": key})
+    paddle.create_calls = 0
+    for index, spec in enumerate(PRICES):
+        remote = _remote_price(spec, f"pri_old_{index}")
+        if spec.stable_key in ("cabinet_annuel", "cabinet_mensuel"):
+            remote["unit_price"]["amount"] = "99000" if spec.interval == "year" else "9900"
+        paddle.prices.append(remote)
+    nicolas = next(p for p in paddle.prices if p["custom_data"]["stable_key"] == "cabinet_annuel")
+    paddle.live_subscriptions = {nicolas["id"]: [{"id": "sub_nicolas", "status": "active"}]}
+
+    lines, price_ids = await rotate_prices(client=paddle)  # type: ignore[arg-type]
+    assert paddle.create_calls == 2
+    assert any(
+        "cabinet_annuel" in line and "KEPT ACTIVE, retired — 1 live" in line for line in lines
+    )
+    assert any("cabinet_mensuel" in line and "archived)" in line for line in lines)
+    # The kept price: still active, still carries its stable_key, now retired.
+    assert nicolas.get("status") != "archived"
+    assert nicolas["custom_data"] == {"stable_key": "cabinet_annuel", "retired": "true"}
+    # Exactly ONE declared price answers to the key now — the successor.
+    declared = [
+        p
+        for p in await paddle.list_prices()
+        if p["custom_data"].get("stable_key") == "cabinet_annuel"
+        and not p["custom_data"].get("retired")
+    ]
+    assert [p["id"] for p in declared] == [price_ids["cabinet_annuel"]]
+    assert declared[0]["unit_price"]["amount"] == "150000"
+
+    # Second run: the retired price is invisible to the matching.
+    lines2, price_ids2 = await rotate_prices(client=paddle)  # type: ignore[arg-type]
+    assert lines2 == [] and price_ids2 == price_ids
+    # And the audit sees no divergence either.
+    report = await provision_catalog(dry_run=True, client=paddle)  # type: ignore[arg-type]
+    assert report.is_noop and report.divergences == []
+
+
 async def test_align_names_patches_only_the_name_and_lists_each() -> None:
     """The THIRD sanctioned update (micro-lot 08/08): only the prices whose
     display name diverges from the declaration are patched — the real
@@ -323,28 +386,33 @@ async def test_boot_check_flags_missing_and_mismatched_ids() -> None:
 
 
 def test_declared_grid_matches_the_public_pricing() -> None:
-    """The declaration IS the grid (2026-07, Agence amendée 15/08 — décision
-    Eric : 169/mois, 1690/an par la dérivation maison 2-mois-offerts) — one
-    place to read it. Reader (rotation 09/08): 12.99/mois, 119.88/an
-    (9.99 × 12), NET. Indépendant (lot 09/08): 49/490 base, siège 50/500 —
-    Indépendant + 1 siège = Cabinet = 99 exactement, la marche-proposition."""
+    """The declaration IS the grid (2026-09, décision Eric + Alexandre
+    14/09) — one place to read it, pinned STRICTLY: Indépendant 99/mois
+    (siège 70), Cabinet 150 (siège 50), Agence 299 (siège 30); annual by
+    the house rule, 10 × monthly (2 months free). Reader (rotation 09/08)
+    unchanged: 12.99/mois, 119.88/an (9.99 × 12), NET."""
     amounts = {s.stable_key: s.amount_cents for s in PRICES}
     assert amounts == {
-        "independant_mensuel": 4_900,
-        "independant_annuel": 49_000,
-        "seat_independant_mensuel": 5_000,
-        "seat_independant_annuel": 50_000,
-        "cabinet_mensuel": 9_900,
-        "cabinet_annuel": 99_000,
-        "agence_mensuel": 16_900,
-        "agence_annuel": 169_000,
-        "seat_cabinet_mensuel": 3_500,
-        "seat_cabinet_annuel": 35_000,
-        "seat_agence_mensuel": 2_500,
-        "seat_agence_annuel": 25_000,
+        "independant_mensuel": 9_900,
+        "independant_annuel": 99_000,
+        "seat_independant_mensuel": 7_000,
+        "seat_independant_annuel": 70_000,
+        "cabinet_mensuel": 15_000,
+        "cabinet_annuel": 150_000,
+        "agence_mensuel": 29_900,
+        "agence_annuel": 299_000,
+        "seat_cabinet_mensuel": 5_000,
+        "seat_cabinet_annuel": 50_000,
+        "seat_agence_mensuel": 3_000,
+        "seat_agence_annuel": 30_000,
         "seat_reader_mensuel": 1_299,
         "seat_reader_annuel": 11_988,
     }
+    # The annual rule holds for every plan base and manager seat (the
+    # reader SKU has its own 9.99 × 12 rule): 10 × monthly, no exception.
+    for key, monthly in amounts.items():
+        if key.endswith("_mensuel") and not key.startswith("seat_reader_"):
+            assert amounts[key.replace("_mensuel", "_annuel")] == monthly * 10, key
     # And the env keys the runtime reads are exactly these stable keys.
     assert json.dumps(sorted(amounts)) == json.dumps(
         sorted(
