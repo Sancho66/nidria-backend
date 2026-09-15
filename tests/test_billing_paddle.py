@@ -773,7 +773,9 @@ async def test_subscription_state_is_assembled_from_one_cached_call(
     monkeypatch.setattr(paddle_client.PaddleClient, "get_subscription", get_sub)
 
     h = agent_headers(admin)
-    state = (await client.get("/billing/subscription", headers=h)).json()
+    response = await client.get("/billing/subscription", headers=h)
+    assert response.status_code == 200, response.text
+    state = response.json()
     assert state["plan"] == "cabinet" and state["billing_cycle"] == "mensuel"
     assert state["billing_status"] == "active" and state["currency"] == "EUR"
     assert state["seats_billed"] == 0  # 1 member, 3 included — derived live
@@ -786,6 +788,65 @@ async def test_subscription_state_is_assembled_from_one_cached_call(
     # Second read within the TTL: served from the cache, ONE Paddle call.
     await client.get("/billing/subscription", headers=h)
     assert get_sub.await_count == 1
+
+
+async def test_subscription_state_never_500s_on_a_paddle_hiccup(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+    _mock_subscription_reads: AsyncMock,
+) -> None:
+    """A simulated subscription-fetch 429 preserves cold and stale display reads.
+
+    This does not cover errors outside that fetch or validate the fallback price.
+    """
+    import time as _time
+
+    from src.billing import billing_manager, paddle_client
+    from src.billing.paddle_client import PaddleApiError
+
+    aid = admin.agency_id
+    await _activate(client, aid)
+    _mock_subscription_reads.assert_awaited_once_with("sub_123")
+    h = agent_headers(admin)
+    failing_read = AsyncMock(side_effect=PaddleApiError(429, "Too Many Requests"))
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "get_subscription",
+        failing_read,
+    )
+
+    # COLD: retain the current fallback, including its unconfirmed zero price.
+    assert "sub_123" not in billing_manager._SUBSCRIPTION_CACHE
+    resp = await client.get("/billing/subscription", headers=h)
+    assert resp.status_code == 200, resp.text
+    state = resp.json()
+    assert state["plan"] == "cabinet" and state["billing_status"] == "active"
+    assert state["next_payment_amount"] is None
+    assert state["next_billed_at"] is None
+    assert state["seat_unit_price"] is None
+    assert state["reader_unit_price"] is None
+    assert state["scheduled_cancel_at"] is None
+    assert state["referral_discount"] is None
+    assert state["base_unit_price"] == "0"  # Placeholder, not a confirmed free offer.
+    assert state["currency"] == "EUR"
+    assert "sub_123" not in billing_manager._SUBSCRIPTION_CACHE
+
+    # WARM: a stale cache entry (past TTL) is better than nothing — served.
+    stale_entry = (
+        _time.monotonic() - 3600,
+        _paddle_subscription_payload(),
+    )
+    billing_manager._SUBSCRIPTION_CACHE["sub_123"] = stale_entry
+    resp = await client.get("/billing/subscription", headers=h)
+    assert resp.status_code == 200, resp.text
+    state = resp.json()
+    assert state["base_unit_price"] == "150" and state["seat_unit_price"] == "50"
+    assert state["next_payment_amount"] == "250"
+    assert state["next_billed_at"].startswith("2026-08-12")
+    assert billing_manager._SUBSCRIPTION_CACHE["sub_123"] == stale_entry
+    assert failing_read.await_count == 2
 
 
 async def test_cancel_schedules_period_end_and_resume_erases_it(
@@ -849,6 +910,59 @@ async def test_payment_method_update_returns_the_special_transaction(
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"transaction_id": "txn_pmu_1", "paddle_env": "sandbox"}
     special.assert_awaited_once_with("sub_123")
+
+
+@pytest.mark.parametrize(
+    ("url", "method", "activate"),
+    [
+        ("/billing/checkout", "create_transaction", False),
+        ("/billing/subscription/cancel", "cancel_subscription_at_period_end", True),
+        ("/billing/subscription/resume", "remove_scheduled_change", True),
+        ("/billing/payment-method/update", "get_payment_method_update_transaction", True),
+    ],
+)
+async def test_subscription_fetch_fallback_does_not_swallow_mutation_429(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+    url: str,
+    method: str,
+    activate: bool,
+) -> None:
+    from src.billing.paddle_client import PaddleApiError, PaddleClient
+
+    if activate:
+        await _activate(client, admin.agency_id)
+    error = PaddleApiError(429, "Too Many Requests")
+    mutation = AsyncMock(side_effect=error)
+    monkeypatch.setattr(PaddleClient, method, mutation)
+    # ASGITransport propagates unhandled application exceptions in this harness.
+    with pytest.raises(PaddleApiError) as raised:
+        await client.post(
+            url,
+            headers=agent_headers(admin),
+            json=None if activate else {"plan": "cabinet", "billing_cycle": "mensuel"},
+        )
+    assert raised.value is error
+    mutation.assert_awaited_once()
+
+
+async def test_resume_preserves_nothing_scheduled_conflict(
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing.paddle_client import PaddleApiError, PaddleClient
+
+    await _activate(client, admin.agency_id)
+    resume = AsyncMock(side_effect=PaddleApiError(400, "Nothing scheduled"))
+    monkeypatch.setattr(PaddleClient, "remove_scheduled_change", resume)
+    response = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
+    assert response.status_code == 409
+    assert response.json()["code"] == "billing.nothing_scheduled"
+    resume.assert_awaited_once_with("sub_123")
 
 
 # --- re-souscription d'une agence canceled ---------------------------------------------
@@ -1372,6 +1486,41 @@ async def test_resume_pushes_nothing_when_quantities_match(
     resp = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
     assert resp.status_code == 200, resp.text
     push.assert_not_awaited()  # rien ne diverge -> aucun push
+
+
+async def test_seat_sync_429_propagates_but_resume_catch_up_remains_best_effort(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.billing.billing_manager import BillingManager
+    from src.billing.paddle_client import PaddleApiError, PaddleClient
+
+    await _activate(client, admin.agency_id)
+    error = PaddleApiError(429, "Too Many Requests")
+    push = AsyncMock(side_effect=error)
+    monkeypatch.setattr(PaddleClient, "update_subscription_items", push)
+    # The seat mutation raises; its resume caller deliberately tolerates failure.
+    with pytest.raises(PaddleApiError) as raised:
+        await BillingManager(db_session).sync_seat_quantity(admin.agency_id, increase=False)
+    assert raised.value is error
+    push.assert_awaited_once_with(
+        "sub_123",
+        items=[{"price_id": PRICE_IDS["cabinet_mensuel"], "quantity": 1}],
+        proration_billing_mode="full_next_billing_period",
+    )
+    push.reset_mock()
+    resume = AsyncMock(return_value=_sub_payload_with_seats(2))
+    monkeypatch.setattr(PaddleClient, "remove_scheduled_change", resume)
+    response = await client.post("/billing/subscription/resume", headers=agent_headers(admin))
+    assert response.status_code == 200, response.text
+    assert response.json()["scheduled_cancel_at"] is None
+    assert response.json()["seats_billed"] == 0
+    assert response.json()["base_unit_price"] == "150"
+    resume.assert_awaited_once_with("sub_123")
+    push.assert_awaited_once()
 
 
 # --- le self-serve pour les clients reels : la CONVERSION est le discriminant ----------

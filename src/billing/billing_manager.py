@@ -997,7 +997,17 @@ class BillingManager:
     async def get_subscription_state(self, agent: Agent) -> SubscriptionStateResponse:
         agency = await self._paddle_managed_agency(agent)
         assert agency.paddle_subscription_id is not None
-        subscription = await self._fetch_subscription(agency.paddle_subscription_id)
+        try:
+            subscription = await self._fetch_subscription(agency.paddle_subscription_id)
+        except Exception:  # noqa: BLE001 — display data, never a 500 (same
+            # doctrine as _catalog_prices): on any Paddle hiccup (429 rate
+            # limit included) serve the last known subscription even past
+            # its TTL, or a local-only state with null amounts — the page
+            # keeps the agency's own facts either way. Mutations (cancel,
+            # resume, seat sync) keep failing loud: they NEED Paddle.
+            logger.warning("paddle unreachable; subscription state degraded")
+            stale = _SUBSCRIPTION_CACHE.get(agency.paddle_subscription_id)
+            subscription = stale[1] if stale is not None else {}
         from src.agencies.agencies_manager import AgenciesManager
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
