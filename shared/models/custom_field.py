@@ -56,8 +56,11 @@ class CustomFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Taxonomie FICHE (lot taxonomie) : la section de la définition sur la
     # fiche client — 'misc' par défaut pour les custom d'agence,
     # reclassable par le toggle. Voir src/client_profiles/profile_sections.
+    # String(50) = the width of `agency_profile_section.key` it points at
+    # (incident 15/09: a 21-char section key made every definition on that
+    # section a 500 — the two widths had diverged at the sections lot).
     profile_section: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="misc", server_default="misc"
+        String(50), nullable=False, default="misc", server_default="misc"
     )
     # server_default posés au lot D15 (r8b4d0f6a2c8) : le défaut Python
     # seul laissait base et modèle diverger — la garde modèle↔migration

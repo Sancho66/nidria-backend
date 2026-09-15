@@ -37,10 +37,14 @@ subclass that inherits the internal_error default, and refuses two
 subclasses sharing a code.
 """
 
+import logging
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 class NidriaError(Exception):
@@ -123,5 +127,48 @@ async def _nidria_error_handler(request: Request, exc: Exception) -> JSONRespons
     )
 
 
+def request_id_of(request: Request) -> str:
+    """The id a client (or Fly's edge, `Fly-Request-Id`) can quote back to
+    us; minted here when nobody sent one, so a 500 is always traceable."""
+    return (
+        request.headers.get("fly-request-id")
+        or request.headers.get("x-request-id")
+        or uuid.uuid4().hex
+    )
+
+
+async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """The LAST net (incident 15/09/2026, Fly-Request-Id 01M2K3SC…): an
+    unhandled exception used to leave the app as Starlette's bare
+    `500 Internal Server Error` — text/plain, empty for the browser, and the
+    traceback only in the server log with nothing to join it to the client's
+    report. Now: the SAME JSON envelope as every other error, the stable
+    category code `internal_error`, the request id in params AND in the
+    `X-Request-Id` header, and the full traceback logged server-side with
+    that id, the method and the path — so a report « 500 at 18:03, id X »
+    lands on one log line."""
+    request_id = request_id_of(request)
+    logger.exception(
+        "unhandled error request_id=%s %s %s",
+        request_id,
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error.",
+            "code": "internal_error",
+            "params": {"request_id": request_id},
+        },
+        headers={"X-Request-Id": request_id},
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NidriaError, _nidria_error_handler)
+    # Starlette routes a bare `Exception` handler through its
+    # ServerErrorMiddleware: our JSON goes out, then the exception is
+    # re-raised for the server/test client to see — both facts, never a
+    # silent swallow.
+    app.add_exception_handler(Exception, _unhandled_error_handler)

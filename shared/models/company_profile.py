@@ -84,8 +84,8 @@ class CompanyFieldDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # LUE par `resolve_company_sections` — c'est ce qui rend le
     # reclassement vrai au lieu d'un plan figé dans le code.
     profile_section: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="misc", server_default="misc"
-    )
+        String(50), nullable=False, default="misc", server_default="misc"
+    )  # same width as agency_profile_section.key (incident 15/09)
     position: Mapped[int] = mapped_column(default=0, nullable=False, server_default=text("0"))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
