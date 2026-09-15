@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # exclusion list below — that, and not the switch, is the single
     # definition of "test account".
     signup_alert_enabled: bool | None = None
+    # INTERNAL billing incident alert (kept-price guard, lot pricing 14/09):
+    # same recipients list as the signup alert, its own lever — None =
+    # production only, True/False force it.
+    billing_alert_enabled: bool | None = None
     # INTERNAL signup alert (demande Eric 13/08) — NOT the onboarding mail:
     # that one goes TO the agency at J+10 min, this one goes to US, at once,
     # so a signup can be traced and called back the same day. Recipients are

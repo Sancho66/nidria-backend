@@ -307,6 +307,50 @@ class BillingManager:
 
     # --- seat sync (our member count DRIVES the Paddle quantity) ---------------------
 
+    async def _kept_prices(self, agency: Agency) -> dict[str, str]:
+        """The price ids a push must KEEP (see _kept_price_ids), VERIFIED
+        against Paddle: every kept id must still be an ACTIVE price. A kept
+        price that Paddle no longer lists as active (archived under the
+        client by mistake) makes the push FAIL LOUD — stable code
+        `billing.kept_price_inactive`, internal alert — never a silent
+        skip, never a fallback to the env's fresh price (that fallback IS
+        the implicit repricing this whole doctrine exists to prevent)."""
+        assert agency.paddle_subscription_id is not None
+        kept = _kept_price_ids(await self._fetch_subscription(agency.paddle_subscription_id))
+        if not kept:
+            return kept
+        active = {p["id"] for p in await PaddleClient().list_prices(ids=list(kept.values()))}
+        inactive = {key: pid for key, pid in kept.items() if pid not in active}
+        if inactive:
+            from src.billing.billing_alert import notify_billing_incident
+
+            detail = ", ".join(f"{key}={pid}" for key, pid in sorted(inactive.items()))
+            logger.error(
+                "kept price INACTIVE in Paddle for %s (%s): %s — push refused",
+                agency.slug,
+                agency.paddle_subscription_id,
+                detail,
+            )
+            await notify_billing_incident(
+                f"kept price inactive: {agency.slug}",
+                "A seat push was REFUSED because a price the subscription bills on is no "
+                "longer active in Paddle. Nothing was pushed, nothing was repriced.\n\n"
+                f"agency: {agency.slug} ({agency.id})\n"
+                f"subscription: {agency.paddle_subscription_id}\n"
+                f"inactive kept prices: {detail}\n\n"
+                "Reactivate the price in Paddle (status=active, custom_data.retired=true) "
+                "and retry the gesture.",
+            )
+            raise ConflictError(
+                "A price this subscription bills on is no longer active in Paddle.",
+                code="billing.kept_price_inactive",
+                params={
+                    "subscription_id": agency.paddle_subscription_id,
+                    "prices": inactive,
+                },
+            )
+        return kept
+
     async def sync_seat_quantity(self, agency_id: uuid.UUID, *, increase: bool) -> None:
         """Push the derived `billed` as the seat-item quantity. Called after a
         member-count change on a paddle agency; best-effort at call sites (a
@@ -351,9 +395,9 @@ class BillingManager:
             logger.error("paddle reader price id missing; seat sync skipped for %s", agency.slug)
             return
         # The subscription's OWN price ids win over the env's (rotation
-        # doctrine, see _kept_price_ids); the read is the same cached GET
-        # the management page uses.
-        kept = _kept_price_ids(await self._fetch_subscription(agency.paddle_subscription_id))
+        # doctrine, see _kept_price_ids), verified still active in Paddle
+        # (a stale one fails loud — see _kept_prices).
+        kept = await self._kept_prices(agency)
         base_price = kept.get(_price_key(agency.plan, agency.billing_cycle), base_price)
         seat_price = kept.get(_seat_price_key(agency.plan, agency.billing_cycle), seat_price)
         reader_price = kept.get(_reader_price_key(agency.billing_cycle), reader_price)
@@ -1134,8 +1178,8 @@ class BillingManager:
 
         usage = await AgenciesManager(self.db).seat_usage(agency)
         # Same rotation doctrine as sync_seat_quantity: the lines the
-        # subscription already carries keep THEIR price ids.
-        kept = _kept_price_ids(await self._fetch_subscription(agency.paddle_subscription_id))
+        # subscription already carries keep THEIR price ids (verified active).
+        kept = await self._kept_prices(agency)
         base_price = kept.get(_price_key(agency.plan, agency.billing_cycle), base_price)
         seat_price = kept.get(_seat_price_key(agency.plan, agency.billing_cycle), seat_price)
         reader_price = kept.get(_reader_price_key(agency.billing_cycle), reader_price)

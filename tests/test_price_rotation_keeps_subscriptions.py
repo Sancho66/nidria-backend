@@ -17,7 +17,11 @@ Pinned here, against the real app:
     and the existing reader line at their subscription ids;
 (c) a subscription whose items carry no stable_key falls back to the
     env ids — the pre-rotation behaviour, unchanged;
-(d) the helper itself: stable_key → id, nothing else read.
+(d) the helper itself: stable_key → id, nothing else read;
+(e) THE GUARD (correctif immédiat 14/09): a kept price Paddle no longer lists
+    as active makes the push FAIL LOUD — 409 `billing.kept_price_inactive`,
+    internal alert mail, NOTHING pushed — never a silent skip, never the
+    env's fresh id (the implicit repricing).
 """
 
 import json
@@ -37,6 +41,7 @@ from shared.models.rbac import Role
 from src.billing import paddle_client
 from src.billing.billing_manager import BillingManager, _kept_price_ids
 from src.core.config import get_settings
+from src.core.exceptions import ConflictError
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
@@ -117,6 +122,11 @@ def _nicolas_subscription(*, with_reader: bool = False, keyed: bool = True) -> d
     }
 
 
+def _active(*price_ids: str) -> list[dict[str, Any]]:
+    """What GET /prices?status=active&id=… answers for the kept ids."""
+    return [{"id": pid, "status": "active"} for pid in price_ids]
+
+
 async def _paddle_cabinet_annuel(
     db: AsyncSession, agency_id: uuid.UUID, *, readers: int = 0
 ) -> None:
@@ -158,9 +168,13 @@ async def test_seat_sync_keeps_the_subscription_base_price_across_a_rotation(
         "get_subscription",
         AsyncMock(return_value=_nicolas_subscription()),
     )
+    # The kept price is verified ACTIVE in Paddle before the push (guard e).
+    list_prices = AsyncMock(return_value=_active(OLD_BASE_CAB_A))
+    monkeypatch.setattr(paddle_client.PaddleClient, "list_prices", list_prices)
 
     await BillingManager(db_session).sync_seat_quantity(admin.agency_id, increase=True)
 
+    list_prices.assert_awaited_once_with(ids=[OLD_BASE_CAB_A])
     push.assert_awaited_once()
     items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
     assert items == {OLD_BASE_CAB_A: 1, "pri_new_seat_cab_a": 1}
@@ -187,6 +201,11 @@ async def test_reader_purchase_keeps_every_existing_line_at_its_price(
         paddle_client.PaddleClient,
         "get_subscription",
         AsyncMock(return_value=_nicolas_subscription(with_reader=True)),
+    )
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "list_prices",
+        AsyncMock(return_value=_active(OLD_BASE_CAB_A, OLD_READER_A)),
     )
 
     response = await client.post(
@@ -227,6 +246,90 @@ async def test_items_without_stable_key_fall_back_to_the_env_ids(
 
     items = {i["price_id"]: i["quantity"] for i in push.await_args.kwargs["items"]}
     assert items == {"pri_new_base_cab_a": 1, "pri_new_seat_cab_a": 1}
+
+
+# --- (e) THE GUARD: a kept price gone inactive fails loud, pushes nothing -------------
+
+
+async def test_seat_sync_refuses_loudly_when_a_kept_price_is_no_longer_active(
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The base price Nicolas bills on was archived by mistake: Paddle's
+    active listing no longer returns it. The push is REFUSED — stable code,
+    the inactive ids named, an internal alert to the team — and NOTHING is
+    pushed: neither the archived id nor the env's fresh one (that would be
+    the implicit repricing)."""
+    from src.core import email
+
+    monkeypatch.setenv("BILLING_ALERT_ENABLED", "true")
+    get_settings.cache_clear()
+    await _paddle_cabinet_annuel(db_session, admin.agency_id)
+    for i in range(3):
+        await make_agent(
+            role=system_roles["member"], agency_id=admin.agency_id, email=f"m{i}@example.com"
+        )
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "get_subscription",
+        AsyncMock(return_value=_nicolas_subscription()),
+    )
+    monkeypatch.setattr(paddle_client.PaddleClient, "list_prices", AsyncMock(return_value=[]))
+    email.outbox.clear()
+
+    with pytest.raises(ConflictError) as raised:
+        await BillingManager(db_session).sync_seat_quantity(admin.agency_id, increase=True)
+
+    assert raised.value.code == "billing.kept_price_inactive"
+    assert raised.value.params == {
+        "subscription_id": "sub_nicolas",
+        "prices": {"cabinet_annuel": OLD_BASE_CAB_A},
+    }
+    push.assert_not_awaited()  # nothing pushed, nothing repriced
+    alerts = [m for m in email.outbox if "kept price inactive" in m.subject]
+    assert len(alerts) == 1
+    assert OLD_BASE_CAB_A in alerts[0].body and "sub_nicolas" in alerts[0].body
+
+
+async def test_reader_purchase_is_a_409_when_a_kept_price_is_no_longer_active(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same guard on the API face: the reader purchase answers 409 with the
+    stable code, the pool is NOT changed, nothing is pushed."""
+    await _paddle_cabinet_annuel(db_session, admin.agency_id, readers=2)
+    push = AsyncMock(return_value={})
+    monkeypatch.setattr(paddle_client.PaddleClient, "update_subscription_items", push)
+    monkeypatch.setattr(
+        paddle_client.PaddleClient,
+        "get_subscription",
+        AsyncMock(return_value=_nicolas_subscription(with_reader=True)),
+    )
+    # Only the base is still active: the reader line's price went missing.
+    monkeypatch.setattr(
+        paddle_client.PaddleClient, "list_prices", AsyncMock(return_value=_active(OLD_BASE_CAB_A))
+    )
+
+    response = await client.post(
+        "/billing/seats/add", headers=agent_headers(admin), json={"reader": 1}
+    )
+    assert response.status_code == 409, response.text
+    body = response.json()
+    assert body["code"] == "billing.kept_price_inactive"
+    assert body["params"]["prices"] == {"seat_reader_annuel": OLD_READER_A}
+    push.assert_not_awaited()
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    await db_session.refresh(agency)
+    assert agency.reader_seats_purchased == 2  # the pool did not move
 
 
 # --- (d) the helper -------------------------------------------------------------------
