@@ -26309,6 +26309,7 @@
         "type": "string",
         "enum": [
           "text",
+          "long_text",
           "number",
           "date",
           "boolean",

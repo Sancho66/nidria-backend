@@ -227,6 +227,12 @@ class CustomFieldType(StrEnum):
     to SELECT / MULTI_SELECT only."""
 
     TEXT = "text"
+    # « Texte long » (lot 15/09/2026): a multi-line free text (textarea),
+    # newlines kept as typed, capped at LONG_TEXT_MAX_LENGTH characters
+    # (custom_fields_validation). Same storage (JSONB string), visibility,
+    # sections, permissions, export and import mechanics as TEXT — only
+    # the renderer and the cap differ.
+    LONG_TEXT = "long_text"
     NUMBER = "number"
     DATE = "date"
     BOOLEAN = "boolean"

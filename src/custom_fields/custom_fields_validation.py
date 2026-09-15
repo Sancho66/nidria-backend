@@ -19,6 +19,24 @@ from src.core.enums import CustomFieldType
 from src.core.exceptions import ValidationError
 
 _DATETIME_FORMATS = ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S")
+# « Texte long » cap (lot 15/09/2026) — characters, newlines included, the
+# value kept verbatim below it. Exceeding it is the ONE custom-field value
+# error with its own stable code (the front names the field and the cap).
+LONG_TEXT_MAX_LENGTH = 5_000
+LONG_TEXT_TOO_LONG = "custom_field.long_text_too_long"
+
+
+class CodedValueError(ValueError):
+    """A value error that also carries a stable code + params: when it is
+    among the accumulated errors, the 422 envelope takes its code (the
+    first coded error wins) — the message stays the readable aggregate."""
+
+    def __init__(self, message: str, *, code: str, params: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.code = code
+        self.params = params
+
+
 # ISO 3166-1 alpha-2 — the SAME rule as CaseUpdateRequest.origin_country,
 # so a custom country field validates identically to the canonical columns.
 _COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
@@ -69,6 +87,22 @@ def _coerce_address(value: Any) -> dict[str, str]:
     return out
 
 
+def _coerce_long_text(definition: CustomFieldDefinition, value: Any) -> str:
+    """Verbatim string (newlines, spacing kept — it is a textarea), capped."""
+    text = str(value)
+    if len(text) > LONG_TEXT_MAX_LENGTH:
+        raise CodedValueError(
+            f"too long ({len(text)} characters, max {LONG_TEXT_MAX_LENGTH})",
+            code=LONG_TEXT_TOO_LONG,
+            params={
+                "key": definition.key,
+                "length": len(text),
+                "max_length": LONG_TEXT_MAX_LENGTH,
+            },
+        )
+    return text
+
+
 def _coerce_number(value: Any) -> float | int:
     if isinstance(value, bool):  # bool is an int subclass — reject explicitly
         raise ValueError("expects a number")
@@ -111,6 +145,8 @@ def _coerce_one(definition: CustomFieldDefinition, value: Any) -> Any:
     ftype = definition.field_type
     if ftype == CustomFieldType.TEXT.value:
         return str(value)
+    if ftype == CustomFieldType.LONG_TEXT.value:
+        return _coerce_long_text(definition, value)
     if ftype == CustomFieldType.NUMBER.value:
         return _coerce_number(value)
     if ftype == CustomFieldType.DATE.value:
@@ -157,6 +193,7 @@ def validate_and_merge(
     """
     by_key = {d.key: d for d in active_definitions}
     errors: list[str] = []
+    coded: CodedValueError | None = None  # the first coded error names the 422
     merged = dict(current)
 
     for key, value in submitted.items():
@@ -173,10 +210,15 @@ def validate_and_merge(
             continue
         try:
             merged[key] = _coerce_one(definition, value)
+        except CodedValueError as exc:
+            coded = coded or exc
+            errors.append(f"Field {label}: {exc}.")
         except ValueError as exc:
             errors.append(f"Field {label}: {exc}.")
 
     if errors:
+        if coded is not None:
+            raise ValidationError("; ".join(errors), code=coded.code, params=coded.params)
         raise ValidationError("; ".join(errors))
     return merged
 
