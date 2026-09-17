@@ -5,7 +5,7 @@ and the per-cell validator are pure library functions (csv_reader,
 cell_validation) consumed by the later blocs, not endpoints.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CrmFieldOut(BaseModel):
@@ -56,8 +56,10 @@ class ImportTarget(BaseModel):
     #: text | select | number | date | boolean | country | address | tags
     field_type: str
     section: str
-    #: L'import refuse de partir sans elle (le trio person, la dénomination).
-    required: bool
+    required: bool = Field(
+        description="Individually mandatory target. Person imports have no individually required "
+        "target: each row needs email OR phone OR both first_name and last_name."
+    )
     #: Sous-champ d'adresse : la base qu'il compose, et lequel des 4.
     address_base: str | None
     address_subfield: str | None

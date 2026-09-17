@@ -12649,7 +12649,7 @@
           "imports"
         ],
         "summary": "Import Client Profiles",
-        "description": "V4a — l'import repointé FICHES : colonnes→champs person, dédup\nemail (lier, pas dupliquer), SANS parcours (étape séparée optionnelle\n— le wizard dossiers existant la garde). Aucun mail : une fiche\nn'invite personne.",
+        "description": "Import profiles without creating cases or sending invitations.\n\nA row needs a mapped email, phone, or both first_name and last_name.\nDeduplication selects email, otherwise normalized phone, otherwise exact\ncase/accent-insensitive full name, within the agency and this file.\nRepeated keys link to the first accepted row; later values fill gaps only.\nRows without an identifier are ignored with missing_identity and their\none-based data record number (header excluded, empty records included).\ncreated_count is the total number of newly created profiles;\ncreated_without_email counts the subset created without email.\nClient access requires an email (422 profile.no_email).",
         "operationId": "import_client_profiles_imports_client_profiles_post",
         "requestBody": {
           "content": {
@@ -29590,7 +29590,8 @@
           },
           "required": {
             "type": "boolean",
-            "title": "Required"
+            "title": "Required",
+            "description": "Individually mandatory target. Person imports have no individually required target: each row needs email OR phone OR both first_name and last_name."
           },
           "address_base": {
             "anyOf": [
@@ -34227,7 +34228,8 @@
             },
             "type": "object",
             "minProperties": 1,
-            "title": "Mapping"
+            "title": "Mapping",
+            "description": "Each row needs a mapped email, phone, or both first_name and last_name. Missing identifiers are reported per row as missing_identity."
           },
           "corrections": {
             "items": {
@@ -34327,6 +34329,12 @@
             "type": "integer",
             "title": "Total Rows"
           },
+          "created_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Created Count",
+            "description": "Total number of newly created profiles, with or without email; links are excluded."
+          },
           "created": {
             "items": {
               "$ref": "#/components/schemas/ProfileImportRowOutcome"
@@ -34355,12 +34363,15 @@
           },
           "created_without_email": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Created Without Email",
+            "description": "Number of newly created profiles without an email; links are excluded.",
             "default": 0
           },
           "values_salvaged": {
             "type": "integer",
             "title": "Values Salvaged",
+            "description": "Legacy counter; now always zero.",
             "default": 0
           },
           "created_by_status": {
@@ -34386,6 +34397,7 @@
         "type": "object",
         "required": [
           "total_rows",
+          "created_count",
           "created",
           "linked",
           "ignored"
@@ -34433,7 +34445,8 @@
             },
             "type": "object",
             "minProperties": 1,
-            "title": "Mapping"
+            "title": "Mapping",
+            "description": "Each row needs a mapped email, phone, or both first_name and last_name. Missing identifiers are reported per row as missing_identity."
           },
           "corrections": {
             "items": {
@@ -34476,7 +34489,8 @@
         "properties": {
           "row": {
             "type": "integer",
-            "title": "Row"
+            "title": "Row",
+            "description": "One-based data record number, excluding the header; includes empty rows."
           },
           "email": {
             "anyOf": [
@@ -36151,7 +36165,8 @@
         "properties": {
           "row_index": {
             "type": "integer",
-            "title": "Row Index"
+            "title": "Row Index",
+            "description": "One-based data record number, excluding the header. Person imports include empty rows."
           },
           "status": {
             "type": "string",

@@ -78,13 +78,17 @@ async def test_profile_import_creates_links_ignores(
     assert r.status_code == 200, r.text
     report = r.json()
     assert report["total_rows"] == 4
-    # « Sans Email » (identité complète, pas d'email) est CRÉÉE — plus
-    # jamais ignorée ; la ventilation le dit à l'agence.
-    assert [c["email"] for c in report["created"]] == ["nouvelle@example.com", None]
-    assert report["created_with_email"] == 1
+    assert report["created_count"] == 3
+    # Both a full name without email and an email without names identify a row.
+    assert [c["email"] for c in report["created"]] == [
+        "nouvelle@example.com",
+        None,
+        "anonyme@example.com",
+    ]
+    assert report["created_with_email"] == 2
     assert report["created_without_email"] == 1
     assert [x["profile_id"] for x in report["linked"]] == [existing_id]
-    assert [i["reason"] for i in report["ignored"]] == ["missing_identity"]
+    assert report["ignored"] == []
     # FILL-GAP sur la liée : nationalité comblée, custom person posé.
     detail = (await client.get(f"/client-profiles/{existing_id}", headers=headers)).json()
     assert detail["nationality"] == "BR"
@@ -1852,96 +1856,45 @@ async def test_company_sack_labels_survive_import_creation(
 # --- LOT EMAIL OPTIONNEL (parité avec la création manuelle) -------------------------------
 
 
-async def test_email_optional_creates_and_dedups_by_identity_within_the_batch(
+async def test_full_name_dedup_also_checks_existing_agency_profiles(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    """L'email n'est plus obligatoire : identité seule = fiche CRÉÉE.
-    La dédup suit la frontière — email présent, la clé d'email ; email
-    absent, l'identité normalisée DANS LE BATCH SEULEMENT, JAMAIS contre
-    la base (deux homonymes d'une agence peuvent être deux personnes).
-    Le rapport ventile « avec email · sans email »."""
+    """A complete name is now an agency-scoped fallback key across imports."""
     headers = agent_headers(admin)
-    # Un HOMONYME déjà en base, sans email : l'import ne doit PAS le
-    # rejoindre — on ne fusionne pas des homonymes en silence.
-    r = await client.post(
+    existing = await client.post(
         "/client-profiles",
         headers=headers,
-        json={"first_name": "Jean", "last_name": "Martin"},
+        json={"first_name": "Jean", "last_name": "Martín"},
     )
-    assert r.status_code == 201, r.text
-    homonym_id = r.json()["id"]
-
-    csv_text = (
-        "Prénom,Nom,Email,Téléphone\n"
-        "Jean,Martin,,0601020304\n"  # homonyme de la base → CRÉE quand même
-        "JEAN,  martin ,,0700000000\n"  # même identité normalisée → LIE
-        "Gil,Dieu,,0611223344\n"  # identité seule → CRÉE
-        "Avec,Email,avec@example.com,\n"  # la clé d'email, inchangée
-        ",,,0699999999\n"  # ni nom ni email → il ne reste RIEN
-    )
-    mapping = {
-        "Prénom": "first_name",
-        "Nom": "last_name",
-        "Email": "email",
-        "Téléphone": "phone",
+    assert existing.status_code == 201, existing.text
+    profile_id = existing.json()["id"]
+    body = {
+        "csv_text": "First,Last,Nationality\nJEAN,MARTIN,FR\nJean,Martin,AR\nGil,Dieu,BR\n",
+        "mapping": {"First": "first_name", "Last": "last_name", "Nationality": "nationality"},
     }
-    body = {"csv_text": csv_text, "mapping": mapping}
-
-    preview = (
-        await client.post("/imports/client-profiles/preview", headers=headers, json=body)
-    ).json()
-    assert preview["summary"] == {
-        "create": 3,
-        "link": 1,
-        "ignore": 1,
-        "ignore_reasons": {"missing_identity": 1},
-        "create_with_email": 1,
-        "create_without_email": 2,
-    }
-
-    r = await client.post("/imports/client-profiles", headers=headers, json=body)
-    assert r.status_code == 200, r.text
-    report = r.json()
-    assert report["created_with_email"] == 1
-    assert report["created_without_email"] == 2
-    assert [c["email"] for c in report["created"]] == [None, None, "avec@example.com"]
-    # Le doublon d'identité a LIÉ la fiche née à la ligne 1 (pas dupliqué),
-    # et sûrement PAS l'homonyme de la base.
-    assert len(report["linked"]) == 1
-    linked_id = report["linked"][0]["profile_id"]
-    assert linked_id == report["created"][0]["profile_id"]
-    assert linked_id != homonym_id
-    assert [i["reason"] for i in report["ignored"]] == ["missing_identity"]
-
-    # L'homonyme de la base est resté INTOUCHÉ (pas de fusion silencieuse).
-    detail = (await client.get(f"/client-profiles/{homonym_id}", headers=headers)).json()
-    assert detail["phone"] is None
-    # Deux « Jean Martin » cohabitent : celui de la base, celui de l'import.
-    listing = (await client.get("/client-profiles?search=Martin", headers=headers)).json()
-    assert listing["total"] == 2
-    # Le fill-gap du doublon intra-batch a tenu : 1re valeur gardée.
-    imported = (await client.get(f"/client-profiles/{linked_id}", headers=headers)).json()
-    assert imported["phone"] == "0601020304"
-    assert not imported["email"]  # la fiche reste sans email (colonne NULL)
-    n_null = (
-        await db_session.execute(text("SELECT count(*) FROM client_profile WHERE email IS NULL"))
-    ).scalar_one()
-    assert n_null == 3  # l'homonyme de base + les 2 créées sans email
+    preview = await client.post("/imports/client-profiles/preview", headers=headers, json=body)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["summary"]["link"] == 2
+    result = await client.post("/imports/client-profiles", headers=headers, json=body)
+    assert result.status_code == 200, result.text
+    assert [row["profile_id"] for row in result.json()["linked"]] == [profile_id, profile_id]
+    assert result.json()["created_without_email"] == 1
+    detail = (await client.get(f"/client-profiles/{profile_id}", headers=headers)).json()
+    assert detail["nationality"] == "FR"
+    assert detail["last_name"] == "Martín"
+    assert (await db_session.execute(text("SELECT count(*) FROM client_profile"))).scalar_one() == 2
 
 
-async def test_values_of_the_dropped_row_reach_the_sibling_profile(
+async def test_email_only_identity_creates_then_completes_missing_names(
     client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
     agent_headers: AuthHeaders,
 ) -> None:
-    """Correctif c — une ligne ignorée pour `missing_identity` dont
-    l'email crée une fiche PAR UNE AUTRE ligne n'emporte plus ses valeurs
-    dans la tombe (2 téléphones perdus sur le fichier Teamleader réel) :
-    report en FILL-ONLY, la ligne reste ignorée mais dit où c'est parti."""
+    """An email now creates immediately; later rows fill missing identity fields."""
     headers = agent_headers(admin)
     # Le cas réel `distri-24h@outlook.fr` : ligne 1 sans prénom MAIS avec
     # le téléphone, ligne 2 complète et muette sur le numéro.
@@ -1965,15 +1918,16 @@ async def test_values_of_the_dropped_row_reach_the_sibling_profile(
     report = r.json()
     assert [c["email"] for c in report["created"]] == ["distri@example.com"]
     created_id = report["created"][0]["profile_id"]
-    # La ligne 1 reste IGNORÉE (elle n'a créé aucune fiche)…
-    assert [i["reason"] for i in report["ignored"]] == ["missing_identity"]
-    # …mais son `profile_id` dit où sa donnée est allée, et le rapport compte.
-    assert report["ignored"][0]["profile_id"] == created_id
-    assert report["values_salvaged"] == 1
+    assert report["ignored"] == []
+    assert report["created"][0]["row"] == 1
+    assert report["linked"][0]["profile_id"] == created_id
+    assert report["linked"][0]["row"] == 2
+    assert report["values_salvaged"] == 0
     detail = (await client.get(f"/client-profiles/{created_id}", headers=headers)).json()
     assert detail["phone"] == "+33 6 20 51 64 85"  # sauvé de la ligne jetée
     assert detail["profession"] == "Gérant"
-    assert detail["first_name"] == "Karim"  # l'identité vient de la ligne 2
+    assert detail["first_name"] == "Karim"
+    assert detail["last_name"] == "K"  # The first nonempty value wins.
 
 
 async def test_mobile_lands_in_secondary_phone_end_to_end(

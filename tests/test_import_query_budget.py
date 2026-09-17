@@ -132,11 +132,13 @@ async def test_person_import_stays_within_its_query_budget(
     assert r.status_code == 200, r.text
     report = r.json()
     assert report["total_rows"] == 1844
-    # LES VERDICTS NE BOUGENT PAS (le batch change la vitesse, pas les
-    # décisions) : les comptes du rejeu réel, gravés.
-    assert len(report["created"]) == 1593
-    assert len(report["linked"]) == 37
-    assert len(report["ignored"]) == 214
+    # Email-only and phone-only records now identify profiles as well.
+    assert len(report["created"]) == 1787
+    assert report["created_count"] == 1787
+    assert len(report["linked"]) == 48
+    assert len(report["ignored"]) == 9
+    assert report["created_with_email"] == 1649
+    assert report["created_without_email"] == 138
     assert len(first_pass) <= QUERY_BUDGET, (
         f"import initial : {len(first_pass)} requêtes pour 1844 lignes "
         f"(budget {QUERY_BUDGET}) — le N+1 est de retour.\n" + _histogram(first_pass)
@@ -148,13 +150,13 @@ async def test_person_import_stays_within_its_query_budget(
         r = await client.post("/imports/client-profiles", headers=headers, json=payload)
     assert r.status_code == 200, r.text
     again = r.json()
-    # Les comptes du ré-import, mesurés sur la base réelle : les 1543
-    # lignes à email retrouvent leur fiche, les 91 SANS email se recréent
-    # (la dédup par identité est intra-batch et ne va JAMAIS contre la
-    # base — on ne fusionne pas des homonymes), 210 restent sans identité.
-    assert len(again["created"]) == 91
-    assert len(again["linked"]) == 1543
-    assert len(again["ignored"]) == 210
+    # All accepted identities now deduplicate against the agency, including
+    # telephone and full name. A replay creates no additional profiles.
+    assert len(again["created"]) == 0
+    assert again["created_count"] == 0
+    assert len(again["linked"]) == 1835
+    assert len(again["ignored"]) == 9
+    assert again["created_without_email"] == 0
     assert len(second_pass) <= QUERY_BUDGET, (
         f"ré-import : {len(second_pass)} requêtes pour 1844 lignes "
         f"(budget {QUERY_BUDGET}) — le lookup par ligne est revenu.\n" + _histogram(second_pass)

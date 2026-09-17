@@ -53,7 +53,9 @@ def _detect_delimiter(first_line: str) -> str:
     return ";" if first_line.count(";") > first_line.count(",") else ","
 
 
-def parse_csv(content: bytes | str, *, max_bytes: int = MAX_CSV_BYTES) -> ParsedCsv:
+def parse_csv(
+    content: bytes | str, *, max_bytes: int = MAX_CSV_BYTES, keep_empty_rows: bool = False
+) -> ParsedCsv:
     size = len(content if isinstance(content, bytes) else content.encode("utf-8"))
     if size > max_bytes:
         raise PayloadTooLargeError(
@@ -76,7 +78,7 @@ def parse_csv(content: bytes | str, *, max_bytes: int = MAX_CSV_BYTES) -> Parsed
     headers = [cell.strip() for cell in records[0]]
     rows: list[dict[str, str]] = []
     for record in records[1:]:
-        if all(cell.strip() == "" for cell in record):
+        if not keep_empty_rows and all(cell.strip() == "" for cell in record):
             continue  # blank line (trailing newline, separator-only row)
         # Map by position; missing trailing cells → "", extra cells dropped.
         rows.append(
@@ -122,7 +124,9 @@ def _xlsx_cell_to_str(value: object) -> str:
     return str(value).strip()
 
 
-def parse_xlsx(content: bytes, *, max_bytes: int = MAX_XLSX_BYTES) -> ParsedCsv:
+def parse_xlsx(
+    content: bytes, *, max_bytes: int = MAX_XLSX_BYTES, keep_empty_rows: bool = False
+) -> ParsedCsv:
     if len(content) > max_bytes:
         raise PayloadTooLargeError(
             f"XLSX exceeds the {max_bytes}-byte limit.",
@@ -161,7 +165,7 @@ def parse_xlsx(content: bytes, *, max_bytes: int = MAX_XLSX_BYTES) -> ParsedCsv:
     headers = [cell.strip() for cell in records[header_index]]
     rows: list[dict[str, str]] = []
     for record in records[header_index + 1 :]:
-        if all(cell.strip() == "" for cell in record):
+        if not keep_empty_rows and all(cell.strip() == "" for cell in record):
             continue  # blank row
         rows.append(
             {
@@ -188,7 +192,11 @@ def _looks_xlsx(filename: str | None, content: bytes | str) -> bool:
 
 
 def parse_upload(
-    filename: str | None, content: bytes | str, *, max_bytes: int = MAX_CSV_BYTES
+    filename: str | None,
+    content: bytes | str,
+    *,
+    max_bytes: int = MAX_CSV_BYTES,
+    keep_empty_rows: bool = False,
 ) -> ParsedCsv:
     """THE single reader the import chain calls. Routes to parse_xlsx or
     parse_csv; both return the same ParsedCsv, so nothing downstream changes."""
@@ -197,5 +205,5 @@ def parse_upload(
             raise ValidationError(
                 "An .xlsx upload must be provided as file bytes.", code="import.xlsx_requires_file"
             )
-        return parse_xlsx(bytes(content), max_bytes=max_bytes)
-    return parse_csv(content, max_bytes=max_bytes)
+        return parse_xlsx(bytes(content), max_bytes=max_bytes, keep_empty_rows=keep_empty_rows)
+    return parse_csv(content, max_bytes=max_bytes, keep_empty_rows=keep_empty_rows)

@@ -139,10 +139,18 @@ async def import_cases(
 async def import_client_profiles(
     body: ProfileImportRequest, agent: AgentDep, db: DbDep
 ) -> ProfileImportReport:
-    """V4a — l'import repointé FICHES : colonnes→champs person, dédup
-    email (lier, pas dupliquer), SANS parcours (étape séparée optionnelle
-    — le wizard dossiers existant la garde). Aucun mail : une fiche
-    n'invite personne."""
+    """Import profiles without creating cases or sending invitations.
+
+    A row needs a mapped email, phone, or both first_name and last_name.
+    Deduplication selects email, otherwise normalized phone, otherwise exact
+    case/accent-insensitive full name, within the agency and this file.
+    Repeated keys link to the first accepted row; later values fill gaps only.
+    Rows without an identifier are ignored with missing_identity and their
+    one-based data record number (header excluded, empty records included).
+    created_count is the total number of newly created profiles;
+    created_without_email counts the subset created without email.
+    Client access requires an email (422 profile.no_email).
+    """
     return await ProfileImportManager(db).run_import(agent, body)
 
 

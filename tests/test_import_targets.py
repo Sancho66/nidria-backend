@@ -185,12 +185,8 @@ async def test_person_flags_required_will_create_named_and_subfields(
     body = await _targets(client, agent_headers(admin), "person")
     by_key = {t["key"]: t for t in body["targets"]}
 
-    # OBLIGATOIRE : le trio d'identité, et lui seul.
-    assert {k for k, t in by_key.items() if t["required"]} == {
-        "first_name",
-        "last_name",
-        "email",
-    }
+    # Identity alternatives are checked per row, never individually required.
+    assert {k for k, t in by_key.items() if t["required"]} == set()
 
     # « SERA AJOUTÉ » : un preset du catalogue non déclaré — l'import
     # crée sa définition en chemin, la liste le dit avant d'agir.

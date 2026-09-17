@@ -332,6 +332,27 @@ class ClientProfilesRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def import_fallback_identities(
+        self, agency_id: uuid.UUID
+    ) -> list[tuple[uuid.UUID, str | None, str | None, str | None]]:
+        """Load agency phone/name candidates once, including account-owned names.
+
+        Oldest profile wins when historical records share a fallback key.
+        Normalization and key selection belong to the import manager.
+        """
+        stmt = (
+            select(
+                ClientProfile.id,
+                ClientProfile.phone,
+                func.coalesce(ExpatUser.first_name, ClientProfile.first_name),
+                func.coalesce(ExpatUser.last_name, ClientProfile.last_name),
+            )
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(ClientProfile.agency_id == agency_id)
+            .order_by(ClientProfile.created_at, ClientProfile.id)
+        )
+        return [tuple(row) for row in (await self.db.execute(stmt)).all()]
+
     async def companies_for_profile(
         self, profile_id: uuid.UUID
     ) -> list[tuple[uuid.UUID, str, str, str | None, uuid.UUID]]:

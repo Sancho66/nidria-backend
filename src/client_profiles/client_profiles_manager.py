@@ -1012,6 +1012,11 @@ class ClientProfilesManager:
                 "This profile has no email to create a case with.",
                 code="profile.no_email",
             )
+        if account is None and (not profile.first_name or not profile.last_name):
+            raise ValidationError(
+                "Complete the profile first and last names before creating client access.",
+                code="profile.missing_identity",
+            )
         request = CaseCreateRequest(
             first_name=account.first_name if account else (profile.first_name or ""),
             last_name=account.last_name if account else (profile.last_name or ""),

@@ -273,7 +273,7 @@ async def person_target_catalog(
         seen.add(spec.key)
         buckets[spec.section if spec.section in buckets else "misc"].append(spec)
 
-    # 1. Le trio obligatoire — sans lui l'import ne part pas.
+    # Identity alternatives are validated per row; no single target is required.
     for key in IDENTITY_TARGETS:
         emit(
             ImportTargetSpec(
@@ -282,7 +282,7 @@ async def person_target_catalog(
                 label_i18n=dict(IDENTITY_LABELS[key]),
                 field_type="text",
                 section="identity",
-                required=True,
+                required=False,
             )
         )
 
