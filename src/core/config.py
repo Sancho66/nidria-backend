@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # OWASP's floor for bcrypt, and the value this app shipped with. Named here
@@ -172,6 +172,15 @@ class Settings(BaseSettings):
 
     # Resend transactional email (invitations + mail reminders).
     resend_api_key: str | None = None
+    # Confirm against the shared Resend account. None means unknown, never zero.
+    resend_monitor_enabled: bool = False
+    resend_daily_limit: int | None = Field(default=None, gt=0)
+    resend_monthly_limit: int | None = Field(default=None, gt=0)
+    resend_monthly_reset_day: int | None = Field(default=None, ge=1, le=31)
+    resend_quota_thresholds: list[Annotated[int, Field(ge=1, le=100)]] = [80, 90, 100]
+    resend_usage_max_age_seconds: int = Field(default=3600, ge=60)
+    resend_monthly_cooldown_seconds: int = Field(default=3600, ge=60)
+
     # Svix secret (whsec_…) of the Resend webhook endpoint — delivery proof
     # (incident Bulgarie 01/09). None = webhook answers 401, nothing breaks.
     resend_webhook_secret: str | None = None

@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 import resend
 from pydantic import AfterValidator, EmailStr
+from resend.exceptions import ResendError
 
 from src.core.config import get_settings
 
@@ -157,7 +158,15 @@ def send_email(
         payload["reply_to"] = [reply_to]
     if html is not None:
         payload["html"] = html
-    response = resend.Emails.send(payload)  # type: ignore[arg-type]
+    from src.email_monitor.email_monitor_manager import check_send, observe
+
+    check_send()
+    try:
+        response = resend.Emails.send(payload)  # type: ignore[arg-type]
+    except ResendError as exc:
+        observe(exc.headers, exc.error_type)
+        raise
+    observe(response.get("http_headers", {}) if isinstance(response, dict) else {})
     # The Resend message id is the correlation handle with their
     # dashboard (delivered / bounced / suppressed) — without it a
     # "mail never arrived" report is undiagnosable server-side.

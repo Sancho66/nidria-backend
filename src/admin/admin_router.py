@@ -34,10 +34,13 @@ from src.core.exceptions import ValidationError
 from src.core.http import file_download_response
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
+from src.email_monitor.email_monitor_manager import EmailMonitorManager
+from src.email_monitor.email_monitor_schema import EmailUsageResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 BINDINGS = [
+    RouteBinding("GET", "/admin/email-usage", Audience.AGENT, Permission.PLATFORM_TASK_MANAGE),
     # Platform tool: only the superadmin holds agency.create; an agency
     # admin/agent/expat is 403. Reached with the superadmin's OWN token
     # (not an impersonation session — see the impersonation note in the
@@ -344,3 +347,8 @@ async def delete_platform_task_comment(
 ) -> None:
     """Author-only, hard delete (403 task.comment_not_author otherwise)."""
     await PlatformTasksManager(db).delete_comment(agent, task_id, comment_id)
+
+
+@router.get("/email-usage", response_model=EmailUsageResponse)
+async def email_usage(agent: AgentDep, db: DbDep) -> EmailUsageResponse:
+    return await EmailMonitorManager.read(db)

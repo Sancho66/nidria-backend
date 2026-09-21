@@ -2840,6 +2840,32 @@
         }
       }
     },
+    "/admin/email-usage": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Email Usage",
+        "operationId": "email_usage_admin_email_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailUsageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/help/search-miss": {
       "post": {
         "tags": [
@@ -27111,6 +27137,129 @@
           "validation_status"
         ],
         "title": "DocumentValidationRequest"
+      },
+      "EmailQuotaResponse": {
+        "properties": {
+          "used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "used",
+          "limit",
+          "percent",
+          "period",
+          "observed_at",
+          "status"
+        ],
+        "title": "EmailQuotaResponse"
+      },
+      "EmailUsageResponse": {
+        "properties": {
+          "daily": {
+            "$ref": "#/components/schemas/EmailQuotaResponse"
+          },
+          "monthly": {
+            "$ref": "#/components/schemas/EmailQuotaResponse"
+          },
+          "blocked_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Until"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "thresholds": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Thresholds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "daily",
+          "monthly",
+          "blocked_until",
+          "blocked_reason",
+          "thresholds"
+        ],
+        "title": "EmailUsageResponse"
       },
       "ExpatAgencyPendingResponse": {
         "properties": {
