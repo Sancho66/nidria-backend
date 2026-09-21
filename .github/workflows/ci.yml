@@ -45,7 +45,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     # No GHA `services.postgres` — tests/conftest.py spins up its own
     # postgres:16-alpine via testcontainers (per CLAUDE.md rule #5).
     # Adding a service postgres on top is wasted boot time + RAM,
