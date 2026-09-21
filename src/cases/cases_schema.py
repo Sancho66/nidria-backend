@@ -75,6 +75,14 @@ class CaseCreateRequest(_CivilStatusFields):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
     email: NormalizedEmailStr
+    send_invitation: bool = Field(
+        default=True,
+        strict=True,
+        description=(
+            "Send the client invitation for this creation. "
+            "False creates no invitation or activation reminder."
+        ),
+    )
     preferred_lang: str = Field(default="fr", min_length=2, max_length=5)
     # Case — origin/destination addresses (flat columns on client_case).
     # country stays separate (its query ecosystem); street/city/postal are
@@ -268,6 +276,7 @@ class PersonCreateRequest(_CivilStatusFields):
     relationship: str = Field(min_length=1, max_length=50)
     relationship_kind: RelationshipKind | None = None
     email: NormalizedEmailStr | None = None
+    send_invitation: bool = Field(default=True, strict=True)
     custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 

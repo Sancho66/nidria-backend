@@ -21718,6 +21718,12 @@
             "format": "email",
             "title": "Email"
           },
+          "send_invitation": {
+            "type": "boolean",
+            "title": "Send Invitation",
+            "description": "Send the client invitation for this creation. False creates no invitation or activation reminder.",
+            "default": true
+          },
           "preferred_lang": {
             "type": "string",
             "maxLength": 5,
@@ -31871,6 +31877,11 @@
               }
             ],
             "title": "Email"
+          },
+          "send_invitation": {
+            "type": "boolean",
+            "title": "Send Invitation",
+            "default": true
           },
           "custom_fields": {
             "additionalProperties": true,

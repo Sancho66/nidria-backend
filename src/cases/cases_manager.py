@@ -333,25 +333,30 @@ class CasesManager:
         # part a l'instant — elle suffit (l'espace montrera tout a
         # l'activation). On ouvre la fenetre "steps" pour que les
         # demarrages d'etapes qui suivent n'empilent pas de mails.
-        await record_send(self.db, case.id, normalize_email(payload.email), "steps")
+        if payload.send_invitation:
+            await record_send(self.db, case.id, normalize_email(payload.email), "steps")
 
         # The case link IS principal_expat_user_id (just set). The
         # invitation is notification + audit trail, never the linking
         # mechanism — sent for new AND existing expats.
         settings = get_settings()
-        invitation = self.repo.add_case_invitation(
-            case_id=case.id,
-            email=payload.email,
-            token=secrets.token_urlsafe(24),
-            expires_at=datetime.now(UTC) + timedelta(days=settings.case_invitation_expires_days),
-        )
+        invitation = None
+        if payload.send_invitation:
+            invitation = self.repo.add_case_invitation(
+                case_id=case.id,
+                email=payload.email,
+                token=secrets.token_urlsafe(24),
+                expires_at=datetime.now(UTC)
+                + timedelta(days=settings.case_invitation_expires_days),
+            )
         usage = UsageManager(self.db)
         await usage.emit_for_case(
             case, "case.created", actor_type=ActorType.AGENT, actor_id=agent.id
         )
-        await usage.emit_for_case(
-            case, "case.client_invited", actor_type=ActorType.AGENT, actor_id=agent.id
-        )
+        if payload.send_invitation:
+            await usage.emit_for_case(
+                case, "case.client_invited", actor_type=ActorType.AGENT, actor_id=agent.id
+            )
         if expat.activated_at is not None:
             # A client whose account is ALREADY active can follow this new
             # dossier immediately: the adoption signal holds for THIS
@@ -363,10 +368,21 @@ class CasesManager:
                 actor_id=agent.id,
                 details={"via": "existing_account"},
             )
-        self._log(case.id, agent, "case.created")
-        self._log(case.id, agent, "case.invitation_sent", {"email": payload.email})
+        self._log(
+            case.id,
+            agent,
+            "case.created",
+            {} if payload.send_invitation else {"send_invitation": False},
+        )
+        if payload.send_invitation:
+            self._log(case.id, agent, "case.invitation_sent", {"email": payload.email})
         await self.db.commit()
         await self.db.refresh(case)
+
+        # No invitation row means activation sweeps cannot resurrect this
+        # operation. Deferred callers receive no mail to enqueue or retry.
+        if invitation is None:
+            return case
 
         agency = await self.repo.get_agency(agent.agency_id)
         agency_name = agency.name if agency else "Votre agence"
@@ -1094,7 +1110,7 @@ class CasesManager:
         self._log(case.id, agent, "person.added", {"person_id": str(person.id)})
         mail = (
             await self._prepare_member_invite(agent, case, payload.email, expat)
-            if expat is not None and payload.email is not None
+            if expat is not None and payload.email is not None and payload.send_invitation
             else None
         )
         await self.db.commit()

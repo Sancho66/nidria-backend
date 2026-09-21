@@ -270,7 +270,7 @@ class CaseImportManager:
             "custom_fields": cv.custom,
         }
         try:
-            CaseCreateRequest(**kwargs)
+            CaseCreateRequest.model_validate(kwargs)
         except PydanticValidationError as exc:
             locs = {str(err["loc"][0]) for err in exc.errors() if err.get("loc")}
             return "rejected", ("invalid_email" if "email" in locs else "invalid_row")
@@ -512,7 +512,7 @@ class CaseImportManager:
 
         kwargs["custom_fields"] = custom
         try:
-            payload = CaseCreateRequest(**kwargs)
+            payload = CaseCreateRequest.model_validate(kwargs)
         except PydanticValidationError as exc:
             locs = {str(err["loc"][0]) for err in exc.errors() if err.get("loc")}
             reason = "invalid_email" if "email" in locs else "invalid_row"
