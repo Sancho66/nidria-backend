@@ -230,7 +230,9 @@ PERSON_AMBIGUOUS: Final[dict[str, list[str]]] = {
     "pays": ["nationality", "tax_residence_country", "residence_address.country"],
     "country": ["nationality", "tax_residence_country", "residence_address.country"],
     "country region": ["nationality", "tax_residence_country", "residence_address.country"],
-    "pays de residence": ["tax_residence_country", "residence_address.country", "nationality"],
+    "pays de residence": ["residence_address.country"],
+    "country of residence": ["residence_address.country"],
+    "residence country": ["residence_address.country"],
 }
 
 # Replis : suggérés SEULEMENT si la cible n'a pas déjà de colonne directe.

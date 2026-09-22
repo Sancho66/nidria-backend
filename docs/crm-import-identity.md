@@ -57,18 +57,20 @@ first/last names, without overwriting existing email, names or other data. Linke
 
 An unidentified record appears in `ignored` with `reason: "missing_identity"` and
 `row`. Preview uses `status: "ignore"`, the same reason, and `row_index`.
-Both numbers are one-based **data record numbers excluding the header**. Empty
-records are included and rejected, preserving numbering of subsequent records.
-Thus, data record 3 is spreadsheet row 4 when the header occupies row 1. A final
-CSV newline alone does not add a record; an explicit blank record does. A quoted
-multiline CSV value belongs to one record. XLSX reads the active sheet.
+Both numbers are original one-based **data record numbers excluding the header**.
+Blank records are skipped without renumbering subsequent records. A populated
+record without an identifier still produces `missing_identity`. A quoted multiline
+CSV value belongs to one record. XLSX reads the active sheet only and also returns
+`source_row`, the physical Excel row including the header offset. The interface
+uses `source_row` when available; correction requests continue using `row_index`.
+See [XLSX preservation](crm-import-xlsx.md) for value resolution and empty rows.
 
 The required report field `created_count` is the total number of newly created
 profiles, with or without email. The frontend can display this total directly
 without adding other counters. `created_without_email` is the subset created
 without email; `created_with_email` is the subset created with email. Linked and
 rejected records are excluded from all three creation counters. These fields
-accompany `total_rows` (all input records), `created`, `linked` and `ignored`.
+accompany `total_rows` (nonempty input records), `created`, `linked` and `ignored`.
 Preview exposes `summary.create_with_email` and `summary.create_without_email`.
 The compatibility field `values_salvaged` remains present and is now zero: a valid
 email-only record is accepted immediately instead of being rejected then salvaged.

@@ -24525,6 +24525,18 @@
             "type": "array",
             "title": "Corrections"
           },
+          "value_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/ImportValueMapping"
+            },
+            "type": "array",
+            "title": "Value Mappings"
+          },
+          "require_valid_values": {
+            "type": "boolean",
+            "title": "Require Valid Values",
+            "default": false
+          },
           "create_fields": {
             "items": {
               "$ref": "#/components/schemas/FieldCreationSpec"
@@ -24555,6 +24567,13 @@
       },
       "CompanyImportPreviewResponse": {
         "properties": {
+          "value_problems": {
+            "items": {
+              "$ref": "#/components/schemas/ImportValueProblem"
+            },
+            "type": "array",
+            "title": "Value Problems"
+          },
           "total_rows": {
             "type": "integer",
             "title": "Total Rows"
@@ -24694,6 +24713,18 @@
             "type": "array",
             "title": "Corrections"
           },
+          "value_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/ImportValueMapping"
+            },
+            "type": "array",
+            "title": "Value Mappings"
+          },
+          "require_valid_values": {
+            "type": "boolean",
+            "title": "Require Valid Values",
+            "default": false
+          },
           "create_fields": {
             "items": {
               "$ref": "#/components/schemas/FieldCreationSpec"
@@ -24712,6 +24743,17 @@
       },
       "CompanyImportRowOutcome": {
         "properties": {
+          "source_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row"
+          },
           "row": {
             "type": "integer",
             "title": "Row"
@@ -29852,6 +29894,72 @@
         "title": "ImportTargetsResponse",
         "description": "L'UNIVERS COMPLET des cibles d'une agence, pour une entité.\n\nServi depuis la MÊME source que la validation d'import et que\nl'enregistrement de config (`import_targets`) : ce qui est offert ici\nest accepté là-bas, sans recopie possible entre les deux."
       },
+      "ImportValueMapping": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Target"
+          },
+          "source_value": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Source Value"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target",
+          "source_value",
+          "value"
+        ],
+        "title": "ImportValueMapping",
+        "description": "Resolve one source value for every occurrence, before row corrections."
+      },
+      "ImportValueProblem": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "source_value": {
+            "type": "string",
+            "title": "Source Value"
+          },
+          "occurrences": {
+            "type": "integer",
+            "title": "Occurrences"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target",
+          "column",
+          "source_value",
+          "occurrences"
+        ],
+        "title": "ImportValueProblem"
+      },
       "ImportWarningItem": {
         "properties": {
           "code": {
@@ -34398,6 +34506,19 @@
             "type": "array",
             "title": "Corrections"
           },
+          "value_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/ImportValueMapping"
+            },
+            "type": "array",
+            "title": "Value Mappings"
+          },
+          "require_valid_values": {
+            "type": "boolean",
+            "title": "Require Valid Values",
+            "description": "Reject the complete import before writing if any cell remains invalid.",
+            "default": false
+          },
           "create_fields": {
             "items": {
               "$ref": "#/components/schemas/FieldCreationSpec"
@@ -34471,6 +34592,13 @@
             },
             "type": "array",
             "title": "Fields Created"
+          },
+          "value_problems": {
+            "items": {
+              "$ref": "#/components/schemas/ImportValueProblem"
+            },
+            "type": "array",
+            "title": "Value Problems"
           }
         },
         "type": "object",
@@ -34615,6 +34743,19 @@
             "type": "array",
             "title": "Corrections"
           },
+          "value_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/ImportValueMapping"
+            },
+            "type": "array",
+            "title": "Value Mappings"
+          },
+          "require_valid_values": {
+            "type": "boolean",
+            "title": "Require Valid Values",
+            "description": "Reject the complete import before writing if any cell remains invalid.",
+            "default": false
+          },
           "create_fields": {
             "items": {
               "$ref": "#/components/schemas/FieldCreationSpec"
@@ -34650,7 +34791,25 @@
           "row": {
             "type": "integer",
             "title": "Row",
-            "description": "One-based data record number, excluding the header; includes empty rows."
+            "description": "Original one-based data record number, excluding the header."
+          },
+          "source_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/RowIssue"
+            },
+            "type": "array",
+            "title": "Issues"
           },
           "email": {
             "anyOf": [
@@ -36312,6 +36471,35 @@
           "code": {
             "type": "string",
             "title": "Code"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "source_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Value"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options"
           }
         },
         "type": "object",
@@ -36326,7 +36514,26 @@
           "row_index": {
             "type": "integer",
             "title": "Row Index",
-            "description": "One-based data record number, excluding the header. Person imports include empty rows."
+            "description": "Original one-based data record number, excluding the header. Blank records are skipped without renumbering later records."
+          },
+          "source_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row",
+            "description": "Physical Excel row when reading XLSX."
+          },
+          "source_values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Source Values"
           },
           "status": {
             "type": "string",

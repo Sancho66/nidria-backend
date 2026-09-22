@@ -186,7 +186,9 @@ async def test_an_unreadable_status_is_reported_as_an_issue_in_the_preview(
     assert r.status_code == 200, r.text
     row = r.json()["rows"][0]
     assert row["status"] == "create"
-    assert {"column": "Statut", "code": "invalid_value"} in row["issues"]
+    assert {"column": "Statut", "code": "invalid_value"} in [
+        {"column": issue["column"], "code": issue["code"]} for issue in row["issues"]
+    ]
     assert "status_override" not in row["person"]
 
 

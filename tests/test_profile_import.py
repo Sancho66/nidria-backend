@@ -343,7 +343,9 @@ async def test_preview_and_import_render_identical_verdicts(
     # La cellule mauvaise = ISSUE, la ligne vit (create).
     bad_row = next(row for row in preview["rows"] if row["row_index"] == 5)
     assert bad_row["status"] == "create"
-    assert bad_row["issues"] == [{"column": "Genre", "code": "invalid_value"}]
+    assert [{"column": issue["column"], "code": issue["code"]} for issue in bad_row["issues"]] == [
+        {"column": "Genre", "code": "invalid_value"}
+    ]
     assert "sex" not in bad_row["person"]  # trou annoncé
     assert preview["rows"][0]["person"]["sex"] == "F"  # normalisé servi
 
@@ -404,7 +406,9 @@ async def test_corrections_flow_through_the_same_mill(
     assert row["status"] == "create"
     assert row["person"]["email"] == "corrigee@example.com"
     assert row["person"]["sex"] == "F"  # la correction passe la moulinette
-    assert {"column": "(correction)", "code": "unknown_target"} in row["issues"]
+    assert {"column": "(correction)", "code": "unknown_target"} in [
+        {"column": issue["column"], "code": issue["code"]} for issue in row["issues"]
+    ]
     # L'import réel avec les mêmes corrections écrit le corrigé.
     r = await client.post("/imports/client-profiles", headers=headers, json=body)
     assert r.status_code == 200, r.text
@@ -454,10 +458,9 @@ async def test_company_import_widened_targets_and_typed_coercions(
     second = preview["rows"][1]["person"]
     assert second["email"] == "hola@iberia.es"  # minusculisé
     third = preview["rows"][2]
-    # 'Bulgarie' en toutes lettres ≠ ISO-2 (la règle V1, format seul) →
-    # issue + trou ; 'XX' passerait (format-valide, pas de liste blanche).
-    assert {"column": "Pays", "code": "invalid_value"} in third["issues"]
-    assert "country" not in third["person"]  # trou, la ligne vit
+    # Unambiguous country labels are resolved to their canonical code.
+    assert third["issues"] == []
+    assert third["person"]["country"] == "BG"
 
     # L'import réel range les valeurs dans les SECTIONS posées.
     r = await client.post(
@@ -1111,13 +1114,14 @@ async def test_address_composition_contract(
         "postal_code": "1000",
         "country": "BG",
     }
-    # 'Francia' ≠ ISO-2 → le sous-champ pays tombe, LE RESTE s'assemble.
+    # Translated country labels preserve the complete address.
     assert rows[1]["person"]["residence_address"] == {
         "street": "1 rue A",
         "city": "Paris",
         "postal_code": "75001",
+        "country": "FR",
     }
-    assert {"column": "PaysAdr", "code": "invalid_value"} in rows[1]["issues"]
+    assert rows[1]["issues"] == []
 
     # EXCLUSIVITÉ : texte intégral + sous-champ sur la même base → 422.
     r = await client.post(
@@ -1195,7 +1199,7 @@ async def test_street_number_pair_contract(
     # le reste de l'adresse (la ville) vit.
     assert "street" not in rows[2]["person"]["residence_address"]
     assert rows[2]["person"]["residence_address"]["city"] == "Lyon"
-    assert rows[2]["issues"] == [
+    assert [{"column": issue["column"], "code": issue["code"]} for issue in rows[2]["issues"]] == [
         {"column": "Numéro de la rue + Rue", "code": "street_number_orphan"}
     ]
 
@@ -1441,8 +1445,12 @@ async def test_company_number_targets_coerced_on_real_values(
     # La plage et le littéral : deux trous MOTIVÉS, la ligne vit (create).
     second = rows[1]
     assert second["status"] == "create"
-    assert {"column": "Effectif", "code": "invalid_value"} in second["issues"]
-    assert {"column": "Capital social", "code": "invalid_value"} in second["issues"]
+    assert {"column": "Effectif", "code": "invalid_value"} in [
+        {"column": issue["column"], "code": issue["code"]} for issue in second["issues"]
+    ]
+    assert {"column": "Capital social", "code": "invalid_value"} in [
+        {"column": issue["column"], "code": issue["code"]} for issue in second["issues"]
+    ]
     assert "employee_count" not in second["person"]
     assert "share_capital" not in second["person"]
 
@@ -1542,7 +1550,9 @@ async def test_create_field_from_grid(
     assert preview["rows"][0]["person"]["num_irina"] == "IR-2231"
     assert str(preview["rows"][0]["person"]["end_contrat_dom"]).startswith("2027-01-15")
     # kind date → l'illisible fait un TROU motivé, la ligne vit.
-    assert {"column": "Fin contrat", "code": "invalid_value"} in preview["rows"][1]["issues"]
+    assert {"column": "Fin contrat", "code": "invalid_value"} in [
+        {"column": issue["column"], "code": issue["code"]} for issue in preview["rows"][1]["issues"]
+    ]
     n_defs = (
         await db_session.execute(
             text(
@@ -1849,7 +1859,9 @@ async def test_company_sack_labels_survive_import_creation(
     )
     assert r.status_code == 200, r.text
     first = r.json()["rows"][0]
-    assert {"column": "Note du juriste", "code": "invalid_value"} in first["issues"]
+    assert {"column": "Note du juriste", "code": "invalid_value"} in [
+        {"column": issue["column"], "code": issue["code"]} for issue in first["issues"]
+    ]
     assert "note_du_juriste" not in first["person"]
 
 

@@ -159,6 +159,15 @@ class FieldCreationSpec(BaseModel):
     kind: Literal["text", "number", "date", "boolean"]
 
 
+class ImportValueMapping(BaseModel):
+    """Resolve one source value for every occurrence, before row corrections."""
+
+    model_config = ConfigDict(extra="forbid")
+    target: str = Field(min_length=1, max_length=100)
+    source_value: str = Field(min_length=1, max_length=5000)
+    value: str = Field(min_length=1, max_length=5000)
+
+
 class ProfileImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -173,6 +182,12 @@ class ProfileImportRequest(BaseModel):
         "Missing identifiers are reported per row as missing_identity.",
     )
     corrections: list[ImportCorrection] = Field(default_factory=list)
+    value_mappings: list[ImportValueMapping] = Field(default_factory=list)
+    require_valid_values: bool = Field(
+        default=False,
+        strict=True,
+        description="Reject the complete import before writing if any cell remains invalid.",
+    )
     # Création depuis la grille (lot grille) — dédup lier-pas-dupliquer
     # sur label/clé existants ; la déf naît à l'IMPORT seulement.
     create_fields: list[FieldCreationSpec] = Field(default_factory=list)
@@ -192,15 +207,30 @@ class ProfileImportPreviewRequest(ProfileImportRequest):
 class RowIssue(BaseModel):
     column: str
     code: str
+    target: str | None = None
+    source_value: str | None = None
+    options: list[str] = Field(default_factory=list)
+
+
+class ImportValueProblem(BaseModel):
+    target: str
+    column: str
+    source_value: str
+    occurrences: int
+    options: list[str] = Field(default_factory=list)
 
 
 class RowVerdict(BaseModel):
     # A write-plan reference, never exposed as an actual profile ID in a dry run.
     _linked_row: int | None = PrivateAttr(default=None)
     row_index: int = Field(
-        description="One-based data record number, excluding the header. "
-        "Person imports include empty rows."
+        description="Original one-based data record number, excluding the header. "
+        "Blank records are skipped without renumbering later records."
     )
+    source_row: int | None = Field(
+        default=None, description="Physical Excel row when reading XLSX."
+    )
+    source_values: dict[str, str] = Field(default_factory=dict)
     status: Literal["create", "link", "ignore"]
     reason: str | None = None
     profile_id: uuid.UUID | None = None
@@ -210,9 +240,9 @@ class RowVerdict(BaseModel):
 
 
 class ProfileImportRowOutcome(BaseModel):
-    row: int = Field(
-        description="One-based data record number, excluding the header; includes empty rows."
-    )
+    row: int = Field(description="Original one-based data record number, excluding the header.")
+    source_row: int | None = None
+    issues: list[RowIssue] = Field(default_factory=list)
     email: str | None = None
     profile_id: uuid.UUID | None = None
     reason: str | None = None
@@ -271,6 +301,54 @@ class ProfileImportPreviewResponse(BaseModel):
     # Dry-run de la création : les labels qui NAÎTRAIENT à l'import (ceux
     # dédupliqués vers un champ existant n'y figurent pas).
     fields_created: list[str] = Field(default_factory=list)
+    value_problems: list[ImportValueProblem] = Field(default_factory=list)
+
+
+def _value_problems(verdicts: list[RowVerdict]) -> list[ImportValueProblem]:
+    """Aggregate the entire upload, including records outside the visible page."""
+    grouped: dict[tuple[str, str], ImportValueProblem] = {}
+    for verdict in verdicts:
+        seen: set[tuple[str, str]] = set()
+        for issue in verdict.issues:
+            if not issue.target or not issue.source_value:
+                continue
+            key = (issue.target, issue.source_value)
+            if key in seen:
+                continue
+            seen.add(key)
+            if key not in grouped:
+                grouped[key] = ImportValueProblem(
+                    target=issue.target,
+                    column=issue.column,
+                    source_value=issue.source_value,
+                    occurrences=0,
+                    options=issue.options,
+                )
+            grouped[key].occurrences += 1
+    return list(grouped.values())
+
+
+def _value_mapping_index(
+    rules: list[ImportValueMapping], allowed: set[str]
+) -> dict[tuple[str, str], str]:
+    result: dict[tuple[str, str], str] = {}
+    for rule in rules:
+        key = (rule.target, rule.source_value.strip())
+        if rule.target not in allowed or key in result or not rule.value.strip():
+            raise ValidationError(
+                "Invalid or duplicate value mapping.", code="import.unknown_targets"
+            )
+        result[key] = rule.value.strip()
+    return result
+
+
+def _require_valid_values(verdicts: list[RowVerdict], required: bool) -> None:
+    if required and any(verdict.issues for verdict in verdicts):
+        raise ValidationError(
+            "Resolve invalid cells before importing.",
+            code="import.unresolved_values",
+            params={"count": sum(len(verdict.issues) for verdict in verdicts)},
+        )
 
 
 def _summarize(verdicts: list[RowVerdict]) -> ImportPreviewSummary:
@@ -303,7 +381,7 @@ class ProfileImportManager:
         content: bytes | str = (
             base64.b64decode(body.file_b64) if body.file_b64 else (body.csv_text or "")
         )
-        parsed = parse_upload(body.filename, content, keep_empty_rows=True)
+        parsed = parse_upload(body.filename, content)
 
         # L'UNIVERS DES CIBLES vient de `import_targets` — LA source, celle
         # que la config d'agence consomme aussi (un test prouve l'égalité).
@@ -388,6 +466,10 @@ class ProfileImportManager:
             else:
                 creation_plan[spec.column] = (slug, spec.label, spec.kind, True)
         self._creation_plan = creation_plan
+        value_rules = _value_mapping_index(
+            body.value_mappings,
+            set(body.mapping.values()) | {item[0] for item in creation_plan.values()},
+        )
 
         corrections_by_row: dict[int, list[ImportCorrection]] = {}
         for correction in body.corrections:
@@ -409,12 +491,13 @@ class ProfileImportManager:
         # fausserait le verdict.
         email_columns = [c for c, t in body.mapping.items() if t == "email"]
         candidate_emails: set[str] = set()
-        for index, row in enumerate(parsed.rows, start=1):
+        for index, row in parsed.numbered_rows():
             cell = ""
             for column in email_columns:
                 raw_cell = (row.get(column) or "").strip()
                 if raw_cell:
                     cell = raw_cell
+            cell = value_rules.get(("email", cell), cell)
             for correction in corrections_by_row.get(index, ()):
                 if correction.target == "email":
                     cell = correction.value.strip()
@@ -443,7 +526,7 @@ class ProfileImportManager:
         verdicts: list[RowVerdict] = []
         seen_keys: dict[IdentityKey, int] = {}
         seen_identities: dict[int, dict[str, Any]] = {}
-        for index, row in enumerate(parsed.rows, start=1):
+        for index, row in parsed.numbered_rows():
             issues: list[RowIssue] = []
             values: dict[str, str] = {}
             for column, target in body.mapping.items():
@@ -468,9 +551,19 @@ class ProfileImportManager:
                 cell = (row.get(column) or "").strip()
                 if cell:
                     creation_cells[key] = (cell, kind, column)
+            source_values = dict(values)
+            source_values.update({key: cell for key, (cell, _kind, _col) in creation_cells.items()})
+            values = {key: value_rules.get((key, cell), cell) for key, cell in values.items()}
+            creation_cells = {
+                key: (value_rules.get((key, cell), cell), kind, column)
+                for key, (cell, kind, column) in creation_cells.items()
+            }
             # CORRECTIONS : après parse, avant validation — même moulinette.
             for correction in corrections_by_row.get(index, ()):
-                if correction.target not in valid_targets:
+                if (
+                    correction.target not in valid_targets
+                    and correction.target not in creation_cells
+                ):
                     issues.append(RowIssue(column="(correction)", code="unknown_target"))
                     continue
                 if correction.target in {*IDENTITY_TARGETS, "phone"} and (
@@ -479,6 +572,13 @@ class ProfileImportManager:
                     issues.append(RowIssue(column="(correction)", code="unmapped_identifier"))
                     continue
                 corrected = correction.value.strip()
+                if correction.target in creation_cells:
+                    _cell, kind, column = creation_cells[correction.target]
+                    if corrected:
+                        creation_cells[correction.target] = (corrected, kind, column)
+                    else:
+                        creation_cells.pop(correction.target)
+                    continue
                 if corrected:
                     values[correction.target] = corrected
                 else:
@@ -531,12 +631,15 @@ class ProfileImportManager:
                     )
                 )
             from src.imports.value_normalizers import normalize_import_value
+            from src.imports.value_resolution import coerce_import_field, country_value
 
             for civil in CIVIL_COLUMNS:
                 raw = values.get(civil)
                 if raw is None:
                     continue
                 raw = normalize_import_value(civil, raw)
+                if civil == "nationality":
+                    raw = country_value(raw)
                 try:
                     validated = PersonUpdateRequest.model_validate({civil: raw})
                 except PydanticValidationError:
@@ -579,7 +682,7 @@ class ProfileImportManager:
                         agency_id=agent.agency_id, key=key, label=key, field_type=kind
                     )
                 try:
-                    person[key] = _coerce_one(definition, cell)
+                    person[key] = coerce_import_field(definition, cell)
                 except ValueError:
                     issues.append(RowIssue(column=column, code="invalid_value"))
             custom_keys = (set(values) & (set(defs_by_key) | preset_person_keys)) - {
@@ -606,12 +709,13 @@ class ProfileImportManager:
                         field_type=preset.field_type,
                         options=(preset.options or {}).get("fr") if preset.options else None,
                     )
+                    defs_by_key[key] = definition
                 raw = normalize_import_value(key, raw, definition.option_values or None)
                 try:
                     if definition.field_type == CustomFieldType.ADDRESS.value:
                         person[key] = _coerce_one(definition, {"street": raw})
                     else:
-                        person[key] = _coerce_one(definition, raw)
+                        person[key] = coerce_import_field(definition, raw)
                 except ValueError:
                     issues.append(
                         RowIssue(column=columns_by_target.get(key, key), code="invalid_value")
@@ -622,6 +726,8 @@ class ProfileImportManager:
                 verdicts.append(
                     RowVerdict(
                         row_index=index,
+                        source_row=parsed.source_rows.get(index),
+                        source_values=source_values,
                         status="ignore",
                         reason="missing_identity",
                         person=person,
@@ -633,6 +739,8 @@ class ProfileImportManager:
             linked_row = seen_keys.get(dedup_key) if existing_id is None else None
             verdict = RowVerdict(
                 row_index=index,
+                source_row=parsed.source_rows.get(index),
+                source_values=source_values,
                 status="link" if existing_id is not None or linked_row is not None else "create",
                 profile_id=existing_id,
                 person=person,
@@ -654,6 +762,17 @@ class ProfileImportManager:
                     existing_by_key.setdefault(available_key, existing_id)
                 else:
                     seen_keys.setdefault(available_key, source_row)
+
+        for verdict in verdicts:
+            for issue in verdict.issues:
+                issue.target = next(
+                    (key for key, column in columns_by_target.items() if column == issue.column),
+                    None,
+                )
+                issue.source_value = verdict.source_values.get(issue.target or "")
+                definition = defs_by_key.get(issue.target or "")
+                if definition is not None:
+                    issue.options = definition.option_values
 
         # LE DÉFAUT GLOBAL, posé ICI et nulle part ailleurs : dans
         # l'ANALYSE, donc l'aperçu montre exactement ce que l'import
@@ -679,6 +798,7 @@ class ProfileImportManager:
             rows=verdicts[start : start + body.page_size],
             page=body.page,
             page_size=body.page_size,
+            value_problems=_value_problems(verdicts),
             fields_created=[
                 label
                 for _key, label, _kind, to_create in getattr(self, "_creation_plan", {}).values()
@@ -690,6 +810,7 @@ class ProfileImportManager:
 
     async def run_import(self, agent: Agent, body: ProfileImportRequest) -> ProfileImportReport:
         verdicts = await self._analyze(agent, body)
+        _require_valid_values(verdicts, body.require_valid_values)
         # DÉCLARATION À LA VOLÉE (la mécanique du picker, helper partagé) :
         # les presets du catalogue mappés mais non déclarés deviennent des
         # défs de l'agence — idempotent, jamais au preview.
@@ -746,7 +867,11 @@ class ProfileImportManager:
             email = verdict.person.get("email")
             if verdict.status == "ignore":
                 outcome = ProfileImportRowOutcome(
-                    row=verdict.row_index, email=email, reason=verdict.reason
+                    row=verdict.row_index,
+                    source_row=verdict.source_row,
+                    issues=verdict.issues,
+                    email=email,
+                    reason=verdict.reason,
                 )
                 ignored.append(outcome)
                 continue
@@ -777,7 +902,11 @@ class ProfileImportManager:
                 created_by_row[verdict.row_index] = profile.id
                 created.append(
                     ProfileImportRowOutcome(
-                        row=verdict.row_index, email=email, profile_id=profile.id
+                        row=verdict.row_index,
+                        source_row=verdict.source_row,
+                        issues=verdict.issues,
+                        email=email,
+                        profile_id=profile.id,
                     )
                 )
                 continue
@@ -791,7 +920,13 @@ class ProfileImportManager:
             assert existing is not None
             self._apply_values(existing, verdict.person, fill_gaps_only=True)
             linked.append(
-                ProfileImportRowOutcome(row=verdict.row_index, email=email, profile_id=profile_id)
+                ProfileImportRowOutcome(
+                    row=verdict.row_index,
+                    source_row=verdict.source_row,
+                    issues=verdict.issues,
+                    email=email,
+                    profile_id=profile_id,
+                )
             )
 
         # ÉCRITURE GROUPÉE : les fiches partent par paquets d'INSERT —
@@ -905,6 +1040,8 @@ class CompanyImportRequest(BaseModel):
     filename: str | None = None
     mapping: dict[str, str] = Field(min_length=1)
     corrections: list[ImportCorrection] = Field(default_factory=list)
+    value_mappings: list[ImportValueMapping] = Field(default_factory=list)
+    require_valid_values: bool = Field(default=False, strict=True)
     # Création depuis la grille — côté société le « champ » est une CLÉ DE
     # SACK (pas de référentiel société au MVP, écart nommé) ; coercé par
     # le kind, rangé en misc.
@@ -917,6 +1054,7 @@ class CompanyImportPreviewRequest(CompanyImportRequest):
 
 
 class CompanyImportRowOutcome(BaseModel):
+    source_row: int | None = None
     row: int
     name: str | None = None
     company_profile_id: uuid.UUID | None = None
@@ -933,6 +1071,7 @@ class CompanyImportReport(BaseModel):
 
 
 class CompanyImportPreviewResponse(BaseModel):
+    value_problems: list[ImportValueProblem] = Field(default_factory=list)
     total_rows: int
     summary: ImportPreviewSummary
     rows: list[RowVerdict]
@@ -1032,6 +1171,10 @@ class CompanyImportManager:
             # Dédup : le slug retombe sur une cible connue → on LIE.
             creation_plan[spec.column] = (slug, spec.label, spec.kind, slug not in valid_targets)
         self._creation_plan = creation_plan
+        value_rules = _value_mapping_index(
+            body.value_mappings,
+            set(body.mapping.values()) | {item[0] for item in creation_plan.values()},
+        )
 
         corrections_by_row: dict[int, list[ImportCorrection]] = {}
         for correction in body.corrections:
@@ -1047,12 +1190,13 @@ class CompanyImportManager:
         # est inoffensif, un nom manquant fausserait le verdict.
         name_columns = [c for c, t in body.mapping.items() if t == "name"]
         candidate_names: set[str] = set()
-        for index, row in enumerate(parsed.rows, start=1):
+        for index, row in parsed.numbered_rows():
             cell = ""
             for column in name_columns:
                 raw_cell = (row.get(column) or "").strip()
                 if raw_cell:
                     cell = raw_cell
+            cell = value_rules.get(("name", cell), cell)
             for correction in corrections_by_row.get(index, ()):
                 if correction.target == "name":
                     cell = correction.value.strip()
@@ -1062,7 +1206,7 @@ class CompanyImportManager:
 
         verdicts: list[RowVerdict] = []
         seen_names: dict[str, int] = {}
-        for index, row in enumerate(parsed.rows, start=1):
+        for index, row in parsed.numbered_rows():
             issues: list[RowIssue] = []
             values: dict[str, str] = {}
             for column, target in body.mapping.items():
@@ -1082,6 +1226,14 @@ class CompanyImportManager:
                             code="street_number_orphan",
                         )
                     )
+            source_values = dict(values)
+            source_values.update(
+                {
+                    key: (row.get(col) or "").strip()
+                    for col, (key, _l, _k, _c) in creation_plan.items()
+                }
+            )
+            values = {key: value_rules.get((key, cell), cell) for key, cell in values.items()}
             for correction in corrections_by_row.get(index, ()):
                 if correction.target not in valid_targets:
                     issues.append(RowIssue(column="(correction)", code="unknown_target"))
@@ -1098,9 +1250,10 @@ class CompanyImportManager:
                     values.setdefault(canonical, values.pop(alias))
             if "country" in values:
                 from src.custom_fields.custom_fields_validation import _coerce_country
+                from src.imports.value_resolution import country_value
 
                 try:
-                    values["country"] = _coerce_country(values["country"])
+                    values["country"] = _coerce_country(country_value(values["country"]))
                 except ValueError:
                     issues.append(
                         RowIssue(
@@ -1139,6 +1292,7 @@ class CompanyImportManager:
 
             for column, (key, _label, kind, _to_create) in creation_plan.items():
                 cell = (row.get(column) or "").strip()
+                cell = value_rules.get((key, cell), cell)
                 if not cell:
                     continue
                 try:
@@ -1206,6 +1360,8 @@ class CompanyImportManager:
                 verdicts.append(
                     RowVerdict(
                         row_index=index,
+                        source_row=parsed.source_rows.get(index),
+                        source_values=source_values,
                         status="ignore",
                         reason="no_name",
                         person=person,
@@ -1219,6 +1375,8 @@ class CompanyImportManager:
                 verdicts.append(
                     RowVerdict(
                         row_index=index,
+                        source_row=parsed.source_rows.get(index),
+                        source_values=source_values,
                         status="link",
                         profile_id=existing_id,
                         person=person,
@@ -1228,13 +1386,34 @@ class CompanyImportManager:
                 continue
             if key in seen_names:
                 verdicts.append(
-                    RowVerdict(row_index=index, status="link", person=person, issues=issues)
+                    RowVerdict(
+                        row_index=index,
+                        source_row=parsed.source_rows.get(index),
+                        source_values=source_values,
+                        status="link",
+                        person=person,
+                        issues=issues,
+                    )
                 )
                 continue
             seen_names[key] = index
             verdicts.append(
-                RowVerdict(row_index=index, status="create", person=person, issues=issues)
+                RowVerdict(
+                    row_index=index,
+                    source_row=parsed.source_rows.get(index),
+                    source_values=source_values,
+                    status="create",
+                    person=person,
+                    issues=issues,
+                )
             )
+        for verdict in verdicts:
+            for issue in verdict.issues:
+                issue.target = next(
+                    (key for key, column in columns_by_target.items() if column == issue.column),
+                    None,
+                )
+                issue.source_value = verdict.source_values.get(issue.target or "")
         return verdicts
 
     async def preview(
@@ -1248,6 +1427,7 @@ class CompanyImportManager:
             rows=verdicts[start : start + body.page_size],
             page=body.page,
             page_size=body.page_size,
+            value_problems=_value_problems(verdicts),
             fields_created=[
                 label
                 for _k, label, _kd, to_create in getattr(self, "_creation_plan", {}).values()
@@ -1261,6 +1441,7 @@ class CompanyImportManager:
         from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 
         verdicts = await self._analyze(agent, body)
+        _require_valid_values(verdicts, body.require_valid_values)
         fields_created = [
             label
             for _k, label, _kd, to_create in getattr(self, "_creation_plan", {}).values()
@@ -1314,7 +1495,12 @@ class CompanyImportManager:
             key = name.strip().lower() if name else None
             if verdict.status == "ignore":
                 ignored.append(
-                    CompanyImportRowOutcome(row=verdict.row_index, name=name, reason=verdict.reason)
+                    CompanyImportRowOutcome(
+                        row=verdict.row_index,
+                        source_row=verdict.source_row,
+                        name=name,
+                        reason=verdict.reason,
+                    )
                 )
                 continue
             if verdict.status == "create":
@@ -1334,14 +1520,22 @@ class CompanyImportManager:
                 created_by_name[key] = company.id
                 created.append(
                     CompanyImportRowOutcome(
-                        row=verdict.row_index, name=name, company_profile_id=company.id
+                        row=verdict.row_index,
+                        source_row=verdict.source_row,
+                        name=name,
+                        company_profile_id=company.id,
                     )
                 )
                 continue
             company_id = verdict.profile_id or (created_by_name.get(key) if key else None)
             if company_id is None:
                 ignored.append(
-                    CompanyImportRowOutcome(row=verdict.row_index, name=name, reason="no_name")
+                    CompanyImportRowOutcome(
+                        row=verdict.row_index,
+                        source_row=verdict.source_row,
+                        name=name,
+                        reason="no_name",
+                    )
                 )
                 continue
             existing_company = existing_by_id.get(company_id) or pending_by_id.get(company_id)
@@ -1349,7 +1543,10 @@ class CompanyImportManager:
             self._fill_gaps(existing_company, verdict.person)
             linked.append(
                 CompanyImportRowOutcome(
-                    row=verdict.row_index, name=name, company_profile_id=company_id
+                    row=verdict.row_index,
+                    source_row=verdict.source_row,
+                    name=name,
+                    company_profile_id=company_id,
                 )
             )
         # ÉCRITURE GROUPÉE : paquets d'INSERT, UNE transaction (même

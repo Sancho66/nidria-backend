@@ -305,6 +305,7 @@ def assemble_address(parts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     = retiré + signalé, le reste s'assemble — la règle absolue à la
     granularité du sous-champ. Retourne (objet, sous-champs en échec)."""
     from src.custom_fields.custom_fields_validation import _coerce_country
+    from src.imports.value_resolution import country_value
 
     out: dict[str, str] = {}
     failed: list[str] = []
@@ -314,7 +315,7 @@ def assemble_address(parts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
             continue
         if sub == "country":
             try:
-                out["country"] = _coerce_country(value)
+                out["country"] = _coerce_country(country_value(value))
             except ValueError:
                 failed.append(sub)
             continue

@@ -14,8 +14,11 @@ oversized file is 413, non-UTF-8 is 422.
 
 import csv
 import io
+import re
+import unicodedata
 import zipfile
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 import openpyxl
@@ -33,6 +36,19 @@ MAX_CSV_BYTES = 5 * 1024 * 1024
 class ParsedCsv:
     headers: list[str]
     rows: list[dict[str, str]]
+    row_indices: list[int] = field(default_factory=list, compare=False)
+    source_rows: dict[int, int] = field(default_factory=dict, compare=False)
+
+    def numbered_rows(self) -> Iterator[tuple[int, dict[str, str]]]:
+        """Keep correction references stable when blank records are skipped."""
+        return iter(zip(self.row_indices or range(1, len(self.rows) + 1), self.rows, strict=True))
+
+
+def is_contact_header(value: str) -> bool:
+    """Exclude unnamed columns and explicitly labelled worksheet legends."""
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+    return bool(normalized) and re.match(r"^(?:legende|legend)\s*:", normalized) is None
 
 
 def _decode(content: bytes | str) -> str:
@@ -77,7 +93,8 @@ def parse_csv(
 
     headers = [cell.strip() for cell in records[0]]
     rows: list[dict[str, str]] = []
-    for record in records[1:]:
+    row_indices: list[int] = []
+    for row_index, record in enumerate(records[1:], start=1):
         if not keep_empty_rows and all(cell.strip() == "" for cell in record):
             continue  # blank line (trailing newline, separator-only row)
         # Map by position; missing trailing cells → "", extra cells dropped.
@@ -87,7 +104,8 @@ def parse_csv(
                 for index, header in enumerate(headers)
             }
         )
-    return ParsedCsv(headers=headers, rows=rows)
+        row_indices.append(row_index)
+    return ParsedCsv(headers=headers, rows=rows, row_indices=row_indices)
 
 
 # --- XLSX (Excel) ---------------------------------------------------------------
@@ -162,18 +180,31 @@ def parse_xlsx(
         raise ValidationError(
             "The .xlsx file is empty or has no header row.", code="import.xlsx_empty"
         )
-    headers = [cell.strip() for cell in records[header_index]]
+    header_cells = [cell.strip() for cell in records[header_index]]
+    columns = [i for i, label in enumerate(header_cells) if is_contact_header(label)]
+    # A structured table is not a data boundary: adjacent named columns
+    # may contain contact values even when the Excel table stops earlier.
+    headers = [header_cells[i] for i in columns]
+    legend_columns = {
+        i for i, label in enumerate(header_cells) if label and not is_contact_header(label)
+    }
     rows: list[dict[str, str]] = []
-    for record in records[header_index + 1 :]:
-        if not keep_empty_rows and all(cell.strip() == "" for cell in record):
+    row_indices: list[int] = []
+    source_rows: dict[int, int] = {}
+    for row_index, record in enumerate(records[header_index + 1 :], start=1):
+        if not keep_empty_rows and all(
+            cell.strip() == "" for i, cell in enumerate(record) if i not in legend_columns
+        ):
             continue  # blank row
         rows.append(
             {
-                header: (record[index].strip() if index < len(record) else "")
-                for index, header in enumerate(headers)
+                header_cells[index]: (record[index].strip() if index < len(record) else "")
+                for index in columns
             }
         )
-    return ParsedCsv(headers=headers, rows=rows)
+        row_indices.append(row_index)
+        source_rows[row_index] = header_index + row_index + 1
+    return ParsedCsv(headers=headers, rows=rows, row_indices=row_indices, source_rows=source_rows)
 
 
 # --- unified entry point --------------------------------------------------------

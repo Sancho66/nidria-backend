@@ -64,8 +64,8 @@ async def test_identity_alternatives_blank_rows_and_counts(
     assert preview.json()["summary"] == {
         "create": 4,
         "link": 2,
-        "ignore": 2,
-        "ignore_reasons": {"missing_identity": 2},
+        "ignore": 1,
+        "ignore_reasons": {"missing_identity": 1},
         "create_with_email": 1,
         "create_without_email": 3,
     }
@@ -73,13 +73,12 @@ async def test_identity_alternatives_blank_rows_and_counts(
     result = await client.post("/imports/client-profiles", headers=headers, json=body)
     assert result.status_code == 200, result.text
     report = result.json()
-    assert report["total_rows"] == 8
+    assert report["total_rows"] == 7
     assert report["created_count"] == 4
     assert report["created_without_email"] == 3
     assert report["created_with_email"] == 1
     assert [row["row"] for row in report["created"]] == [1, 2, 6, 7]
     assert [(row["row"], row["reason"]) for row in report["ignored"]] == [
-        (3, "missing_identity"),
         (8, "missing_identity"),
     ]
     assert [row["profile_id"] for row in report["linked"]] == [
@@ -265,7 +264,9 @@ async def test_invalid_identifiers_and_unmapped_corrections_cannot_bypass_identi
     rows = preview.json()["rows"]
     assert [row["status"] for row in rows] == ["create", "ignore"]
     assert rows[1]["reason"] == "missing_identity"
-    assert rows[0]["issues"] == [{"column": "Email", "code": "invalid_value"}]
+    assert [{"column": issue["column"], "code": issue["code"]} for issue in rows[0]["issues"]] == [
+        {"column": "Email", "code": "invalid_value"}
+    ]
     imported = await client.post("/imports/client-profiles", headers=headers, json=body)
     assert imported.status_code == 200, imported.text
     assert imported.json()["created_without_email"] == 1
@@ -281,9 +282,10 @@ async def test_invalid_identifiers_and_unmapped_corrections_cannot_bypass_identi
     )
     assert corrected.status_code == 200, corrected.text
     assert corrected.json()["rows"][0]["reason"] == "missing_identity"
-    assert corrected.json()["rows"][0]["issues"] == [
-        {"column": "(correction)", "code": "unmapped_identifier"}
-    ]
+    assert [
+        {"column": issue["column"], "code": issue["code"]}
+        for issue in corrected.json()["rows"][0]["issues"]
+    ] == [{"column": "(correction)", "code": "unmapped_identifier"}]
 
 
 async def test_same_file_dedup_uses_selected_key_without_falling_back(
