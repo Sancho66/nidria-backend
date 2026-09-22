@@ -274,7 +274,15 @@ async def test_export_keeps_newlines_and_the_csv_imports_back_verbatim(
     )
     assert preview.status_code == 200, preview.text
     verdict = preview.json()["rows"][0]
-    assert verdict["issues"] == [{"column": "Notes du dossier", "code": "invalid_value"}]
+    assert verdict["issues"] == [
+        {
+            "column": "Notes du dossier",
+            "code": "invalid_value",
+            "target": "notes_dossier",
+            "source_value": "z" * (LONG_TEXT_MAX_LENGTH + 1),
+            "options": [],
+        }
+    ]
     assert "notes_dossier" not in verdict["person"]
     refused = await client.post(
         "/imports/client-profiles",
