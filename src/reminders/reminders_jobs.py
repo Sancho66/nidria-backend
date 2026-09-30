@@ -55,6 +55,7 @@ from src.core.config import get_settings
 from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import (
     auto_reminder_body,
+    provider_fallback_name,
     reminder_digest_email,
     reminder_email,
     reminder_escalation_email,
@@ -180,7 +181,12 @@ def _recipient(
     owner = _owner_delivery(db, reminder.case_id, agency)
     if owner is None:
         return None
-    return owner[0], owner[1], (contact.name if contact is not None else "ce prestataire")
+    # The owner's language names the missing provider (never a French literal).
+    return (
+        owner[0],
+        owner[1],
+        (contact.name if contact is not None else provider_fallback_name(owner[1])),
+    )
 
 
 def _done_step_ids(db: Session, rows: Sequence[Any]) -> set[uuid.UUID]:

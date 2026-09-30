@@ -1,10 +1,15 @@
-"""Transactional email templates — French, one builder per email.
+"""Transactional email templates — the seven SUPPORTED_LANGUAGES, one builder
+per email.
 
 Each builder returns an EmailContent(subject, text, html): HTML for the
 clients that render it, plain text as the multipart fallback. The HTML
 is email-safe (tables + inline styles, max 600px, no external CSS, no
 JS, no hosted images — the header is styled text). Links are ALWAYS
 built by the callers on settings.frontend_url, never hardcoded here.
+
+Typography follows each language: the space before « : » is French only,
+quotes are « » (fr, with inner spaces), “ ” (en), «» (es, pt, it, ru) and
+„ ” (hu). A string that carries a count has its plural forms (`_plural`).
 """
 
 import html as html_lib
@@ -14,7 +19,7 @@ from dataclasses import dataclass
 from src.core.config import get_settings
 
 # Per-language chrome strings (BLOC NOTIF-2). The body strings live in each
-# builder's own {fr,en,es} catalog; these are the shared layout bits.
+# builder's own seven-language catalog; these are the shared layout bits.
 _FOOTER = {
     "fr": (
         "Cet email a été envoyé par Nidria. "
@@ -45,6 +50,52 @@ _COPY_PASTE = {
     "pt": "Ou copie e cole este link",
     "it": "Oppure copia e incolla questo link",
     "hu": "Vagy másolja be ezt a linket",
+}
+
+# The colon between a label and its link. The space before « : » is a FRENCH
+# rule (non-breaking in HTML); every other language glues the colon to the word.
+_COLON = {
+    "fr": {"text": " : ", "html": "&nbsp;: "},
+    "en": {"text": ": ", "html": ": "},
+    "es": {"text": ": ", "html": ": "},
+    "ru": {"text": ": ", "html": ": "},
+    "pt": {"text": ": ", "html": ": "},
+    "it": {"text": ": ", "html": ": "},
+    "hu": {"text": ": ", "html": ": "},
+}
+
+# Stand-ins for a name the caller could not read, in the recipient's language
+# — never a French literal in a Russian mail. `_PROVIDER_FALLBACK` fills the
+# escalation's `{name}` slot (see `provider_fallback_name`).
+_AGENCY_FALLBACK = {
+    "fr": "Votre agence",
+    "en": "Your agency",
+    "es": "Su agencia",
+    "ru": "Ваше агентство",
+    "pt": "A sua agência",
+    "it": "La tua agenzia",
+    # After the templates' « A(z) », « irodája » reads « Az irodája ».
+    "hu": "irodája",
+}
+
+_CLIENT_FALLBACK = {
+    "fr": "Votre client",
+    "en": "Your client",
+    "es": "Su cliente",
+    "ru": "Ваш клиент",
+    "pt": "O seu cliente",
+    "it": "Il tuo cliente",
+    "hu": "Az Ön ügyfele",
+}
+
+_PROVIDER_FALLBACK = {
+    "fr": "ce prestataire",
+    "en": "this provider",
+    "es": "este proveedor",
+    "ru": "этот поставщик",
+    "pt": "este prestador",
+    "it": "questo fornitore",
+    "hu": "ez a szolgáltató",
 }
 
 _HTML_LAYOUT = """\
@@ -103,7 +154,7 @@ font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none;">{label}</a>
 # so `show_links=False` drops it (onboarding mail, 13/08).
 _HTML_COPY_PASTE = """\
                 <p style="margin:0 0 24px;font-size:12px;line-height:1.6;color:#8a8a94;\
-word-break:break-all;">{copy_paste}&nbsp;: \
+word-break:break-all;">{copy_paste}{colon}\
 <a href="{url}" style="color:#3b3bd6;">{url}</a></p>
 """
 
@@ -139,6 +190,7 @@ def _render(
     show_links: bool = True,
 ) -> EmailContent:
     footer = _FOOTER.get(lang, _FOOTER["fr"])
+    colon = _pick(_COLON, lang)
     action_blocks = ""
     if body_text is not None:
         escaped = html_lib.escape(body_text).replace("\n", "<br>")
@@ -154,7 +206,9 @@ def _render(
         )
         if show_links:
             block += _HTML_COPY_PASTE.format(
-                copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]), url=escaped_url
+                copy_paste=_COPY_PASTE.get(lang, _COPY_PASTE["fr"]),
+                colon=colon["html"],
+                url=escaped_url,
             )
         return block
 
@@ -180,9 +234,9 @@ def _render(
     if body_text is not None:
         text_parts += ["", body_text]
     if button_label is not None and button_url is not None:
-        text_parts += ["", f"{button_label} : {button_url}"]
+        text_parts += ["", f"{button_label}{colon['text']}{button_url}"]
     for extra_label, extra_url in extra_buttons:
-        text_parts += ["", f"{extra_label} : {extra_url}"]
+        text_parts += ["", f"{extra_label}{colon['text']}{extra_url}"]
     if validity is not None:
         text_parts += ["", validity]
     text_parts += ["", "--", footer]
@@ -191,7 +245,7 @@ def _render(
 
 # Agent-facing templates — rendered in the AGENT's language (agency default,
 # resolved by resolve_notification_lang_agent). Historically FR-only: an
-# Italian agent received French. Now six languages, strict parity.
+# Italian agent received French. Now seven languages, strict parity.
 _PASSWORD_RESET = {
     "fr": {
         "subject": "Nidria : Réinitialisez votre mot de passe",
@@ -202,6 +256,7 @@ _PASSWORD_RESET = {
         "button": "Choisir un nouveau mot de passe",
         "hours": "Ce lien expire dans {n} heures.",
         "minutes": "Ce lien expire dans {n} minutes.",
+        "minutes_one": "Ce lien expire dans {n} minute.",
     },
     "en": {
         "subject": "Nidria: Reset your password",
@@ -210,6 +265,7 @@ _PASSWORD_RESET = {
         "button": "Choose a new password",
         "hours": "This link expires in {n} hours.",
         "minutes": "This link expires in {n} minutes.",
+        "minutes_one": "This link expires in {n} minute.",
     },
     "es": {
         "subject": "Nidria: Restablezca su contraseña",
@@ -218,6 +274,7 @@ _PASSWORD_RESET = {
         "button": "Elegir una nueva contraseña",
         "hours": "Este enlace caduca en {n} horas.",
         "minutes": "Este enlace caduca en {n} minutos.",
+        "minutes_one": "Este enlace caduca en {n} minuto.",
     },
     "ru": {
         "subject": "Nidria: Сбросьте пароль",
@@ -225,7 +282,11 @@ _PASSWORD_RESET = {
         "intro": "Для вашей учётной записи Nidria запрошен сброс пароля.",
         "button": "Выбрать новый пароль",
         "hours": "Эта ссылка действительна {n} часов.",
+        "hours_one": "Эта ссылка действительна {n} час.",
+        "hours_few": "Эта ссылка действительна {n} часа.",
         "minutes": "Эта ссылка действительна {n} минут.",
+        "minutes_one": "Эта ссылка действительна {n} минуту.",
+        "minutes_few": "Эта ссылка действительна {n} минуты.",
     },
     "pt": {
         "subject": "Nidria: Redefina a sua palavra-passe",
@@ -234,6 +295,7 @@ _PASSWORD_RESET = {
         "button": "Escolher uma nova palavra-passe",
         "hours": "Este link expira em {n} horas.",
         "minutes": "Este link expira em {n} minutos.",
+        "minutes_one": "Este link expira em {n} minuto.",
     },
     "it": {
         "subject": "Nidria: Reimposta la password",
@@ -242,6 +304,7 @@ _PASSWORD_RESET = {
         "button": "Scegliere una nuova password",
         "hours": "Questo link scade tra {n} ore.",
         "minutes": "Questo link scade tra {n} minuti.",
+        "minutes_one": "Questo link scade tra {n} minuto.",
     },
     "hu": {
         "subject": "Nidria: Állítsa vissza jelszavát",
@@ -250,6 +313,7 @@ _PASSWORD_RESET = {
         "button": "Új jelszó megadása",
         "hours": "Ez a link {n} óra múlva lejár.",
         "minutes": "Ez a link {n} perc múlva lejár.",
+        "minutes_one": "Ez a link {n} perc múlva lejár.",
     },
 }
 
@@ -264,6 +328,7 @@ _AGENT_INVITATION = {
         ),
         "button": "Accepter l'invitation",
         "expires": "Ce lien expire dans {days} jours.",
+        "expires_one": "Ce lien expire dans {days} jour.",
     },
     "en": {
         "subject": "Nidria: You are invited to join {agency}",
@@ -271,6 +336,7 @@ _AGENT_INVITATION = {
         "intro": ("{agency} invites you to join its workspace on Nidria to manage its cases."),
         "button": "Accept the invitation",
         "expires": "This link expires in {days} days.",
+        "expires_one": "This link expires in {days} day.",
     },
     "es": {
         "subject": "Nidria: Le invitan a unirse a {agency}",
@@ -281,6 +347,7 @@ _AGENT_INVITATION = {
         ),
         "button": "Aceptar la invitación",
         "expires": "Este enlace caduca en {days} días.",
+        "expires_one": "Este enlace caduca en {days} día.",
     },
     "ru": {
         "subject": "Nidria: Вас приглашают присоединиться к {agency}",
@@ -291,6 +358,8 @@ _AGENT_INVITATION = {
         ),
         "button": "Принять приглашение",
         "expires": "Эта ссылка действительна {days} дней.",
+        "expires_one": "Эта ссылка действительна {days} день.",
+        "expires_few": "Эта ссылка действительна {days} дня.",
     },
     "pt": {
         "subject": "Nidria: Foi convidado(a) para se juntar a {agency}",
@@ -301,6 +370,7 @@ _AGENT_INVITATION = {
         ),
         "button": "Aceitar o convite",
         "expires": "Este link expira em {days} dias.",
+        "expires_one": "Este link expira em {days} dia.",
     },
     "it": {
         "subject": "Nidria: Sei invitato(a) a unirti a {agency}",
@@ -311,6 +381,7 @@ _AGENT_INVITATION = {
         ),
         "button": "Accettare l'invito",
         "expires": "Questo link scade tra {days} giorni.",
+        "expires_one": "Questo link scade tra {days} giorno.",
     },
     "hu": {
         "subject": "Nidria: Meghívást kapott a(z) {agency} csapatába",
@@ -318,6 +389,7 @@ _AGENT_INVITATION = {
         "intro": ("A(z) {agency} meghívja Önt a Nidria munkaterületére az ügyek kezeléséhez."),
         "button": "Meghívás elfogadása",
         "expires": "Ez a link {days} nap múlva lejár.",
+        "expires_one": "Ez a link {days} nap múlva lejár.",
     },
 }
 
@@ -369,9 +441,10 @@ def password_reset_email(
     hours ("24 heures", onboarding); the classic 60-minute reset in minutes."""
     s = _pick(_PASSWORD_RESET, lang)
     if expires_minutes >= 120 and expires_minutes % 60 == 0:
-        validity = s["hours"].format(n=expires_minutes // 60)
+        hours = expires_minutes // 60
+        validity = _plural(s, "hours", lang, hours).format(n=hours)
     else:
-        validity = s["minutes"].format(n=expires_minutes)
+        validity = _plural(s, "minutes", lang, expires_minutes).format(n=expires_minutes)
     return _render(
         subject=s["subject"],
         title=s["title"],
@@ -395,7 +468,7 @@ def agent_invitation_email(
         intro=s["intro"].format(agency=agency_name),
         button_label=s["button"],
         button_url=link,
-        validity=s["expires"].format(days=expires_days),
+        validity=_plural(s, "expires", lang, expires_days).format(days=expires_days),
         lang=lang,
     )
 
@@ -433,6 +506,7 @@ _CASE_ACTIVATION = {
         ),
         "button": "Activer mon espace",
         "expires": "Ce lien expire dans {days} jours.",
+        "expires_one": "Ce lien expire dans {days} jour.",
     },
     "en": {
         "subject": "{agency} opened a tracking space for you",
@@ -443,6 +517,7 @@ _CASE_ACTIVATION = {
         ),
         "button": "Activate my space",
         "expires": "This link expires in {days} days.",
+        "expires_one": "This link expires in {days} day.",
     },
     "es": {
         "subject": "{agency} le abrió un espacio de seguimiento",
@@ -453,6 +528,7 @@ _CASE_ACTIVATION = {
         ),
         "button": "Activar mi espacio",
         "expires": "Este enlace caduca en {days} días.",
+        "expires_one": "Este enlace caduca en {days} día.",
     },
     "ru": {
         "subject": "{agency} открыло для вас пространство отслеживания",
@@ -463,6 +539,8 @@ _CASE_ACTIVATION = {
         ),
         "button": "Активировать кабинет",
         "expires": "Эта ссылка действительна {days} дней.",
+        "expires_one": "Эта ссылка действительна {days} день.",
+        "expires_few": "Эта ссылка действительна {days} дня.",
     },
     "pt": {
         "subject": "{agency} abriu-lhe um espaço de acompanhamento",
@@ -473,6 +551,7 @@ _CASE_ACTIVATION = {
         ),
         "button": "Ativar o meu espaço",
         "expires": "Este link expira em {days} dias.",
+        "expires_one": "Este link expira em {days} dia.",
     },
     "it": {
         "subject": "{agency} ti ha aperto uno spazio di monitoraggio",
@@ -483,6 +562,7 @@ _CASE_ACTIVATION = {
         ),
         "button": "Attivare il mio spazio",
         "expires": "Questo link scade tra {days} giorni.",
+        "expires_one": "Questo link scade tra {days} giorno.",
     },
     "hu": {
         "subject": "A(z) {agency} követési felületet nyitott Önnek",
@@ -493,6 +573,7 @@ _CASE_ACTIVATION = {
         ),
         "button": "Felületem aktiválása",
         "expires": "Ez a link {days} nap múlva lejár.",
+        "expires_one": "Ez a link {days} nap múlva lejár.",
     },
 }
 
@@ -568,16 +649,19 @@ _MEMBER_PENDING = {
 
 def _pending_block(pending_items: list[tuple[str, int]] | None, lang: str) -> str | None:
     """body_text for the member invitation: one intro line + the kickoff's
-    per-step line format (shared wording, one plural style per language).
+    per-step line format (shared wording, plural forms per language).
     None when nothing is pending — the mail stays byte-identical."""
     if not pending_items:
         return None
-    line = _pick(_JOURNEY_KICKOFF, lang)["line"]
+    kickoff = _pick(_JOURNEY_KICKOFF, lang)
     intro = _pick(_MEMBER_PENDING, lang)["intro"]
     return (
         intro
         + "\n"
-        + "\n".join(line.format(step=step, count=count) for step, count in pending_items)
+        + "\n".join(
+            _plural(kickoff, "line", lang, count).format(step=step, count=count)
+            for step, count in pending_items
+        )
     )
 
 
@@ -595,6 +679,7 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Activer mon espace",
         "expires": "Ce lien expire dans {days} jours.",
+        "expires_one": "Ce lien expire dans {days} jour.",
     },
     "en": {
         "subject": "{agency}: your space is still waiting for you",
@@ -605,6 +690,7 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Activate my space",
         "expires": "This link expires in {days} days.",
+        "expires_one": "This link expires in {days} day.",
     },
     "es": {
         "subject": "{agency}: su espacio sigue esperándole",
@@ -615,6 +701,7 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Activar mi espacio",
         "expires": "Este enlace expira en {days} días.",
+        "expires_one": "Este enlace expira en {days} día.",
     },
     "ru": {
         "subject": "{agency}: ваше пространство всё ещё ждёт вас",
@@ -626,6 +713,8 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Активировать пространство",
         "expires": "Ссылка действует ещё {days} дней.",
+        "expires_one": "Ссылка действует ещё {days} день.",
+        "expires_few": "Ссылка действует ещё {days} дня.",
     },
     "pt": {
         "subject": "{agency}: o seu espaço continua à sua espera",
@@ -636,6 +725,7 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Ativar o meu espaço",
         "expires": "Este link expira dentro de {days} dias.",
+        "expires_one": "Este link expira dentro de {days} dia.",
     },
     "it": {
         "subject": "{agency}: il tuo spazio ti aspetta ancora",
@@ -646,6 +736,7 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Attiva il mio spazio",
         "expires": "Questo link scade tra {days} giorni.",
+        "expires_one": "Questo link scade tra {days} giorno.",
     },
     "hu": {
         "subject": "{agency}: a felülete még várja Önt",
@@ -656,6 +747,7 @@ _ACTIVATION_REMINDER = {
         ),
         "button": "Felület aktiválása",
         "expires": "Ez a link {days} nap múlva lejár.",
+        "expires_one": "Ez a link {days} nap múlva lejár.",
     },
 }
 
@@ -676,13 +768,13 @@ def activation_reminder_email(
         intro=s["intro"].format(agency=agency_name, dossier=_dossier(journey_name, lang)),
         button_label=s["button"],
         button_url=link,
-        validity=s["expires"].format(days=days_left),
+        validity=_plural(s, "expires", lang, days_left).format(days=days_left),
         lang=lang,
     )
 
 
 def expat_activation_email(
-    agency_name: str,
+    agency_name: str | None,
     link: str,
     expires_days: int,
     journey_name: str | None = None,
@@ -695,8 +787,10 @@ def expat_activation_email(
     intro carries the journey name (resolved) or the neutral fallback.
     `pending_items` ((step name, count) per step): the MEMBER variant lists
     what is already expected from THIS person — absent for the principal
-    (the kickoff mail covers them) and when nothing is pending."""
+    (the kickoff mail covers them) and when nothing is pending. An unknown
+    agency (None) is named « your agency » in `lang`."""
     s = _pick(_CASE_ACTIVATION, lang)
+    agency_name = _agency_or_fallback(agency_name, lang)
     return _render(
         subject=s["subject"].format(agency=agency_name),
         title=s["title"].format(agency=agency_name),
@@ -704,14 +798,14 @@ def expat_activation_email(
         body_text=_pending_block(pending_items, lang),
         button_label=_pick(_CLIENT_ENTRY, lang)["activate"],
         button_url=link,
-        validity=s["expires"].format(days=expires_days),
+        validity=_plural(s, "expires", lang, expires_days).format(days=expires_days),
         extra_buttons=[(_pick(_CLIENT_ENTRY, lang)["login"], login_link)] if login_link else (),
         lang=lang,
     )
 
 
 def new_case_email(
-    agency_name: str,
+    agency_name: str | None,
     login_link: str,
     journey_name: str | None = None,
     lang: str = "fr",
@@ -721,6 +815,7 @@ def new_case_email(
     language, carrying the journey name or the neutral fallback. Same
     optional `pending_items` block as the activation variant."""
     s = _pick(_NEW_CASE, lang)
+    agency_name = _agency_or_fallback(agency_name, lang)
     return _render(
         subject=s["subject"].format(agency=agency_name),
         title=s["title"].format(agency=agency_name),
@@ -852,18 +947,52 @@ def reminder_escalation_email(
     return reminder_email(agency_name, f"{prefix}\n\n{message_body}", None, lang)
 
 
+def provider_fallback_name(lang: str) -> str:
+    """The escalation's `{name}` for a provider whose record cannot be read,
+    in the language of the agent who receives it."""
+    return _PROVIDER_FALLBACK.get(lang, _PROVIDER_FALLBACK["fr"])
+
+
 # Auto follow-up (J+N) body — SYSTEM-authored (not the agency's free text), so
 # it MUST reach the client in THEIR language, resolved like every other
-# notification. Same message, six languages, strict parity: a step has not
+# notification. Same message, seven languages, strict parity: a step has not
 # progressed for N days. `step` is the (agency-authored) step name, a variable.
+# N is an agency setting (per-journey thresholds): 1 and 21 happen, hence the
+# plural forms.
 _AUTO_REMINDER_BODY = {
-    "fr": "Relance automatique : l'étape « {step} » n'a pas progressé depuis {days} jours.",
-    "en": "Automatic follow-up: the step “{step}” has not progressed for {days} days.",
-    "es": "Recordatorio automático: la etapa «{step}» no ha avanzado desde hace {days} días.",
-    "ru": "Автоматическое напоминание: этап «{step}» не продвигался {days} дней.",
-    "pt": "Lembrete automático: a etapa «{step}» não avança há {days} dias.",
-    "it": "Promemoria automatico: la fase «{step}» non è avanzata da {days} giorni.",
-    "hu": "Automatikus emlékeztető: a(z) „{step}” lépés {days} napja nem haladt előre.",
+    "fr": {
+        "body": "Relance automatique : l'étape « {step} » n'a pas progressé depuis {days} jours.",
+        "body_one": (
+            "Relance automatique : l'étape « {step} » n'a pas progressé depuis {days} jour."
+        ),
+    },
+    "en": {
+        "body": "Automatic follow-up: the step “{step}” has not progressed for {days} days.",
+        "body_one": "Automatic follow-up: the step “{step}” has not progressed for {days} day.",
+    },
+    "es": {
+        "body": "Recordatorio automático: la etapa «{step}» no ha avanzado desde hace {days} días.",
+        "body_one": (
+            "Recordatorio automático: la etapa «{step}» no ha avanzado desde hace {days} día."
+        ),
+    },
+    "ru": {
+        "body": "Автоматическое напоминание: этап «{step}» не продвигался {days} дней.",
+        "body_one": "Автоматическое напоминание: этап «{step}» не продвигался {days} день.",
+        "body_few": "Автоматическое напоминание: этап «{step}» не продвигался {days} дня.",
+    },
+    "pt": {
+        "body": "Lembrete automático: a etapa «{step}» não avança há {days} dias.",
+        "body_one": "Lembrete automático: a etapa «{step}» não avança há {days} dia.",
+    },
+    "it": {
+        "body": "Promemoria automatico: la fase «{step}» non è avanzata da {days} giorni.",
+        "body_one": "Promemoria automatico: la fase «{step}» non è avanzata da {days} giorno.",
+    },
+    "hu": {
+        "body": "Automatikus emlékeztető: a(z) „{step}” lépés {days} napja nem haladt előre.",
+        "body_one": "Automatikus emlékeztető: a(z) „{step}” lépés {days} napja nem haladt előre.",
+    },
 }
 
 
@@ -871,8 +1000,8 @@ def auto_reminder_body(step_name: str, days: int, lang: str = "fr") -> str:
     """The stored body of an auto follow-up reminder, in the recipient
     (client) language. Kept as plain text — it flows through the same
     reminder_email dispatch (chrome localized to the same lang)."""
-    template = _AUTO_REMINDER_BODY.get(lang, _AUTO_REMINDER_BODY["fr"])
-    return template.format(step=step_name, days=days)
+    s = _pick(_AUTO_REMINDER_BODY, lang)
+    return _plural(s, "body", lang, days).format(step=step_name, days=days)
 
 
 # GROUPED reminders (lot 13/08). When several AUTOMATIC follow-ups of the same
@@ -918,13 +1047,43 @@ def _pick(catalog: dict[str, dict[str, str]], lang: str) -> dict[str, str]:
     return catalog.get(lang, catalog["fr"])
 
 
+def _plural_category(lang: str, n: int) -> str:
+    """CLDR cardinal plural category of a non-negative integer in `lang`.
+
+    ru: one (1, 21, 31…), few (2–4, 22–24…), many (0, 5–20, 25–30…).
+    fr: one for 0 and 1. The Portuguese copy is European (pt-PT): one for 1
+    only, like en, es and it. hu has one/other too, but the noun stays
+    singular after a numeral: its `_one` strings repeat the general form."""
+    if lang == "ru":
+        if n % 10 == 1 and n % 100 != 11:
+            return "one"
+        if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+            return "few"
+        return "many"
+    if lang == "fr":
+        return "one" if n in (0, 1) else "other"
+    return "one" if n == 1 else "other"
+
+
+def _plural(strings: dict[str, str], key: str, lang: str, n: int) -> str:
+    """`strings[key]` in the form the count `n` calls for: `key_one` /
+    `key_few` when the language carries that form, else `key` itself — the
+    general form (« other », or « many » in Russian)."""
+    return strings.get(f"{key}_{_plural_category(lang, n)}", strings[key])
+
+
+def _agency_or_fallback(agency_name: str | None, lang: str) -> str:
+    """The agency's name, or « your agency » in `lang` when it is unknown."""
+    return agency_name or _AGENCY_FALLBACK.get(lang, _AGENCY_FALLBACK["fr"])
+
+
 # Each catalog: lang → {subject, title, intro (named placeholders), button}.
-# The SAME placeholders appear in the 3 languages (a missing one would silently
+# The SAME placeholders appear in the 7 languages (a missing one would silently
 # drop a variable — guarded by the render tests). step_name arrives already
 # resolved in the recipient language.
 _REQUIREMENT_REQUEST = {
     "fr": {
-        "subject": "Nidria : De nouvelles informations sont attendues",
+        "subject": "De nouvelles informations sont attendues",
         "title": "De nouvelles informations sont attendues",
         "intro": (
             "{agency} a besoin d'informations ou de documents pour l'étape « {step} » de votre "
@@ -933,7 +1092,7 @@ _REQUIREMENT_REQUEST = {
         "button": "Compléter mon dossier",
     },
     "en": {
-        "subject": "Nidria: New information is required",
+        "subject": "New information is required",
         "title": "New information is required",
         "intro": (
             "{agency} needs information or documents for the step “{step}” of your case. Log in "
@@ -942,7 +1101,7 @@ _REQUIREMENT_REQUEST = {
         "button": "Complete my case",
     },
     "es": {
-        "subject": "Nidria: Se requiere nueva información",
+        "subject": "Se requiere nueva información",
         "title": "Se requiere nueva información",
         "intro": (
             "{agency} necesita información o documentos para la etapa «{step}» de su expediente. "
@@ -951,7 +1110,7 @@ _REQUIREMENT_REQUEST = {
         "button": "Completar mi expediente",
     },
     "ru": {
-        "subject": "Nidria: Ожидается новая информация",
+        "subject": "Ожидается новая информация",
         "title": "Ожидается новая информация",
         "intro": (
             "{agency} требуются сведения или документы для этапа «{step}» вашего дела. Войдите в "
@@ -960,7 +1119,7 @@ _REQUIREMENT_REQUEST = {
         "button": "Заполнить моё дело",
     },
     "pt": {
-        "subject": "Nidria: São necessárias novas informações",
+        "subject": "São necessárias novas informações",
         "title": "São necessárias novas informações",
         "intro": (
             "{agency} precisa de informações ou documentos para a etapa «{step}» do seu processo. "
@@ -969,7 +1128,7 @@ _REQUIREMENT_REQUEST = {
         "button": "Completar o meu processo",
     },
     "it": {
-        "subject": "Nidria: Sono richieste nuove informazioni",
+        "subject": "Sono richieste nuove informazioni",
         "title": "Sono richieste nuove informazioni",
         "intro": (
             "{agency} ha bisogno di informazioni o documenti per la fase «{step}» della tua "
@@ -978,7 +1137,7 @@ _REQUIREMENT_REQUEST = {
         "button": "Completare la mia pratica",
     },
     "hu": {
-        "subject": "Nidria: Új információkat várunk Öntől",
+        "subject": "Új információkat várunk Öntől",
         "title": "Új információkat várunk Öntől",
         "intro": (
             "A(z) {agency} információkat vagy dokumentumokat kér az ügye „{step}” "
@@ -990,7 +1149,7 @@ _REQUIREMENT_REQUEST = {
 
 _STEP_REOPENED = {
     "fr": {
-        "subject": "Nidria : Votre agence a besoin de précisions",
+        "subject": "Votre agence a besoin de précisions",
         "title": "Votre agence a besoin de précisions",
         "intro": (
             "{agency} a rouvert l'étape « {step} » de votre dossier et a besoin de précisions ou "
@@ -999,7 +1158,7 @@ _STEP_REOPENED = {
         "button": "Mettre à jour mon dossier",
     },
     "en": {
-        "subject": "Nidria: Your agency needs clarification",
+        "subject": "Your agency needs clarification",
         "title": "Your agency needs clarification",
         "intro": (
             "{agency} reopened the step “{step}” of your case and needs clarification or "
@@ -1008,7 +1167,7 @@ _STEP_REOPENED = {
         "button": "Update my case",
     },
     "es": {
-        "subject": "Nidria: Su agencia necesita aclaraciones",
+        "subject": "Su agencia necesita aclaraciones",
         "title": "Su agencia necesita aclaraciones",
         "intro": (
             "{agency} reabrió la etapa «{step}» de su expediente y necesita aclaraciones o "
@@ -1017,7 +1176,7 @@ _STEP_REOPENED = {
         "button": "Actualizar mi expediente",
     },
     "ru": {
-        "subject": "Nidria: Вашему агентству нужны уточнения",
+        "subject": "Вашему агентству нужны уточнения",
         "title": "Вашему агентству нужны уточнения",
         "intro": (
             "{agency} вновь открыло этап «{step}» вашего дела и нуждается в уточнениях или "
@@ -1026,7 +1185,7 @@ _STEP_REOPENED = {
         "button": "Обновить моё дело",
     },
     "pt": {
-        "subject": "Nidria: A sua agência precisa de esclarecimentos",
+        "subject": "A sua agência precisa de esclarecimentos",
         "title": "A sua agência precisa de esclarecimentos",
         "intro": (
             "{agency} reabriu a etapa «{step}» do seu processo e precisa de esclarecimentos ou de "
@@ -1035,7 +1194,7 @@ _STEP_REOPENED = {
         "button": "Atualizar o meu processo",
     },
     "it": {
-        "subject": "Nidria: La tua agenzia ha bisogno di chiarimenti",
+        "subject": "La tua agenzia ha bisogno di chiarimenti",
         "title": "La tua agenzia ha bisogno di chiarimenti",
         "intro": (
             "{agency} ha riaperto la fase «{step}» della tua pratica e ha bisogno di chiarimenti o "
@@ -1044,7 +1203,7 @@ _STEP_REOPENED = {
         "button": "Aggiornare la mia pratica",
     },
     "hu": {
-        "subject": "Nidria: Az irodájának pontosításokra van szüksége",
+        "subject": "Az irodájának pontosításokra van szüksége",
         "title": "Az irodájának pontosításokra van szüksége",
         "intro": (
             "A(z) {agency} újranyitotta az ügye „{step}” lépését, és pontosítást vagy "
@@ -1121,7 +1280,7 @@ _READY_TO_VALIDATE = {
 
 _NEW_COMMENT_CLIENT = {
     "fr": {
-        "subject": "Nidria : Nouveau message de votre conseiller",
+        "subject": "Nouveau message de votre conseiller",
         "title": "Vous avez un nouveau message",
         "intro": (
             "{author} de {agency} vous a écrit au sujet de l'étape « {step} ». Répondez depuis "
@@ -1130,7 +1289,7 @@ _NEW_COMMENT_CLIENT = {
         "button": "Voir la conversation",
     },
     "en": {
-        "subject": "Nidria: New message from your advisor",
+        "subject": "New message from your advisor",
         "title": "You have a new message",
         "intro": (
             "{author} from {agency} wrote to you about the step “{step}”. Reply from your space."
@@ -1138,7 +1297,7 @@ _NEW_COMMENT_CLIENT = {
         "button": "View the conversation",
     },
     "es": {
-        "subject": "Nidria: Nuevo mensaje de su asesor",
+        "subject": "Nuevo mensaje de su asesor",
         "title": "Tiene un nuevo mensaje",
         "intro": (
             "{author} de {agency} le escribió sobre la etapa «{step}». Responda desde su espacio."
@@ -1146,7 +1305,7 @@ _NEW_COMMENT_CLIENT = {
         "button": "Ver la conversación",
     },
     "ru": {
-        "subject": "Nidria: Новое сообщение от вашего консультанта",
+        "subject": "Новое сообщение от вашего консультанта",
         "title": "У вас новое сообщение",
         "intro": (
             "{author} из {agency} написал(а) вам по поводу этапа «{step}». Ответьте из своего "
@@ -1155,7 +1314,7 @@ _NEW_COMMENT_CLIENT = {
         "button": "Посмотреть переписку",
     },
     "pt": {
-        "subject": "Nidria: Nova mensagem do seu consultor",
+        "subject": "Nova mensagem do seu consultor",
         "title": "Tem uma nova mensagem",
         "intro": (
             "{author} da {agency} escreveu-lhe sobre a etapa «{step}». Responda a partir do seu "
@@ -1164,7 +1323,7 @@ _NEW_COMMENT_CLIENT = {
         "button": "Ver a conversa",
     },
     "it": {
-        "subject": "Nidria: Nuovo messaggio dal tuo consulente",
+        "subject": "Nuovo messaggio dal tuo consulente",
         "title": "Hai un nuovo messaggio",
         "intro": (
             "{author} di {agency} ti ha scritto in merito alla fase «{step}». Rispondi dal tuo "
@@ -1173,7 +1332,7 @@ _NEW_COMMENT_CLIENT = {
         "button": "Vedere la conversazione",
     },
     "hu": {
-        "subject": "Nidria: Új üzenet a tanácsadójától",
+        "subject": "Új üzenet a tanácsadójától",
         "title": "Új üzenete érkezett",
         "intro": (
             "{author} ({agency}) írt Önnek a(z) „{step}” lépéssel kapcsolatban. "
@@ -1236,7 +1395,7 @@ _NEW_COMMENT_AGENT = {
 
 
 def requirement_request_email(
-    agency_name: str, step_name: str, space_link: str, lang: str = "fr"
+    agency_name: str | None, step_name: str, space_link: str, lang: str = "fr"
 ) -> EmailContent:
     """(a) A step became active and needs info/documents from the client.
     Rendered in the recipient language `lang` (BLOC NOTIF-2). step_name is
@@ -1245,7 +1404,7 @@ def requirement_request_email(
     return _render(
         subject=s["subject"],
         title=s["title"],
-        intro=s["intro"].format(agency=agency_name, step=step_name),
+        intro=s["intro"].format(agency=_agency_or_fallback(agency_name, lang), step=step_name),
         button_label=s["button"],
         button_url=space_link,
         lang=lang,
@@ -1253,7 +1412,7 @@ def requirement_request_email(
 
 
 def step_reopened_email(
-    agency_name: str, step_name: str, space_link: str, lang: str = "fr"
+    agency_name: str | None, step_name: str, space_link: str, lang: str = "fr"
 ) -> EmailContent:
     """(c) The agency reopened a step — distinct tone from the first request.
     Rendered in the recipient language `lang`."""
@@ -1261,7 +1420,7 @@ def step_reopened_email(
     return _render(
         subject=s["subject"],
         title=s["title"],
-        intro=s["intro"].format(agency=agency_name, step=step_name),
+        intro=s["intro"].format(agency=_agency_or_fallback(agency_name, lang), step=step_name),
         button_label=s["button"],
         button_url=space_link,
         lang=lang,
@@ -1337,7 +1496,7 @@ _COUNTERSIGN_TURN = {
 
 _DOCUMENT_SIGNED_CLIENT = {
     "fr": {
-        "subject": "Nidria : votre document « {reference} » est signé",
+        "subject": "Votre document « {reference} » est signé",
         "title": "Document signé par toutes les parties",
         "intro": (
             "Le document « {reference} » demandé par {agency} est maintenant signé par "
@@ -1347,7 +1506,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "button": "Voir mes documents",
     },
     "en": {
-        "subject": "Nidria: your document “{reference}” is signed",
+        "subject": "Your document “{reference}” is signed",
         "title": "Document signed by all parties",
         "intro": (
             "The document “{reference}” requested by {agency} is now signed by all "
@@ -1356,7 +1515,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "button": "View my documents",
     },
     "es": {
-        "subject": "Nidria: su documento «{reference}» está firmado",
+        "subject": "Su documento «{reference}» está firmado",
         "title": "Documento firmado por todas las partes",
         "intro": (
             "El documento «{reference}» solicitado por {agency} ya está firmado por "
@@ -1366,7 +1525,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "button": "Ver mis documentos",
     },
     "ru": {
-        "subject": "Nidria: ваш документ «{reference}» подписан",
+        "subject": "Ваш документ «{reference}» подписан",
         "title": "Документ подписан всеми сторонами",
         "intro": (
             "Документ «{reference}», запрошенный {agency}, подписан всеми сторонами. "
@@ -1375,7 +1534,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "button": "Мои документы",
     },
     "pt": {
-        "subject": "Nidria: o seu documento «{reference}» está assinado",
+        "subject": "O seu documento «{reference}» está assinado",
         "title": "Documento assinado por todas as partes",
         "intro": (
             "O documento «{reference}» pedido por {agency} está agora assinado por "
@@ -1385,7 +1544,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "button": "Ver os meus documentos",
     },
     "it": {
-        "subject": "Nidria: il Suo documento «{reference}» è firmato",
+        "subject": "Il Suo documento «{reference}» è firmato",
         "title": "Documento firmato da tutte le parti",
         "intro": (
             "Il documento «{reference}» richiesto da {agency} è ora firmato da tutte "
@@ -1395,7 +1554,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "button": "Vedere i miei documenti",
     },
     "hu": {
-        "subject": "Nidria: a(z) „{reference}” dokumentuma alá van írva",
+        "subject": "A(z) „{reference}” dokumentuma alá van írva",
         "title": "A dokumentumot minden fél aláírta",
         "intro": (
             "A(z) {agency} által kért „{reference}” dokumentumot minden fél aláírta. "
@@ -1407,7 +1566,7 @@ _DOCUMENT_SIGNED_CLIENT = {
 
 
 def document_signed_client_email(
-    agency_name: str, reference: str, space_url: str, lang: str = "fr"
+    agency_name: str | None, reference: str, space_url: str, lang: str = "fr"
 ) -> EmailContent:
     """Complétion d'une demande (lot notification 30/07) : chaque signataire
     CLIENT est prévenu — jamais de pièce jointe, le PDF signé et le dossier
@@ -1416,7 +1575,7 @@ def document_signed_client_email(
     return _render(
         subject=s["subject"].format(reference=reference),
         title=s["title"],
-        intro=s["intro"].format(reference=reference, agency=agency_name),
+        intro=s["intro"].format(reference=reference, agency=_agency_or_fallback(agency_name, lang)),
         button_label=s["button"],
         button_url=space_url,
         lang=lang,
@@ -1543,7 +1702,11 @@ def ready_to_validate_email(
 
 
 def new_comment_to_client(
-    agency_name: str, author_first_name: str, step_name: str, space_link: str, lang: str = "fr"
+    agency_name: str | None,
+    author_first_name: str,
+    step_name: str,
+    space_link: str,
+    lang: str = "fr",
 ) -> EmailContent:
     """Agent posted on a step thread → notify the client. Uses the agent's
     FIRST NAME (a deliberate, scoped exception to the anti-staffing rule: a
@@ -1553,7 +1716,11 @@ def new_comment_to_client(
     return _render(
         subject=s["subject"],
         title=s["title"],
-        intro=s["intro"].format(author=author_first_name, agency=agency_name, step=step_name),
+        intro=s["intro"].format(
+            author=author_first_name,
+            agency=_agency_or_fallback(agency_name, lang),
+            step=step_name,
+        ),
         button_label=s["button"],
         button_url=space_link,
         lang=lang,
@@ -1561,15 +1728,19 @@ def new_comment_to_client(
 
 
 def new_comment_to_agent(
-    client_name: str, step_name: str, app_link: str, lang: str = "fr"
+    client_name: str | None, step_name: str, app_link: str, lang: str = "fr"
 ) -> EmailContent:
     """Client posted on a step thread → notify the case owner agent. Rendered
-    in the agent language `lang`."""
+    in the agent language `lang`; a client without a name reads « your
+    client » in that language."""
     s = _pick(_NEW_COMMENT_AGENT, lang)
     return _render(
         subject=s["subject"],
         title=s["title"],
-        intro=s["intro"].format(client=client_name, step=step_name),
+        intro=s["intro"].format(
+            client=client_name or _CLIENT_FALLBACK.get(lang, _CLIENT_FALLBACK["fr"]),
+            step=step_name,
+        ),
         button_label=s["button"],
         button_url=app_link,
         lang=lang,
@@ -1587,7 +1758,7 @@ _REFERRAL_GRANTED = {
         ),
     },
     "en": {
-        "subject": "Nidria: your referral subscribed : {rate}% off for 12 months",
+        "subject": "Nidria: your referral subscribed: {rate}% off for 12 months",
         "title": "Your referral paid off",
         "intro": (
             "{referred} just subscribed to Nidria thanks to your referral. "
@@ -1596,7 +1767,7 @@ _REFERRAL_GRANTED = {
         ),
     },
     "es": {
-        "subject": "Nidria: su recomendado se ha suscrito : -{rate} % durante 12 meses",
+        "subject": "Nidria: su recomendado se ha suscrito: -{rate} % durante 12 meses",
         "title": "Su recomendación ha dado frutos",
         "intro": (
             "{referred} acaba de suscribirse a Nidria gracias a su recomendación. "
@@ -1605,7 +1776,7 @@ _REFERRAL_GRANTED = {
         ),
     },
     "ru": {
-        "subject": "Nidria: ваш приглашённый оформил подписку : скидка {rate} % на 12 месяцев",
+        "subject": "Nidria: ваш приглашённый оформил подписку: скидка {rate} % на 12 месяцев",
         "title": "Ваша рекомендация принесла плоды",
         "intro": (
             "{referred} только что оформил подписку на Nidria по вашей рекомендации. "
@@ -1614,7 +1785,7 @@ _REFERRAL_GRANTED = {
         ),
     },
     "pt": {
-        "subject": "Nidria: o seu indicado assinou : -{rate} % durante 12 meses",
+        "subject": "Nidria: o seu indicado assinou: -{rate} % durante 12 meses",
         "title": "A sua indicação deu frutos",
         "intro": (
             "{referred} acaba de assinar a Nidria graças à sua indicação. "
@@ -1623,7 +1794,7 @@ _REFERRAL_GRANTED = {
         ),
     },
     "it": {
-        "subject": "Nidria: il tuo invitato si è abbonato : -{rate}% per 12 mesi",
+        "subject": "Nidria: il tuo invitato si è abbonato: -{rate}% per 12 mesi",
         "title": "Il tuo passaparola ha dato i suoi frutti",
         "intro": (
             "{referred} si è appena abbonato a Nidria grazie al tuo invito. "
@@ -1645,91 +1816,136 @@ _REFERRAL_GRANTED = {
 
 _JOURNEY_KICKOFF = {
     "fr": {
-        "subject": "Nidria : votre parcours démarre, des éléments sont attendus de vous",
+        "subject": "Votre parcours démarre, des éléments sont attendus de vous",
         "title": "Votre parcours démarre",
         "intro": (
-            "{agency} a lancé votre parcours : {total} élément(s) sont attendus de vous "
+            "{agency} a lancé votre parcours : {total} éléments sont attendus de vous "
             "pour commencer. Voici ce qui vous sera demandé, étape par étape :"
         ),
-        "line": "{step} : {count} élément(s)",
+        "intro_one": (
+            "{agency} a lancé votre parcours : {total} élément est attendu de vous "
+            "pour commencer. Voici ce qui vous sera demandé, étape par étape :"
+        ),
+        "line": "{step} : {count} éléments",
+        "line_one": "{step} : {count} élément",
         "button": "Ouvrir mon espace",
     },
     "en": {
-        "subject": "Nidria: your journey starts, some items are expected from you",
+        "subject": "Your journey starts, some items are expected from you",
         "title": "Your journey starts",
         "intro": (
-            "{agency} has launched your journey: {total} item(s) are expected from you "
+            "{agency} has launched your journey: {total} items are expected from you "
             "to begin. Here is what will be asked, step by step:"
         ),
-        "line": "{step}: {count} item(s)",
+        "intro_one": (
+            "{agency} has launched your journey: {total} item is expected from you "
+            "to begin. Here is what will be asked, step by step:"
+        ),
+        "line": "{step}: {count} items",
+        "line_one": "{step}: {count} item",
         "button": "Open my space",
     },
     "es": {
-        "subject": "Nidria: su proceso comienza, se esperan elementos de usted",
+        "subject": "Su proceso comienza, se esperan elementos de usted",
         "title": "Su proceso comienza",
         "intro": (
-            "{agency} ha lanzado su proceso: se esperan {total} elemento(s) de usted "
+            "{agency} ha lanzado su proceso: se esperan {total} elementos de usted "
             "para comenzar. Esto es lo que se le pedirá, etapa por etapa:"
         ),
-        "line": "{step}: {count} elemento(s)",
+        "intro_one": (
+            "{agency} ha lanzado su proceso: se espera {total} elemento de usted "
+            "para comenzar. Esto es lo que se le pedirá, etapa por etapa:"
+        ),
+        "line": "{step}: {count} elementos",
+        "line_one": "{step}: {count} elemento",
         "button": "Abrir mi espacio",
     },
     "ru": {
-        "subject": "Nidria: ваш процесс начинается, от вас ожидаются документы",
+        "subject": "Ваш процесс начинается, от вас ожидаются документы",
         "title": "Ваш процесс начинается",
         "intro": (
-            "{agency} запустило ваш процесс: от вас ожидается {total} элемент(ов) "
+            "{agency} запустило ваш процесс: от вас ожидается {total} элементов "
             "для начала. Вот что потребуется, по этапам:"
         ),
-        "line": "{step}: {count} элемент(ов)",
+        "intro_one": (
+            "{agency} запустило ваш процесс: от вас ожидается {total} элемент "
+            "для начала. Вот что потребуется, по этапам:"
+        ),
+        "intro_few": (
+            "{agency} запустило ваш процесс: от вас ожидается {total} элемента "
+            "для начала. Вот что потребуется, по этапам:"
+        ),
+        "line": "{step}: {count} элементов",
+        "line_one": "{step}: {count} элемент",
+        "line_few": "{step}: {count} элемента",
         "button": "Открыть моё пространство",
     },
     "pt": {
-        "subject": "Nidria: o seu percurso começa, aguardamos elementos seus",
+        "subject": "O seu percurso começa, aguardamos elementos seus",
         "title": "O seu percurso começa",
         "intro": (
-            "{agency} lançou o seu percurso: aguardamos {total} elemento(s) seus "
+            "{agency} lançou o seu percurso: aguardamos {total} elementos seus "
             "para começar. Eis o que será pedido, etapa a etapa:"
         ),
-        "line": "{step}: {count} elemento(s)",
+        "intro_one": (
+            "{agency} lançou o seu percurso: aguardamos {total} elemento seu "
+            "para começar. Eis o que será pedido, etapa a etapa:"
+        ),
+        "line": "{step}: {count} elementos",
+        "line_one": "{step}: {count} elemento",
         "button": "Abrir o meu espaço",
     },
     "it": {
-        "subject": "Nidria: il tuo percorso inizia, alcuni elementi sono attesi da te",
+        "subject": "Il tuo percorso inizia, alcuni elementi sono attesi da te",
         "title": "Il tuo percorso inizia",
         "intro": (
-            "{agency} ha avviato il tuo percorso: {total} elemento(i) sono attesi da te "
+            "{agency} ha avviato il tuo percorso: {total} elementi sono attesi da te "
             "per iniziare. Ecco cosa ti sarà chiesto, tappa per tappa:"
         ),
-        "line": "{step}: {count} elemento(i)",
+        "intro_one": (
+            "{agency} ha avviato il tuo percorso: {total} elemento è atteso da te "
+            "per iniziare. Ecco cosa ti sarà chiesto, tappa per tappa:"
+        ),
+        "line": "{step}: {count} elementi",
+        "line_one": "{step}: {count} elemento",
         "button": "Apri il mio spazio",
     },
     "hu": {
-        "subject": "Nidria: elindult az útja, elemeket várunk Öntől",
+        "subject": "Elindult az útja, elemeket várunk Öntől",
         "title": "Elindult az útja",
         "intro": (
             "A(z) {agency} elindította az Ön útját: {total} elemet várunk Öntől a "
             "kezdéshez. Íme, amit lépésenként kérni fogunk:"
         ),
+        "intro_one": (
+            "A(z) {agency} elindította az Ön útját: {total} elemet várunk Öntől a "
+            "kezdéshez. Íme, amit lépésenként kérni fogunk:"
+        ),
         "line": "{step}: {count} elem",
+        "line_one": "{step}: {count} elem",
         "button": "Felületem megnyitása",
     },
 }
 
 
 def journey_kickoff_email(
-    agency_name: str, items: list[tuple[str, int]], space_link: str, lang: str = "fr"
+    agency_name: str | None, items: list[tuple[str, int]], space_link: str, lang: str = "fr"
 ) -> EmailContent:
     """ONE mail at journey assignment (anti-burst J1): what the startable
     steps expect from the client, grouped by step — instead of N unitary
     requirement mails as the agent starts them."""
     s = _pick(_JOURNEY_KICKOFF, lang)
     total = sum(count for _, count in items)
-    lines = "\n".join("- " + s["line"].format(step=step, count=count) for step, count in items)
+    lines = "\n".join(
+        "- " + _plural(s, "line", lang, count).format(step=step, count=count)
+        for step, count in items
+    )
     return _render(
         subject=s["subject"],
         title=s["title"],
-        intro=s["intro"].format(agency=agency_name, total=total),
+        intro=_plural(s, "intro", lang, total).format(
+            agency=_agency_or_fallback(agency_name, lang), total=total
+        ),
         body_text=lines,
         button_label=s["button"],
         button_url=space_link,
@@ -1739,46 +1955,55 @@ def journey_kickoff_email(
 
 _DIGEST = {
     "fr": {
-        "subject": "Nidria : votre dossier a avancé",
+        "subject": "Votre dossier a avancé",
         "title": "Votre dossier a avancé",
         "intro": "{agency} : {summary}.",
         "period_weekly": "cette semaine",
         "period_daily": "aujourd'hui",
-        "completed": "{n} étape(s) terminée(s)",
-        "started": "{n} étape(s) démarrée(s)",
-        "documents": "{n} document(s) validé(s)",
+        "completed": "{n} étapes terminées",
+        "completed_one": "{n} étape terminée",
+        "started": "{n} étapes démarrées",
+        "started_one": "{n} étape démarrée",
+        "documents": "{n} documents validés",
+        "documents_one": "{n} document validé",
         "line_completed": "Terminée : {step}",
         "line_started": "Démarrée : {step}",
         "button": "Voir mon dossier",
     },
     "en": {
-        "subject": "Nidria: your file has moved forward",
+        "subject": "Your file has moved forward",
         "title": "Your file has moved forward",
         "intro": "{agency}: {summary}.",
         "period_weekly": "this week",
         "period_daily": "today",
-        "completed": "{n} step(s) completed",
-        "started": "{n} step(s) started",
-        "documents": "{n} document(s) validated",
+        "completed": "{n} steps completed",
+        "completed_one": "{n} step completed",
+        "started": "{n} steps started",
+        "started_one": "{n} step started",
+        "documents": "{n} documents validated",
+        "documents_one": "{n} document validated",
         "line_completed": "Completed: {step}",
         "line_started": "Started: {step}",
         "button": "View my file",
     },
     "es": {
-        "subject": "Nidria: su expediente ha avanzado",
+        "subject": "Su expediente ha avanzado",
         "title": "Su expediente ha avanzado",
         "intro": "{agency}: {summary}.",
         "period_weekly": "esta semana",
         "period_daily": "hoy",
-        "completed": "{n} etapa(s) completada(s)",
-        "started": "{n} etapa(s) iniciada(s)",
-        "documents": "{n} documento(s) validado(s)",
+        "completed": "{n} etapas completadas",
+        "completed_one": "{n} etapa completada",
+        "started": "{n} etapas iniciadas",
+        "started_one": "{n} etapa iniciada",
+        "documents": "{n} documentos validados",
+        "documents_one": "{n} documento validado",
         "line_completed": "Completada: {step}",
         "line_started": "Iniciada: {step}",
         "button": "Ver mi expediente",
     },
     "ru": {
-        "subject": "Nidria: ваше дело продвинулось",
+        "subject": "Ваше дело продвинулось",
         "title": "Ваше дело продвинулось",
         "intro": "{agency}: {summary}.",
         "period_weekly": "за эту неделю",
@@ -1791,40 +2016,49 @@ _DIGEST = {
         "button": "Открыть моё дело",
     },
     "pt": {
-        "subject": "Nidria: o seu processo avançou",
+        "subject": "O seu processo avançou",
         "title": "O seu processo avançou",
         "intro": "{agency}: {summary}.",
         "period_weekly": "esta semana",
         "period_daily": "hoje",
-        "completed": "{n} etapa(s) concluída(s)",
-        "started": "{n} etapa(s) iniciada(s)",
-        "documents": "{n} documento(s) validado(s)",
+        "completed": "{n} etapas concluídas",
+        "completed_one": "{n} etapa concluída",
+        "started": "{n} etapas iniciadas",
+        "started_one": "{n} etapa iniciada",
+        "documents": "{n} documentos validados",
+        "documents_one": "{n} documento validado",
         "line_completed": "Concluída: {step}",
         "line_started": "Iniciada: {step}",
         "button": "Ver o meu processo",
     },
     "it": {
-        "subject": "Nidria: la tua pratica è avanzata",
+        "subject": "La tua pratica è avanzata",
         "title": "La tua pratica è avanzata",
         "intro": "{agency}: {summary}.",
         "period_weekly": "questa settimana",
         "period_daily": "oggi",
-        "completed": "{n} tappa(e) completata(e)",
-        "started": "{n} tappa(e) avviata(e)",
-        "documents": "{n} documento(i) convalidato(i)",
+        "completed": "{n} tappe completate",
+        "completed_one": "{n} tappa completata",
+        "started": "{n} tappe avviate",
+        "started_one": "{n} tappa avviata",
+        "documents": "{n} documenti convalidati",
+        "documents_one": "{n} documento convalidato",
         "line_completed": "Completata: {step}",
         "line_started": "Avviata: {step}",
         "button": "Vedi la mia pratica",
     },
     "hu": {
-        "subject": "Nidria: az ügye előrehaladt",
+        "subject": "Az ügye előrehaladt",
         "title": "Az ügye előrehaladt",
         "intro": "{agency}: {summary}.",
         "period_weekly": "ezen a héten",
         "period_daily": "ma",
         "completed": "{n} lépés befejezve",
+        "completed_one": "{n} lépés befejezve",
         "started": "{n} lépés elindítva",
+        "started_one": "{n} lépés elindítva",
         "documents": "{n} dokumentum jóváhagyva",
+        "documents_one": "{n} dokumentum jóváhagyva",
         "line_completed": "Befejezve: {step}",
         "line_started": "Elindítva: {step}",
         "button": "Ügyem megtekintése",
@@ -1847,11 +2081,15 @@ def digest_email(
     s = _pick(_DIGEST, lang)
     parts: list[str] = []
     if completed_steps:
-        parts.append(s["completed"].format(n=len(completed_steps)))
+        n = len(completed_steps)
+        parts.append(_plural(s, "completed", lang, n).format(n=n))
     if started_steps:
-        parts.append(s["started"].format(n=len(started_steps)))
+        n = len(started_steps)
+        parts.append(_plural(s, "started", lang, n).format(n=n))
     if documents_validated:
-        parts.append(s["documents"].format(n=documents_validated))
+        parts.append(
+            _plural(s, "documents", lang, documents_validated).format(n=documents_validated)
+        )
     period_label = s["period_weekly"] if period == "weekly" else s["period_daily"]
     summary = f"{period_label}, " + ", ".join(parts)
     lines = [s["line_completed"].format(step=step) for step in completed_steps]
@@ -1881,10 +2119,10 @@ def referral_granted_email(referred_name: str, rate: int, lang: str = "fr") -> E
 
 _SIGNUP_CODE = {
     "fr": {
-        "subject": "Nidria : votre code de verification",
-        "title": "Votre code de verification",
-        "intro": ("Voici votre code pour creer votre espace Nidria. Il expire dans 15 minutes."),
-        "phishing": "Si vous n'avez pas demande ce code, ignorez cet email.",
+        "subject": "Nidria : votre code de vérification",
+        "title": "Votre code de vérification",
+        "intro": ("Voici votre code pour créer votre espace Nidria. Il expire dans 15 minutes."),
+        "phishing": "Si vous n'avez pas demandé ce code, ignorez cet email.",
     },
     "en": {
         "subject": "Nidria: your verification code",
@@ -1893,10 +2131,10 @@ _SIGNUP_CODE = {
         "phishing": "If you did not request this code, please ignore this email.",
     },
     "es": {
-        "subject": "Nidria: su codigo de verificacion",
-        "title": "Su codigo de verificacion",
-        "intro": ("Aqui tiene su codigo para crear su espacio Nidria. Caduca en 15 minutos."),
-        "phishing": "Si no ha solicitado este codigo, ignore este correo.",
+        "subject": "Nidria: su código de verificación",
+        "title": "Su código de verificación",
+        "intro": ("Aquí tiene su código para crear su espacio Nidria. Caduca en 15 minutos."),
+        "phishing": "Si no ha solicitado este código, ignore este correo.",
     },
     "ru": {
         "subject": "Nidria: ваш код подтверждения",
@@ -1907,10 +2145,10 @@ _SIGNUP_CODE = {
         "phishing": "Если вы не запрашивали этот код, просто проигнорируйте это письмо.",
     },
     "pt": {
-        "subject": "Nidria: o seu codigo de verificacao",
-        "title": "O seu codigo de verificacao",
-        "intro": ("Aqui esta o seu codigo para criar o seu espaco Nidria. Expira em 15 minutos."),
-        "phishing": "Se nao solicitou este codigo, ignore este email.",
+        "subject": "Nidria: o seu código de verificação",
+        "title": "O seu código de verificação",
+        "intro": ("Aqui está o seu código para criar o seu espaço Nidria. Expira em 15 minutos."),
+        "phishing": "Se não solicitou este código, ignore este email.",
     },
     "it": {
         "subject": "Nidria: il tuo codice di verifica",
@@ -1928,15 +2166,15 @@ _SIGNUP_CODE = {
 
 _SIGNUP_EXISTING = {
     "fr": {
-        "subject": "Nidria : vous avez deja un compte",
-        "title": "Vous avez deja un compte",
+        "subject": "Nidria : vous avez déjà un compte",
+        "title": "Vous avez déjà un compte",
         "intro": (
-            "Une creation d'espace a ete demandee avec cette adresse, mais un "
-            "compte existe deja. Connectez-vous ci-dessous ; mot de passe oublie ? "
-            "La page de connexion propose la reinitialisation."
+            "Une création d'espace a été demandée avec cette adresse, mais un "
+            "compte existe déjà. Connectez-vous ci-dessous ; mot de passe oublié ? "
+            "La page de connexion propose la réinitialisation."
         ),
         "button": "Se connecter",
-        "phishing": "Si vous n'etes pas a l'origine de cette demande, ignorez cet email.",
+        "phishing": "Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.",
     },
     "en": {
         "subject": "Nidria: you already have an account",
@@ -1953,11 +2191,11 @@ _SIGNUP_EXISTING = {
         "subject": "Nidria: ya tiene una cuenta",
         "title": "Ya tiene una cuenta",
         "intro": (
-            "Se solicito crear un espacio con esta direccion, pero ya existe una "
-            "cuenta. Inicie sesion a continuacion."
+            "Se solicitó crear un espacio con esta dirección, pero ya existe una "
+            "cuenta. Inicie sesión a continuación."
         ),
-        "button": "Iniciar sesion",
-        "phishing": "Si usted no realizo esta solicitud, ignore este correo.",
+        "button": "Iniciar sesión",
+        "phishing": "Si usted no realizó esta solicitud, ignore este correo.",
     },
     "ru": {
         "subject": "Nidria: у вас уже есть аккаунт",
@@ -1970,21 +2208,21 @@ _SIGNUP_EXISTING = {
         "phishing": "Если это были не вы, просто проигнорируйте это письмо.",
     },
     "pt": {
-        "subject": "Nidria: ja tem uma conta",
-        "title": "Ja tem uma conta",
+        "subject": "Nidria: já tem uma conta",
+        "title": "Já tem uma conta",
         "intro": (
-            "Foi pedida a criacao de um espaco com este endereco, mas ja existe "
-            "uma conta. Inicie sessao abaixo."
+            "Foi pedida a criação de um espaço com este endereço, mas já existe "
+            "uma conta. Inicie sessão abaixo."
         ),
-        "button": "Iniciar sessao",
-        "phishing": "Se nao fez este pedido, ignore este email.",
+        "button": "Iniciar sessão",
+        "phishing": "Se não fez este pedido, ignore este email.",
     },
     "it": {
-        "subject": "Nidria: hai gia un account",
-        "title": "Hai gia un account",
+        "subject": "Nidria: hai già un account",
+        "title": "Hai già un account",
         "intro": (
-            "E stata richiesta la creazione di uno spazio con questo indirizzo, "
-            "ma esiste gia un account. Accedi qui sotto."
+            "È stata richiesta la creazione di uno spazio con questo indirizzo, "
+            "ma esiste già un account. Accedi qui sotto."
         ),
         "button": "Accedi",
         "phishing": "Se non hai effettuato questa richiesta, ignora questa email.",
@@ -2109,42 +2347,42 @@ _TASK_STATUS_CHANGED = {
     "en": {
         "subject": "Nidria: task updated: {title}",
         "title": "A task changed status",
-        "intro": '{actor} moved the task "{title}" to the status: {status}.',
+        "intro": "{actor} moved the task “{title}” to the status: {status}.",
         "client_block": "Message for the client (copy and paste):",
         "button": "Open the tasks",
     },
     "es": {
         "subject": "Nidria: tarea actualizada: {title}",
         "title": "Una tarea ha cambiado de estado",
-        "intro": '{actor} ha pasado la tarea "{title}" al estado: {status}.',
+        "intro": "{actor} ha pasado la tarea «{title}» al estado: {status}.",
         "client_block": "Mensaje para el cliente (para copiar y pegar):",
         "button": "Abrir las tareas",
     },
     "ru": {
         "subject": "Nidria: задача обновлена: {title}",
         "title": "Статус задачи изменился",
-        "intro": '{actor} перевёл(а) задачу "{title}" в статус: {status}.',
+        "intro": "{actor} перевёл(а) задачу «{title}» в статус: {status}.",
         "client_block": "Сообщение для клиента (скопируйте и вставьте):",
         "button": "Открыть задачи",
     },
     "pt": {
         "subject": "Nidria: tarefa atualizada: {title}",
         "title": "Uma tarefa mudou de estado",
-        "intro": '{actor} passou a tarefa "{title}" ao estado: {status}.',
+        "intro": "{actor} passou a tarefa «{title}» ao estado: {status}.",
         "client_block": "Mensagem para o cliente (para copiar e colar):",
         "button": "Abrir as tarefas",
     },
     "it": {
         "subject": "Nidria: compito aggiornato: {title}",
         "title": "Un compito ha cambiato stato",
-        "intro": '{actor} ha portato il compito "{title}" allo stato: {status}.',
+        "intro": "{actor} ha portato il compito «{title}» allo stato: {status}.",
         "client_block": "Messaggio per il cliente (da copiare e incollare):",
         "button": "Aprire i compiti",
     },
     "hu": {
         "subject": "Nidria: feladat frissítve: {title}",
         "title": "Egy feladat állapota megváltozott",
-        "intro": '{actor} a(z) "{title}" feladatot új állapotba tette: {status}.',
+        "intro": "{actor} a(z) „{title}” feladatot új állapotba tette: {status}.",
         "client_block": "Üzenet az ügyfélnek (másolja és illessze be):",
         "button": "Feladatok megnyitása",
     },
@@ -2269,7 +2507,12 @@ _SIGNATURE_CREDITS_LOW = {
         "title": "Crédits signature : solde bas",
         "intro": (
             "Le solde de crédits signature de {agency} est passé sous votre seuil "
-            "d'alerte ({threshold}) : il reste {available} crédit(s). Rechargez pour "
+            "d'alerte ({threshold}) : il reste {available} crédits. Rechargez pour "
+            "que les prochaines étapes avec documents à signer puissent démarrer."
+        ),
+        "intro_one": (
+            "Le solde de crédits signature de {agency} est passé sous votre seuil "
+            "d'alerte ({threshold}) : il reste {available} crédit. Rechargez pour "
             "que les prochaines étapes avec documents à signer puissent démarrer."
         ),
         "button": "Gérer mes crédits",
@@ -2279,7 +2522,12 @@ _SIGNATURE_CREDITS_LOW = {
         "title": "Signature credits: low balance",
         "intro": (
             "The signature credit balance of {agency} dropped below your alert "
-            "threshold ({threshold}): {available} credit(s) left. Top up so the next "
+            "threshold ({threshold}): {available} credits left. Top up so the next "
+            "steps carrying documents to sign can start."
+        ),
+        "intro_one": (
+            "The signature credit balance of {agency} dropped below your alert "
+            "threshold ({threshold}): {available} credit left. Top up so the next "
             "steps carrying documents to sign can start."
         ),
         "button": "Manage my credits",
@@ -2289,7 +2537,12 @@ _SIGNATURE_CREDITS_LOW = {
         "title": "Créditos de firma: saldo bajo",
         "intro": (
             "El saldo de créditos de firma de {agency} bajó de su umbral de alerta "
-            "({threshold}): quedan {available} crédito(s). Recargue para que las "
+            "({threshold}): quedan {available} créditos. Recargue para que las "
+            "próximas etapas con documentos por firmar puedan comenzar."
+        ),
+        "intro_one": (
+            "El saldo de créditos de firma de {agency} bajó de su umbral de alerta "
+            "({threshold}): queda {available} crédito. Recargue para que las "
             "próximas etapas con documentos por firmar puedan comenzar."
         ),
         "button": "Gestionar mis créditos",
@@ -2299,7 +2552,17 @@ _SIGNATURE_CREDITS_LOW = {
         "title": "Кредиты подписи: низкий баланс",
         "intro": (
             "Баланс кредитов подписи {agency} опустился ниже порога оповещения "
-            "({threshold}): осталось {available} кредит(ов). Пополните баланс, чтобы "
+            "({threshold}): осталось {available} кредитов. Пополните баланс, чтобы "
+            "следующие этапы с документами на подпись могли начаться."
+        ),
+        "intro_one": (
+            "Баланс кредитов подписи {agency} опустился ниже порога оповещения "
+            "({threshold}): остался {available} кредит. Пополните баланс, чтобы "
+            "следующие этапы с документами на подпись могли начаться."
+        ),
+        "intro_few": (
+            "Баланс кредитов подписи {agency} опустился ниже порога оповещения "
+            "({threshold}): осталось {available} кредита. Пополните баланс, чтобы "
             "следующие этапы с документами на подпись могли начаться."
         ),
         "button": "Управлять кредитами",
@@ -2309,7 +2572,12 @@ _SIGNATURE_CREDITS_LOW = {
         "title": "Créditos de assinatura: saldo baixo",
         "intro": (
             "O saldo de créditos de assinatura de {agency} desceu abaixo do seu limiar "
-            "de alerta ({threshold}): restam {available} crédito(s). Recarregue para que "
+            "de alerta ({threshold}): restam {available} créditos. Recarregue para que "
+            "as próximas etapas com documentos a assinar possam começar."
+        ),
+        "intro_one": (
+            "O saldo de créditos de assinatura de {agency} desceu abaixo do seu limiar "
+            "de alerta ({threshold}): resta {available} crédito. Recarregue para que "
             "as próximas etapas com documentos a assinar possam começar."
         ),
         "button": "Gerir os meus créditos",
@@ -2319,7 +2587,12 @@ _SIGNATURE_CREDITS_LOW = {
         "title": "Crediti firma: saldo basso",
         "intro": (
             "Il saldo dei crediti firma di {agency} è sceso sotto la tua soglia di "
-            "allerta ({threshold}): restano {available} credito/i. Ricarica perché le "
+            "allerta ({threshold}): restano {available} crediti. Ricarica perché le "
+            "prossime tappe con documenti da firmare possano partire."
+        ),
+        "intro_one": (
+            "Il saldo dei crediti firma di {agency} è sceso sotto la tua soglia di "
+            "allerta ({threshold}): resta {available} credito. Ricarica perché le "
             "prossime tappe con documenti da firmare possano partire."
         ),
         "button": "Gestire i miei crediti",
@@ -2328,6 +2601,11 @@ _SIGNATURE_CREDITS_LOW = {
         "subject": "Nidria: alacsony az aláírás-kredit egyenlege",
         "title": "Aláírás-kreditek: alacsony egyenleg",
         "intro": (
+            "A(z) {agency} aláírás-kredit egyenlege a riasztási küszöb ({threshold}) alá "
+            "csökkent: {available} kredit maradt. Töltse fel, hogy a következő, aláírandó "
+            "dokumentumokat tartalmazó lépések elindulhassanak."
+        ),
+        "intro_one": (
             "A(z) {agency} aláírás-kredit egyenlege a riasztási küszöb ({threshold}) alá "
             "csökkent: {available} kredit maradt. Töltse fel, hogy a következő, aláírandó "
             "dokumentumokat tartalmazó lépések elindulhassanak."
@@ -2347,7 +2625,9 @@ def signature_credits_low_email(
     return _render(
         subject=s["subject"],
         title=s["title"],
-        intro=s["intro"].format(agency=agency_name, available=available, threshold=threshold),
+        intro=_plural(s, "intro", lang, available).format(
+            agency=agency_name, available=available, threshold=threshold
+        ),
         button_label=s["button"],
         button_url=f"{get_settings().frontend_url}/app/settings",
         lang=lang,
@@ -2509,7 +2789,7 @@ def agency_onboarding_email(
     has_example_case: bool = True,
 ) -> EmailContent:
     """The welcome mail of a freshly created agency, in the agency language
-    (fr/en/es/hu; any other language falls back to FR via `_pick`).
+    (the seven SUPPORTED_LANGUAGES; any other falls back to FR via `_pick`).
 
     `first_name` empty or blank → « Bonjour, » (never « Bonjour , »).
     `has_example_case` False → the example sentence is DROPPED rather than

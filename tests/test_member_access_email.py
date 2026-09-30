@@ -302,7 +302,7 @@ async def test_member_invitation_lists_their_pending_pieces(
     # SES 2 pièces each_person, comptées par étape — jamais le Kbis du
     # principal (3 aurait trahi une fuite de périmètre).
     assert "Des éléments sont déjà attendus de votre part" in body
-    assert "Collecte : 2 élément(s)" in body
+    assert "Collecte : 2 éléments" in body  # accordé, plus de « élément(s) »
 
 
 async def test_member_invitation_stays_bare_when_nothing_is_pending(
@@ -373,4 +373,4 @@ async def test_resend_invitation_also_lists_the_pending_pieces(
     )
     assert r.status_code == 200, r.text
     assert [m.to for m in email.outbox] == ["assoc-resend@example.com"]
-    assert "Collecte : 2 élément(s)" in email.outbox[0].body
+    assert "Collecte : 2 éléments" in email.outbox[0].body

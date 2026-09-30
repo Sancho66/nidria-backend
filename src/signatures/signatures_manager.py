@@ -612,7 +612,8 @@ class SignaturesWebhookManager:
 
         mails: list[PendingMail] = []
         agency = await self.db.get(Agency, case.agency_id)
-        agency_name = agency.name if agency else "Votre agence"
+        # Unknown agency → « your agency » in each signer's language.
+        agency_name = agency.name if agency else None
         agency_slug = agency.slug if agency else None
         client_url = space_link(get_settings().frontend_url, "/space", agency_slug)
         signers = await self.repo.list_signers(request.id)

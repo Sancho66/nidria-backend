@@ -28,7 +28,9 @@ class AuthEmailEntrypointsTest(unittest.TestCase):
                 mail = password_reset_email(action, 60, lang, login_link=login)
                 self.assertIn(action, mail.text)
                 self.assertIn(f'href="{action}"', mail.html)
-                self.assertIn(f"{label} : {login}", mail.text)
+                # The space before « : » is French typography only.
+                colon = " : " if lang == "fr" else ": "
+                self.assertIn(f"{label}{colon}{login}", mail.text)
                 self.assertIn(html.escape(label), mail.html)
                 self.assertIn(f'href="{login}"', mail.html)
                 self.assertNotIn('href="https://example.test/login"', mail.html)

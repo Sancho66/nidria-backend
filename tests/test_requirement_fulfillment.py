@@ -733,7 +733,7 @@ async def test_activation_notifies_client(
     # demarrage dans la foulee est absorbe par la fenetre — un seul mail.
     sent = [m for m in email.outbox if m.to == expat.email]
     assert len(sent) == 1
-    assert "votre parcours démarre" in sent[0].subject
+    assert "Votre parcours démarre" in sent[0].subject  # sans « Nidria : » (14/08)
 
 
 async def test_reopen_notifies_client_distinct_template(

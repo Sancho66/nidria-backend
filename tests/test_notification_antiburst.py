@@ -23,7 +23,8 @@ from tests.plugins.expat_plugin import MakeExpatUser
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
 
-KICKOFF_SUBJECT = "votre parcours démarre"
+# Client subjects open on their own words — no « Nidria : » prefix (14/08).
+KICKOFF_SUBJECT = "Votre parcours démarre"
 REQUEST_SUBJECT = "informations sont attendues"
 
 

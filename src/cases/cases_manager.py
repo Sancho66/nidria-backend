@@ -448,7 +448,9 @@ class CasesManager:
         if invitation is None:
             return case
 
-        agency_name = agency.name if agency else "Votre agence"
+        # Unknown agency → the builders name it « your agency » in the
+        # mail's language (never a French literal).
+        agency_name = agency.name if agency else None
         agency_slug = agency.slug if agency else None
         # ICP multi-métier: the invite names the JOURNEY, in the client's
         # language (neutral "votre dossier" when the case has no journey).
@@ -1329,7 +1331,9 @@ class CasesManager:
         agency = await self.repo.get_agency(
             agent.agency_id if agent is not None else case.agency_id
         )
-        agency_name = agency.name if agency else "Votre agence"
+        # Unknown agency → the builders name it « your agency » in the
+        # mail's language (never a French literal).
+        agency_name = agency.name if agency else None
         agency_slug = agency.slug if agency else None
         agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
         # The member's language FOR THIS AGENCY: its record of that person
