@@ -15,6 +15,7 @@ from pydantic import BaseModel
 # Same inline custom-field schema the agency face embeds on CaseDetailResponse
 # — reused (not re-declared) so both faces describe a custom field identically.
 from src.cases.cases_schema import CustomFieldDefinitionInline
+from src.core.i18n import Language
 
 # Same resolved days-remaining counter the agency timeline ships — one
 # computation in timeline_for_case, read by both faces (single source).
@@ -48,6 +49,14 @@ class ExpatCaseSummaryResponse(BaseModel):
     # write affordance hidden). A future viewer type is a new enum value, not
     # a boolean that silently reads false — the read contract never breaks.
     viewer_role: Literal["principal", "member"] = "principal"
+    # THE VIEWER's language for THIS dossier's agency (lot « la langue du
+    # client », 30/09): the language the agency set on its record of this
+    # person, else the account's, else the agency's own — the SAME
+    # resolution as every mail that agency sends them. The space opens in
+    # it by default; a language the client picks in the space only changes
+    # their display (no write — out of scope), never this value. Per
+    # dossier: two agencies may set two different languages.
+    client_lang: Language
 
 
 class ExpatReferentResponse(BaseModel):

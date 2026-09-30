@@ -597,6 +597,7 @@ class SignaturesWebhookManager:
         La face AGENCE aussi (constat : rien de direct n'existait), au
         propriétaire du dossier, langue par défaut agence. Un signataire
         sans email/compte est sauté en silence."""
+        from src.core.client_lang import client_langs
         from src.core.email import space_link
         from src.core.email_templates import (
             document_signed_agency_email,
@@ -605,7 +606,6 @@ class SignaturesWebhookManager:
         from src.core.i18n import (
             case_label_for_notif,
             resolve_notification_lang_agent,
-            resolve_notification_lang_client,
         )
         from src.progress.progress_manager import PendingMail
         from src.progress.progress_repository import ProgressRepository
@@ -616,6 +616,7 @@ class SignaturesWebhookManager:
         agency_slug = agency.slug if agency else None
         client_url = space_link(get_settings().frontend_url, "/space", agency_slug)
         signers = await self.repo.list_signers(request.id)
+        recipients: list[ExpatUser] = []
         seen_emails: set[str] = set()
         for signer in signers:
             if signer.case_person_id is None:
@@ -627,7 +628,18 @@ class SignaturesWebhookManager:
             if expat is None or not expat.email or expat.email in seen_emails:
                 continue
             seen_emails.add(expat.email)
-            lang = resolve_notification_lang_client(expat.preferred_lang)
+            recipients.append(expat)
+        # Chaque signataire dans SA langue POUR CETTE AGENCE (la fiche de
+        # l'agence, puis le compte, puis la langue de l'agence) — une
+        # lecture groupée pour tous les signataires.
+        langs = await client_langs(
+            self.db,
+            case.agency_id,
+            {expat.id: expat.preferred_lang for expat in recipients},
+            agency_default=agency.default_language if agency else None,
+        )
+        for expat in recipients:
+            lang = langs[expat.id]
             mails.append(
                 PendingMail(
                     to=expat.email,

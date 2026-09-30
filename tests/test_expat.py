@@ -32,6 +32,9 @@ SUMMARY_KEYS = {
     # Member read-only feature: the viewer's role on this dossier (principal
     # vs member) so the front hides every write affordance for a member.
     "viewer_role",
+    # « La langue du client » (30/09): the viewer's language for this
+    # dossier's agency — the space's default display language.
+    "client_lang",
 }
 DETAIL_KEYS = SUMMARY_KEYS | {"referent", "timeline", "custom_field_definitions"}
 STEP_KEYS = {

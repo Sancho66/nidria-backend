@@ -47,6 +47,7 @@ from src.cases.cases_schema import (
 )
 from src.cases.client_space import client_space_state
 from src.client_profiles.client_profiles_manager import profile_divergences
+from src.core.client_lang import client_lang, client_langs
 from src.core.config import get_settings
 from src.core.email import (
     PendingEmail,
@@ -179,6 +180,54 @@ class CasesManager:
             details=details,
         )
 
+    def _settle_client_lang(
+        self,
+        case: ClientCase,
+        agent: Agent,
+        requested: str | None,
+        expat: ExpatUser,
+        profile: ClientProfileModel | None,
+        *,
+        new_account: bool,
+        agency_default: str,
+    ) -> None:
+        """The client's language at case creation (lot « la langue du
+        client », 30/09) — the agency sets it, on ITS record of the client.
+
+        Retained language: the form's value → the agency record's existing
+        one → (an EXISTING account's own language) → the agency's language.
+        Same order as every send (resolve_notification_lang_client), so the
+        record written here is exactly what the invitation will use.
+
+        - A NEW account is seeded with it (it had a provisional value).
+        - An EXISTING account keeps its own language — it is global, shared
+          with the other agencies, never rewritten by one of them.
+        - The agency record (client_profile.preferred_lang) receives it when
+          the form gave one EXPLICITLY, or when the record had none: that is
+          what makes it effective for THIS agency. An explicit value that
+          REPLACES a different one is traced (it changes the language of the
+          client's other dossiers in this agency too)."""
+        profile_lang = profile.preferred_lang if profile is not None else None
+        retained = resolve_notification_lang_client(
+            None if new_account else expat.preferred_lang,
+            profile_lang=requested or profile_lang,
+            agency_default=agency_default,
+        )
+        if new_account:
+            expat.preferred_lang = retained
+        if profile is None:
+            return
+        if requested is None and profile_lang:
+            return  # the record already carries the agency's choice
+        if profile_lang and profile_lang != retained:
+            self._log(
+                case.id,
+                agent,
+                "profile.updated",
+                {"profile_id": str(profile.id), "fields": ["preferred_lang"]},
+            )
+        profile.preferred_lang = retained
+
     # --- create -------------------------------------------------------------------
 
     async def prefill_sources(self, agent: Agent, email: str) -> list[PrefillSourceResponse]:
@@ -212,15 +261,21 @@ class CasesManager:
         if payload.owner_agent_id is not None:
             await self._validate_owner(agent, payload.owner_agent_id)
 
+        agency = await self.repo.get_agency(agent.agency_id)
+        agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
+
         # Link-or-create the principal by email. An EXISTING user keeps
-        # their identity — the payload's names only seed a NEW row.
+        # their identity — the payload's names only seed a NEW row. The
+        # language seeded here is PROVISIONAL: the agency's record of this
+        # client is only known once linked (below, _settle_client_lang).
         expat = await self.repo.get_expat_by_email(payload.email)
+        new_account = expat is None
         if expat is None:
             expat = self.repo.add_expat(
                 first_name=payload.first_name,
                 last_name=payload.last_name,
                 email=payload.email,
-                preferred_lang=payload.preferred_lang,
+                preferred_lang=payload.preferred_lang or agency_default,
             )
             await self.db.flush()
 
@@ -295,7 +350,16 @@ class CasesManager:
         # sur le dossier, doctrine inchangée.
         from src.client_profiles.client_profiles_manager import link_and_prefill_person
 
-        await link_and_prefill_person(self.db, agent.agency_id, principal)
+        profile = await link_and_prefill_person(self.db, agent.agency_id, principal)
+        self._settle_client_lang(
+            case,
+            agent,
+            payload.preferred_lang,
+            expat,
+            profile,
+            new_account=new_account,
+            agency_default=agency_default,
+        )
         from src.client_profiles.client_profiles_manager import auto_promote_person_gaps
 
         await auto_promote_person_gaps(self.db, agent, principal)
@@ -384,19 +448,25 @@ class CasesManager:
         if invitation is None:
             return case
 
-        agency = await self.repo.get_agency(agent.agency_id)
         agency_name = agency.name if agency else "Votre agence"
         agency_slug = agency.slug if agency else None
         # ICP multi-métier: the invite names the JOURNEY, in the client's
         # language (neutral "votre dossier" when the case has no journey).
-        lang = resolve_notification_lang_client(expat.preferred_lang)
-        agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
+        # The client's language FOR THIS AGENCY — the record just settled
+        # above, read back through the one resolver every client send uses.
+        lang = await client_lang(
+            self.db, agent.agency_id, expat.id, expat.preferred_lang, agency_default=agency_default
+        )
         journey_name = await self._journey_name(agent, case, lang, agency_default)
         if expat.activated_at is None:
             # The activation screen is the FIRST thing a client ever sees:
-            # it must land branded (?agency=<slug>).
+            # it must land branded (?agency=<slug>) and in the mail's
+            # language (?lang=<code>).
             link = space_link(
-                settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
+                settings.frontend_url,
+                f"/space/activate/{invitation.token}",
+                agency_slug,
+                lang=lang,
             )
             content = expat_activation_email(
                 agency_name,
@@ -404,12 +474,14 @@ class CasesManager:
                 settings.case_invitation_expires_days,
                 journey_name,
                 lang,
-                login_link=space_link(settings.frontend_url, "/space/login", agency_slug),
+                login_link=space_link(
+                    settings.frontend_url, "/space/login", agency_slug, lang=lang
+                ),
             )
         else:
             content = new_case_email(
                 agency_name,
-                space_link(settings.frontend_url, "/space/login", agency_slug),
+                space_link(settings.frontend_url, "/space/login", agency_slug, lang=lang),
                 journey_name,
                 lang,
             )
@@ -522,18 +594,31 @@ class CasesManager:
         journey_names = await self._resolve_journey_names(agent, cases, lang)
         current_steps = await self._resolve_current_steps(agent, cases, lang)
         client_spaces = await self._resolve_client_space(cases)
-        return CaseListResponse(
-            items=[
-                CaseListItemResponse.model_validate(case).model_copy(
+        # The principal's language FOR THIS AGENCY (its record, then the
+        # account) — the language the sends really use, one batched read.
+        client_languages = await client_langs(
+            self.db,
+            agent.agency_id,
+            {case.principal.id: case.principal.preferred_lang for case in cases},
+        )
+        items: list[CaseListItemResponse] = []
+        for case in cases:
+            item = CaseListItemResponse.model_validate(case)
+            items.append(
+                item.model_copy(
                     update={
+                        "principal": item.principal.model_copy(
+                            update={"preferred_lang": client_languages[case.principal.id]}
+                        ),
                         "journey_name": journey_names.get(case.id),
                         "urgency": urgencies[case.id],
                         "client_space_state": client_spaces.get(case.id),
                         **current_steps.get(case.id, {}),
                     }
                 )
-                for case in cases
-            ],
+            )
+        return CaseListResponse(
+            items=items,
             total=total,
             page=page,
             page_size=page_size,
@@ -558,6 +643,7 @@ class CasesManager:
             )
             profiles_by_id = {row.id: row for row in rows.scalars()}
         principal_person = next(p for p in persons if p.kind == CasePersonKind.PRINCIPAL.value)
+        person_langs = await self._person_langs(agent.agency_id, persons)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         journey_names = await self._resolve_journey_names(agent, [case], lang)
         current = (await self._resolve_current_steps(agent, [case], lang)).get(case.id, {})
@@ -578,6 +664,7 @@ class CasesManager:
                     definitions,
                     pending_until,
                     profiles_by_id.get(p.client_profile_id) if p.client_profile_id else None,
+                    effective_lang=(person_langs.get(p.expat_user_id) if p.expat_user_id else None),
                 )
                 for p in persons
             ],
@@ -897,19 +984,46 @@ class CasesManager:
             return None
         return await self.db.get(ClientProfileModel, person.client_profile_id)
 
+    async def _person_langs(
+        self, agency_id: uuid.UUID, persons: list[CasePerson]
+    ) -> dict[uuid.UUID, str]:
+        """{expat_user_id: that person's language FOR THIS AGENCY} for the
+        persons with an account — the SAME resolution as the sends (the
+        agency record, then the account, then the agency's language), so the
+        dossier screen states the language the mails really go out in. One
+        batched read (client_langs)."""
+        return await client_langs(
+            self.db,
+            agency_id,
+            {p.expat_user.id: p.expat_user.preferred_lang for p in persons if p.expat_user},
+        )
+
+    async def _person_lang(self, agency_id: uuid.UUID, person: CasePerson) -> str | None:
+        """One person's language for this agency (write responses)."""
+        if person.expat_user_id is None:
+            return None
+        return (await self._person_langs(agency_id, [person])).get(person.expat_user_id)
+
     @staticmethod
     def _person_response(
         person: CasePerson,
         active_definitions: list[CustomFieldDefinition],
         pending_until: dict[str, datetime],
         profile: "ClientProfileModel | None" = None,
+        *,
+        effective_lang: str | None,
     ) -> PersonResponse:
         """Homogeneous shape: PRINCIPAL resolves identity from the shared
         expat_user (full_name NULL), FAMILY carries full_name. custom_fields
         exposes only keys with an ACTIVE definition (orphans hidden).
 
         `pending_until` is REQUIRED (no default): a caller that forgot it
-        would silently report EXPIRED on a perfectly live invitation."""
+        would silently report EXPIRED on a perfectly live invitation.
+
+        `effective_lang` is REQUIRED too, for the same reason: `preferred_lang`
+        serves the person's language FOR THIS AGENCY (see _person_langs),
+        never the raw account value — a caller that forgot it would show a
+        language the sends do not use."""
         expat = person.expat_user
         state, invitation_expires_at = client_space_state(expat, pending_until)
         return PersonResponse(
@@ -925,7 +1039,7 @@ class CasesManager:
             first_name=expat.first_name if expat else None,
             last_name=expat.last_name if expat else None,
             email=expat.email if expat else None,
-            preferred_lang=expat.preferred_lang if expat else None,
+            preferred_lang=effective_lang if expat else None,
             activated=(expat.activated_at is not None) if expat else None,
             passport_number=person.passport_number,
             date_of_birth=person.date_of_birth,
@@ -1123,10 +1237,11 @@ class CasesManager:
             definitions,
             await self._pending_invitations(case.id),
             await self._profile_for(reloaded),
+            effective_lang=await self._person_lang(case.agency_id, reloaded),
         )
 
     async def _member_pending_items(
-        self, case: ClientCase, expat: ExpatUser, lang: str
+        self, case: ClientCase, expat: ExpatUser, lang: str, agency_default: str
     ) -> list[tuple[str, int]]:
         """(resolved step name, pending count) for THIS person's own
         requirement rows — the invitation's « déjà attendu de vous » block
@@ -1176,7 +1291,12 @@ class CasesManager:
             if step.id not in counts:
                 counts[step.id] = 0
                 ordered.append(
-                    (step.id, resolve_step_name_for_notif(step.name_i18n, step.name, lang))
+                    (
+                        step.id,
+                        resolve_step_name_for_notif(
+                            step.name_i18n, step.name, lang, agency_default
+                        ),
+                    )
                 )
             counts[step.id] += 1
         return [(name, counts[step_id]) for step_id, name in ordered]
@@ -1211,15 +1331,23 @@ class CasesManager:
         )
         agency_name = agency.name if agency else "Votre agence"
         agency_slug = agency.slug if agency else None
-        lang = resolve_notification_lang_client(expat.preferred_lang)
         agency_default = (agency.default_language if agency else DEFAULT_LANG) or DEFAULT_LANG
+        # The member's language FOR THIS AGENCY: its record of that person
+        # first (lot « la langue du client »), then the account, then the
+        # agency's language.
+        lang = await client_lang(
+            self.db, case.agency_id, expat.id, expat.preferred_lang, agency_default=agency_default
+        )
         journey_name = await self._journey_name(agent, case, lang, agency_default)
         # « Déjà attendu de vous » : les pièces pendantes de CETTE personne,
         # par étape — le seul mail qu'un membre non activé recevra (NID-23).
-        pending_items = await self._member_pending_items(case, expat, lang)
+        pending_items = await self._member_pending_items(case, expat, lang, agency_default)
         if expat.activated_at is None:
             link = space_link(
-                settings.frontend_url, f"/space/activate/{invitation.token}", agency_slug
+                settings.frontend_url,
+                f"/space/activate/{invitation.token}",
+                agency_slug,
+                lang=lang,
             )
             content = expat_activation_email(
                 agency_name,
@@ -1228,12 +1356,14 @@ class CasesManager:
                 journey_name,
                 lang,
                 pending_items=pending_items,
-                login_link=space_link(settings.frontend_url, "/space/login", agency_slug),
+                login_link=space_link(
+                    settings.frontend_url, "/space/login", agency_slug, lang=lang
+                ),
             )
         else:
             content = new_case_email(
                 agency_name,
-                space_link(settings.frontend_url, "/space/login", agency_slug),
+                space_link(settings.frontend_url, "/space/login", agency_slug, lang=lang),
                 journey_name,
                 lang,
                 pending_items=pending_items,
@@ -1390,6 +1520,7 @@ class CasesManager:
             definitions,
             await self._pending_invitations(case.id),
             await self._profile_for(reloaded),
+            effective_lang=await self._person_lang(case.agency_id, reloaded),
         )
         response.invitation_resent = invitation_resent
         return response
@@ -1465,6 +1596,7 @@ class CasesManager:
             definitions,
             await self._pending_invitations(case.id),
             await self._profile_for(reloaded),
+            effective_lang=await self._person_lang(case.agency_id, reloaded),
         )
         response.invitation_resent = True
         return response

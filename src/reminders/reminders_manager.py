@@ -15,6 +15,7 @@ from shared.models.message_template import MessageTemplate
 from shared.models.reminder import Reminder
 from src.activity.activity_manager import ActivityManager
 from src.cases.client_space import client_space_is_active
+from src.core.client_lang import client_lang
 from src.core.config import get_settings
 from src.core.email import space_link
 from src.core.enums import (
@@ -35,7 +36,6 @@ from src.core.i18n import (
     format_date_for_lang,
     resolve_i18n,
     resolve_notification_lang_agent,
-    resolve_notification_lang_client,
 )
 from src.reminders.reminder_tokens import (
     AGENCY_TOKENS,
@@ -258,7 +258,9 @@ class RemindersManager:
           `recipient_type` sur la ligne, donc une édition ultérieure repasse
           bien par ici ;
         - EXPAT : le membre que l'étape désigne quand elle n'en désigne qu'un
-          (routage du 18/07), le principal sinon, dans SA langue à elle."""
+          (routage du 18/07), le principal sinon, dans SA langue à elle —
+          celle que L'AGENCE a posée sur sa fiche, puis celle du compte,
+          puis la langue de l'agence (lot « la langue du client », 30/09)."""
         if recipient_type is RecipientType.EXTERNAL:
             lang = resolve_notification_lang_agent(agency.default_language)
             if recipient_external_id is None:
@@ -290,7 +292,13 @@ class RemindersManager:
             return _Addressee(
                 person.full_name or f"{member.first_name} {member.last_name}".strip(),
                 member.first_name,
-                resolve_notification_lang_client(member.preferred_lang),
+                await client_lang(
+                    self.db,
+                    case.agency_id,
+                    member.id,
+                    member.preferred_lang,
+                    agency_default=agency.default_language,
+                ),
                 member,
             )
         principal = await self.repo.get_expat(case.principal_expat_user_id)
@@ -298,7 +306,13 @@ class RemindersManager:
         return _Addressee(
             f"{principal.first_name} {principal.last_name}".strip(),
             principal.first_name,
-            resolve_notification_lang_client(principal.preferred_lang),
+            await client_lang(
+                self.db,
+                case.agency_id,
+                principal.id,
+                principal.preferred_lang,
+                agency_default=agency.default_language,
+            ),
             principal,
         )
 

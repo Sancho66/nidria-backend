@@ -37,11 +37,12 @@ from shared.models.digest import DigestCursor
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplateStep
 from src.cases.client_space import client_space_is_active
+from src.core.client_lang import client_langs_sync
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import digest_email
 from src.core.enums import CasePersonKind, CaseStatus
-from src.core.i18n import resolve_notification_lang_client, resolve_step_name_for_notif
+from src.core.i18n import resolve_step_name_for_notif
 from src.core.notification_prefs import client_pref
 
 logger = logging.getLogger(__name__)
@@ -137,17 +138,17 @@ def _agency_digest(
             continue  # nothing whitelisted survived (e.g. validations not OK)
         completed_ids, started_ids, docs = content
         step_names = _step_names(db, completed_ids + started_ids)
-        recipients, skipped = _client_recipients(db, case)
+        recipients, skipped = _client_recipients(db, case, agency)
         if skipped:
             skipped_no_client_space += skipped
             log(f"digest skipped: case {case.id} — {skipped} recipient(s) without an active space")
         for email, lang in recipients:
             completed = [
-                resolve_step_name_for_notif(i18n, name, lang)
+                resolve_step_name_for_notif(i18n, name, lang, agency.default_language)
                 for name, i18n in (step_names[pid] for pid in completed_ids if pid in step_names)
             ]
             started = [
-                resolve_step_name_for_notif(i18n, name, lang)
+                resolve_step_name_for_notif(i18n, name, lang, agency.default_language)
                 for name, i18n in (step_names[pid] for pid in started_ids if pid in step_names)
             ]
             if not completed and not started and not docs:
@@ -202,9 +203,15 @@ def _step_names(db: Session, progress_ids: list[str]) -> dict[str, tuple[str, An
     return {str(row[0]): (row[1], row[2]) for row in rows}
 
 
-def _client_recipients(db: Session, case: ClientCase) -> tuple[list[tuple[str, str]], int]:
+def _client_recipients(
+    db: Session, case: ClientCase, agency: Agency
+) -> tuple[list[tuple[str, str]], int]:
     """((email, lang) for the principal + every member with an access, each in
     THEIR language, never the principal's ; skipped count).
+
+    « Their language » = their language FOR THIS AGENCY (lot « la langue du
+    client », 30/09): the agency's record of that person, then the account,
+    then the agency's language — resolved for all recipients in ONE read.
 
     NID-23 follow-up: a person who never activated is DROPPED. The digest's
     whole payload is "voici ce qui a avancé, allez voir" — sending it to
@@ -212,7 +219,7 @@ def _client_recipients(db: Session, case: ClientCase) -> tuple[list[tuple[str, s
     The rule comes from `client_space_is_active`, the same derivation as the
     badge on the fiche; it is never re-tested on `activated_at` here.
     """
-    recipients: list[tuple[str, str]] = []
+    kept: list[ExpatUser] = []
     skipped = 0
     principal = db.execute(
         select(ExpatUser)
@@ -221,9 +228,7 @@ def _client_recipients(db: Session, case: ClientCase) -> tuple[list[tuple[str, s
     ).scalar_one_or_none()
     if principal is not None and principal.email:
         if client_space_is_active(principal):
-            recipients.append(
-                (principal.email, resolve_notification_lang_client(principal.preferred_lang))
-            )
+            kept.append(principal)
         else:
             skipped += 1
     members = (
@@ -239,10 +244,16 @@ def _client_recipients(db: Session, case: ClientCase) -> tuple[list[tuple[str, s
         .all()
     )
     for member in members:
-        if not member.email or any(member.email == existing for existing, _ in recipients):
+        if not member.email or any(member.email == existing.email for existing in kept):
             continue
         if not client_space_is_active(member):
             skipped += 1
             continue
-        recipients.append((member.email, resolve_notification_lang_client(member.preferred_lang)))
-    return recipients, skipped
+        kept.append(member)
+    langs = client_langs_sync(
+        db,
+        agency.id,
+        {expat.id: expat.preferred_lang for expat in kept},
+        agency_default=agency.default_language,
+    )
+    return [(expat.email, langs[expat.id]) for expat in kept], skipped

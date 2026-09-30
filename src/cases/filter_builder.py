@@ -26,6 +26,7 @@ from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
 from shared.models.client_case import ClientCase
+from shared.models.client_profile import ClientProfile
 from shared.models.expat_user import ExpatUser
 from src.cases.filter_schema import AdvancedFilters, FilterCondition, FilterGroup
 from src.core.exceptions import ValidationError
@@ -170,11 +171,39 @@ def _build_tag_clause(op: str, value: Any) -> ColumnElement[bool]:
     )
 
 
+def principal_lang_expr() -> ColumnElement[Any]:
+    """The principal's language as the case's AGENCY sees it (lot « la
+    langue du client », 30/09): the agency's record of the client first,
+    then the account — the value the listing now SERVES, so a language
+    filter finds exactly the cases whose column shows that language.
+    Correlated to ClientCase only: no join, one row per case."""
+    record = (
+        select(ClientProfile.preferred_lang)
+        .where(
+            ClientProfile.agency_id == ClientCase.agency_id,
+            ClientProfile.expat_user_id == ClientCase.principal_expat_user_id,
+        )
+        .correlate(ClientCase)
+        .scalar_subquery()
+    )
+    account = (
+        select(ExpatUser.preferred_lang)
+        .where(ExpatUser.id == ClientCase.principal_expat_user_id)
+        .correlate(ClientCase)
+        .scalar_subquery()
+    )
+    return func.coalesce(record, account)
+
+
 def _build_principal_clause(field_name: str, op: str, value: Any) -> ColumnElement[bool]:
     """Filter on the principal expat's identity fields. Wrapped in
     `principal_expat_user_id IN (<subquery>)` so the listing query
-    stays single-row-per-case (same pattern as Prism's contact_*)."""
+    stays single-row-per-case (same pattern as Prism's contact_*).
+    The language is the exception: agency-scoped (principal_lang_expr)."""
     suffix = field_name.removeprefix("principal_")
+    if suffix == "preferred_lang":
+        clause: ColumnElement[bool] = _apply_operator(principal_lang_expr(), op, value)
+        return clause
     column = _PRINCIPAL_FIELDS.get(suffix)
     if column is None:
         raise ValidationError(

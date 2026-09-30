@@ -50,6 +50,7 @@ from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.reminder import Reminder
 from shared.models.step_case_requirement import StepCaseRequirement
 from src.cases.client_space import client_space_is_active
+from src.core.client_lang import client_lang_sync
 from src.core.config import get_settings
 from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import (
@@ -65,7 +66,7 @@ from src.core.enums import (
     ReminderStatus,
     StepStatus,
 )
-from src.core.i18n import resolve_notification_lang_agent, resolve_notification_lang_client
+from src.core.i18n import resolve_notification_lang_agent, resolve_step_name_for_notif
 from src.core.notification_prefs import auto_reminders_require_approval, client_pref
 from src.progress.requirements_eval import step_all_met
 from src.reminders.reminders_targeting import targeted_member
@@ -73,6 +74,29 @@ from src.reminders.reminders_targeting import targeted_member
 logger = logging.getLogger(__name__)
 
 LogFn = Callable[[str], None]
+
+# (agency_id, expat_user_id) → the client's language for that agency, memoized
+# for ONE tick: a dossier's addressee is resolved once, however many of its
+# reminders or thresholds the tick touches.
+ClientLangCache = dict[tuple[uuid.UUID, uuid.UUID], str]
+
+
+def _client_lang(
+    db: Session,
+    agency: Agency,
+    expat_user_id: uuid.UUID,
+    account_lang: str | None,
+    cache: ClientLangCache,
+) -> str:
+    """The CLIENT's language for this agency (lot « la langue du client »,
+    30/09): the agency's record of that person, then the account, then the
+    agency's language — the one resolver of every client send."""
+    key = (agency.id, expat_user_id)
+    if key not in cache:
+        cache[key] = client_lang_sync(
+            db, agency.id, expat_user_id, account_lang, agency_default=agency.default_language
+        )
+    return cache[key]
 
 
 def _owner_delivery(db: Session, case_id: uuid.UUID, agency: Agency) -> tuple[str, str] | None:
@@ -120,7 +144,7 @@ def _targeted_member_user(
 
 
 def _recipient(
-    db: Session, reminder: Reminder, agency: Agency
+    db: Session, reminder: Reminder, agency: Agency, langs: ClientLangCache
 ) -> tuple[str, str, str | None] | None:
     """(email, language, escalated_from). `escalated_from` is None for a
     direct delivery; it carries the ORIGINAL contact's name when an EXTERNAL
@@ -133,15 +157,19 @@ def _recipient(
         # in HER language. Otherwise the principal, as before. Never both.
         member = _targeted_member_user(db, reminder.case_id, reminder.step_progress_id)
         if member is not None:
-            return member.email, resolve_notification_lang_client(member.preferred_lang), None
+            return (
+                member.email,
+                _client_lang(db, agency, member.id, member.preferred_lang, langs),
+                None,
+            )
         row = db.execute(
-            select(ExpatUser.email, ExpatUser.preferred_lang)
+            select(ExpatUser.id, ExpatUser.email, ExpatUser.preferred_lang)
             .join(ClientCase, ClientCase.principal_expat_user_id == ExpatUser.id)
             .where(ClientCase.id == reminder.case_id)
         ).first()
-        if row is None or row[0] is None:
+        if row is None or row[1] is None:
             return None
-        return str(row[0]), resolve_notification_lang_client(row[1]), None
+        return str(row[1]), _client_lang(db, agency, row[0], row[2], langs), None
     if reminder.recipient_type == RecipientType.AGENT.value:  # already owner-directed
         owner = _owner_delivery(db, reminder.case_id, agency)
         return (owner[0], owner[1], None) if owner is not None else None
@@ -172,17 +200,21 @@ def _done_step_ids(db: Session, rows: Sequence[Any]) -> set[uuid.UUID]:
     )
 
 
-def _step_names_by_reminder(db: Session, reminders: list[Reminder]) -> dict[uuid.UUID, str]:
-    """Step name per reminder — what the GROUPED mail lists. Same scalar name
-    the individual body already carries (`auto_reminder_body(step.name, …)`),
-    so grouping never renames anything."""
+def _step_names_by_reminder(
+    db: Session, reminders: list[Reminder], lang: str, agency_default: str | None
+) -> dict[uuid.UUID, str]:
+    """Step name per reminder — what the GROUPED mail lists, in the language
+    of the mail (`lang`, the routed recipient's) with the agency's language as
+    first fallback: the same resolution the individual body gets at creation
+    (`auto_reminder_body(resolve_step_name_for_notif(…))`), so grouping never
+    renames anything — and never lists a raw French name to a Russian client."""
     progress_ids = [r.step_progress_id for r in reminders if r.step_progress_id is not None]
     if not progress_ids:
         return {}
     by_progress = {
-        progress_id: name
-        for progress_id, name in db.execute(
-            select(CaseStepProgress.id, JourneyTemplateStep.name)
+        progress_id: resolve_step_name_for_notif(name_i18n, name, lang, agency_default)
+        for progress_id, name, name_i18n in db.execute(
+            select(CaseStepProgress.id, JourneyTemplateStep.name, JourneyTemplateStep.name_i18n)
             .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
             .where(CaseStepProgress.id.in_(progress_ids))
         ).all()
@@ -243,6 +275,7 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
     # The step-done guard, resolved once for the tick (see the module header).
     done_steps = _done_step_ids(db, rows)
     skipped_step_done = 0
+    langs: ClientLangCache = {}
 
     def _record(reminder: Reminder, extra: dict[str, Any]) -> None:
         """Mark SENT + log — per reminder, always, grouped or not."""
@@ -304,7 +337,7 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
             # the expat space (no notifications table).
             silent.append(reminder)
             continue
-        recipient = _recipient(db, reminder, agency)
+        recipient = _recipient(db, reminder, agency, langs)
         if recipient is None:
             # No reachable recipient AND no owner to escalate to — the
             # only case left approved (loud log, never a silent drop).
@@ -358,7 +391,7 @@ def dispatch_due_reminders(db: Session, *, log: LogFn, dry_run: bool = False) ->
             # THE NORMAL CASE, byte for byte what it was before grouping.
             content = reminder_email(agency.name, members[0].message_body, link, lang)
         else:
-            names = _step_names_by_reminder(db, members)
+            names = _step_names_by_reminder(db, members, lang, agency.default_language)
             content = reminder_digest_email(
                 agency.name,
                 [names.get(member.id, member.message_body) for member in members],
@@ -502,6 +535,7 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
     # The step's real addressee (member-or-principal), resolved ONCE per step —
     # the thresholds loop must not re-query it.
     routed: dict[Any, ExpatUser | None] = {}
+    langs: ClientLangCache = {}
     # The smallest threshold the system can ever resolve is the validation
     # floor (1 day) — a step touched more recently can't have crossed any
     # threshold, so it never becomes a candidate.
@@ -538,8 +572,8 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
         .join(JourneyTemplateStep, JourneyTemplateStep.id == CaseStepProgress.template_step_id)
         # The CASE's journey carries the per-journey thresholds (NID-18).
         .join(JourneyTemplate, JourneyTemplate.id == ClientCase.journey_template_id)
-        # The recipient (case principal) — its preferred_lang drives the
-        # SYSTEM-authored body's language.
+        # The case principal — the addressee when the step targets no single
+        # member (the routing below decides; the body follows the ROUTED one).
         .join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
         .where(
             CaseStepProgress.status.in_([StepStatus.TODO.value, StepStatus.IN_PROGRESS.value]),
@@ -591,6 +625,14 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
             if dry_run:
                 would_create += 1
                 continue
+            # The body speaks the language of the person the dispatch will
+            # REALLY mail — the routed addressee (a targeted member, else the
+            # principal), for THIS agency — never the principal's by default:
+            # a Russian member used to receive a French body in a Russian
+            # envelope. The step name is TRANSLATED in that language (agency
+            # language as fallback), like every other client mail.
+            assert addressee is not None  # client_space_is_active(None) is False
+            lang = _client_lang(db, agency, addressee.id, addressee.preferred_lang, langs)
             db.add(
                 Reminder(
                     case_id=case.id,
@@ -601,11 +643,13 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     # NULL approver: nobody clicked. The activity log below
                     # records WHICH regime produced the row.
                     recipient_type=RecipientType.EXPAT.value,
-                    # Translated into the CLIENT's language.
+                    # Translated into the ROUTED client's language.
                     message_body=auto_reminder_body(
-                        step.name,
+                        resolve_step_name_for_notif(
+                            step.name_i18n, step.name, lang, agency.default_language
+                        ),
                         threshold,
-                        resolve_notification_lang_client(expat.preferred_lang),
+                        lang,
                     ),
                     auto_threshold_days=threshold,
                 )
@@ -688,7 +732,12 @@ def create_auto_reminders(db: Session, *, log: LogFn, dry_run: bool = False) -> 
                     # The manual-flow language rule: a provider reads the
                     # AGENCY's language, never the client's.
                     message_body=auto_reminder_body(
-                        step.name,
+                        resolve_step_name_for_notif(
+                            step.name_i18n,
+                            step.name,
+                            resolve_notification_lang_agent(agency.default_language),
+                            agency.default_language,
+                        ),
                         threshold,
                         resolve_notification_lang_agent(agency.default_language),
                     ),

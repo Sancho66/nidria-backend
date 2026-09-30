@@ -100,12 +100,44 @@ def apply_i18n_write(
 # the display chain (which would give an agent's FR default to a client).
 
 
-def resolve_notification_lang_client(preferred_lang: str | None) -> str:
-    """The language of a notification sent to a CLIENT (expat). Their stored
-    preferred_lang if supported, else ENGLISH — never the agency default."""
-    if preferred_lang and preferred_lang.lower()[:2] in SUPPORTED_LANGUAGES:
-        return preferred_lang.lower()[:2]
-    return "en"
+def supported_lang(value: str | None) -> str | None:
+    """`value` as one of SUPPORTED_LANGUAGES ("pt-BR" → "pt"), or None when it
+    is empty or outside the product (a legacy "de" on an old account)."""
+    if value and value.lower()[:2] in SUPPORTED_LANGUAGES:
+        return value.lower()[:2]
+    return None
+
+
+def resolve_notification_lang_client(
+    preferred_lang: str | None,
+    *,
+    profile_lang: str | None = None,
+    agency_default: str | None = None,
+) -> str:
+    """The language of a notification sent to a CLIENT (expat), as seen from
+    ONE agency (lot « la langue du client », 30/09). First supported value of:
+
+      1. `profile_lang`   — the AGENCY's record (client_profile.preferred_lang
+                            for (agency, expat)): the agency sets the language
+                            of ITS client, and it wins for that agency only;
+      2. `preferred_lang` — the account's own language (expat_user, global);
+      3. "en"             — the account STATES a language the product does
+                            not speak (a legacy "de"): English, never the
+                            agency's (NOTIF-1 — a German speaker reads
+                            English sooner than his agency's French);
+      4. `agency_default` — only when NO language is known at all (never a
+                            hardcoded "fr" any more), else "en".
+
+    Called with the account language alone (no agency context: the expat
+    password reset), it keeps its historical meaning: account, else English.
+    The DB-aware helpers that fetch `profile_lang` live in
+    src/core/client_lang.py — every client send goes through them."""
+    code = supported_lang(profile_lang) or supported_lang(preferred_lang)
+    if code is not None:
+        return code
+    if preferred_lang:
+        return "en"
+    return supported_lang(agency_default) or "en"
 
 
 def resolve_notification_lang_agent(agency_default: str | None) -> str:
@@ -116,12 +148,20 @@ def resolve_notification_lang_agent(agency_default: str | None) -> str:
     return DEFAULT_LANG
 
 
-def resolve_step_name_for_notif(name_i18n: dict[str, str] | None, scalar: str, lang: str) -> str:
+def resolve_step_name_for_notif(
+    name_i18n: dict[str, str] | None,
+    scalar: str,
+    lang: str,
+    agency_default: str | None = None,
+) -> str:
     """Resolve a step name for a notification in the recipient's `lang`. The
     recipient language is already resolved (client/agent rules), so the chain
-    is blob[lang] → blob[fr] → the scalar. Never empty — the scalar (a required
-    field) is the ultimate fallback."""
-    resolved = resolve_i18n(name_i18n, lang, lang, scalar)
+    is blob[lang] → blob[agency_default] → blob[fr] → the scalar — the SAME
+    order as the timeline the recipient reads (resolve_i18n): a Spanish
+    agency's step reaches a Hungarian client in Spanish, not in French.
+    Without `agency_default` (legacy callers) the agency step is skipped.
+    Never empty — the scalar (a required field) is the ultimate fallback."""
+    resolved = resolve_i18n(name_i18n, lang, agency_default or lang, scalar)
     return resolved if resolved is not None else scalar
 
 

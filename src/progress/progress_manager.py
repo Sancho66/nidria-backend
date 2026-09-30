@@ -18,6 +18,7 @@ from shared.models.journey import JourneyStepParticipant, JourneyTemplateStep
 from shared.models.journey_step_cost import JourneyStepCost
 from shared.models.step_requirement import StepRequirement
 from src.activity.activity_manager import ActivityManager
+from src.core.client_lang import client_lang
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import (
@@ -44,7 +45,6 @@ from src.core.i18n import (
     case_label_for_notif,
     resolve_i18n,
     resolve_notification_lang_agent,
-    resolve_notification_lang_client,
     resolve_step_name_for_notif,
 )
 from src.core.notification_prefs import agent_pref, client_pref
@@ -403,14 +403,21 @@ class ProgressManager:
         with_prereq = {
             p.step_id for p in await self.repo.list_prerequisites_for_steps([s.id for s in steps])
         }
-        lang = resolve_notification_lang_client(preferred_lang)
+        lang, agency_default = await self._principal_lang(case, preferred_lang)
         items: list[tuple[str, int]] = []
         for step in sorted(steps, key=lambda s: s.position):
             if step.id in with_prereq:
                 continue  # not startable yet — its own activation will speak
             count = len(await self.repo.list_step_requirements(step.id))
             if count:
-                items.append((resolve_step_name_for_notif(step.name_i18n, step.name, lang), count))
+                items.append(
+                    (
+                        resolve_step_name_for_notif(
+                            step.name_i18n, step.name, lang, agency_default
+                        ),
+                        count,
+                    )
+                )
         if not items:
             return None
         link = space_link(get_settings().frontend_url, "/space", agency_slug)
@@ -1674,6 +1681,22 @@ class ProgressManager:
         content = ready_to_validate_email(case_label, step_name, link, lang)
         return PendingMail(to=email, content=content)
 
+    async def _principal_lang(
+        self, case: ClientCase, account_lang: str | None
+    ) -> tuple[str, str | None]:
+        """(the principal's language for this case's agency, the agency's
+        default language) — one resolution shared by every client mail of
+        this manager (lot « la langue du client », 30/09)."""
+        agency_default = await self.repo.agency_default_language(case.agency_id)
+        lang = await client_lang(
+            self.db,
+            case.agency_id,
+            case.principal_expat_user_id,
+            account_lang,
+            agency_default=agency_default,
+        )
+        return lang, agency_default
+
     async def _client_step_mail_for_row(
         self, case: ClientCase, row: CaseStepProgress, *, reopened: bool
     ) -> PendingMail | None:
@@ -1708,9 +1731,10 @@ class ProgressManager:
         ) = await self.repo.get_principal_email_and_agency_name(case)
         if not email:
             return None
-        # Recipient = the CLIENT → preferred_lang, else EN (never agency fr).
-        lang = resolve_notification_lang_client(preferred_lang)
-        step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang)
+        # Recipient = the CLIENT → their language FOR THIS AGENCY (the
+        # agency's record, then the account, then the agency's language).
+        lang, agency_default = await self._principal_lang(case, preferred_lang)
+        step_name = resolve_step_name_for_notif(step.name_i18n, step.name, lang, agency_default)
         link = space_link(get_settings().frontend_url, "/space", agency_slug)
         if reopened:
             # A reopen is a correction: it always speaks, never windowed.

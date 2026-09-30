@@ -21751,11 +21751,24 @@
             "default": true
           },
           "preferred_lang": {
-            "type": "string",
-            "maxLength": 5,
-            "minLength": 2,
-            "title": "Preferred Lang",
-            "default": "fr"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "fr",
+                  "en",
+                  "es",
+                  "ru",
+                  "pt",
+                  "it",
+                  "hu"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Lang"
           },
           "origin_country": {
             "anyOf": [
@@ -27428,6 +27441,19 @@
             "title": "Viewer Role",
             "default": "principal"
           },
+          "client_lang": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Client Lang"
+          },
           "referent": {
             "anyOf": [
               {
@@ -27464,6 +27490,7 @@
           "steps_total",
           "created_at",
           "updated_at",
+          "client_lang",
           "referent",
           "timeline",
           "custom_field_definitions"
@@ -27532,6 +27559,19 @@
             ],
             "title": "Viewer Role",
             "default": "principal"
+          },
+          "client_lang": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Client Lang"
           }
         },
         "type": "object",
@@ -27544,7 +27584,8 @@
           "steps_done",
           "steps_total",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "client_lang"
         ],
         "title": "ExpatCaseSummaryResponse"
       },

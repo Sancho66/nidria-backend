@@ -21,7 +21,7 @@ from src.cases.case_urgency import (
     urgency_rank_expr,
     urgency_value_expr,
 )
-from src.cases.filter_builder import build_advanced_clauses
+from src.cases.filter_builder import build_advanced_clauses, principal_lang_expr
 
 # Field → column resolution for ?sort_by= (Prism convention: single
 # source of truth next to the SQL columns; the manager validates the
@@ -79,7 +79,7 @@ class CasesRepository:
             ClientCase.agency_id == agency_id, ClientCase.deleted_at.is_(None)
         )
         # One join serves the principal-based filters AND principal sorts.
-        if join_principal or filters.get("q") or filters.get("preferred_lang"):
+        if join_principal or filters.get("q"):
             stmt = stmt.join(ExpatUser, ExpatUser.id == ClientCase.principal_expat_user_id)
         if filters.get("status"):
             stmt = stmt.where(ClientCase.status.in_([s.value for s in filters["status"]]))
@@ -90,7 +90,8 @@ class CasesRepository:
         if filters.get("owner_agent_id"):
             stmt = stmt.where(ClientCase.owner_agent_id == filters["owner_agent_id"])
         if filters.get("preferred_lang"):
-            stmt = stmt.where(ExpatUser.preferred_lang == filters["preferred_lang"])
+            # The language the column shows: the agency's record first.
+            stmt = stmt.where(principal_lang_expr() == filters["preferred_lang"])
         for tag in filters.get("tag") or []:
             # contains-ALL: one JSONB @> per tag.
             stmt = stmt.where(ClientCase.tags.contains([tag]))

@@ -12,6 +12,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.step_comment import StepComment
 from src.comments.comments_repository import CommentsRepository
 from src.comments.comments_schema import CommentResponse
+from src.core.client_lang import client_lang
 from src.core.config import get_settings
 from src.core.email import send_email, space_link
 from src.core.email_templates import new_comment_to_agent, new_comment_to_client
@@ -19,7 +20,6 @@ from src.core.enums import ActorType
 from src.core.exceptions import ForbiddenError, NotFoundError
 from src.core.i18n import (
     resolve_notification_lang_agent,
-    resolve_notification_lang_client,
     resolve_step_name_for_notif,
 )
 from src.core.notification_prefs import COMMENT_WINDOWS, agent_pref, client_pref
@@ -378,9 +378,17 @@ class CommentsManager:
                 return
             agency = await self.repo.get_agency(case.agency_id)
             agency_name = agency.name if agency else "Votre agence"
-            # Recipient = CLIENT → preferred_lang, else EN.
-            lang = resolve_notification_lang_client(preferred_lang)
-            step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang)
+            agency_default = agency.default_language if agency else None
+            # Recipient = CLIENT → their language FOR THIS AGENCY (the
+            # agency's record, then the account, then the agency's language).
+            lang = await client_lang(
+                self.db,
+                case.agency_id,
+                case.principal_expat_user_id,
+                preferred_lang,
+                agency_default=agency_default,
+            )
+            step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang, agency_default)
             content = new_comment_to_client(
                 agency_name,
                 author_first_name or "",

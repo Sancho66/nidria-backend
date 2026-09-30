@@ -84,14 +84,27 @@ def _is_mocked() -> bool:
     return settings.mock_services
 
 
-def space_link(frontend_url: str, path: str, agency_slug: str | None) -> str:
+def space_link(
+    frontend_url: str, path: str, agency_slug: str | None, *, lang: str | None = None
+) -> str:
     """Client-space URL carrying the white-label context: every client
     email lands on the BRANDED login/activation (?agency=<slug>), never
     the naked /space pages. Slugs are [a-z0-9-] by construction; quoted
-    anyway (clean encoding whatever a future slug holds)."""
+    anyway (clean encoding whatever a future slug holds).
+
+    `lang` (lot « la langue du client », 30/09): the language the mail was
+    written in (?lang=<code>), so the activation / login page the client
+    lands on opens in the language the agency set for them — before any
+    login, hence before the space can ask the server. Query string only:
+    the token stays in the PATH, its validation is untouched."""
     url = f"{frontend_url}{path}"
+    params: list[str] = []
     if agency_slug:
-        url = f"{url}?agency={quote(agency_slug, safe='')}"
+        params.append(f"agency={quote(agency_slug, safe='')}")
+    if lang:
+        params.append(f"lang={quote(lang, safe='')}")
+    if params:
+        url = f"{url}?{'&'.join(params)}"
     return url
 
 

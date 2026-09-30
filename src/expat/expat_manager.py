@@ -19,6 +19,7 @@ from src.cases.cases_schema import (
     PersonUpdateRequest,
 )
 from src.core import storage
+from src.core.client_lang import client_langs_by_agency
 from src.core.enums import (
     ActorType,
     ResponsibleType,
@@ -113,6 +114,7 @@ class ExpatPortalManager:
         counts: dict[uuid.UUID, tuple[int, int]],
         *,
         is_member: bool,
+        client_lang: str,
     ) -> ExpatCaseSummaryResponse:
         done, total = counts.get(case.id, (0, 0))
         return ExpatCaseSummaryResponse(
@@ -133,13 +135,24 @@ class ExpatPortalManager:
             updated_at=case.updated_at,
             # The front hides every write affordance for a member (read-only).
             viewer_role="member" if is_member else "principal",
+            client_lang=client_lang,
         )
 
     async def list_my_cases(self, expat: ExpatUser) -> list[ExpatCaseSummaryResponse]:
         rows = await self.repo.list_cases_for_viewer(expat.id)
         counts = await self.repo.step_counts([case.id for case, _ in rows])
+        # One read for the whole list, whatever the number of agencies.
+        langs = await client_langs_by_agency(
+            self.db, expat.id, expat.preferred_lang, [agency for _, agency in rows]
+        )
         return [
-            self._summary(case, agency, counts, is_member=case.principal_expat_user_id != expat.id)
+            self._summary(
+                case,
+                agency,
+                counts,
+                is_member=case.principal_expat_user_id != expat.id,
+                client_lang=langs[agency.id],
+            )
             for case, agency in rows
         ]
 
@@ -223,8 +236,11 @@ class ExpatPortalManager:
         # Same active definitions the agency face embeds — so the client
         # renders a custom_field requirement identically (no divergence).
         definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
+        langs = await client_langs_by_agency(self.db, expat.id, expat.preferred_lang, [agency])
         return ExpatCaseDetailResponse(
-            **self._summary(case, agency, counts, is_member=is_member).model_dump(),
+            **self._summary(
+                case, agency, counts, is_member=is_member, client_lang=langs[agency.id]
+            ).model_dump(),
             referent=referent,
             timeline=timeline,
             custom_field_definitions=[

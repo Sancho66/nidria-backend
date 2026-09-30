@@ -380,7 +380,7 @@ class ClientProfilesManager:
         # Annuaire F3.3 : l'étape en cours par dossier, batchée (UNE requête
         # progress), résolue dans la LANGUE DE L'AGENCE — même règle de bande
         # de progression que la liste dossiers.
-        from src.core.i18n import resolve_i18n
+        from src.core.i18n import resolve_i18n, resolve_notification_lang_client
         from src.progress.progress_repository import ProgressRepository
 
         with_journey = [c.id for _e, c, _n in cases if c.journey_template_id is not None]
@@ -412,8 +412,14 @@ class ClientProfilesManager:
             last_name=account.last_name if account else (profile.last_name or ""),
             email=account.email if account else (profile.email or ""),
             # La langue : le registre de la FICHE prime, la préférence du
-            # compte en repli (nommé au rapport).
-            preferred_lang=profile.preferred_lang or (account.preferred_lang if account else None),
+            # compte en repli, puis la langue de l'agence — la MÊME chaîne
+            # que tous les envois au client (lot « la langue du client »,
+            # 30/09) : l'écran dit la langue dans laquelle les mails partent.
+            preferred_lang=resolve_notification_lang_client(
+                account.preferred_lang if account else None,
+                profile_lang=profile.preferred_lang,
+                agency_default=agency_lang,
+            ),
             activated_at=account.activated_at if account else None,
             passport_number=profile.passport_number,
             date_of_birth=profile.date_of_birth,
@@ -1021,7 +1027,11 @@ class ClientProfilesManager:
             first_name=account.first_name if account else (profile.first_name or ""),
             last_name=account.last_name if account else (profile.last_name or ""),
             email=account.email if account else profile.email,
-            preferred_lang=account.preferred_lang if account else "fr",
+            # No language forced here (it used to be a hardcoded "fr" for a
+            # profile without account): create_case settles it from THIS
+            # record, then the account, then the agency's language — the
+            # same order as every client send.
+            preferred_lang=None,
             journey_template_id=payload.journey_template_id,
             origin_country=payload.origin_country,
             dest_country=payload.dest_country,

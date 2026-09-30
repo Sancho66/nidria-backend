@@ -30,11 +30,12 @@ from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.invitation import CaseInvitation
 from shared.models.journey import JourneyTemplate
+from src.core.client_lang import client_lang_sync
 from src.core.config import get_settings
 from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import activation_reminder_email
 from src.core.enums import InvitationStatus
-from src.core.i18n import resolve_i18n, resolve_notification_lang_client
+from src.core.i18n import resolve_i18n
 from src.core.job_wrapper import LogFn
 from src.core.notification_prefs import activation_reminders_enabled
 
@@ -83,7 +84,11 @@ def send_activation_reminders(db: Session, *, log: LogFn, dry_run: bool = False)
             stats["sent"] += 1
             continue
 
-        lang = resolve_notification_lang_client(expat.preferred_lang)
+        # SA langue POUR CETTE AGENCE : la fiche de l'agence, puis le compte,
+        # puis la langue de l'agence (lot « la langue du client », 30/09).
+        lang = client_lang_sync(
+            db, agency.id, expat.id, expat.preferred_lang, agency_default=agency.default_language
+        )
         journey_name = None
         if case.journey_template_id is not None:
             template = db.get(JourneyTemplate, case.journey_template_id)
@@ -93,7 +98,12 @@ def send_activation_reminders(db: Session, *, log: LogFn, dry_run: bool = False)
                 )
         content = activation_reminder_email(
             agency.name,
-            space_link(settings.frontend_url, f"/space/activate/{invitation.token}", agency.slug),
+            space_link(
+                settings.frontend_url,
+                f"/space/activate/{invitation.token}",
+                agency.slug,
+                lang=lang,
+            ),
             max(1, (invitation.expires_at - now).days),
             journey_name,
             lang,

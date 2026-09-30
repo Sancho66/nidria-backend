@@ -17,6 +17,7 @@ from src.core.enums import (
     MaritalStatus,
     Sex,
 )
+from src.core.i18n import Language
 from src.progress.progress_schema import StepProgressResponse
 
 _COUNTRY_PATTERN = r"^[A-Z]{2}$"
@@ -83,7 +84,15 @@ class CaseCreateRequest(_CivilStatusFields):
             "False creates no invitation or activation reminder."
         ),
     )
-    preferred_lang: str = Field(default="fr", min_length=2, max_length=5)
+    # THE CLIENT'S LANGUAGE for this agency (lot « la langue du client »,
+    # 30/09). Optional: omitted, the case keeps what the agency's record of
+    # this client already says, else the agency's own language — never a
+    # hardcoded "fr" any more (the CRM import relies on that default). One
+    # of the 7 supported languages: anything else would be stored and then
+    # silently mailed in another language. Given, it is WRITTEN to the
+    # agency's record (client_profile.preferred_lang) — see
+    # CasesManager._settle_client_lang.
+    preferred_lang: Language | None = None
     # Case — origin/destination addresses (flat columns on client_case).
     # country stays separate (its query ecosystem); street/city/postal are
     # collectable address fields added in the sections chantier (vague B).

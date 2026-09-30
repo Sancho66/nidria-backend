@@ -337,6 +337,11 @@ class AuthManager:
             settings = get_settings()
             # An EXPAT reads it in their preferred_lang; an AGENT in the agency
             # default (agents carry no personal language).
+            # DELIBERATELY the ACCOUNT's language, not the agency-record one
+            # every other client mail uses (src/core/client_lang.py): the
+            # reset is a mail about the GLOBAL account, which may belong to
+            # several agencies — none of them owns it, so none of their
+            # records may choose its language. (Account, else English.)
             if isinstance(actor, ExpatUser):
                 lang = resolve_notification_lang_client(actor.preferred_lang)
             else:
