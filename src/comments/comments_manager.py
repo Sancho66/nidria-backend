@@ -332,7 +332,9 @@ class CommentsManager:
         if comment.author_type != viewer_type.value or comment.author_id != viewer_id:
             # Each party touches ONLY its own messages — checked against the
             # JWT identity, never the payload.
-            raise ForbiddenError("Only the author can modify this comment.")
+            raise ForbiddenError(
+                "Only the author can modify this comment.", code="comment.not_author"
+            )
         return comment
 
     # --- notification (anti-burst, best-effort, AFTER commit) ----------------------

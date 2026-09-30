@@ -1030,6 +1030,30 @@ class ProgressManager:
         steps = await self.repo.get_template_steps_by_ids(unfinished_ids)
         return [steps[sid] for sid in unfinished_ids if sid in steps]
 
+    async def _prerequisite_lock_error(
+        self, case: ClientCase, unfinished: list[JourneyTemplateStep], lang: str | None
+    ) -> ConflictError:
+        """Feature 4's refusal, the same on every face (agent transition,
+        client or provider validation). `detail` keeps the scalar names (the
+        English fallback, read by logs); `params.steps` carries the names
+        RESOLVED in the reader's language — the request language, else the
+        agency's — for the front to interpolate, never concatenated into a
+        sentence it cannot translate."""
+        agency_default = (await self.repo.agency_default_language(case.agency_id)) or DEFAULT_LANG
+        reader_lang = lang or agency_default
+        names = ", ".join(step.name for step in unfinished)
+        return ConflictError(
+            f"Step is blocked by unfinished prerequisite step(s): {names}.",
+            code="progress.step_blocked",
+            params={
+                "steps": [
+                    resolve_i18n(step.name_i18n, reader_lang, agency_default, step.name)
+                    or step.name
+                    for step in unfinished
+                ]
+            },
+        )
+
     async def update_step(
         self,
         agent: Agent,
@@ -1059,7 +1083,7 @@ class ProgressManager:
 
         pending: list[PendingMail] = []
         if "status" in payload.model_fields_set and payload.status is not None:
-            pending = await self._apply_transition(agent, case, row, payload.status)
+            pending = await self._apply_transition(agent, case, row, payload.status, lang)
 
         await self.db.commit()
         await self.send_pending(pending)
@@ -1168,6 +1192,7 @@ class ProgressManager:
         actor_type: ActorType,
         actor_id: uuid.UUID | None,
         completed_by_agent_id: uuid.UUID | None,
+        lang: str | None = None,
     ) -> None:
         """Close an ACTIVE step because its designated validator (client or
         provider) clicked validate. Shared core for the expat/external
@@ -1175,13 +1200,16 @@ class ProgressManager:
         re-checked, status→DONE, logged with the real actor. The CALLER has
         already verified the actor IS the legitimate validator (RGPD) and
         commits. No requirement-met precondition — the validator decides
-        (same prerogative as the agency's manual close)."""
+        (same prerogative as the agency's manual close). `lang` names a
+        blocking prerequisite in the validator's language (None: the
+        agency's)."""
         if row.status != StepStatus.IN_PROGRESS.value:
-            raise ConflictError("Only an active step can be validated.")
+            raise ConflictError(
+                "Only an active step can be validated.", code="progress.step_not_active"
+            )
         unfinished = await self._unfinished_prerequisites(row)
         if unfinished:
-            names = ", ".join(step.name for step in unfinished)
-            raise ConflictError(f"Step is blocked by unfinished prerequisite step(s): {names}.")
+            raise await self._prerequisite_lock_error(case, unfinished, lang)
         row.status = StepStatus.DONE.value
         row.completed_at = datetime.now(UTC)
         row.completed_by_agent_id = completed_by_agent_id
@@ -1317,12 +1345,23 @@ class ProgressManager:
         case.status = new_status
 
     async def _apply_transition(
-        self, agent: Agent, case: ClientCase, row: CaseStepProgress, target: StepStatus
+        self,
+        agent: Agent,
+        case: ClientCase,
+        row: CaseStepProgress,
+        target: StepStatus,
+        lang: str,
     ) -> list[PendingMail]:
         if target is StepStatus.BLOCKED:
-            raise ValidationError("'blocked' is a projection, not a settable status.")
+            raise ValidationError(
+                "'blocked' is a projection, not a settable status.",
+                code="progress.status_not_settable",
+            )
         if (row.status, target.value) not in _ALLOWED_TRANSITIONS:
-            raise ValidationError(f"Invalid transition: {row.status} -> {target.value}.")
+            raise ValidationError(
+                f"Invalid transition: {row.status} -> {target.value}.",
+                code="progress.transition_invalid",
+            )
 
         is_reopen = row.status == StepStatus.DONE.value
         if not is_reopen:
@@ -1331,8 +1370,7 @@ class ProgressManager:
             # correction and is never lock-checked.
             unfinished = await self._unfinished_prerequisites(row)
             if unfinished:
-                names = ", ".join(step.name for step in unfinished)
-                raise ConflictError(f"Step is blocked by unfinished prerequisite step(s): {names}.")
+                raise await self._prerequisite_lock_error(case, unfinished, lang)
 
         now = datetime.now(UTC)
         pending: list[PendingMail] = []

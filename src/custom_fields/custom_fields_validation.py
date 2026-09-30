@@ -17,6 +17,7 @@ from typing import Any
 from shared.models.custom_field import CustomFieldDefinition
 from src.core.enums import CustomFieldType
 from src.core.exceptions import ValidationError
+from src.core.i18n import resolve_i18n
 
 _DATETIME_FORMATS = ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S")
 # « Texte long » cap (lot 15/09/2026) — characters, newlines included, the
@@ -37,6 +38,19 @@ class CodedValueError(ValueError):
         self.params = params
 
 
+class FieldValueError(ValueError):
+    """A type/format refusal (country, date, number, choice…) named by a
+    stable code. It carries NO field label: validate_and_merge adds the
+    label shown to the reader (it alone knows the request language), so
+    the 422 never hands the technical key to the screen. The message stays
+    the readable English reason (`str(exc)`, also read by the imports)."""
+
+    def __init__(self, message: str, *, code: str, params: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.params = params or {}
+
+
 # ISO 3166-1 alpha-2 — the SAME rule as CaseUpdateRequest.origin_country,
 # so a custom country field validates identically to the canonical columns.
 _COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
@@ -45,7 +59,9 @@ _COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
 def _coerce_country(value: Any) -> str:
     s = str(value).strip()
     if not _COUNTRY_RE.match(s):
-        raise ValueError("expects a 2-letter ISO country code (e.g. FR)")
+        raise FieldValueError(
+            "expects a 2-letter ISO country code (e.g. FR)", code="custom_field.country_invalid"
+        )
     return s
 
 
@@ -71,7 +87,10 @@ def _coerce_address(value: Any) -> dict[str, str]:
     (the same ISO-2 rule as the country type and the canonical columns).
     Empty sub-fields are dropped. Unknown keys are ignored."""
     if not isinstance(value, dict):
-        raise ValueError("expects an address object {street, city, postal_code, country}")
+        raise FieldValueError(
+            "expects an address object {street, city, postal_code, country}",
+            code="custom_field.address_invalid",
+        )
     out: dict[str, str] = {}
     for sub, maxlen in _ADDRESS_SUBFIELDS.items():
         raw = value.get(sub)
@@ -79,7 +98,11 @@ def _coerce_address(value: Any) -> dict[str, str]:
             continue
         s = str(raw).strip()
         if len(s) > maxlen:
-            raise ValueError(f"{sub} too long (max {maxlen} characters)")
+            raise FieldValueError(
+                f"{sub} too long (max {maxlen} characters)",
+                code="custom_field.address_part_too_long",
+                params={"max_length": maxlen},
+            )
         out[sub] = s
     country = value.get("country")
     if country is not None and str(country).strip() != "":
@@ -103,16 +126,19 @@ def _coerce_long_text(definition: CustomFieldDefinition, value: Any) -> str:
     return text
 
 
+_NUMBER_INVALID = "custom_field.number_invalid"
+
+
 def _coerce_number(value: Any) -> float | int:
     if isinstance(value, bool):  # bool is an int subclass — reject explicitly
-        raise ValueError("expects a number")
+        raise FieldValueError("expects a number", code=_NUMBER_INVALID)
     if isinstance(value, int | float):
         return value
     try:
         text = str(value).strip()
         return int(text) if text.lstrip("-").isdigit() else float(text)
     except (TypeError, ValueError) as exc:
-        raise ValueError("expects a number") from exc
+        raise FieldValueError("expects a number", code=_NUMBER_INVALID) from exc
 
 
 def _coerce_date(value: Any) -> str:
@@ -128,7 +154,7 @@ def _coerce_date(value: Any) -> str:
             return datetime.strptime(s, fmt).date().isoformat()
         except ValueError:
             continue
-    raise ValueError("expects a date (YYYY-MM-DD)")
+    raise FieldValueError("expects a date (YYYY-MM-DD)", code="custom_field.date_invalid")
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -136,12 +162,16 @@ def _coerce_bool(value: Any) -> bool:
         return value
     if isinstance(value, str) and value.strip().lower() in ("true", "false", "1", "0"):
         return value.strip().lower() in ("true", "1")
-    raise ValueError("expects a boolean")
+    raise FieldValueError("expects a boolean", code="custom_field.boolean_invalid")
+
+
+_OPTIONS_INVALID = "custom_field.options_invalid"
 
 
 def _coerce_one(definition: CustomFieldDefinition, value: Any) -> Any:
     """Coerce/validate a non-empty value against the field type. Raises
-    ValueError with a human message (caller prefixes the field label)."""
+    FieldValueError (a stable code) or CodedValueError (the long text cap)
+    with a human message; the caller prefixes the field label."""
     ftype = definition.field_type
     if ftype == CustomFieldType.TEXT.value:
         return str(value)
@@ -160,14 +190,18 @@ def _coerce_one(definition: CustomFieldDefinition, value: Any) -> Any:
     options = set(definition.option_values)
     if ftype == CustomFieldType.SELECT.value:
         if value not in options:
-            raise ValueError(f"must be one of {sorted(options)}")
+            raise FieldValueError(
+                f"must be one of {sorted(options)}", code="custom_field.option_invalid"
+            )
         return value
     if ftype == CustomFieldType.MULTI_SELECT.value:
         if not isinstance(value, list):
-            raise ValueError("expects a list of values")
+            raise FieldValueError("expects a list of values", code=_OPTIONS_INVALID)
         invalid = [v for v in value if v not in options]
         if invalid:
-            raise ValueError(f"contains values outside {sorted(options)}: {invalid}")
+            raise FieldValueError(
+                f"contains values outside {sorted(options)}: {invalid}", code=_OPTIONS_INVALID
+            )
         return value
     raise ValueError(f"unknown field type {ftype!r}")
 
@@ -178,6 +212,8 @@ def validate_and_merge(
     submitted: dict[str, Any],
     *,
     allow_clear: bool = False,
+    lang: str | None = None,
+    agency_default: str | None = None,
 ) -> dict[str, Any]:
     """Return the merged custom_fields after validating `submitted`.
 
@@ -190,21 +226,43 @@ def validate_and_merge(
       requirement returns to pending. Every agency path keeps allow_clear=
       False, so required stays enforced where it makes sense (unchanged).
     - A null/empty value on a non-required field clears the key.
+
+    The 422 envelope (point 9): `detail` is the English aggregate (every
+    bad field, for logs); `code` + `params` name the FIRST refusal. The
+    field is named by its label as the READER sees it: resolved in `lang`
+    (the request language, e.g. the client's) when given, else the
+    agency's scalar label — never the technical key.
     """
     by_key = {d.key: d for d in active_definitions}
     errors: list[str] = []
     coded: CodedValueError | None = None  # the first coded error names the 422
     merged = dict(current)
 
+    def shown(definition: CustomFieldDefinition) -> str:
+        if lang is None:
+            return definition.label
+        resolved = resolve_i18n(
+            definition.label_i18n, lang, agency_default or lang, definition.label
+        )
+        return resolved or definition.label
+
     for key, value in submitted.items():
         definition = by_key.get(key)
         if definition is None:
-            errors.append(f"unknown or archived custom field: {key!r}")
+            message = f"unknown or archived custom field: {key!r}"
+            errors.append(message)
+            coded = coded or CodedValueError(
+                message, code="custom_field.unknown_or_archived", params={}
+            )
             continue
         label = f"'{definition.label}' ({key})"
         if _is_empty(value):
             if definition.required and not allow_clear:
-                errors.append(f"Field {label}: required, cannot be empty.")
+                message = f"Field {label}: required, cannot be empty."
+                errors.append(message)
+                coded = coded or CodedValueError(
+                    message, code="custom_field.value_required", params={"label": shown(definition)}
+                )
             else:
                 merged.pop(key, None)  # clear (non-required, or an authorized clear)
             continue
@@ -212,6 +270,11 @@ def validate_and_merge(
             merged[key] = _coerce_one(definition, value)
         except CodedValueError as exc:
             coded = coded or exc
+            errors.append(f"Field {label}: {exc}.")
+        except FieldValueError as exc:
+            coded = coded or CodedValueError(
+                str(exc), code=exc.code, params={**exc.params, "label": shown(definition)}
+            )
             errors.append(f"Field {label}: {exc}.")
         except ValueError as exc:
             errors.append(f"Field {label}: {exc}.")

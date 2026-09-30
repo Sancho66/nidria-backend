@@ -100,8 +100,9 @@ async def fulfill_requirement_value(
     body: RequirementValueRequest,
     expat: ExpatDep,
     db: DbDep,
+    lang: RequestLang,
 ) -> ExpatCaseDetailResponse:
-    return await ExpatPortalManager(db).fulfill_value(expat, case_id, requirement_id, body)
+    return await ExpatPortalManager(db).fulfill_value(expat, case_id, requirement_id, body, lang)
 
 
 @router.put(
@@ -114,9 +115,10 @@ async def fulfill_case_requirement_value(
     body: RequirementValueRequest,
     expat: ExpatDep,
     db: DbDep,
+    lang: RequestLang,
 ) -> ExpatCaseDetailResponse:
     return await ExpatPortalManager(db).fulfill_case_value(
-        expat, case_id, case_requirement_id, body
+        expat, case_id, case_requirement_id, body, lang
     )
 
 
@@ -138,9 +140,9 @@ async def fulfill_requirement_document(
     "/cases/{case_id}/steps/{progress_id}/validate", response_model=ExpatCaseDetailResponse
 )
 async def validate_step(
-    case_id: uuid.UUID, progress_id: uuid.UUID, expat: ExpatDep, db: DbDep
+    case_id: uuid.UUID, progress_id: uuid.UUID, expat: ExpatDep, db: DbDep, lang: RequestLang
 ) -> ExpatCaseDetailResponse:
-    return await ExpatPortalManager(db).validate_step(expat, case_id, progress_id)
+    return await ExpatPortalManager(db).validate_step(expat, case_id, progress_id, lang)
 
 
 @router.get("/cases/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download")

@@ -45,9 +45,32 @@ from src.expat.expat_schema import (
     ExpatTimelineStepResponse,
     RequirementValueRequest,
 )
+from src.imports.target_labels import ADDRESS_SUBFIELD_LABELS, CIVIL_LABELS
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
+
+# The refusals a client reads on their own space (point 9): a stable code
+# + params, the English `detail` kept as the fallback. A field is named by
+# its LABEL in the reader's language, never by its technical key.
+_STEP_NOT_ACTIVE = "requirement.step_not_active"
+_VALUE_INVALID = "requirement.value_invalid"
+
+
+def _base_field_label(reference: str, lang: str) -> str:
+    """A civil column (`date_of_birth`) as the client reads it, in `lang` —
+    the same x7 vocabulary the import targets serve."""
+    labels = CIVIL_LABELS.get(reference, {})
+    return labels.get(lang) or labels.get(DEFAULT_LANG, "")
+
+
+def _case_field_label(column: str, lang: str) -> str:
+    """A client_case address column (`origin_country`, `dest_street`…) named
+    by its address part (Country, Street…) in `lang`: the backend has no x7
+    name for the origin/destination pair, and the refusal is shown inline,
+    next to the field the screen already names."""
+    labels = ADDRESS_SUBFIELD_LABELS.get(column.split("_", 1)[-1], {})
+    return labels.get(lang) or labels.get(DEFAULT_LANG, "")
 
 
 def _displayable_responsible(step: StepProgressResponse) -> ExpatResponsibleResponse:
@@ -283,7 +306,9 @@ class ExpatPortalManager:
         if is_member and (viewing_person is None or requirement.person_id != viewing_person.id):
             raise NotFoundError("Requirement not found.")
         if progress.status != StepStatus.IN_PROGRESS.value:  # border 3
-            raise ConflictError("This step is not active; its requirements are read-only.")
+            raise ConflictError(
+                "This step is not active; its requirements are read-only.", code=_STEP_NOT_ACTIVE
+            )
         return case, requirement
 
     async def fulfill_value(
@@ -292,17 +317,21 @@ class ExpatPortalManager:
         case_id: uuid.UUID,
         requirement_id: uuid.UUID,
         payload: RequirementValueRequest,
+        lang: str = DEFAULT_LANG,
     ) -> ExpatCaseDetailResponse:
         case, requirement = await self._resolve_writable_requirement(expat, case_id, requirement_id)
         if requirement.kind == StepRequirementKind.DOCUMENT.value:
-            raise ValidationError("This requirement expects a document upload, not a value.")
+            raise ValidationError(
+                "This requirement expects a document upload, not a value.",
+                code="requirement.expects_document",
+            )
         person = await self.repo.get_case_person(case.id, requirement.person_id)  # border 4
         if person is None:  # defensive — a materialized person can't vanish (CASCADE)
             raise NotFoundError("Requirement not found.")
 
         progress_mgr = ProgressManager(self.db)
         before = await progress_mgr.snapshot_active_completion(case)
-        await self._write_field(case, person, requirement, payload.value)
+        await self._write_field(case, person, requirement, payload.value, lang)
         # The fill may complete an auto step or arm an agency_validation
         # step — recompute, commit, then send mails (best-effort).
         pending = await progress_mgr.recompute_active(case, before)
@@ -316,18 +345,25 @@ class ExpatPortalManager:
         person: CasePerson,
         requirement: CaseStepRequirement,
         value: object,
+        lang: str,
     ) -> None:
         """Write the value onto case_person (the single source of truth).
         base_field → type-validated via PersonUpdateRequest; custom_field
         → validated against the agency's active definitions. An empty value
         CLEARS the field — EVEN a required one on this client path
         (allow_clear=True): the requirement returns to pending and the step
-        reopens. The agency paths keep required enforced (allow_clear=False)."""
+        reopens. The agency paths keep required enforced (allow_clear=False).
+        A refused value names the field by its label in `lang` (the client's
+        request language), never by its key."""
         if requirement.kind == StepRequirementKind.BASE_FIELD.value:
             try:
                 validated = PersonUpdateRequest.model_validate({requirement.reference: value})
             except PydanticValidationError as exc:
-                raise ValidationError(f"Invalid value for {requirement.reference!r}.") from exc
+                raise ValidationError(
+                    f"Invalid value for {requirement.reference!r}.",
+                    code=_VALUE_INVALID,
+                    params={"label": _base_field_label(requirement.reference, lang)},
+                ) from exc
             coerced = validated.model_dump(exclude_unset=True).get(requirement.reference)
             # Enums (sex, marital_status) → store their .value.
             setattr(person, requirement.reference, getattr(coerced, "value", coerced))
@@ -336,11 +372,14 @@ class ExpatPortalManager:
             discard_inherited_keys(person, [requirement.reference])
         else:  # custom_field
             definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
+            agency = await self.db.get(Agency, case.agency_id)
             person.custom_fields = validate_and_merge(
                 definitions,
                 person.custom_fields or {},
                 {requirement.reference: value},
                 allow_clear=True,  # the client may retract a required value (dégel)
+                lang=lang,
+                agency_default=agency.default_language if agency is not None else None,
             )
             from src.client_profiles.client_profiles_manager import discard_inherited_keys
 
@@ -362,7 +401,9 @@ class ExpatPortalManager:
             raise NotFoundError("Case requirement not found.")
         creq, progress = found
         if progress.status != StepStatus.IN_PROGRESS.value:  # border c (active → 409)
-            raise ConflictError("This step is not active; its requirements are read-only.")
+            raise ConflictError(
+                "This step is not active; its requirements are read-only.", code=_STEP_NOT_ACTIVE
+            )
         return case, creq
 
     async def fulfill_case_value(
@@ -371,6 +412,7 @@ class ExpatPortalManager:
         case_id: uuid.UUID,
         case_requirement_id: uuid.UUID,
         payload: RequirementValueRequest,
+        lang: str = DEFAULT_LANG,
     ) -> ExpatCaseDetailResponse:
         case, creq = await self._resolve_writable_case_requirement(
             expat, case_id, case_requirement_id
@@ -387,7 +429,11 @@ class ExpatPortalManager:
         try:
             validated = CaseUpdateRequest.model_validate({column: payload.value})
         except PydanticValidationError as exc:
-            raise ValidationError(f"Invalid value for {column!r}.") from exc
+            raise ValidationError(
+                f"Invalid value for {column!r}.",
+                code=_VALUE_INVALID,
+                params={"label": _case_field_label(column, lang)},
+            ) from exc
         coerced = validated.model_dump(exclude_unset=True).get(column)
 
         progress_mgr = ProgressManager(self.db)
@@ -407,7 +453,9 @@ class ExpatPortalManager:
     ) -> ExpatCaseDetailResponse:
         case, requirement = await self._resolve_writable_requirement(expat, case_id, requirement_id)
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
-            raise ValidationError("This requirement does not expect a document.")
+            raise ValidationError(
+                "This requirement does not expect a document.", code="requirement.not_document"
+            )
         # DURCISSEMENT (29/07) : AVANT l'upload (qui committe) — même garde
         # que la face agence, même code 422 ; le cœur partagé double en
         # défense.
@@ -460,7 +508,11 @@ class ExpatPortalManager:
         return attachment.filename, content
 
     async def validate_step(
-        self, expat: ExpatUser, case_id: uuid.UUID, progress_id: uuid.UUID
+        self,
+        expat: ExpatUser,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        lang: str = DEFAULT_LANG,
     ) -> ExpatCaseDetailResponse:
         """ "Action validée par" = client: the principal validates a step of
         ITS OWN dossier. Server-side borders, none trusting the client:
@@ -475,13 +527,17 @@ class ExpatPortalManager:
         if progress is None:
             raise NotFoundError("Case step not found.")
         if progress.validated_by_type != StepValidatorType.EXPAT.value:  # border 3
-            raise ConflictError("This step is not validated by the client.")
+            raise ConflictError(
+                "This step is not validated by the client.",
+                code="progress.not_validated_by_client",
+            )
         await ProgressManager(self.db).close_step_by_validation(
             case,
             progress,
             actor_type=ActorType.EXPAT,
             actor_id=expat.id,
             completed_by_agent_id=None,  # the client is not an agent
+            lang=lang,  # a blocking prerequisite is named in the client's language
         )
         await self.db.commit()
         return await self.get_my_case(expat, case_id)

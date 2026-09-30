@@ -33,6 +33,11 @@ from src.external.scoping import get_case_for_external
 from src.progress.progress_manager import ProgressManager
 from src.usage.usage_manager import UsageManager
 
+# Refusals shared by every face that deposits on a requirement (agent,
+# client, provider): the same code as the client's own requirement path.
+_STEP_NOT_ACTIVE = "requirement.step_not_active"
+_NOT_DOCUMENT = "requirement.not_document"
+
 
 class DocumentsManager:
     def __init__(self, db: AsyncSession) -> None:
@@ -110,16 +115,22 @@ class DocumentsManager:
         settings = get_settings()
         original_filename = file.filename
         if not original_filename:
-            raise ValidationError("A filename is required.")
+            raise ValidationError("A filename is required.", code="document.filename_required")
         extension = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
         if extension not in settings.allowed_document_extensions:
             allowed = ", ".join(settings.allowed_document_extensions)
-            raise ValidationError(f"File type not allowed (accepted: {allowed}).")
+            raise ValidationError(
+                f"File type not allowed (accepted: {allowed}).",
+                code="document.type_not_allowed",
+                params={"accepted": sorted(settings.allowed_document_extensions)},
+            )
 
         content = await file.read()
         if len(content) > settings.max_document_size_mb * 1024 * 1024:
             raise PayloadTooLargeError(
-                f"File exceeds the {settings.max_document_size_mb} MB limit."
+                f"File exceeds the {settings.max_document_size_mb} MB limit.",
+                code="document.too_large",
+                params={"max_mb": settings.max_document_size_mb},
             )
 
         if step_progress_id is not None and (
@@ -258,9 +269,13 @@ class DocumentsManager:
             raise NotFoundError("Requirement not found.")
         requirement, progress = found
         if progress.status != StepStatus.IN_PROGRESS.value:  # border 3 (mirror expat)
-            raise ConflictError("This step is not active; its requirements are read-only.")
+            raise ConflictError(
+                "This step is not active; its requirements are read-only.", code=_STEP_NOT_ACTIVE
+            )
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
-            raise ValidationError("This requirement does not expect a document.")
+            raise ValidationError(
+                "This requirement does not expect a document.", code=_NOT_DOCUMENT
+            )
         # DURCISSEMENT (29/07) : AVANT l'upload (qui committe) — une ligne
         # signable ne se fournit qu'en signant, et aucun fichier orphelin ne
         # doit rester d'une tentative refusée. Le cœur partagé porte la même
@@ -454,9 +469,13 @@ class DocumentsManager:
             raise NotFoundError("Requirement not found.")
         requirement, progress = found
         if progress.status != StepStatus.IN_PROGRESS.value:
-            raise ConflictError("This step is not active; its requirements are read-only.")
+            raise ConflictError(
+                "This step is not active; its requirements are read-only.", code=_STEP_NOT_ACTIVE
+            )
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
-            raise ValidationError("This requirement does not expect a document.")
+            raise ValidationError(
+                "This requirement does not expect a document.", code=_NOT_DOCUMENT
+            )
 
         document = await self._upload(
             case, file, requirement.case_step_progress_id, None, ActorType.AGENT, external.id
@@ -551,9 +570,13 @@ class DocumentsManager:
             document.uploaded_by_type != ActorType.EXPAT.value
             or document.uploaded_by_id != expat.id
         ):
-            raise ForbiddenError("Only your own uploads can be deleted.")
+            raise ForbiddenError(
+                "Only your own uploads can be deleted.", code="document.not_own_upload"
+            )
         if document.validation_status == DocValidationStatus.OK.value:
             # An OK-validated piece is frozen in the file; NULL /
             # INCOMPLETE / TO_FIX stay deletable (replace flow).
-            raise ForbiddenError("A validated document cannot be deleted.")
+            raise ForbiddenError(
+                "A validated document cannot be deleted.", code="document.validated_locked"
+            )
         await self._delete(case, document, ActorType.EXPAT, expat.id)
