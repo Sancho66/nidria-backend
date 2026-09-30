@@ -379,7 +379,8 @@ class CommentsManager:
             if not email:
                 return
             agency = await self.repo.get_agency(case.agency_id)
-            agency_name = agency.name if agency else "Votre agence"
+            # No agency name → the builder names it in the mail's language.
+            agency_name = agency.name if agency else None
             agency_default = agency.default_language if agency else None
             # Recipient = CLIENT → their language FOR THIS AGENCY (the
             # agency's record, then the account, then the agency's language).
@@ -410,7 +411,8 @@ class CommentsManager:
             lang = resolve_notification_lang_agent(agency.default_language if agency else None)
             step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang)
             content = new_comment_to_agent(
-                client_name or "Votre client",
+                # An unnamed client reads « your client » in the agent's language.
+                client_name or None,
                 step_name,
                 f"{settings.frontend_url}/app/cases/{case.id}",
                 lang,

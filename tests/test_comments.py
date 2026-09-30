@@ -7,7 +7,10 @@ first mail does not suppress the next) and soft-delete coherence."""
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
@@ -573,3 +576,33 @@ async def test_comment_count_is_per_step_not_cross_contaminated(
     by_id = {s["id"]: s for s in (await c_client.get(f"/cases/{case.id}/steps", headers=ah)).json()}
     assert by_id[p1]["comment_count"] == 2
     assert by_id[p2]["comment_count"] == 0  # untouched step → zero, not N+1-defaulted
+
+
+async def test_unnamed_client_is_named_in_the_agents_language(
+    c_client: AsyncClient,
+    admin: Agent,
+    make_expat_user: MakeExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+    db_session: AsyncSession,
+) -> None:
+    """A client without a name reads « your client » in the AGENT's language
+    — never a hardcoded French « Votre client » in an English agency."""
+    await db_session.execute(
+        update(Agency).where(Agency.id == admin.agency_id).values(default_language="en")
+    )
+    await db_session.commit()
+    nameless = await make_expat_user(email="nameless@example.com", first_name="", last_name="")
+    case, pid = await _thread(c_client, agent_headers(admin), admin, nameless, make_client_case)
+    email.outbox.clear()
+
+    posted = await c_client.post(
+        f"/expat/cases/{case.id}/steps/{pid}/comments",
+        headers=expat_headers(nameless),
+        json={"body": "Here is my question."},
+    )
+    assert posted.status_code == 201, posted.text
+    [sent] = [m for m in email.outbox if m.to == admin.email]
+    assert "Your client" in sent.html
+    assert "Votre client" not in sent.html
