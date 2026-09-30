@@ -23,9 +23,9 @@ Arbitrated v1 perimeter (Alexandre, 2026-07-07, on Eric's spec):
 - Postel tolerance on labels (2026-07-07): AIs naturally emit plain
   strings where the schema expects multilingual objects - a string is
   accepted anywhere a label is expected and normalized to
-  {langue_par_defaut | fr: string} BEFORE validation (the fr-required
-  rule applies AFTER, unchanged); any other type keeps the exact-path
-  rejection. A soft warning counts the normalized labels. Select
+  {langue_par_defaut | fr: string} BEFORE validation (the declared
+  default language is required; absent/unsupported defaults keep fr).
+  Any other type keeps the exact-path rejection. A soft warning counts the normalized labels. Select
   OPTIONS additionally accept the RICH form {valeur|value|cle|key,
   libelle|label} AIs produce spontaneously: it collapses to its label
   (the options storage is a plain list[str] - verified - so the
@@ -33,7 +33,7 @@ Arbitrated v1 perimeter (Alexandre, 2026-07-07, on Eric's spec):
 
 Validation is two-tiered: a violation INSIDE a step rejects that step
 (partial import, prerequisite dependents cascade-rejected with
-mention), while a globally invalid JSON (no fr name, zero valid step,
+mention), while a globally invalid JSON (no default-language name, zero valid step,
 prerequisite cycle) raises a 422 whose import_ai.* code + {chemin,
 valeur} params the front renders in the agency's language."""
 
@@ -192,19 +192,25 @@ class JourneyImportManager:
             return inner
         return self._coerce_label(value)
 
-    def _label(self, value: Any, chemin: str, *, require_fr: bool) -> dict[str, str]:
+    def _label(self, value: Any, chemin: str, *, require_default: bool) -> dict[str, str]:
         value = self._coerce_label(value)
         if not isinstance(value, dict):
             raise _StepInvalid("import_ai.label_invalid", chemin, str(value)[:80])
         blob = normalize_i18n_input({k: v for k, v in value.items() if isinstance(v, str)})
-        if require_fr and not blob.get("fr"):
-            raise _StepInvalid("import_ai.label_fr_missing", f"{chemin}.fr")
+        if require_default and not blob.get(self._default_lang):
+            # Keep the legacy French error code readable by older frontends.
+            code = (
+                "import_ai.label_fr_missing"
+                if self._default_lang == "fr"
+                else "import_ai.label_default_missing"
+            )
+            raise _StepInvalid(code, f"{chemin}.{self._default_lang}")
         return blob
 
     def _parse_field(self, raw: Any, chemin: str) -> _Field:
         if not isinstance(raw, dict):
             raise _StepInvalid("import_ai.field_invalid", chemin, str(raw)[:80])
-        label = self._label(raw.get("libelle"), f"{chemin}.libelle", require_fr=True)
+        label = self._label(raw.get("libelle"), f"{chemin}.libelle", require_default=True)
         raw_type = raw.get("type")
         if raw_type not in _FIELD_TYPES:
             raise _StepInvalid("import_ai.invalid_field_type", f"{chemin}.type", str(raw_type))
@@ -217,11 +223,11 @@ class JourneyImportManager:
             options = []
             for i, raw_option in enumerate(raw_options):
                 option_label = self._label(
-                    self._coerce_option(raw_option), f"{chemin}.options[{i}]", require_fr=True
+                    self._coerce_option(raw_option), f"{chemin}.options[{i}]", require_default=True
                 )
-                if option_label["fr"] not in options:  # storage wants unique strings
-                    options.append(option_label["fr"])
-        key = _slugify(str(raw.get("cle") or "")) or _slugify(label["fr"]) or "champ"
+                if option_label[self._default_lang] not in options:  # storage wants unique strings
+                    options.append(option_label[self._default_lang])
+        key = _slugify(str(raw.get("cle") or "")) or _slugify(label[self._default_lang]) or "champ"
         return _Field(
             key=key,
             field_type=field_type,
@@ -239,7 +245,7 @@ class JourneyImportManager:
         if ref in refs_taken:
             raise _StepInvalid("import_ai.duplicate_ref", f"{chemin}.ref", ref)
         try:
-            name = self._label(raw.get("nom"), f"{chemin}.nom", require_fr=True)
+            name = self._label(raw.get("nom"), f"{chemin}.nom", require_default=True)
         except _StepInvalid as exc:
             raise _StepInvalid("import_ai.step_name_missing", exc.chemin, exc.valeur) from exc
 
@@ -309,7 +315,7 @@ class JourneyImportManager:
         provided = raw.get("informations_fournies")
         if isinstance(provided, dict) and provided.get("note") is not None:
             step.note = self._label(
-                provided["note"], f"{chemin}.informations_fournies.note", require_fr=False
+                provided["note"], f"{chemin}.informations_fournies.note", require_default=False
             )
         return step
 
@@ -419,11 +425,11 @@ class JourneyImportManager:
             if isinstance(raw_name, dict)
             else {}
         )
-        if not name_blob.get("fr"):
+        if not name_blob.get(self._default_lang):
             raise ValidationError(
-                "The journey needs a French name (parcours.nom.fr).",
+                "The journey needs a name in its default language.",
                 code="import_ai.name_missing",
-                params={"chemin": "parcours.nom.fr"},
+                params={"chemin": f"parcours.nom.{self._default_lang}"},
             )
         for lang, text in name_blob.items():
             pii_texts.append((f"parcours.nom.{lang}", text))
@@ -586,10 +592,12 @@ class JourneyImportManager:
         )
         report = JourneyImportReport(
             template_id=None,
-            name=name_blob["fr"],
+            name=name_blob[self._default_lang],
             created=False,
             steps_created=[
-                ImportStepCreated(ref=s.ref, name=s.name["fr"], position=i, fields=len(s.fields))
+                ImportStepCreated(
+                    ref=s.ref, name=s.name[self._default_lang], position=i, fields=len(s.fields)
+                )
                 for i, s in enumerate(valid)
             ],
             steps_ignored=ignored,
@@ -776,15 +784,17 @@ class JourneyImportManager:
             # Remplacement : la coquille (id, liens) survit, le contenu
             # repart du JSON.
             template = existing_template
-            template.name = name_blob.get(agency_default) or name_blob["fr"]
+            template.name = name_blob.get(agency_default) or name_blob[self._default_lang]
             template.name_i18n = name_blob
+            template.editing_language = self._default_lang
         else:
             template = JourneyTemplate(
                 id=uuid.uuid4(),
                 agency_id=agent.agency_id,
                 is_sample=False,
-                name=name_blob.get(agency_default) or name_blob["fr"],
+                name=name_blob.get(agency_default) or name_blob[self._default_lang],
                 name_i18n=name_blob,
+                editing_language=self._default_lang,
             )
             self.db.add(template)
 
@@ -797,7 +807,7 @@ class JourneyImportManager:
                 CustomFieldDefinition(
                     agency_id=agent.agency_id,
                     key=key,
-                    label=parsed.label["fr"],
+                    label=parsed.label[self._default_lang],
                     label_i18n=parsed.label,
                     field_type=parsed.field_type,
                     options=parsed.options,
@@ -817,7 +827,7 @@ class JourneyImportManager:
             row = JourneyTemplateStep(
                 id=uuid.uuid4(),
                 template_id=template.id,
-                name=parsed_step.name.get(agency_default) or parsed_step.name["fr"],
+                name=parsed_step.name.get(agency_default) or parsed_step.name[self._default_lang],
                 name_i18n=parsed_step.name,
                 position=position,
                 estimated_days=parsed_step.estimated_days,
@@ -828,7 +838,9 @@ class JourneyImportManager:
                 ),
                 default_validated_by_type=parsed_step.validator,
                 content_note=(
-                    parsed_step.note.get(agency_default) or parsed_step.note.get("fr")
+                    parsed_step.note.get(agency_default)
+                    or parsed_step.note.get(self._default_lang)
+                    or parsed_step.note.get("fr")
                     if parsed_step.note
                     else None
                 ),

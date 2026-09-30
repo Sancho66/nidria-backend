@@ -39,7 +39,14 @@ class JourneyImportRequest(BaseModel):
     and disappears from the preview's external_slots."""
 
     version: int = 1
-    parcours: dict[str, Any]
+    parcours: dict[str, Any] = Field(
+        description=(
+            "Journey format v1. langue_par_defaut selects the required language for "
+            "names, collected-field labels and select options (fr, en, es, ru, pt, it, hu). "
+            "Absent or unsupported language defaults to fr. Plain-string labels use that "
+            "language. Other translations are optional; French is not otherwise required."
+        )
+    )
     provider_assignments: dict[str, "ProviderRef"] | None = None
 
 

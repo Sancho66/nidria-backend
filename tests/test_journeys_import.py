@@ -307,22 +307,27 @@ async def test_plain_string_labels_are_normalized(
     assert definition.options == ["Célibataire", "Marié(e)"]
 
 
-async def test_string_label_without_fr_pivot_still_rejected(
-    client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
+async def test_english_string_labels_are_normalized_and_created(
+    client: AsyncClient, db_session: AsyncSession, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """The fr rule applies AFTER normalization: langue_par_defaut=en
-    puts the string under en, and the missing fr pivot still rejects."""
     payload = {
         "version": 1,
         "parcours": {
             "nom": "English only journey",
             "langue_par_defaut": "en",
-            "etapes": [{"ref": "e1", "nom": {"fr": "Etape"}}],
+            "etapes": [{"ref": "e1", "nom": "Initial contact"}],
         },
     }
     response = await client.post("/journeys/import", headers=agent_headers(admin), json=payload)
-    assert response.status_code == 422
-    assert response.json()["code"] == "import_ai.name_missing"
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["name"] == "English only journey"
+    assert report["steps_created"][0]["name"] == "Initial contact"
+    assert "import_ai.labels_normalized" in _codes(report["warnings"])
+    template = await db_session.get(JourneyTemplate, uuid.UUID(report["template_id"]))
+    assert template is not None
+    assert template.name_i18n == {"en": "English only journey"}
+    assert template.editing_language == "en"
 
 
 async def test_non_string_label_keeps_the_exact_path_rejection(
@@ -1065,3 +1070,253 @@ async def test_preview_is_idempotent_same_json_same_payload(
         )
     ).scalar_one()
     assert fresh is None
+
+
+# The journey's declared language governs every required label, including
+# option storage and the preview report. The agency still defaults to French.
+def _language_payload(language: str) -> dict[str, Any]:
+    names = {
+        "fr": "Suivi client",
+        "en": "Client onboarding",
+        "es": "Alta de cliente",
+        "ru": "Регистрация клиента",
+        "pt": "Integração do cliente",
+        "it": "Avvio cliente",
+        "hu": "Ügyfélfelvétel",
+    }
+    return {
+        "version": 1,
+        "parcours": {
+            "langue_par_defaut": language,
+            "nom": {language: names[language]},
+            "etapes": [
+                {
+                    "ref": "contact",
+                    "nom": {language: names[language]},
+                    "informations_fournies": {"note": {language: "Please provide the details."}},
+                    "informations_a_collecter": [
+                        {
+                            "cle": f"choice_{kind}",
+                            "type": kind,
+                            "libelle": {language: "Client choice"},
+                            "options": [
+                                {language: "First"},
+                                "Second",
+                                {"value": "third", "label": {language: "Third"}},
+                                {"valeur": "fourth", "libelle": "Fourth"},
+                                {language: "First"},
+                            ],
+                        }
+                        for kind in ["select_single", "select_multi"]
+                    ]
+                    + [{"type": "text", "libelle": {language: "Contact details"}}],
+                }
+            ],
+        },
+    }
+
+
+@pytest.mark.parametrize("language", ["fr", "en", "es", "ru", "pt", "it", "hu"])
+async def test_declared_language_preview_and_creation_without_french(
+    language: str,
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    payload = _language_payload(language)
+    headers = agent_headers(admin)
+    models = [JourneyTemplate, JourneyTemplateStep, CustomFieldDefinition, UsageEvent]
+    before = [(await db_session.execute(select(func.count(m.id)))).scalar_one() for m in models]
+    preview = await client.post("/journeys/import?preview=true", headers=headers, json=payload)
+    assert preview.status_code == 200, preview.text
+    report = preview.json()
+    assert report["created"] is False and report["template_id"] is None
+    assert report["name"] == payload["parcours"]["nom"][language]
+    assert report["steps_created"][0]["name"] == report["name"]
+    assert report["steps_ignored"] == []
+    after = [(await db_session.execute(select(func.count(m.id)))).scalar_one() for m in models]
+    assert after == before
+
+    created = await client.post("/journeys/import", headers=headers, json=payload)
+    assert created.status_code == 200, created.text
+    assert created.json()["steps_created"] == report["steps_created"]
+    tid = uuid.UUID(created.json()["template_id"])
+    template = await db_session.get(JourneyTemplate, tid)
+    assert template is not None
+    assert template.name_i18n == payload["parcours"]["nom"]
+    assert template.name == report["name"]
+    assert template.editing_language == language
+    step = (
+        await db_session.execute(
+            select(JourneyTemplateStep).where(JourneyTemplateStep.template_id == tid)
+        )
+    ).scalar_one()
+    assert step.name == report["name"]
+    assert step.name_i18n == {language: report["name"]}
+    assert step.content_note == "Please provide the details."
+    assert step.content_note_i18n == {language: step.content_note}
+    definitions = list(
+        (
+            await db_session.execute(
+                select(CustomFieldDefinition).where(
+                    CustomFieldDefinition.agency_id == admin.agency_id
+                )
+            )
+        ).scalars()
+    )
+    imported = [
+        d
+        for d in definitions
+        if d.key in {"choice_select_single", "choice_select_multi", "contact_details"}
+    ]
+    assert len(imported) == 3
+    for definition in imported:
+        assert definition.label_i18n == {language: definition.label}
+        if definition.key.startswith("choice_"):
+            assert definition.options == ["First", "Second", "Third", "Fourth"]
+    # A French-speaking reader still gets the scalar fallback, never an empty name.
+    detail = await client.get(f"/journeys/{tid}", headers={**headers, "Accept-Language": "fr"})
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["name"] == report["name"]
+
+
+@pytest.mark.parametrize("target", ["name", "step", "field", "option"])
+@pytest.mark.parametrize("missing", [None, "", "   "])
+async def test_french_cannot_replace_missing_default_language_label(
+    target: str,
+    missing: str | None,
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    payload = _language_payload("en")
+    journey = payload["parcours"]
+    step = journey["etapes"][0]
+    field = step["informations_a_collecter"][0]
+    destinations = {
+        "name": (journey, "nom", "parcours.nom.en", "import_ai.name_missing"),
+        "step": (step, "nom", "parcours.etapes[0].nom.en", "import_ai.step_name_missing"),
+        "field": (
+            field,
+            "libelle",
+            "parcours.etapes[0].informations_a_collecter[0].libelle.en",
+            "import_ai.label_default_missing",
+        ),
+        "option": (
+            field["options"],
+            0,
+            "parcours.etapes[0].informations_a_collecter[0].options[0].en",
+            "import_ai.label_default_missing",
+        ),
+    }
+    container, key, path, code = destinations[target]
+    label = {"fr": "Traduction française"}
+    if missing is not None:
+        label["en"] = missing
+    container[key] = label
+    before = (await db_session.execute(select(func.count(JourneyTemplate.id)))).scalar_one()
+    response = await client.post("/journeys/import", headers=agent_headers(admin), json=payload)
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == code
+    assert response.json()["params"]["chemin"] == path
+    assert (await db_session.execute(select(func.count(JourneyTemplate.id)))).scalar_one() == before
+
+
+@pytest.mark.parametrize("default", [None, "de", "", ["en"]])
+async def test_legacy_default_language_falls_back_to_french(
+    default: Any,
+    client: AsyncClient,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    payload = _language_payload("fr")
+    payload["parcours"]["langue_par_defaut"] = default
+    response = await client.post(
+        "/journeys/import?preview=true", headers=agent_headers(admin), json=payload
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == "Suivi client"
+
+
+async def test_english_eight_steps_nine_fields_creation_and_regeneration(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    payload: dict[str, Any] = {
+        "version": 1,
+        "parcours": {
+            "langue_par_defaut": "en",
+            "nom": {"en": "Accounting onboarding"},
+            "etapes": [
+                {
+                    "ref": f"step_{i}",
+                    "nom": {"en": f"Stage {i + 1}"},
+                    "prerequis": [f"step_{i - 1}"] if i else [],
+                    "informations_a_collecter": [
+                        {
+                            "cle": f"field_{i}_{j}",
+                            "type": "text",
+                            "libelle": {"en": f"Information {i + 1}.{j + 1}"},
+                        }
+                        for j in range(2 if i == 0 else 1)
+                    ],
+                }
+                for i in range(8)
+            ],
+        },
+    }
+    headers = agent_headers(admin)
+    preview = await client.post("/journeys/import?preview=true", headers=headers, json=payload)
+    assert preview.status_code == 200, preview.text
+    assert len(preview.json()["steps_created"]) == 8
+    assert sum(s["fields"] for s in preview.json()["steps_created"]) == 9
+    created = await client.post("/journeys/import", headers=headers, json=payload)
+    assert created.status_code == 200, created.text
+    tid = uuid.UUID(created.json()["template_id"])
+    template = await db_session.get(JourneyTemplate, tid)
+    assert template is not None
+    original_steps = set(
+        (
+            await db_session.execute(
+                select(JourneyTemplateStep.id).where(JourneyTemplateStep.template_id == tid)
+            )
+        ).scalars()
+    )
+    # Regenerate an existing French template into English, preserving its identity.
+    template.editing_language = "fr"
+    await db_session.commit()
+    payload["parcours"]["nom"] = {"en": "Revised accounting onboarding"}
+    preview = await client.post(
+        f"/journeys/{tid}/import?preview=true", headers=headers, json=payload
+    )
+    assert preview.status_code == 200, preview.text
+    await db_session.refresh(template)
+    assert template.name == "Accounting onboarding"
+    assert template.editing_language == "fr"
+    replaced = await client.post(f"/journeys/{tid}/import", headers=headers, json=payload)
+    assert replaced.status_code == 200, replaced.text
+    assert replaced.json()["template_id"] == str(tid)
+    await db_session.refresh(template)
+    assert template.name == "Revised accounting onboarding"
+    assert template.name_i18n == {"en": template.name}
+    assert template.editing_language == "en"
+    new_steps = set(
+        (
+            await db_session.execute(
+                select(JourneyTemplateStep.id).where(JourneyTemplateStep.template_id == tid)
+            )
+        ).scalars()
+    )
+    assert len(new_steps) == 8 and not new_steps.intersection(original_steps)
+    assert (
+        await db_session.execute(
+            select(func.count(CustomFieldDefinition.id)).where(
+                CustomFieldDefinition.agency_id == admin.agency_id,
+                CustomFieldDefinition.key.like("field_%"),
+            )
+        )
+    ).scalar_one() == 9
