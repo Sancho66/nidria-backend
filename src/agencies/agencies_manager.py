@@ -674,7 +674,11 @@ class AgenciesManager:
             plan=agency.plan,
             billing_cycle=agency.billing_cycle,
             is_founding=agency.is_founding,
-            trial_ends_at=agency.trial_ends_at,
+            # The column survives the conversion (never touched there), but
+            # it is no longer a deadline: served, it told a PAYING agency its
+            # trial was ending (Domiciliation Bulgarie, 28/09). Same
+            # discriminant as blocking_reason — converted_at, not billing_mode.
+            trial_ends_at=agency.trial_ends_at if agency.converted_at is None else None,
             seats=await self.seat_usage(agency),
             providers=ProviderUsage(
                 count=await self._providers_with_access(agency.id),

@@ -283,6 +283,35 @@ async def test_settings_expose_the_subscription_block(
     assert after["subscription"]["seats"]["max"] is None  # active sub: no ceiling
 
 
+async def test_converted_agency_is_served_no_trial_deadline(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Domiciliation Bulgarie, 28/09: subscribed in July, trial_ends_at still
+    set in DB, and the front's J-7 banner told them their trial was ending.
+    The column stays (history), the SERVED deadline dies with conversion."""
+    agency = await db_session.get(Agency, admin.agency_id)
+    assert agency is not None
+    agency.trial_ends_at = datetime.now(UTC) + timedelta(days=2)
+    await db_session.commit()
+    trial = (await client.get("/agencies/me", headers=agent_headers(admin))).json()
+    assert trial["subscription"]["trial_ends_at"] is not None
+
+    await client.patch(
+        f"/agencies/{admin.agency_id}/subscription",
+        headers=agent_headers(superadmin),
+        json={"plan": "cabinet", "billing_cycle": "mensuel"},
+    )
+    converted = (await client.get("/agencies/me", headers=agent_headers(admin))).json()
+    assert converted["subscription"]["trial_ends_at"] is None
+    assert converted["subscription"]["is_blocked"] is False
+    await db_session.refresh(agency)
+    assert agency.trial_ends_at is not None  # the DB column itself is untouched
+
+
 # --- (e) converted agencies leave the nurture scope --------------------------------------
 
 
