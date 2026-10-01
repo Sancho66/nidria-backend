@@ -106,6 +106,8 @@ async def test_notif_routes_recipient_language_and_resolves_step_name(
     # NOTIF-2: the subject + body are now in EN (recipient language), and a
     # client relationship mail carries no « Nidria: » prefix (decision 14/08).
     assert sent.subject == "New message from your advisor"
+    # Client relationship mail: displayed From = the agency (decision §3).
+    assert sent.sender is not None and sent.sender.startswith('"')
     assert 'html lang="en"' in sent.html
 
 
@@ -416,7 +418,7 @@ async def test_failed_first_mail_does_not_suppress_next(
 
     calls: list[str] = []
 
-    def flaky(to: str, subject: str, body: str, html: str | None = None) -> None:
+    def flaky(to: str, subject: str, body: str, html: str | None = None, **_kw: object) -> None:
         calls.append(to)
         if len(calls) == 1:
             raise RuntimeError("SMTP down")  # first send fails
@@ -606,3 +608,4 @@ async def test_unnamed_client_is_named_in_the_agents_language(
     [sent] = [m for m in email.outbox if m.to == admin.email]
     assert "Your client" in sent.html
     assert "Votre client" not in sent.html
+    assert sent.sender is None  # an agent notification stays in Nidria's name

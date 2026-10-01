@@ -266,10 +266,10 @@ def test_signup_mails_have_their_accents() -> None:
     assert "mot de passe oublié ?" in existing_fr.text
     assert "Si vous n'êtes pas à l'origine" in existing_fr.text
     assert "Aquí tiene su código" in signup_code_email("1", "es").text
-    assert "Inicie sesión a continuación." in signup_existing_account_email("u", "es").text
+    assert "Inicie sesión a continuación;" in signup_existing_account_email("u", "es").text
     assert "o seu código de verificação" in signup_code_email("1", "pt").subject
     assert (
-        "já existe uma conta. Inicie sessão abaixo."
+        "já existe uma conta. Inicie sessão abaixo;"
         in signup_existing_account_email("u", "pt").text
     )
     assert "È stata richiesta" in signup_existing_account_email("u", "it").text
@@ -281,3 +281,27 @@ def test_signup_mails_have_their_accents() -> None:
     for lang in ("fr", "es", "pt", "it"):
         for text in _strings(et._SIGNUP_CODE[lang]) + _strings(et._SIGNUP_EXISTING[lang]):
             assert not unaccented.search(text), f"{lang}: {text}"
+
+
+@pytest.mark.parametrize(
+    ("lang", "fragment"),
+    [
+        ("fr", "mot de passe oublié"),
+        ("en", "forgot your password"),
+        ("es", "ha olvidado su contraseña"),
+        ("ru", "забыли пароль"),
+        ("pt", "esqueceu-se da palavra-passe"),
+        ("it", "hai dimenticato la"),
+        ("hu", "elfelejtett jelszó"),
+    ],
+)
+def test_signup_existing_account_points_to_the_reset_in_every_language(
+    lang: str, fragment: str
+) -> None:
+    """es/ru/pt/it lacked the pointer to the password reset that fr/en/hu
+    carried (C3 report): a user with an account was told to log in, never
+    how to recover a forgotten password."""
+    from src.core.email_templates import signup_existing_account_email
+
+    mail = signup_existing_account_email("https://app.nidria.com/login", lang)
+    assert fragment in mail.text.lower()

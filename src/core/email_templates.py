@@ -2192,7 +2192,8 @@ _SIGNUP_EXISTING = {
         "title": "Ya tiene una cuenta",
         "intro": (
             "Se solicitó crear un espacio con esta dirección, pero ya existe una "
-            "cuenta. Inicie sesión a continuación."
+            "cuenta. Inicie sesión a continuación; ¿ha olvidado su contraseña? La "
+            "página de inicio de sesión permite restablecerla."
         ),
         "button": "Iniciar sesión",
         "phishing": "Si usted no realizó esta solicitud, ignore este correo.",
@@ -2202,7 +2203,8 @@ _SIGNUP_EXISTING = {
         "title": "У вас уже есть аккаунт",
         "intro": (
             "С этим адресом запрошено создание пространства, но аккаунт уже "
-            "существует. Войдите по кнопке ниже."
+            "существует. Войдите по кнопке ниже; забыли пароль? На странице входа "
+            "его можно сбросить."
         ),
         "button": "Войти",
         "phishing": "Если это были не вы, просто проигнорируйте это письмо.",
@@ -2212,7 +2214,8 @@ _SIGNUP_EXISTING = {
         "title": "Já tem uma conta",
         "intro": (
             "Foi pedida a criação de um espaço com este endereço, mas já existe "
-            "uma conta. Inicie sessão abaixo."
+            "uma conta. Inicie sessão abaixo; esqueceu-se da palavra-passe? A "
+            "página de início de sessão permite redefini-la."
         ),
         "button": "Iniciar sessão",
         "phishing": "Se não fez este pedido, ignore este email.",
@@ -2222,7 +2225,8 @@ _SIGNUP_EXISTING = {
         "title": "Hai già un account",
         "intro": (
             "È stata richiesta la creazione di uno spazio con questo indirizzo, "
-            "ma esiste già un account. Accedi qui sotto."
+            "ma esiste già un account. Accedi qui sotto; hai dimenticato la "
+            "password? La pagina di accesso consente di reimpostarla."
         ),
         "button": "Accedi",
         "phishing": "Se non hai effettuato questa richiesta, ignora questa email.",

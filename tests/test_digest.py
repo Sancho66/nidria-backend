@@ -150,6 +150,8 @@ async def test_weekly_sends_only_on_monday_and_whitelist_holds(
     assert stats["mails"] >= 1
     [sent] = [m for m in email.outbox if m.to == principal.email]
     assert "Depot du dossier" in sent.body and "Traduction" in sent.body
+    # Client relationship mail: displayed From = the agency (decision §3).
+    assert sent.sender is not None and sent.sender.startswith('"')
     assert "1 document" in sent.body or "document(s)" in sent.body
     assert "note interne sensible" not in sent.body  # le bruit ne fuit JAMAIS
     assert "reminder" not in sent.body.lower()

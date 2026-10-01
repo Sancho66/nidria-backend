@@ -598,7 +598,7 @@ class SignaturesWebhookManager:
         propriétaire du dossier, langue par défaut agence. Un signataire
         sans email/compte est sauté en silence."""
         from src.core.client_lang import client_langs
-        from src.core.email import space_link
+        from src.core.email import sender_as_agency, space_link
         from src.core.email_templates import (
             document_signed_agency_email,
             document_signed_client_email,
@@ -647,6 +647,8 @@ class SignaturesWebhookManager:
                     content=document_signed_client_email(
                         agency_name, request.reference, client_url, lang
                     ),
+                    # Client relationship mail: displayed From = the agency.
+                    sender=sender_as_agency(agency_name),
                 )
             )
         if case.owner_agent_id is not None:

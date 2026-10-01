@@ -20,7 +20,7 @@ from shared.models.step_requirement import StepRequirement
 from src.activity.activity_manager import ActivityManager
 from src.core.client_lang import client_lang
 from src.core.config import get_settings
-from src.core.email import send_email, space_link
+from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import (
     EmailContent,
     journey_kickoff_email,
@@ -86,6 +86,9 @@ class PendingMail:
     to: str
     content: EmailContent
     window: tuple[uuid.UUID, str] | None = None
+    # Displayed From: the AGENCY on client relationship mails (decision §3,
+    # 14/08 — sender_as_agency); None = the transactional Nidria sender.
+    sender: str | None = None
 
 
 # Stored-status state machine. BLOCKED never appears here: it is a
@@ -429,7 +432,12 @@ class ProgressManager:
             return None
         link = space_link(get_settings().frontend_url, "/space", agency_slug)
         content = journey_kickoff_email(agency_name, items, link, lang)
-        return PendingMail(to=email, content=content, window=(case.id, "steps"))
+        return PendingMail(
+            to=email,
+            content=content,
+            window=(case.id, "steps"),
+            sender=sender_as_agency(agency_name),
+        )
 
     async def backfill_step(self, agent: Agent, step: JourneyTemplateStep) -> int:
         """Option-A contract (step 8): a step added to an ASSIGNED
@@ -1809,7 +1817,9 @@ class ProgressManager:
         if reopened:
             # A reopen is a correction: it always speaks, never windowed.
             return PendingMail(
-                to=email, content=step_reopened_email(agency_name, step_name, link, lang)
+                to=email,
+                content=step_reopened_email(agency_name, step_name, link, lang),
+                sender=sender_as_agency(agency_name),
             )
         # Activation mails share the "steps" window (30 min per case and
         # recipient): the setup burst (kickoff or first start) opens it,
@@ -1820,6 +1830,7 @@ class ProgressManager:
             to=email,
             content=requirement_request_email(agency_name, step_name, link, lang),
             window=(case.id, "steps"),
+            sender=sender_as_agency(agency_name),
         )
 
     async def send_pending(self, mails: list[PendingMail]) -> None:
@@ -1831,7 +1842,12 @@ class ProgressManager:
         for mail in mails:
             try:
                 await asyncio.to_thread(
-                    send_email, mail.to, mail.content.subject, mail.content.text, mail.content.html
+                    send_email,
+                    mail.to,
+                    mail.content.subject,
+                    mail.content.text,
+                    mail.content.html,
+                    sender=mail.sender,
                 )
             except Exception:  # noqa: BLE001 — best-effort boundary
                 logger.exception("step notification email failed (best-effort) to=%s", mail.to)

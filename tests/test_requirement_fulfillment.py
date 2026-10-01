@@ -1052,3 +1052,47 @@ async def test_value_and_definitions_consistent_across_faces(
 
     assert expat_req["value"] == agent_req["value"] == "B"  # same resolution
     assert expat_defs["visa_type"] == agent_defs["visa_type"]  # same definition shape
+
+
+async def test_write_response_speaks_the_clients_language(
+    rf_client: AsyncClient,
+    admin: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    """The refreshed case a write returns is resolved in the language the
+    client reads (it was always « fr »: a client in English saw French step
+    names after saving a value, until the next reload)."""
+    headers = agent_headers(admin)
+    tid = (await rf_client.post("/journeys", headers=headers, json={"name": "T"})).json()["id"]
+    sid = (
+        await rf_client.post(
+            f"/journeys/{tid}/steps",
+            headers=headers,
+            json={"name": "Collecte", "name_i18n": {"fr": "Collecte", "en": "Collection"}},
+        )
+    ).json()["id"]
+    await _add_req(
+        rf_client,
+        headers,
+        tid,
+        sid,
+        kind="base_field",
+        reference="passport_number",
+        scope="principal",
+    )
+    case = await make_client_case(
+        agency_id=admin.agency_id, principal_expat_user_id=expat.id, owner_agent_id=admin.id
+    )
+    await _assign_start(rf_client, headers, str(case.id), tid)
+    req = await _find_req(rf_client, expat_headers, expat, str(case.id), "passport_number")
+
+    put = await rf_client.put(
+        f"/expat/cases/{case.id}/requirements/{req['id']}",
+        headers={**expat_headers(expat), "Accept-Language": "en"},
+        json={"value": "AB12345"},
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["timeline"][0]["name"] == "Collection"

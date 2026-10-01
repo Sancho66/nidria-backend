@@ -119,6 +119,9 @@ async def test_completion_notifies_each_client_in_their_language(
     assert "è ora firmato da tutte le parti" in by_to["notif-m@example.com"].body
     agency_mails = _agency_signed_mails()
     assert [m.to for m in agency_mails] == [admin.email]
+    # Displayed From (decision §3): the agency to its clients, Nidria to the agency.
+    assert all(m.sender is not None and m.sender.startswith('"') for m in mails)
+    assert agency_mails[0].sender is None
 
     # Rejeu ×3 du webhook final : toujours le même compte (convergence).
     for _ in range(3):

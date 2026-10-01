@@ -14,7 +14,7 @@ from src.comments.comments_repository import CommentsRepository
 from src.comments.comments_schema import CommentResponse
 from src.core.client_lang import client_lang
 from src.core.config import get_settings
-from src.core.email import send_email, space_link
+from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import new_comment_to_agent, new_comment_to_client
 from src.core.enums import ActorType
 from src.core.exceptions import ForbiddenError, NotFoundError
@@ -374,6 +374,7 @@ class CommentsManager:
         step_scalar = step_scalar or ""
         settings = get_settings()
 
+        sender: str | None
         if recipient_type is ActorType.EXPAT:
             _, email, preferred_lang = await self.repo.get_principal_name_email(case)
             if not email:
@@ -392,6 +393,8 @@ class CommentsManager:
                 agency_default=agency_default,
             )
             step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang, agency_default)
+            # Client relationship mail: displayed From = the agency (§3).
+            sender = sender_as_agency(agency_name)
             content = new_comment_to_client(
                 agency_name,
                 author_first_name or "",
@@ -410,6 +413,7 @@ class CommentsManager:
             agency = await self.repo.get_agency(case.agency_id)
             lang = resolve_notification_lang_agent(agency.default_language if agency else None)
             step_name = resolve_step_name_for_notif(step_i18n, step_scalar, lang)
+            sender = None  # an agent notification stays in Nidria's name
             content = new_comment_to_agent(
                 # An unnamed client reads « your client » in the agent's language.
                 client_name or None,
@@ -426,7 +430,9 @@ class CommentsManager:
             return  # grouped — recipient already notified recently for this case
 
         try:
-            await asyncio.to_thread(send_email, email, content.subject, content.text, content.html)
+            await asyncio.to_thread(
+                send_email, email, content.subject, content.text, content.html, sender=sender
+            )
         except Exception:  # noqa: BLE001 — best-effort boundary
             logger.exception("comment notification email failed (best-effort) to=%s", email)
             return  # do NOT record a send → the next message will retry

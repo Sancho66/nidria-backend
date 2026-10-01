@@ -39,7 +39,7 @@ from shared.models.journey import JourneyTemplateStep
 from src.cases.client_space import client_space_is_active
 from src.core.client_lang import client_langs_sync
 from src.core.config import get_settings
-from src.core.email import send_email, space_link
+from src.core.email import send_email, sender_as_agency, space_link
 from src.core.email_templates import digest_email
 from src.core.enums import CasePersonKind, CaseStatus
 from src.core.i18n import resolve_step_name_for_notif
@@ -156,7 +156,14 @@ def _agency_digest(
             mail = digest_email(agency.name, mode, completed, started, docs, link, lang)
             if not dry_run:
                 try:
-                    send_email(email, mail.subject, mail.text, mail.html)
+                    # Client relationship mail: displayed From = the agency (§3).
+                    send_email(
+                        email,
+                        mail.subject,
+                        mail.text,
+                        mail.html,
+                        sender=sender_as_agency(agency.name),
+                    )
                 except Exception:  # noqa: BLE001 — best-effort boundary
                     logger.exception("digest mail failed (best-effort) to=%s", email)
                     continue

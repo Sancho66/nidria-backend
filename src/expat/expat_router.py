@@ -132,8 +132,9 @@ async def fulfill_requirement_document(
     expat: ExpatDep,
     db: DbDep,
     file: Annotated[UploadFile, File()],
+    lang: RequestLang,
 ) -> ExpatCaseDetailResponse:
-    return await ExpatPortalManager(db).fulfill_document(expat, case_id, requirement_id, file)
+    return await ExpatPortalManager(db).fulfill_document(expat, case_id, requirement_id, file, lang)
 
 
 @router.post(

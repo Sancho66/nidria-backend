@@ -89,6 +89,8 @@ async def test_assignment_sends_one_kickoff_with_the_list(
     assert len(mails) == 1  # UN envoi au lieu de N
     assert KICKOFF_SUBJECT in mails[0].subject
     assert "Dossier initial" in mails[0].body and "Justificatifs" in mails[0].body
+    # Client relationship mail: displayed From = the agency (decision §3, 14/08).
+    assert mails[0].sender is not None and mails[0].sender.startswith('"')
 
     # Le burst réel : l'agent démarre les 2 étapes dans la foulée → zéro mail.
     email.outbox.clear()
@@ -127,6 +129,7 @@ async def test_isolated_activation_stays_unitary(
     mails = _mails_to(expat.email)
     assert len(mails) == 1
     assert REQUEST_SUBJECT in mails[0].subject  # l'unitaire, pas le kickoff
+    assert mails[0].sender is not None and mails[0].sender.startswith('"')
 
 
 async def test_two_comments_two_steps_five_minutes_one_mail(

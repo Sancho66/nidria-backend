@@ -340,7 +340,8 @@ class ExpatPortalManager:
         pending = await progress_mgr.recompute_active(case, before)
         await self.db.commit()
         await progress_mgr.send_pending(pending)
-        return await self.get_my_case(expat, case_id)
+        # The refreshed case in the language the client reads (not « fr »).
+        return await self.get_my_case(expat, case_id, lang)
 
     async def _write_field(
         self,
@@ -445,7 +446,8 @@ class ExpatPortalManager:
         pending = await progress_mgr.recompute_active(case, before)
         await self.db.commit()
         await progress_mgr.send_pending(pending)  # best-effort: a mail failure never rolls back
-        return await self.get_my_case(expat, case_id)
+        # The refreshed case in the language the client reads (not « fr »).
+        return await self.get_my_case(expat, case_id, lang)
 
     async def fulfill_document(
         self,
@@ -453,6 +455,7 @@ class ExpatPortalManager:
         case_id: uuid.UUID,
         requirement_id: uuid.UUID,
         file: UploadFile,
+        lang: str = DEFAULT_LANG,
     ) -> ExpatCaseDetailResponse:
         case, requirement = await self._resolve_writable_requirement(expat, case_id, requirement_id)
         if requirement.kind != StepRequirementKind.DOCUMENT.value:
@@ -482,7 +485,8 @@ class ExpatPortalManager:
         pending = await progress_mgr.fulfill_document_requirement(case, requirement, document.id)
         await self.db.commit()
         await progress_mgr.send_pending(pending)
-        return await self.get_my_case(expat, case_id)
+        # The refreshed case in the language the client reads (not « fr »).
+        return await self.get_my_case(expat, case_id, lang)
 
     async def download_step_attachment(
         self,
@@ -543,7 +547,8 @@ class ExpatPortalManager:
             lang=lang,  # a blocking prerequisite is named in the client's language
         )
         await self.db.commit()
-        return await self.get_my_case(expat, case_id)
+        # The refreshed case in the language the client reads (not « fr »).
+        return await self.get_my_case(expat, case_id, lang)
 
     async def agency_logo(self, expat: ExpatUser, agency_id: uuid.UUID) -> tuple[bytes, str]:
         """The logo of an agency holding at least one of MY live cases —
