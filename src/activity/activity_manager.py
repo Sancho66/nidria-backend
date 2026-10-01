@@ -11,8 +11,11 @@ from src.activity.activity_schema import (
     ActivityLogResponse,
     ActivityStatsResponse,
 )
+from src.activity.cost_redaction import redact_cost_details
 from src.core.enums import ActorType
 from src.core.exceptions import NotFoundError
+from src.core.rbac.enforcement import effective_permissions
+from src.core.rbac.permissions import Permission
 
 
 class ActivityManager:
@@ -38,13 +41,26 @@ class ActivityManager:
         page_size: int,
     ) -> ActivityListResponse:
         """Agency-side journal (the projected timeline is the client
-        view). No manual POST: the journal records facts only."""
+        view). No manual POST: the journal records facts only. Without
+        cost.view, the money is out of it (cost_redaction: the cost events
+        and billing-only updates in SQL, the billing keys on a copy)."""
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
             raise NotFoundError("Case not found.", code="case.not_found")
-        rows, total = await self.repo.list_case_activity(case.id, action_types, page, page_size)
+        include_cost = Permission.COST_VIEW.value in effective_permissions(agent)
+        rows, total = await self.repo.list_case_activity(
+            case.id, action_types, page, page_size, include_cost=include_cost
+        )
+        items = [ActivityLogResponse.model_validate(row) for row in rows]
+        if not include_cost:
+            items = [
+                item.model_copy(
+                    update={"details": redact_cost_details(item.action_type, item.details)}
+                )
+                for item in items
+            ]
         return ActivityListResponse(
-            items=[ActivityLogResponse.model_validate(row) for row in rows],
+            items=items,
             total=total,
             page=page,
             page_size=page_size,

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
 from shared.models.client_case import ClientCase
+from src.activity.cost_redaction import cost_blind_clause
 
 
 class ActivityRepository:
@@ -27,10 +28,16 @@ class ActivityRepository:
         action_types: list[str] | None,
         page: int,
         page_size: int,
+        *,
+        include_cost: bool,
     ) -> tuple[list[ActivityLog], int]:
         stmt = select(ActivityLog).where(ActivityLog.case_id == case_id)
         if action_types:
             stmt = stmt.where(ActivityLog.action_type.in_(action_types))
+        if not include_cost:
+            # In SQL, before the count: `total` and the page size never
+            # count an entry the reader will not see (cost_redaction).
+            stmt = stmt.where(cost_blind_clause())
         total = (
             await self.db.execute(select(func.count()).select_from(stmt.subquery()))
         ).scalar_one()

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Text, and_, cast, delete, exists, func, or_, select, update
+from sqlalchemy import ColumnElement, Text, and_, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,6 +18,7 @@ from shared.models.client_profile import ClientProfile
 from shared.models.client_profile_note import ClientProfileNote
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplate
+from src.activity.cost_redaction import cost_blind_clause
 from src.core.enums import CaseStatus
 from src.imports.batching import IMPORT_READ_CHUNK
 
@@ -571,17 +572,22 @@ class ClientProfilesRepository:
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def activity_page(
-        self, case_ids: list[uuid.UUID], *, page: int, page_size: int
+        self, case_ids: list[uuid.UUID], *, page: int, page_size: int, include_cost: bool
     ) -> tuple[list[tuple[ActivityLog, str | None]], int]:
         """Les activity_log de TOUS les dossiers de la fiche, fusionnés
         antichronologiques, chaque ligne portant la référence de son
-        dossier d'origine. Lecture croisée pure — aucun journal nouveau."""
+        dossier d'origine. Lecture croisée pure — aucun journal nouveau.
+        Sans cost.view, la même règle que le journal du dossier
+        (cost_redaction), posée sur la page ET sur le total."""
         if not case_ids:
             return [], 0
+        scope: list[ColumnElement[bool]] = [ActivityLog.case_id.in_(case_ids)]
+        if not include_cost:
+            scope.append(cost_blind_clause())
         stmt = (
             select(ActivityLog, ClientCase.reference)
             .join(ClientCase, ClientCase.id == ActivityLog.case_id)
-            .where(ActivityLog.case_id.in_(case_ids))
+            .where(*scope)
             .order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -589,7 +595,7 @@ class ClientProfilesRepository:
         rows = [(log, ref) for log, ref in (await self.db.execute(stmt)).all()]
         total = int(
             (
-                await self.db.execute(select(func.count()).where(ActivityLog.case_id.in_(case_ids)))
+                await self.db.execute(select(func.count()).select_from(ActivityLog).where(*scope))
             ).scalar_one()
         )
         return rows, total

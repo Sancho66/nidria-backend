@@ -21,6 +21,7 @@ from shared.models.external_contact import ExternalContact
 from shared.models.invitation import CaseInvitation
 from shared.models.journey import JourneyTemplateStep
 from src.activity.activity_manager import ActivityManager
+from src.activity.cost_redaction import hidden_without_cost
 from src.cases.case_export import build_case_pdf
 from src.cases.cases_repository import SORTABLE_FIELD_MAP, CasesRepository
 from src.cases.cases_schema import (
@@ -1798,6 +1799,14 @@ class CasesManager:
         persons = await self.repo.list_persons(case.id)
         definitions = await CustomFieldsManager(self.db).active_definitions(agent.agency_id)
         activity_rows = await self.repo.list_activity_chronological(case.id)
+        # The PDF lists event names, never amounts — but without cost.view
+        # even the cost events stay out, as in the in-app journal.
+        if Permission.COST_VIEW.value not in effective_permissions(agent):
+            activity_rows = [
+                row
+                for row in activity_rows
+                if not hidden_without_cost(row.action_type, row.details)
+            ]
         agency = await self.repo.get_agency(agent.agency_id)
         agency_default = agency.default_language if agency else DEFAULT_LANG
         # Usage tracker: the export is a read — the event is the only

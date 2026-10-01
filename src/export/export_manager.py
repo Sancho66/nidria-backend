@@ -32,6 +32,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Permission as PermissionRow
 from shared.models.rbac import RolePermission
+from src.activity.cost_redaction import cost_blind_clause, redact_cost_details
 from src.core.enums import ActorType
 from src.core.exceptions import NotFoundError
 from src.core.i18n import DEFAULT_LANG, resolve_i18n
@@ -90,7 +91,7 @@ class ExportManager:
         persons_csv, person_count = await self._persons_csv(agency.id, lang)
         companies_csv, company_count = await self._companies_csv(agency.id, lang)
         cases_csv, case_ids, case_count = await self._cases_csv(agency.id, include_cost)
-        activity_csv = await self._activity_csv(case_ids)
+        activity_csv = await self._activity_csv(case_ids, include_cost)
         notes_csv, confidential_hidden = await self._notes_csv(case_ids, include_confidential)
 
         files = {
@@ -279,19 +280,19 @@ class ExportManager:
             rows.append(row)
         return render_csv(header, rows), [c.id for c in cases], len(cases)
 
-    async def _activity_csv(self, case_ids: list[uuid.UUID]) -> str:
+    async def _activity_csv(self, case_ids: list[uuid.UUID], include_cost: bool) -> str:
+        """The journal of every exported case. Without cost.view, the same
+        money rule as the in-app journal (cost_redaction) — same gate as the
+        billed columns of dossiers.csv."""
         header = ["Dossier", "Date", "Acteur", "Action", "Détails"]
         rows: list[list[object]] = []
         if case_ids:
             refs = await self._case_refs(case_ids)
+            query = select(ActivityLog).where(ActivityLog.case_id.in_(case_ids))
+            if not include_cost:
+                query = query.where(cost_blind_clause())
             entries = (
-                (
-                    await self.db.execute(
-                        select(ActivityLog)
-                        .where(ActivityLog.case_id.in_(case_ids))
-                        .order_by(ActivityLog.case_id, ActivityLog.created_at)
-                    )
-                )
+                (await self.db.execute(query.order_by(ActivityLog.case_id, ActivityLog.created_at)))
                 .scalars()
                 .all()
             )
@@ -301,7 +302,7 @@ class ExportManager:
                     a.created_at.isoformat() if a.created_at else None,
                     a.actor_type,
                     a.action_type,
-                    a.details,
+                    a.details if include_cost else redact_cost_details(a.action_type, a.details),
                 ]
                 for a in entries
             ]
@@ -388,7 +389,8 @@ class ExportManager:
         if not include_cost:
             lines.append("")
             lines.append(
-                "Les montants facturés ne sont pas inclus (permission « voir les coûts » requise)."
+                "Les montants facturés et les coûts ne sont pas inclus, ni dans les dossiers "
+                "ni dans le journal d'activité (permission « voir les coûts » requise)."
             )
         if confidential_hidden:
             lines.append("")

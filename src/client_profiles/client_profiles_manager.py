@@ -17,6 +17,7 @@ from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
 from shared.models.client_profile_note import ClientProfileNote
 from shared.models.custom_field import CustomFieldDefinition
+from src.activity.cost_redaction import redact_cost_details
 from src.cases.cases_schema import CaseNoteCreateRequest, CaseNoteUpdateRequest
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
 from src.client_profiles.client_profiles_schema import (
@@ -812,7 +813,11 @@ class ClientProfilesManager:
     ) -> ProfileActivityListResponse:
         profile = await self._get(agent, profile_id)
         case_ids = await self.repo.case_ids_linked_to_profile(profile.id)
-        rows, total = await self.repo.activity_page(case_ids, page=page, page_size=page_size)
+        # Same money rule as the case journal (cost_redaction).
+        include_cost = Permission.COST_VIEW.value in effective_permissions(agent)
+        rows, total = await self.repo.activity_page(
+            case_ids, page=page, page_size=page_size, include_cost=include_cost
+        )
         return ProfileActivityListResponse(
             items=[
                 ProfileActivityEntryResponse(
@@ -820,7 +825,11 @@ class ClientProfilesManager:
                     actor_type=log.actor_type,
                     actor_id=log.actor_id,
                     action_type=log.action_type,
-                    details=dict(log.details or {}),
+                    details=(
+                        dict(log.details or {})
+                        if include_cost
+                        else redact_cost_details(log.action_type, log.details)
+                    ),
                     created_at=log.created_at,
                     case_id=log.case_id,
                     case_reference=reference,
