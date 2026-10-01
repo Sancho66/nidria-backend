@@ -304,16 +304,21 @@ class AgenciesManager:
             raise ValidationError(
                 "At least one sector is required.", code="agency.sectors_required"
             )
-        # These two 409s (and the slug 422 above) stay on the CATEGORY code
-        # on purpose: the superadmin wizard tells them apart by the word
-        # « slug » in the detail — a translated message would send the slug
-        # conflict to the email field. Dotted codes need that branch first.
+        # The two 409s carry their own code: the superadmin wizard puts each
+        # on its field by CODE (it used to look for the word « slug » in the
+        # English detail).
         if await self.repo.get_agency_by_slug(slug) is not None:
-            raise ConflictError(f"Agency slug '{slug}' is already taken.")
+            raise ConflictError(
+                f"Agency slug '{slug}' is already taken.",
+                code="agency.slug_taken",
+                params={"slug": slug},
+            )
         # One human = one agent account at MVP (agent.email is table-unique):
         # refuse rather than silently re-attach an agent of another agency.
         if await self.repo.get_agent_by_email(payload.admin_email) is not None:
-            raise ConflictError(_EMAIL_TAKEN)
+            raise ConflictError(
+                _EMAIL_TAKEN, code="member.email_taken", params={"email": payload.admin_email}
+            )
         if payload.founding_free_seats > 0 and not payload.is_founding:
             raise ValidationError(
                 "Free seats are reserved for founding agencies.",

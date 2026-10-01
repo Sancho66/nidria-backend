@@ -456,3 +456,34 @@ async def test_signup_cyrillic_agency_name_is_no_longer_refused(
         await db_session.execute(select(Agency).where(Agency.name == "Агентство"))
     ).scalar_one()
     assert agency.slug == "agentstvo"
+
+
+async def test_superadmin_creation_conflicts_carry_their_code(
+    client: AsyncClient,
+    make_agent: MakeAgent,
+    make_agency: MakeAgency,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """The wizard puts each 409 on its field by CODE: it used to look for the
+    word « slug » in the English detail."""
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    existing = await make_agent(role=system_roles["admin"], email="taken@e1.io")
+    await make_agency(slug="taken-slug")
+    body = {
+        "name": "New",
+        "slug": "taken-slug",
+        "admin_email": "fresh@e1.io",
+        "admin_first_name": "Ana",
+        "admin_last_name": "Boss",
+        "sectors": ["legal"],
+    }
+    slug_conflict = await client.post("/agencies", headers=agent_headers(superadmin), json=body)
+    assert slug_conflict.status_code == 409
+    assert slug_conflict.json()["code"] == "agency.slug_taken"
+    assert slug_conflict.json()["params"] == {"slug": "taken-slug"}
+
+    body |= {"slug": "free-slug", "admin_email": existing.email}
+    email_conflict = await client.post("/agencies", headers=agent_headers(superadmin), json=body)
+    assert email_conflict.status_code == 409
+    assert email_conflict.json()["code"] == "member.email_taken"
