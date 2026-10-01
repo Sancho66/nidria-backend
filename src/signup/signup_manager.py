@@ -20,7 +20,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.signup import SignupVerification
-from src.agencies.agencies_manager import AgenciesManager, _slugify
+from src.agencies.agencies_manager import AgenciesManager, _agency_slug
 from src.agencies.agencies_repository import AgenciesRepository
 from src.auth.auth_manager import AuthManager
 from src.auth.auth_schema import TokenPairResponse
@@ -209,14 +209,10 @@ class SignupManager:
                 "At least one sector is required.", code="signup.sectors_required"
             )
         sectors = manager._validate_sectors(payload.sectors)  # enum + dedup
-        slug = base_slug = _slugify(payload.agency_name).strip("-")
-        if not slug:
-            # Only an ASCII letter or digit survives the slug: a name written
-            # entirely in another script (Cyrillic…) lands here.
-            raise ValidationError(
-                "Could not derive a slug from the agency name.",
-                code="signup.agency_name_invalid",
-            )
+        # Never empty: Cyrillic/Greek names are transliterated, any other
+        # script gets a neutral slug — a name in another alphabet used to end
+        # the signup on a 422 (signup.agency_name_invalid).
+        slug = base_slug = _agency_slug(payload.agency_name)
         # Collision → suffix (the self-serve user never picks a slug).
         suffix = 2
         while await manager.repo.get_agency_by_slug(slug) is not None:

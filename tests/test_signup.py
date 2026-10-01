@@ -163,6 +163,35 @@ async def test_slug_collision_gets_a_suffix(
     assert agency.slug == "neo-agence-2"
 
 
+async def test_cyrillic_agency_name_signs_up_with_a_transliterated_slug(
+    client: AsyncClient, db_session: AsyncSession, sent: list[dict]
+) -> None:
+    """A Bulgarian agency typing its name in Cyrillic used to get a 422
+    (signup.agency_name_invalid): the slug lost every letter. It now signs
+    up, the name kept as typed, the slug transliterated."""
+    await _request(client)
+    token = (await _verify(client)).json()["completion_token"]
+    done = await _complete(client, token, agency_name="Домицилиране България")
+    assert done.status_code == 200, done.text
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.name == "Домицилиране България"))
+    ).scalar_one()
+    assert agency.slug == "domitsilirane-balgariya"
+
+
+async def test_name_without_latin_letters_signs_up_with_a_neutral_slug(
+    client: AsyncClient, db_session: AsyncSession, sent: list[dict]
+) -> None:
+    await _request(client)
+    token = (await _verify(client)).json()["completion_token"]
+    done = await _complete(client, token, agency_name="日本の代理店")
+    assert done.status_code == 200, done.text
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.name == "日本の代理店"))
+    ).scalar_one()
+    assert agency.slug.startswith("agency-") and len(agency.slug) == len("agency-") + 6
+
+
 # --- zero oracle, zero fantome ----------------------------------------------------------
 
 

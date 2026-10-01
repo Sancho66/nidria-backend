@@ -28,6 +28,7 @@ from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.expat_user import ExpatUser
 from shared.models.rbac import Role
@@ -428,9 +429,12 @@ async def test_signup_rate_limit_has_its_code(client: AsyncClient) -> None:
 
 
 @pytest.mark.usefixtures("_signup_harness")
-async def test_signup_agency_name_without_slug_has_its_code(client: AsyncClient) -> None:
-    """A name with no ASCII letter or digit cannot give a slug — today a
-    name written entirely in Cyrillic lands here (flagged in the E1 report)."""
+async def test_signup_cyrillic_agency_name_is_no_longer_refused(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Flagged in the E1 report: a name written entirely in Cyrillic used to
+    lose every letter of its slug and end on signup.agency_name_invalid. The
+    slug is transliterated now (signup 01/10), and the signup goes through."""
     requested = await client.post("/signup", json={"email": "ru@e1.io", "lang": "ru"})
     assert requested.status_code == 200, requested.text
     verified = await client.post("/signup/verify", json={"email": "ru@e1.io", "code": "123456"})
@@ -447,9 +451,8 @@ async def test_signup_agency_name_without_slug_has_its_code(client: AsyncClient)
             "sectors": ["legal"],
         },
     )
-    assert response.status_code == 422
-    assert response.json() == {
-        "detail": "Could not derive a slug from the agency name.",
-        "code": "signup.agency_name_invalid",
-        "params": {},
-    }
+    assert response.status_code == 200, response.text
+    agency = (
+        await db_session.execute(select(Agency).where(Agency.name == "Агентство"))
+    ).scalar_one()
+    assert agency.slug == "agentstvo"

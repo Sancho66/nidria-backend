@@ -176,10 +176,41 @@ def _generate_referral_code() -> str:
     return "NID-" + "".join(secrets.choice(_REFERRAL_ALPHABET) for _ in range(6))
 
 
+# Latin spellings for the non-Latin scripts an agency name is written in.
+# The slug is ASCII (public URLs, the white-label `?agency=` login), and NFKD
+# alone DROPS every Cyrillic or Greek letter: « Домицилиране България » left an
+# EMPTY slug and the self-serve signup failed with a 422. Cyrillic covers
+# Russian, Ukrainian, Bulgarian, Serbian and Macedonian (ъ reads as Bulgarian
+# « a »: rare in Russian, a vowel in Bulgarian names). Lower case only: the
+# name is lowered first.
+_TRANSLITERATION_PAIRS = (
+    # Cyrillic
+    "а=a б=b в=v г=g д=d е=e ё=yo ж=zh з=z и=i й=y к=k л=l м=m н=n о=o п=p "
+    "р=r с=s т=t у=u ф=f х=h ц=ts ч=ch ш=sh щ=sht ъ=a ы=y ь= э=e ю=yu я=ya "
+    "є=ye і=i ї=yi ґ=g ђ=dj ј=j љ=lj њ=nj ћ=c џ=dz ѓ=gj ѕ=dz ќ=kj "
+    # Greek (accented letters are decomposed by NFKD, then mapped again)
+    "α=a β=v γ=g δ=d ε=e ζ=z η=i θ=th ι=i κ=k λ=l μ=m ν=n ξ=x ο=o π=p ρ=r "
+    "σ=s ς=s τ=t υ=y φ=f χ=ch ψ=ps ω=o"
+)
+_TRANSLITERATION = str.maketrans(dict(pair.split("=") for pair in _TRANSLITERATION_PAIRS.split()))
+
+
 def _slugify(name: str) -> str:
-    """Derive a URL-safe slug from an agency name (ASCII, lower, hyphen)."""
-    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")[:100].strip("-")
+    """Derive a URL-safe slug from an agency name (ASCII, lower, hyphen).
+    Cyrillic and Greek are transliterated (before NFKD, which would split
+    « й » into « и » + breve; and after, for the base letters it exposes);
+    any other script still yields "" — see `_agency_slug` for the fallback."""
+    lowered = name.lower().translate(_TRANSLITERATION)
+    decomposed = unicodedata.normalize("NFKD", lowered).translate(_TRANSLITERATION)
+    ascii_name = decomposed.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")[:100].strip("-")
+
+
+def _agency_slug(name: str) -> str:
+    """The slug an agency gets from its name, NEVER empty: a name with no
+    transliterable letter (Chinese, Arabic, emoji…) gets a neutral
+    `agency-<6 hex>`. The caller still resolves collisions."""
+    return _slugify(name) or f"agency-{secrets.token_hex(3)}"
 
 
 def onboarding_gestures(
@@ -263,7 +294,7 @@ class AgenciesManager:
         cross-agency access — the new admin, not the superadmin, will work
         the agency. The superadmin still holds only agency.create.
         """
-        slug = (payload.slug or _slugify(payload.name)).strip("-")
+        slug = (payload.slug or _agency_slug(payload.name)).strip("-")
         if not slug:
             raise ValidationError("Could not derive a slug from the name; provide one explicitly.")
         # Superadmin creation: at least one sector is mandatory (the
