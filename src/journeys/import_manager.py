@@ -18,6 +18,16 @@ Arbitrated v1 perimeter (Alexandre, 2026-07-07, on Eric's spec):
   reporting-only, nothing created;
 - creation only, no re-import; `pieces_jointes` ignored with mention
   (a JSON carries no file);
+- documents (01/10, constat du 29/09): `documents_a_fournir` on a step
+  becomes DOCUMENT requirements (free label in the journey language, for
+  the principal or each person). All requirements are mandatory (product
+  decision): `requis: false` is skipped WITH a warning (the prompt puts
+  optional documents in the note). `signature: ses|aes|qes` marks a
+  document to sign: a signable requirement needs a document template the
+  AI cannot provide, so it is created as a deposit and LISTED in the
+  report (`signatures_to_configure`) for the editor's "to finish" screen;
+- a key the format does not know is IGNORED with a warning naming its
+  path (`import_ai.unknown_key_ignored`) — it used to vanish silently;
 - personal-data detection (email / long digit run / precise date in
   labels) WARNS, never rejects;
 - Postel tolerance on labels (2026-07-07): AIs naturally emit plain
@@ -79,6 +89,7 @@ from src.journeys.journeys_schema import (
     AssignableProvider,
     ImportExternalSlot,
     ImportParticipantsSummary,
+    ImportSignatureToConfigure,
     ImportStepCreated,
     ImportStepIgnored,
     ImportWarningItem,
@@ -109,6 +120,31 @@ _VALIDATORS: dict[str, str] = {
     "personne": StepValidatorType.NONE.value,
 }
 _PROVIDER_ACTOR = re.compile(r"^prestataire:(.+)$")
+_DOC_SCOPES: dict[str, str] = {
+    "client": StepRequirementScope.PRINCIPAL.value,
+    "chaque_personne": StepRequirementScope.EACH_PERSON.value,
+}
+_SIGNATURE_LEVELS = ("ses", "aes", "qes")
+# The keys of the format, per level: anything else is ignored WITH a warning.
+_PARCOURS_KEYS = frozenset({"nom", "langue_par_defaut", "etapes", "informations_creation"})
+_STEP_KEYS = frozenset(
+    {
+        "ref",
+        "nom",
+        "delai_jours",
+        "validee_par",
+        "participants",
+        "prerequis",
+        "informations_a_collecter",
+        "informations_fournies",
+        "documents_a_fournir",
+    }
+)
+_PROVIDED_KEYS = frozenset({"note", "pieces_jointes"})
+_FIELD_KEYS = frozenset({"cle", "libelle", "type", "options", "requis"})
+_DOC_KEYS = frozenset({"libelle", "pour", "signature", "requis"})
+_PARTICIPANT_KEYS = frozenset({"acteur", "role"})
+_REFERENCE_MAX = 100  # step_requirement.reference
 
 # Personal-data heuristics (warnings, NEVER blocking): an email, a long
 # digit run (passport/phone-like), a precise date in a label points at a
@@ -149,6 +185,19 @@ class _Step:
     provider_jobs: list[tuple[str, str]]  # (job, role) - report slots only
     fields: list[_Field] = field(default_factory=list)
     note: dict[str, str] = field(default_factory=dict)
+    documents: list["_Document"] = field(default_factory=list)
+    # Non-blocking notices raised while parsing this step (unknown keys,
+    # an optional document skipped) — reported only if the step is kept.
+    notices: list[ImportWarningItem] = field(default_factory=list)
+
+
+@dataclass
+class _Document:
+    label: dict[str, str]
+    scope: str  # StepRequirementScope value
+    signature: str | None  # ses|aes|qes, None = a plain deposit
+    chemin: str
+    reference: str = ""  # resolved label in the journey language (run pass)
 
 
 class _StepInvalid(Exception):
@@ -165,6 +214,7 @@ class JourneyImportManager:
         self.db = db
         self._default_lang = "fr"
         self._normalized = 0  # Postel: plain-string labels accepted, counted
+        self._field_notices: list[ImportWarningItem] = []  # per parsed step
 
     # --- parsing helpers ------------------------------------------------------------
 
@@ -207,6 +257,54 @@ class JourneyImportManager:
             raise _StepInvalid(code, f"{chemin}.{self._default_lang}")
         return blob
 
+    @staticmethod
+    def _unknown_keys(
+        raw: dict[str, Any], known: frozenset[str], chemin: str
+    ) -> list[ImportWarningItem]:
+        """A key the format does not know: ignored, but SAID (it used to
+        vanish silently, e.g. a « documents » key the AI invented)."""
+        return [
+            ImportWarningItem(code="import_ai.unknown_key_ignored", chemin=f"{chemin}.{key}")
+            for key in raw
+            if key not in known
+        ]
+
+    def _parse_document(self, raw: Any, chemin: str, step: "_Step") -> None:
+        """One `documents_a_fournir` item → a DOCUMENT requirement (or a
+        notice). A plain string is accepted as its label (Postel)."""
+        if isinstance(raw, str) and raw.strip():
+            raw = {"libelle": raw}
+        if not isinstance(raw, dict):
+            raise _StepInvalid("import_ai.document_invalid", chemin, str(raw)[:80])
+        label = self._label(raw.get("libelle"), f"{chemin}.libelle", require_default=True)
+        pour = raw.get("pour", "client")
+        if pour not in _DOC_SCOPES:
+            raise _StepInvalid("import_ai.invalid_document_scope", f"{chemin}.pour", str(pour))
+        signature = raw.get("signature")
+        if signature in (None, False):
+            signature = None
+        elif signature is True:
+            signature = "ses"  # « à signer » without a level: the one implemented
+        elif signature not in _SIGNATURE_LEVELS:
+            raise _StepInvalid(
+                "import_ai.invalid_signature_level", f"{chemin}.signature", str(signature)
+            )
+        step.notices.extend(self._unknown_keys(raw, _DOC_KEYS, chemin))
+        if raw.get("requis", True) is False:
+            # Every requirement blocks its step (no optional flag): an
+            # optional document belongs in the step note, never here.
+            step.notices.append(
+                ImportWarningItem(
+                    code="import_ai.optional_document_skipped",
+                    chemin=chemin,
+                    valeur=label[self._default_lang][:80],
+                )
+            )
+            return
+        step.documents.append(
+            _Document(label=label, scope=_DOC_SCOPES[pour], signature=signature, chemin=chemin)
+        )
+
     def _parse_field(self, raw: Any, chemin: str) -> _Field:
         if not isinstance(raw, dict):
             raise _StepInvalid("import_ai.field_invalid", chemin, str(raw)[:80])
@@ -228,6 +326,7 @@ class JourneyImportManager:
                 if option_label[self._default_lang] not in options:  # storage wants unique strings
                     options.append(option_label[self._default_lang])
         key = _slugify(str(raw.get("cle") or "")) or _slugify(label[self._default_lang]) or "champ"
+        self._field_notices.extend(self._unknown_keys(raw, _FIELD_KEYS, chemin))
         return _Field(
             key=key,
             field_type=field_type,
@@ -241,6 +340,7 @@ class JourneyImportManager:
         chemin = f"parcours.etapes[{index}]"
         if not isinstance(raw, dict):
             raise _StepInvalid("import_ai.step_invalid", chemin, str(raw)[:80])
+        self._field_notices = []
         ref = str(raw.get("ref") or f"etape_{index + 1}")
         if ref in refs_taken:
             raise _StepInvalid("import_ai.duplicate_ref", f"{chemin}.ref", ref)
@@ -275,6 +375,9 @@ class JourneyImportManager:
             p_chemin = f"{chemin}.participants[{i}]"
             if not isinstance(raw_participant, dict):
                 raise _StepInvalid("import_ai.invalid_actor", p_chemin, str(raw_participant)[:80])
+            self._field_notices.extend(
+                self._unknown_keys(raw_participant, _PARTICIPANT_KEYS, p_chemin)
+            )
             raw_role = raw_participant.get("role")
             if raw_role not in _ROLES:
                 raise _StepInvalid("import_ai.invalid_role", f"{p_chemin}.role", str(raw_role))
@@ -316,6 +419,18 @@ class JourneyImportManager:
         if isinstance(provided, dict) and provided.get("note") is not None:
             step.note = self._label(
                 provided["note"], f"{chemin}.informations_fournies.note", require_default=False
+            )
+        raw_docs = raw.get("documents_a_fournir") or []
+        if not isinstance(raw_docs, list):
+            raise _StepInvalid(
+                "import_ai.document_invalid", f"{chemin}.documents_a_fournir", str(raw_docs)[:80]
+            )
+        for i, raw_doc in enumerate(raw_docs):
+            self._parse_document(raw_doc, f"{chemin}.documents_a_fournir[{i}]", step)
+        step.notices[:0] = self._unknown_keys(raw, _STEP_KEYS, chemin) + self._field_notices
+        if isinstance(provided, dict):
+            step.notices.extend(
+                self._unknown_keys(provided, _PROVIDED_KEYS, f"{chemin}.informations_fournies")
             )
         return step
 
@@ -434,6 +549,8 @@ class JourneyImportManager:
         for lang, text in name_blob.items():
             pii_texts.append((f"parcours.nom.{lang}", text))
 
+        warnings.extend(self._unknown_keys(parcours, _PARCOURS_KEYS, "parcours"))
+
         # Volet A: ACCEPTED in the JSON, IGNORED in v1 (section packs
         # cover intake) - mention, never an error.
         if parcours.get("informations_creation"):
@@ -518,6 +635,51 @@ class JourneyImportManager:
             )
         self._reject_cycles(valid)
 
+        # --- documents: the label in the journey language, checked + deduped --------
+        agency_default = await JourneysManager(self.db).agency_default(agent.agency_id)
+        signatures: list[ImportSignatureToConfigure] = []
+        for step in valid:
+            warnings.extend(step.notices)
+            kept: list[_Document] = []
+            seen: set[tuple[str, str]] = set()
+            for doc in step.documents:
+                # Same choice as the step names: the agency's language when
+                # the JSON carries it, else the journey's default language.
+                reference = (doc.label.get(agency_default) or doc.label[self._default_lang]).strip()
+                if len(reference) > _REFERENCE_MAX:
+                    warnings.append(
+                        ImportWarningItem(
+                            code="import_ai.document_label_too_long",
+                            chemin=f"{doc.chemin}.libelle",
+                            valeur=reference[:80],
+                        )
+                    )
+                    continue
+                if (reference, doc.scope) in seen:
+                    continue  # the same document twice on one step: one ask
+                seen.add((reference, doc.scope))
+                doc.reference = reference
+                kept.append(doc)
+                if doc.signature is not None:
+                    if doc.signature != "ses":
+                        warnings.append(
+                            ImportWarningItem(
+                                code="import_ai.signature_level_not_available",
+                                chemin=f"{doc.chemin}.signature",
+                                valeur=doc.signature,
+                            )
+                        )
+                    signatures.append(
+                        ImportSignatureToConfigure(
+                            step_ref=step.ref,
+                            step_name=step.name.get(agency_default)
+                            or step.name[self._default_lang],
+                            label=reference,
+                            level=doc.signature,
+                        )
+                    )
+            step.documents = kept
+
         # --- warnings: personal data + participants to finalize ---------------------
         for step in valid:
             base = f"parcours.etapes[{step.index}]"
@@ -530,6 +692,9 @@ class JourneyImportManager:
                     pii_texts.append((f"{base}.informations_a_collecter[{i}].libelle.{lang}", text))
                 for option in parsed.options or []:
                     pii_texts.append((f"{base}.informations_a_collecter[{i}].options", option))
+            for doc in step.documents:
+                for lang, text in doc.label.items():
+                    pii_texts.append((f"{doc.chemin}.libelle.{lang}", text))
         for chemin, text in pii_texts:
             for pattern in _PII_PATTERNS:
                 match = pattern.search(text)
@@ -596,13 +761,18 @@ class JourneyImportManager:
             created=False,
             steps_created=[
                 ImportStepCreated(
-                    ref=s.ref, name=s.name[self._default_lang], position=i, fields=len(s.fields)
+                    ref=s.ref,
+                    name=s.name[self._default_lang],
+                    position=i,
+                    fields=len(s.fields),
+                    documents=len(s.documents),
                 )
                 for i, s in enumerate(valid)
             ],
             steps_ignored=ignored,
             participants=participants,
             warnings=warnings,
+            signatures_to_configure=signatures,
         )
         if preview:
             return report
@@ -895,6 +1065,19 @@ class JourneyImportManager:
                         reference=key,
                         scope=StepRequirementScope.PRINCIPAL.value,
                         position=i,
+                    )
+                )
+            # Documents to provide: DEPOSIT requirements. A document to sign
+            # stays a deposit until the agency attaches its template in the
+            # editor (a signable requirement is born WITH its template).
+            for j, doc in enumerate(parsed_step.documents):
+                self.db.add(
+                    StepRequirement(
+                        step_id=row.id,
+                        kind=StepRequirementKind.DOCUMENT.value,
+                        reference=doc.reference,
+                        scope=doc.scope,
+                        position=len(parsed_step.fields) + j,
                     )
                 )
 

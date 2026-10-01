@@ -29712,6 +29712,40 @@
         ],
         "title": "ImportReport"
       },
+      "ImportSignatureToConfigure": {
+        "properties": {
+          "step_ref": {
+            "type": "string",
+            "title": "Step Ref"
+          },
+          "step_name": {
+            "type": "string",
+            "title": "Step Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "ses",
+              "aes",
+              "qes"
+            ],
+            "title": "Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "step_ref",
+          "step_name",
+          "label",
+          "level"
+        ],
+        "title": "ImportSignatureToConfigure",
+        "description": "A document the JSON marks as TO SIGN. A signable requirement needs a\ndocument template (zones placed by the agency), which an AI cannot\nprovide: the import creates it as a document to DEPOSIT and lists it\nhere, so the editor's \"to finish\" screen names what waits for a model.\n`level` is the one requested (only ses is implemented today)."
+      },
       "ImportSkipped": {
         "properties": {
           "row": {
@@ -29747,6 +29781,11 @@
           "fields": {
             "type": "integer",
             "title": "Fields"
+          },
+          "documents": {
+            "type": "integer",
+            "title": "Documents",
+            "default": 0
           }
         },
         "type": "object",
@@ -30452,6 +30491,14 @@
             },
             "type": "array",
             "title": "Warnings"
+          },
+          "signatures_to_configure": {
+            "items": {
+              "$ref": "#/components/schemas/ImportSignatureToConfigure"
+            },
+            "type": "array",
+            "title": "Signatures To Configure",
+            "default": []
           }
         },
         "type": "object",

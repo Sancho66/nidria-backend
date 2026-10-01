@@ -65,6 +65,7 @@ class ImportStepCreated(BaseModel):
     name: str
     position: int
     fields: int  # informations_a_collecter kept on this step
+    documents: int = 0  # documents_a_fournir kept on this step (deposits)
 
 
 class ImportStepIgnored(BaseModel):
@@ -112,6 +113,19 @@ class ImportExternalSlot(BaseModel):
     assignable: list[AssignableProvider] = []
 
 
+class ImportSignatureToConfigure(BaseModel):
+    """A document the JSON marks as TO SIGN. A signable requirement needs a
+    document template (zones placed by the agency), which an AI cannot
+    provide: the import creates it as a document to DEPOSIT and lists it
+    here, so the editor's "to finish" screen names what waits for a model.
+    `level` is the one requested (only ses is implemented today)."""
+
+    step_ref: str
+    step_name: str
+    label: str
+    level: Literal["ses", "aes", "qes"]
+
+
 class ImportParticipantsSummary(BaseModel):
     client: int
     agency: int
@@ -129,6 +143,7 @@ class JourneyImportReport(BaseModel):
     steps_ignored: list[ImportStepIgnored]
     participants: ImportParticipantsSummary
     warnings: list[ImportWarningItem]
+    signatures_to_configure: list[ImportSignatureToConfigure] = []
 
 
 class JourneyTranslateRequest(BaseModel):
