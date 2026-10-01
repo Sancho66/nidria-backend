@@ -148,7 +148,7 @@ def test_singular_and_plural_in_the_other_languages() -> None:
     assert "há 1 dia." in auto_reminder_body("Visa", 1, "pt")
     assert "da 1 giorno." in auto_reminder_body("Visa", 1, "it")
     kickoff = journey_kickoff_email("A", [("Visa", 1)], "u", "it").text
-    assert "1 elemento è atteso da te" in kickoff and "- Visa: 1 elemento" in kickoff
+    assert "ti viene richiesto 1 elemento" in kickoff and "- Visa: 1 elemento" in kickoff
     digest = digest_email("A", "weekly", ["s1"], ["s2", "s3"], 1, "u", "fr").text
     assert "1 étape terminée, 2 étapes démarrées, 1 document validé" in digest
     # Hungarian: the noun stays singular after a numeral — one wording.
@@ -196,11 +196,21 @@ def test_an_unknown_agency_is_named_in_the_mail_language(lang: str, agency: str)
 def test_a_nameless_client_and_a_missing_provider_are_named_in_the_agent_language() -> None:
     assert "Il tuo cliente ha scritto" in new_comment_to_agent(None, "Step", "u", "it").text
     assert "Ваш клиент написал(а)" in new_comment_to_agent("", "Step", "u", "ru").text
-    assert provider_fallback_name("en") == "this provider"
-    assert provider_fallback_name("fr") == "ce prestataire"
+    assert provider_fallback_name("en") == "(name unknown)"
+    assert provider_fallback_name("fr") == "(nom inconnu)"
     for lang in SUPPORTED_LANGUAGES:
         if lang != "fr":
-            assert provider_fallback_name(lang) != "ce prestataire"
+            assert provider_fallback_name(lang) != "(nom inconnu)"
+
+
+def test_the_missing_provider_never_repeats_the_word_provider() -> None:
+    # « Le prestataire ce prestataire doit… » (01/10): the stand-in names an
+    # unknown NAME, it is not a second noun phrase.
+    def text(lang: str) -> str:
+        return et.reminder_escalation_email("A", et.provider_fallback_name(lang), "x", lang).text
+
+    assert "Le prestataire (nom inconnu) doit" in text("fr")
+    assert "Il fornitore (nome sconosciuto) deve" in text("it")
 
 
 def test_the_sender_falls_back_to_ours_when_the_agency_is_unknown() -> None:

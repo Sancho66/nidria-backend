@@ -116,7 +116,7 @@ async def test_completion_notifies_each_client_in_their_language(
     assert "ya está firmado por todas las partes" in by_to["notif-p@example.com"].body
     assert "alá" not in by_to["notif-p@example.com"].body  # jamais une autre langue
     assert "è firmato" in by_to["notif-m@example.com"].subject
-    assert "è ora firmato da tutte le parti" in by_to["notif-m@example.com"].body
+    assert "ora è firmato da tutte le parti" in by_to["notif-m@example.com"].body
     agency_mails = _agency_signed_mails()
     assert [m.to for m in agency_mails] == [admin.email]
     # Displayed From (decision §3): the agency to its clients, Nidria to the agency.

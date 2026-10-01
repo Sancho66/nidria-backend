@@ -325,7 +325,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {
                     "hu": (
                         "🟠 200 000 € letét, önálló irodahelyiség szükséges. A 70:30 arányú "
-                        "helyi foglalkoztatást 2027. 1. 2-től vizsgálják. Tájékoztató "
+                        "helyi foglalkoztatást 2027. január 2-ától vizsgálják. Tájékoztató "
                         "küszöbértékek."
                     )
                 },
@@ -345,7 +345,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {"hu": "Az engedély kiadása és a tevékenység megkezdése"},
                 {
                     "hu": (
-                        "Megújítható engedély. Adózás: IS (társasági adó) 15%, osztalék ≈ "
+                        "Megújítható engedély. Adózás: társasági adó 15%, osztalék ≈ "
                         "2,65% non-dom státusszal, 50%-os jövedelemadó-mentesség, ha a "
                         "fizetés > 55 000 €/év."
                     )
@@ -664,7 +664,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
         ],
     },
     "Bulgarie : Freelance / profession libérale (hors-UE)": {
-        "name": {"hu": "Bulgária: Szabadúszó / szabadfoglalkozású tevékenység (EU-n kívüli)"},
+        "name": {"hu": "Bulgária: Szabadúszó / szabadfoglalkozású tevékenység (EU-n kívülieknek)"},
         "steps": [
             (
                 {
@@ -731,12 +731,12 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {"hu": "Áfa, bankszámla & a működés megkezdése"},
                 {
                     "hu": (
-                        "🔴 Társasági adó (IS) 10% (az EU-ban a legalacsonyabb), osztalék "
+                        "🔴 Társasági adó 10% (az EU-ban a legalacsonyabb), osztalék "
                         "5%: tájékoztató jellegű kulcsok, ellenőrizze újra (a 2026-os "
                         "euróbevezetés után). Áfakötelezettség, ha az árbevétel > ≈ 51 000 "
                         "€. Ismert szűk keresztmetszet: a bankszámlanyitás (KYC, néha "
                         "személyes megjelenés szükséges). ⚠️ Távolról birtokolni ≠ "
-                        "letelepedni: a 10%-os társasági adó (IS) csak akkor érvényes, ha "
+                        "letelepedni: a 10%-os társasági adó csak akkor érvényes, ha "
                         "a társaságot ténylegesen BULGÁRIÁBÓL irányítják (substance)."
                     )
                 },
@@ -787,7 +787,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                     "hu": (
                         "🔴 AZ ADATLAP NINCS ELSŐDLEGES FORRÁSBÓL ELLENŐRIZVE. ⚠️ ZSÁKUTCA: "
                         "a White Card NEM számít bele SEM az állandó tartózkodásba, SEM a "
-                        "honosításba: 1-2 éves kipróbálási megoldás. A tartós "
+                        "honosításba: csak 1-2 éves kipróbálásra alkalmas megoldás. A tartós "
                         "letelepedéshez másik útra kell váltani. Tilos a magyar piacra "
                         "dolgozni. A minimális havi jövedelem 🔴 változékony, ellenőrizze "
                         "újra az oif.gov.hu oldalon."
@@ -819,8 +819,8 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                         "🔴 AZ ADATLAP NINCS ELSŐDLEGES FORRÁSBÓL ELLENŐRIZVE. Lehetőségek "
                         "(tájékoztató összegek, ellenőrizze újra): MNB által jóváhagyott "
                         "alapok ≈ 250 000 € (a legolcsóbb út); közvetlen "
-                        "lakóingatlan-vásárlás ≈ 500 000 € (ez a lehetőség esetleg "
-                        "ELHALASZTVA: ellenőrizze, hogy valóban elérhető-e); felsőoktatási "
+                        "lakóingatlan-vásárlás ≈ 500 000 € (lehet, hogy ezt a lehetőséget "
+                        "ELHALASZTOTTÁK: ellenőrizze, hogy valóban elérhető-e); felsőoktatási "
                         "adomány ≈ 1 000 000 €. Ellenőrizze, mely MNB-alapok jegyezhetők "
                         "ténylegesen."
                     )
@@ -885,7 +885,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {"hu": "Adószám, ÁFA és nyilvántartások"},
                 {
                     "hu": (
-                        "🟠 IS (társasági adó) 9% (a legalacsonyabb az EU-ban), 0% "
+                        "🟠 Társasági adó 9% (a legalacsonyabb az EU-ban), 0% "
                         "forrásadó a külföldre fizetett osztalékra: tájékoztató kulcsok, "
                         "ellenőrizze újra (NAV). Alanyi ÁFA-mentesség ~18 M HUF/év (~45 "
                         "000 €) alatt, egyébként 27%. Helyi adó (HIPA). Magas bérköltség "
@@ -1045,8 +1045,8 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                         "🟠 Tájékoztató küszöbérték. ⚠️ A remote work vízum NEM vezet "
                         "hosszú távú tartózkodáshoz (1 év): tartós bázishoz + "
                         "adóoptimalizáláshoz már az elején inkább free zone társaságot "
-                        "válasszon. Ezt mondja el, mielőtt az ügyfél bezárkózna ebbe a "
-                        "megoldásba."
+                        "válasszon. Ezt mondja el, mielőtt az ügyfél elköteleződne e "
+                        "megoldás mellett."
                     )
                 },
             ),
@@ -1198,7 +1198,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {"hu": "Munkaszerződés és a fizetési küszöb ellenőrzése"},
                 {
                     "hu": (
-                        "🔴 Minimálbér 30 000 vs. 60 000 MUR/hó, időszaktól/ágazattól "
+                        "🔴 Minimális fizetés 30 000 vs. 60 000 MUR/hó, időszaktól/ágazattól "
                         "függően: ez a LEGINKÁBB változó küszöb, feltétlenül újra kell "
                         "ellenőrizni. Az IKT/BPO-ágazatban a kivételek esetleg "
                         "alacsonyabbak (🟠)."
@@ -1317,7 +1317,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {"hu": "A társasági forma kiválasztása (szűrőkérdés)"},
                 {
                     "hu": (
-                        "HELYI PIAC → Domestic Company (társasági adó (IS) 15%, ≥ 1 "
+                        "HELYI PIAC → Domestic Company (társasági adó 15%, ≥ 1 "
                         "helyben lakó igazgató). NEMZETKÖZI + szükség van a DTAA "
                         "egyezményekre → GBC (~3% effektív adó a 80%-os részleges "
                         "mentesség révén). NEMZETKÖZI, a DTAA-kra NINCS szükség → "
@@ -1618,8 +1618,8 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 },
             ),
             (
-                {"hu": "E-visa kérelem (önszponzorálás pénzeszközökkel)"},
-                {"hu": "E-visa kérelem, önszponzorálás a letétbe helyezett pénzeszközökkel."},
+                {"hu": "E-vízum-kérelem (önszponzorálás pénzeszközökkel)"},
+                {"hu": "E-vízum-kérelem, önszponzorálás a letétbe helyezett pénzeszközökkel."},
             ),
             (
                 {"hu": "A vízum kiadása (5 vagy 10 év)"},
@@ -1949,7 +1949,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {
                     "hu": (
                         "Az igazolást gyakran még aznap kiállítják. A polgármesteri "
-                        "hivatal adja ki, NEM az AIMA → nem érinti a backlog. Személyes "
+                        "hivatal adja ki, NEM az AIMA → nem érinti az ügyhátralék. Személyes "
                         "megjelenés szükséges."
                     )
                 },
@@ -1978,7 +1978,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {
                     "hu": (
                         "🟠 A küszöb az SMN-hez igazodik (~870 €/hó 2025-ben, "
-                        "megerősítendő; az SMN-t évente 14×-ben fizetik, a ×12/×14 "
+                        "megerősítendő; az SMN-t évente 14 alkalommal fizetik, a ×12/×14 "
                         "kétértelműséget tisztázni kell). ⚠️ D7 = kizárólag PASSZÍV "
                         "jövedelem (az aktív távmunka a D8 hatálya alá tartozik)."
                     )
@@ -2053,7 +2053,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {
                     "hu": (
                         "🔴 Díjak ~5 300 € + ~600 €. Az AIMA tényleges ügyintézési ideje "
-                        "(backlog) nem garantált. Minimális jelenlét ~7 nap/év. Az ARI-val "
+                        "(ügyhátralék) nem garantált. Minimális jelenlét ~7 nap/év. Az ARI-val "
                         "töltött idő beszámít az állandó tartózkodásba/állampolgárságba (a "
                         "2025-ös állampolgársági reform függvényében)."
                     )
@@ -2378,7 +2378,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
         ],
     },
     "États-Unis : Green card EB-2 NIW / EB-1A (par le mérite)": {
-        "name": {"hu": "Egyesült Államok: EB-2 NIW / EB-1A zöldkártya (érdemek alapján)"},
+        "name": {"hu": "Egyesült Államok: EB-2 NIW / EB-1A green card (érdemek alapján)"},
         "steps": [
             (
                 {"hu": "A megfelelő út meghatározása"},
@@ -2402,7 +2402,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 {"hu": "Az I-140 petíció benyújtása az USCIS-hez."},
             ),
             (
-                {"hu": "Zöldkártya (visa bulletin / státuszmódosítás)"},
+                {"hu": "Green card (visa bulletin / státuszmódosítás)"},
                 {
                     "hu": (
                         "🔴 Mérlegelésen alapuló döntés (a bizonyítékok minőségétől függ). "
@@ -2755,7 +2755,7 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
         "name": {"hu": "Québec: PSTQ / Arrima (québeci kiválasztás, majd állandó tartózkodás)"},
         "steps": [
             (
-                {"hu": "Arrima-profil létrehozása (szándéknyilatkozat)"},
+                {"hu": "Arrima-profil létrehozása (érdeklődési nyilatkozat)"},
                 {
                     "hu": (
                         "⚠️ Az Express Entrytől KÜLÖNÁLLÓ québeci rendszer. PSTQ = "
@@ -2777,10 +2777,10 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 },
             ),
             (
-                {"hu": "Szövetségi RP-kérelem (IRCC) a CSQ birtokában"},
+                {"hu": "Szövetségi PR-kérelem (IRCC) a CSQ birtokában"},
                 {
                     "hu": (
-                        "Az RP-t (állandó tartózkodás) továbbra is a szövetségi kormány "
+                        "A PR-t (állandó tartózkodás) továbbra is a szövetségi kormány "
                         "adja ki, de a KIVÁLASZTÁS québeci. MEGJEGYZÉS: a PEQ (Programme "
                         "de l'expérience québécoise) gyorsított út a már Québecben "
                         "tartózkodó diplomások/munkavállalók számára."
@@ -2817,10 +2817,10 @@ _SAMPLE_I18N_HU: dict[str, dict[str, object]] = {
                 },
             ),
             (
-                {"hu": "RP-kérelem (állandó tartózkodás) Express Entryn keresztül (CEC)"},
+                {"hu": "PR-kérelem (állandó tartózkodás) Express Entryn keresztül (CEC)"},
                 {
                     "hu": (
-                        "A CEC a leggyorsabb út az RP-hez annak, aki már rendelkezik "
+                        "A CEC a leggyorsabb út a PR-hez annak, aki már rendelkezik "
                         "kanadai tapasztalattal. Francia nyelvtudás = előny (külön "
                         "meghívási körök)."
                     )

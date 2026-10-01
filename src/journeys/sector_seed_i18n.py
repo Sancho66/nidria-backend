@@ -158,7 +158,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
             {
                 "name": {
                     "en": "Pre-trial phase (exchange of written submissions)",
-                    "es": "Fase de instrucción (intercambio de escritos)",
+                    "es": "Fase de alegaciones (intercambio de escritos)",
                     "ru": "Подготовка дела к слушанию (обмен письменными позициями)",
                     "pt": "Fase de instrução (troca de articulados)",
                     "it": "Fase istruttoria (scambio di memorie)",
@@ -405,7 +405,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                     "es": "Validación del cliente y formulación de las cuentas",
                     "ru": "Согласование с клиентом и утверждение отчётности",
                     "pt": "Validação pelo cliente e fecho das contas",
-                    "it": "Validazione del cliente e chiusura dei conti",
+                    "it": "Approvazione del cliente e chiusura dei conti",
                     "hu": "Ügyfél általi jóváhagyás és a beszámoló lezárása",
                 },
                 "note": {},
@@ -415,7 +415,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                         "es": "Cuentas anuales validadas",
                         "ru": "Утверждённая годовая отчётность",
                         "pt": "Contas anuais validadas",
-                        "it": "Bilancio d'esercizio validato",
+                        "it": "Bilancio d'esercizio approvato",
                         "hu": "Jóváhagyott éves beszámoló",
                     },
                 ],
@@ -423,9 +423,9 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
             {
                 "name": {
                     "en": "Electronic submission and statutory filing",
-                    "es": "Presentación telemática y depósito legal",
+                    "es": "Presentación telemática y depósito de cuentas",
                     "ru": "Электронная передача и обязательное представление отчётности",
-                    "pt": "Transmissão eletrónica e depósito legal",
+                    "pt": "Transmissão eletrónica e depósito de contas",
                     "it": "Trasmissione telematica e deposito obbligatorio",
                     "hu": "Elektronikus beküldés és kötelező letétbe helyezés",
                 },
@@ -740,11 +740,8 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                         "conocimiento del cliente"
                     ),
                     "ru": "Ознакомительная встреча и сбор сведений о клиенте",
-                    "pt": "Reunião inicial e recolha de informação de conhecimento do cliente",
-                    "it": (
-                        "Colloquio conoscitivo e raccolta delle informazioni di "
-                        "conoscenza del cliente"
-                    ),
+                    "pt": "Reunião inicial e recolha de informação sobre o cliente",
+                    "it": "Colloquio conoscitivo e profilatura del cliente",
                     "hu": "Megismerő beszélgetés és ügyfélmegismerési adatok gyűjtése",
                 },
                 "note": {},
@@ -778,7 +775,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                         "es": "Cuestionario de conocimiento del cliente",
                         "ru": "Анкета для изучения клиента",
                         "pt": "Questionário de conhecimento do cliente",
-                        "it": "Questionario di conoscenza del cliente",
+                        "it": "Questionario di profilatura del cliente",
                         "hu": "Ügyfélmegismerési kérdőív",
                     },
                 ],
@@ -866,7 +863,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                     {
                         "en": "Subscription forms",
                         "es": "Boletines de suscripción",
-                        "ru": "Заявления на подписку",
+                        "ru": "Заявления на заключение договоров",
                         "pt": "Boletins de subscrição",
                         "it": "Moduli di sottoscrizione",
                         "hu": "Jegyzési lapok",
@@ -889,7 +886,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                         "es": "Actualización del expediente de conocimiento del cliente",
                         "ru": "Актуализация досье по изучению клиента",
                         "pt": "Atualização do dossiê de conhecimento do cliente",
-                        "it": "Aggiornamento del fascicolo di conoscenza del cliente",
+                        "it": "Aggiornamento del profilo del cliente",
                         "hu": "Az ügyfélmegismerési dokumentáció frissítése",
                     },
                 ],
@@ -1032,7 +1029,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                         "ru": "Сертификат о социальном страховании",
                         "pt": "Certificado de cobertura social",
                         "it": "Certificato di copertura previdenziale",
-                        "hu": "Társadalombiztosítási fedezetigazolás",
+                        "hu": "Társadalombiztosítási jogviszony igazolása",
                     },
                     {
                         "en": "Social security registration (international)",
@@ -1385,7 +1382,7 @@ SECTOR_I18N: dict[str, dict[str, Any]] = {
                     {
                         "en": "Engagement letter",
                         "es": "Carta de encargo",
-                        "ru": "Письмо-поручение",
+                        "ru": "Договор на оказание услуг",
                         "pt": "Carta de compromisso",
                         "it": "Lettera d'incarico",
                         "hu": "Megbízási levél",

@@ -89,13 +89,13 @@ _CLIENT_FALLBACK = {
 }
 
 _PROVIDER_FALLBACK = {
-    "fr": "ce prestataire",
-    "en": "this provider",
-    "es": "este proveedor",
-    "ru": "этот поставщик",
-    "pt": "este prestador",
-    "it": "questo fornitore",
-    "hu": "ez a szolgáltató",
+    "fr": "(nom inconnu)",
+    "en": "(name unknown)",
+    "es": "(nombre desconocido)",
+    "ru": "(имя неизвестно)",
+    "pt": "(nome desconhecido)",
+    "it": "(nome sconosciuto)",
+    "hu": "ismeretlen nevű",
 }
 
 _HTML_LAYOUT = """\
@@ -1113,7 +1113,7 @@ _REQUIREMENT_REQUEST = {
         "subject": "Ожидается новая информация",
         "title": "Ожидается новая информация",
         "intro": (
-            "{agency} требуются сведения или документы для этапа «{step}» вашего дела. Войдите в "
+            "{agency} запрашивает сведения или документы для этапа «{step}» вашего дела. Войдите в "
             "свой кабинет, чтобы их предоставить."
         ),
         "button": "Заполнить моё дело",
@@ -1283,8 +1283,8 @@ _NEW_COMMENT_CLIENT = {
         "subject": "Nouveau message de votre conseiller",
         "title": "Vous avez un nouveau message",
         "intro": (
-            "{author} de {agency} vous a écrit au sujet de l'étape « {step} ». Répondez depuis "
-            "votre espace."
+            "{author} ({agency}) vous a écrit au sujet de l'étape « {step} ». Répondez "
+            "depuis votre espace."
         ),
         "button": "Voir la conversation",
     },
@@ -1292,7 +1292,7 @@ _NEW_COMMENT_CLIENT = {
         "subject": "New message from your advisor",
         "title": "You have a new message",
         "intro": (
-            "{author} from {agency} wrote to you about the step “{step}”. Reply from your space."
+            "{author} ({agency}) wrote to you about the step “{step}”. Reply from your space."
         ),
         "button": "View the conversation",
     },
@@ -1300,7 +1300,7 @@ _NEW_COMMENT_CLIENT = {
         "subject": "Nuevo mensaje de su asesor",
         "title": "Tiene un nuevo mensaje",
         "intro": (
-            "{author} de {agency} le escribió sobre la etapa «{step}». Responda desde su espacio."
+            "{author} ({agency}) le escribió sobre la etapa «{step}». Responda desde su espacio."
         ),
         "button": "Ver la conversación",
     },
@@ -1308,7 +1308,7 @@ _NEW_COMMENT_CLIENT = {
         "subject": "Новое сообщение от вашего консультанта",
         "title": "У вас новое сообщение",
         "intro": (
-            "{author} из {agency} написал(а) вам по поводу этапа «{step}». Ответьте из своего "
+            "{author} ({agency}) написал(а) вам по поводу этапа «{step}». Ответьте из своего "
             "кабинета."
         ),
         "button": "Посмотреть переписку",
@@ -1317,7 +1317,7 @@ _NEW_COMMENT_CLIENT = {
         "subject": "Nova mensagem do seu consultor",
         "title": "Tem uma nova mensagem",
         "intro": (
-            "{author} da {agency} escreveu-lhe sobre a etapa «{step}». Responda a partir do seu "
+            "{author} ({agency}) escreveu-lhe sobre a etapa «{step}». Responda a partir do seu "
             "espaço."
         ),
         "button": "Ver a conversa",
@@ -1326,7 +1326,7 @@ _NEW_COMMENT_CLIENT = {
         "subject": "Nuovo messaggio dal tuo consulente",
         "title": "Hai un nuovo messaggio",
         "intro": (
-            "{author} di {agency} ti ha scritto in merito alla fase «{step}». Rispondi dal tuo "
+            "{author} ({agency}) ti ha scritto in merito alla fase «{step}». Rispondi dal tuo "
             "spazio."
         ),
         "button": "Vedere la conversazione",
@@ -1499,8 +1499,8 @@ _DOCUMENT_SIGNED_CLIENT = {
         "subject": "Votre document « {reference} » est signé",
         "title": "Document signé par toutes les parties",
         "intro": (
-            "Le document « {reference} » demandé par {agency} est maintenant signé par "
-            "toutes les parties. Le document signé et son dossier de preuve sont "
+            "{agency} a soumis le document « {reference} » à signature : il est maintenant "
+            "signé par toutes les parties. Le document signé et son dossier de preuve sont "
             "archivés dans votre espace."
         ),
         "button": "Voir mes documents",
@@ -1509,7 +1509,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "subject": "Your document “{reference}” is signed",
         "title": "Document signed by all parties",
         "intro": (
-            "The document “{reference}” requested by {agency} is now signed by all "
+            "{agency} sent the document “{reference}” for signature: it is now signed by all "
             "parties. The signed document and its audit trail are archived in your space."
         ),
         "button": "View my documents",
@@ -1518,7 +1518,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "subject": "Su documento «{reference}» está firmado",
         "title": "Documento firmado por todas las partes",
         "intro": (
-            "El documento «{reference}» solicitado por {agency} ya está firmado por "
+            "{agency} solicitó la firma del documento «{reference}», que ya está firmado por "
             "todas las partes. El documento firmado y su expediente de prueba están "
             "archivados en su espacio."
         ),
@@ -1528,7 +1528,7 @@ _DOCUMENT_SIGNED_CLIENT = {
         "subject": "Ваш документ «{reference}» подписан",
         "title": "Документ подписан всеми сторонами",
         "intro": (
-            "Документ «{reference}», запрошенный {agency}, подписан всеми сторонами. "
+            "Документ «{reference}», который запросило {agency}, подписан всеми сторонами. "
             "Подписанный документ и протокол подписания сохранены в вашем личном кабинете."
         ),
         "button": "Мои документы",
@@ -1537,19 +1537,19 @@ _DOCUMENT_SIGNED_CLIENT = {
         "subject": "O seu documento «{reference}» está assinado",
         "title": "Documento assinado por todas as partes",
         "intro": (
-            "O documento «{reference}» pedido por {agency} está agora assinado por "
+            "{agency} pediu a assinatura do documento «{reference}», que está agora assinado por "
             "todas as partes. O documento assinado e o seu registo de prova estão "
             "arquivados no seu espaço."
         ),
         "button": "Ver os meus documentos",
     },
     "it": {
-        "subject": "Il Suo documento «{reference}» è firmato",
+        "subject": "Il tuo documento «{reference}» è firmato",
         "title": "Documento firmato da tutte le parti",
         "intro": (
-            "Il documento «{reference}» richiesto da {agency} è ora firmato da tutte "
-            "le parti. Il documento firmato e il suo fascicolo di prova sono archiviati "
-            "nel Suo spazio."
+            "{agency} ti aveva richiesto il documento «{reference}»: ora è firmato da "
+            "tutte le parti. Il documento firmato e il suo fascicolo di prova sono "
+            "archiviati nel tuo spazio."
         ),
         "button": "Vedere i miei documenti",
     },
@@ -1785,7 +1785,7 @@ _REFERRAL_GRANTED = {
         ),
     },
     "pt": {
-        "subject": "Nidria: o seu indicado assinou: -{rate} % durante 12 meses",
+        "subject": "Nidria: uma agência recomendada por si subscreveu: -{rate} % durante 12 meses",
         "title": "A sua indicação deu frutos",
         "intro": (
             "{referred} acaba de assinar a Nidria graças à sua indicação. "
@@ -1846,33 +1846,33 @@ _JOURNEY_KICKOFF = {
         "button": "Open my space",
     },
     "es": {
-        "subject": "Su proceso comienza, se esperan elementos de usted",
-        "title": "Su proceso comienza",
+        "subject": "Su recorrido comienza: hay elementos que debe aportar",
+        "title": "Su recorrido comienza",
         "intro": (
-            "{agency} ha lanzado su proceso: se esperan {total} elementos de usted "
-            "para comenzar. Esto es lo que se le pedirá, etapa por etapa:"
+            "{agency} ha puesto en marcha su recorrido: para comenzar, debe aportar "
+            "{total} elementos. Esto es lo que se le pedirá, etapa por etapa:"
         ),
         "intro_one": (
-            "{agency} ha lanzado su proceso: se espera {total} elemento de usted "
-            "para comenzar. Esto es lo que se le pedirá, etapa por etapa:"
+            "{agency} ha puesto en marcha su recorrido: para comenzar, debe aportar "
+            "{total} elemento. Esto es lo que se le pedirá, etapa por etapa:"
         ),
         "line": "{step}: {count} elementos",
         "line_one": "{step}: {count} elemento",
         "button": "Abrir mi espacio",
     },
     "ru": {
-        "subject": "Ваш процесс начинается, от вас ожидаются документы",
-        "title": "Ваш процесс начинается",
+        "subject": "Ваш маршрут начинается, от вас ожидаются документы",
+        "title": "Ваш маршрут начинается",
         "intro": (
-            "{agency} запустило ваш процесс: от вас ожидается {total} элементов "
+            "{agency} запустило ваш маршрут: от вас ожидается {total} элементов "
             "для начала. Вот что потребуется, по этапам:"
         ),
         "intro_one": (
-            "{agency} запустило ваш процесс: от вас ожидается {total} элемент "
+            "{agency} запустило ваш маршрут: от вас ожидается {total} элемент "
             "для начала. Вот что потребуется, по этапам:"
         ),
         "intro_few": (
-            "{agency} запустило ваш процесс: от вас ожидается {total} элемента "
+            "{agency} запустило ваш маршрут: от вас ожидается {total} элемента "
             "для начала. Вот что потребуется, по этапам:"
         ),
         "line": "{step}: {count} элементов",
@@ -1896,29 +1896,29 @@ _JOURNEY_KICKOFF = {
         "button": "Abrir o meu espaço",
     },
     "it": {
-        "subject": "Il tuo percorso inizia, alcuni elementi sono attesi da te",
+        "subject": "Il tuo percorso inizia: ti vengono richiesti alcuni elementi",
         "title": "Il tuo percorso inizia",
         "intro": (
-            "{agency} ha avviato il tuo percorso: {total} elementi sono attesi da te "
-            "per iniziare. Ecco cosa ti sarà chiesto, tappa per tappa:"
+            "{agency} ha avviato il tuo percorso: per iniziare ti vengono richiesti "
+            "{total} elementi. Ecco cosa ti sarà chiesto, fase per fase:"
         ),
         "intro_one": (
-            "{agency} ha avviato il tuo percorso: {total} elemento è atteso da te "
-            "per iniziare. Ecco cosa ti sarà chiesto, tappa per tappa:"
+            "{agency} ha avviato il tuo percorso: per iniziare ti viene richiesto "
+            "{total} elemento. Ecco cosa ti sarà chiesto, fase per fase:"
         ),
         "line": "{step}: {count} elementi",
         "line_one": "{step}: {count} elemento",
         "button": "Apri il mio spazio",
     },
     "hu": {
-        "subject": "Elindult az útja, elemeket várunk Öntől",
-        "title": "Elindult az útja",
+        "subject": "Elindult a folyamata, elemeket várunk Öntől",
+        "title": "Elindult a folyamata",
         "intro": (
-            "A(z) {agency} elindította az Ön útját: {total} elemet várunk Öntől a "
+            "A(z) {agency} elindította az Ön folyamatát: {total} elemet várunk Öntől a "
             "kezdéshez. Íme, amit lépésenként kérni fogunk:"
         ),
         "intro_one": (
-            "A(z) {agency} elindította az Ön útját: {total} elemet várunk Öntől a "
+            "A(z) {agency} elindította az Ön folyamatát: {total} elemet várunk Öntől a "
             "kezdéshez. Íme, amit lépésenként kérni fogunk:"
         ),
         "line": "{step}: {count} elem",
@@ -2037,10 +2037,10 @@ _DIGEST = {
         "intro": "{agency}: {summary}.",
         "period_weekly": "questa settimana",
         "period_daily": "oggi",
-        "completed": "{n} tappe completate",
-        "completed_one": "{n} tappa completata",
-        "started": "{n} tappe avviate",
-        "started_one": "{n} tappa avviata",
+        "completed": "{n} fasi completate",
+        "completed_one": "{n} fase completata",
+        "started": "{n} fasi avviate",
+        "started_one": "{n} fase avviata",
         "documents": "{n} documenti convalidati",
         "documents_one": "{n} documento convalidato",
         "line_completed": "Completata: {step}",
@@ -2203,7 +2203,7 @@ _SIGNUP_EXISTING = {
         "title": "У вас уже есть аккаунт",
         "intro": (
             "С этим адресом запрошено создание пространства, но аккаунт уже "
-            "существует. Войдите по кнопке ниже; забыли пароль? На странице входа "
+            "существует. Войдите по кнопке ниже. Забыли пароль? На странице входа "
             "его можно сбросить."
         ),
         "button": "Войти",
@@ -2592,12 +2592,12 @@ _SIGNATURE_CREDITS_LOW = {
         "intro": (
             "Il saldo dei crediti firma di {agency} è sceso sotto la tua soglia di "
             "allerta ({threshold}): restano {available} crediti. Ricarica perché le "
-            "prossime tappe con documenti da firmare possano partire."
+            "prossime fasi con documenti da firmare possano partire."
         ),
         "intro_one": (
             "Il saldo dei crediti firma di {agency} è sceso sotto la tua soglia di "
             "allerta ({threshold}): resta {available} credito. Ricarica perché le "
-            "prossime tappe con documenti da firmare possano partire."
+            "prossime fasi con documenti da firmare possano partire."
         ),
         "button": "Gestire i miei crediti",
     },
