@@ -31,6 +31,7 @@ from shared.models.journey import (
 from shared.models.step_requirement import StepRequirement
 from src.core.enums import StepParticipantRole
 from src.journeys.field_catalog import SECTION_TYPES, field_kind
+from src.journeys.sample_seed_hu import _SAMPLE_I18N_HU
 
 # A step: (name, estimated_days | None, content_note, role | None, [doc labels]).
 # estimated_days None ⇒ open-ended (e.g. a multi-year backlog wait). role is the
@@ -14175,33 +14176,34 @@ def _apply_sample_i18n(
     tpl: JourneyTemplate, db_steps: list[JourneyTemplateStep], name: str
 ) -> None:
     """Populate the i18n blobs of a sample (template name + per-step name and
-    content_note) by position, from TWO tables merged together: _SAMPLE_I18N
-    (en/es, plus ru/pt/it inline for the 3 preview samples) and the
-    _SAMPLE_I18N_RUPTIT overlay (ru/pt/it for the rest). Idempotent: re-running
+    content_note) by position, from THREE tables merged together: _SAMPLE_I18N
+    (en/es, plus ru/pt/it inline for the 3 preview samples), the
+    _SAMPLE_I18N_RUPTIT overlay (ru/pt/it for the rest) and the
+    _SAMPLE_I18N_HU overlay (hu, sample_seed_hu). Idempotent: re-running
     re-asserts the same keys. The scalar FR + "fr" blob key are preserved. A
     sample with no translation entry still gets its "fr" key normalized."""
 
-    def _combine(a: Any, b: Any) -> dict[str, str]:
+    def _combine(*blobs: Any) -> dict[str, str]:
         merged: dict[str, str] = {}
-        for d in (a, b):
+        for d in blobs:
             if isinstance(d, dict):
                 merged.update(d)
         return merged
 
-    tr = _SAMPLE_I18N.get(name, {})
-    ov = _SAMPLE_I18N_RUPTIT.get(name, {})
-    name_tr = _combine(tr.get("name"), ov.get("name"))
+    def _steps_of(table: dict[str, Any]) -> list[Any]:
+        raw = table.get("steps")
+        return raw if isinstance(raw, list) else []
+
+    tables = [_SAMPLE_I18N.get(name, {}), _SAMPLE_I18N_RUPTIT.get(name, {})]
+    tables.append(_SAMPLE_I18N_HU.get(name, {}))
+    name_tr = _combine(*(t.get("name") for t in tables))
     tpl.name_i18n = _merge_i18n(tpl.name_i18n, tpl.name, name_tr)
-    raw_steps = tr.get("steps")
-    steps_list: list[Any] = raw_steps if isinstance(raw_steps, list) else []
-    raw_ov_steps = ov.get("steps")
-    ov_steps: list[Any] = raw_ov_steps if isinstance(raw_ov_steps, list) else []
+    steps_per_table = [_steps_of(t) for t in tables]
     for i, st in enumerate(db_steps):
-        nm, note = steps_list[i] if i < len(steps_list) else ({}, {})
-        ov_nm, ov_note = ov_steps[i] if i < len(ov_steps) else ({}, {})
-        st.name_i18n = _merge_i18n(st.name_i18n, st.name, _combine(nm, ov_nm))
+        pairs = [s[i] if i < len(s) else ({}, {}) for s in steps_per_table]
+        st.name_i18n = _merge_i18n(st.name_i18n, st.name, _combine(*(nm for nm, _ in pairs)))
         st.content_note_i18n = _merge_i18n(
-            st.content_note_i18n, st.content_note, _combine(note, ov_note)
+            st.content_note_i18n, st.content_note, _combine(*(note for _, note in pairs))
         )
 
 

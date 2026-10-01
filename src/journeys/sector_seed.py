@@ -44,6 +44,7 @@ from shared.models.journey import (
 from shared.models.step_requirement import StepRequirement
 from src.core.enums import AgencySector, StepParticipantRole
 from src.journeys.field_catalog import SECTION_TYPES, field_kind
+from src.journeys.sector_seed_i18n import EXAMPLE_PREFIX_I18N, SECTOR_I18N
 
 # A step: (name, estimated_days | None, content_note, doers, [doc labels]).
 # `doers` ⊆ {"agent", "expat"} in display order; [] = the step is carried by a
@@ -393,6 +394,46 @@ def _example_name(name: str) -> str:
     return name if name.startswith(EXAMPLE_PREFIX) else f"{EXAMPLE_PREFIX}{name}"
 
 
+def _with_fr(fr: str, translations: dict[str, str] | None) -> dict[str, str]:
+    """An i18n blob: the FR scalar under "fr" plus every NON-EMPTY variant
+    (an absent one falls back to FR at read time). An empty FR text (a step
+    without note) gives an empty blob."""
+    if not fr:
+        return {}
+    return {"fr": fr, **{lang: text for lang, text in (translations or {}).items() if text}}
+
+
+def sector_name_i18n(sector: str, fr_name: str) -> dict[str, str]:
+    """The journey name in every language, each with its own « [Exemple] »."""
+    names = SECTOR_I18N.get(sector, {}).get("name") or {}
+    blob = {"fr": _example_name(fr_name)}
+    for lang, name in names.items():
+        prefix = EXAMPLE_PREFIX_I18N.get(lang)
+        if name and prefix:
+            blob[lang] = f"{prefix} {name}"
+    return blob
+
+
+def sector_doc_label(sector: str, step_position: int, fr_label: str, lang: str) -> str:
+    """A requested document's label in `lang`. Document requirements carry a
+    free label without an i18n blob, so the CLONE picks the agency's language
+    (FR when no translation exists — never an invented label)."""
+    _name, steps = SECTOR_TEMPLATES.get(sector, ("", []))
+    if not 0 <= step_position < len(steps):
+        return fr_label
+    fr_docs = steps[step_position][4]
+    if fr_label not in fr_docs:
+        return fr_label
+    tr_steps = SECTOR_I18N.get(sector, {}).get("steps") or []
+    if step_position >= len(tr_steps):
+        return fr_label
+    tr_docs = tr_steps[step_position].get("docs") or []
+    index = fr_docs.index(fr_label)
+    if index >= len(tr_docs):
+        return fr_label
+    return str(tr_docs[index].get(lang) or fr_label)
+
+
 def _add_participants(db: AsyncSession, step_id: uuid.UUID, doers: list[str]) -> None:
     """The step's DOER(s). Only 'agent' (agency in general, agent_id NULL) and
     'expat' (the client) — NEVER 'external' on a global template (résolution A:
@@ -497,13 +538,13 @@ async def _seed_one_sector(db: AsyncSession, sector: str, name: str, steps: list
             sector=sector,
             origin="seed",
             name=display_name,
-            name_i18n={"fr": display_name},
+            name_i18n=sector_name_i18n(sector, name),
         )
         db.add(tpl)
         await db.flush()
     else:
         tpl.name = display_name
-        tpl.name_i18n = {"fr": display_name}
+        tpl.name_i18n = sector_name_i18n(sector, name)
 
     # --- steps: reconcile by position (count is fixed per sector) ---------------------
     existing_steps = {
@@ -515,7 +556,11 @@ async def _seed_one_sector(db: AsyncSession, sector: str, name: str, steps: list
         ).scalars()
     }
     step_objs: list[JourneyTemplateStep] = []
+    tr_steps = SECTOR_I18N.get(sector, {}).get("steps") or []
     for position, (step_name, days, note, _doers, _docs) in enumerate(steps):
+        tr = tr_steps[position] if position < len(tr_steps) else {}
+        name_i18n = _with_fr(step_name, tr.get("name"))
+        note_i18n = _with_fr(note, tr.get("note"))
         step = existing_steps.get(position)
         if step is None:
             step = JourneyTemplateStep(
@@ -525,6 +570,8 @@ async def _seed_one_sector(db: AsyncSession, sector: str, name: str, steps: list
                 position=position,
                 estimated_days=days,
                 content_note=note,
+                name_i18n=name_i18n,
+                content_note_i18n=note_i18n,
                 default_validated_by_type="agent",
             )
             db.add(step)
@@ -532,6 +579,8 @@ async def _seed_one_sector(db: AsyncSession, sector: str, name: str, steps: list
             step.name = step_name
             step.estimated_days = days
             step.content_note = note
+            step.name_i18n = name_i18n
+            step.content_note_i18n = note_i18n
         step_objs.append(step)
     await db.flush()  # ids for children
 

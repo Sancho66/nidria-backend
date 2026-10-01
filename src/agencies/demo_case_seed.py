@@ -55,8 +55,11 @@ from src.client_profiles.profile_sections import catalog_classification
 from src.core import storage
 from src.core.email import demo_expat_email
 from src.core.enums import ActorType, CaseStatus, DocValidationStatus, StepStatus
+from src.core.i18n import resolve_i18n
 from src.core.security import hash_password
 from src.journeys.field_catalog import FIELD_PRESETS, field_kind
+from src.journeys.sector_seed import sector_doc_label
+from src.journeys.sector_seed_i18n import DEMO_COMMON_I18N, DEMO_I18N, EXAMPLE_PREFIX_I18N
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +206,35 @@ def _demo_settings(agency: Agency, now: datetime) -> dict[str, object]:
     return {**agency.settings, DEMO_SEED_MARKER: now.isoformat()}
 
 
+def _demo_text(table: dict[str, str], lang: str) -> str:
+    """A demo label in the agency language, FR when it has no variant."""
+    return table.get(lang) or table["fr"]
+
+
+def _localized_demo_fields(sector: str, raw: dict[str, Any], lang: str) -> dict[str, Any]:
+    """The demo custom_fields in the agency language. A select stores the
+    OPTION text, and the agency's definitions are materialized with the
+    options of ITS language: a FR value (« Vente ») was no option at all of
+    an English agency's field. The option at the same position is taken;
+    a free-text value uses its translation; numbers, dates, addresses and
+    identifiers stay as they are."""
+    texts = DEMO_I18N.get(sector, {}).get("text_fields") or {}
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        preset = FIELD_PRESETS.get(key)
+        fr_options = (preset.options or {}).get("fr") if preset and preset.options else None
+        lang_options = (preset.options or {}).get(lang) if preset and preset.options else None
+        if fr_options and lang_options and len(fr_options) == len(lang_options):
+            if isinstance(value, str) and value in fr_options:
+                value = lang_options[fr_options.index(value)]
+            elif isinstance(value, list):
+                value = [lang_options[fr_options.index(v)] if v in fr_options else v for v in value]
+        elif key in texts and isinstance(value, str):
+            value = texts[key].get(lang) or value
+        out[key] = value
+    return out
+
+
 async def _clone_sector_into_agency(
     db: AsyncSession, src: JourneyTemplate, agency: Agency
 ) -> tuple[JourneyTemplate, list[JourneyTemplateStep]]:
@@ -213,13 +245,16 @@ async def _clone_sector_into_agency(
 
     Sector templates carry ONLY agent/expat participants (agent_id/external_id
     NULL — résolution A), so copying them verbatim leaks no cross-agency FK."""
+    lang = agency.default_language or "fr"
     new_tpl = JourneyTemplate(
         id=uuid.uuid4(),
         agency_id=agency.id,
         is_sample=False,
         sector=src.sector,
         origin="seed",  # un cadeau système, jamais un geste d'agence
-        name=src.name,
+        # The agency reads its gift in ITS language: the scalar is the
+        # agency-language variant (as clone_template does), the blob is kept.
+        name=resolve_i18n(src.name_i18n, lang, lang, src.name) or src.name,
         name_i18n=dict(src.name_i18n or {}),
     )
     db.add(new_tpl)
@@ -244,10 +279,14 @@ async def _clone_sector_into_agency(
         step = JourneyTemplateStep(
             id=nid,
             template_id=new_tpl.id,
-            name=src_step.name,
+            name=resolve_i18n(src_step.name_i18n, lang, lang, src_step.name) or src_step.name,
+            name_i18n=dict(src_step.name_i18n or {}),
             position=src_step.position,
             estimated_days=src_step.estimated_days,
-            content_note=src_step.content_note,
+            content_note=resolve_i18n(
+                src_step.content_note_i18n, lang, lang, src_step.content_note
+            ),
+            content_note_i18n=dict(src_step.content_note_i18n or {}),
             completion_mode=src_step.completion_mode,
             default_validated_by_type=src_step.default_validated_by_type,
         )
@@ -273,12 +312,18 @@ async def _clone_sector_into_agency(
         .scalars()
         .all()
     )
+    position_of = {s.id: s.position for s in src_steps}
     for req in requirements:
+        reference = req.reference
+        if req.kind == "document" and src.sector:
+            # A document label is free text (no i18n blob): the agency's copy
+            # gets it in the agency language.
+            reference = sector_doc_label(src.sector, position_of[req.step_id], reference, lang)
         db.add(
             StepRequirement(
                 step_id=id_map[req.step_id],
                 kind=req.kind,
-                reference=req.reference,
+                reference=reference,
                 scope=req.scope,
                 position=req.position,
             )
@@ -448,7 +493,11 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
     first_case: ClientCase | None = None
     for index, (template, steps) in enumerate(cloned, start=1):
         spec = _DEMO_BY_SECTOR.get(template.sector or "", {})
-        custom_fields: dict[str, Any] = dict(spec.get("custom_fields", {}))
+        lang = agency.default_language or "fr"
+        custom_fields: dict[str, Any] = _localized_demo_fields(
+            template.sector or "", dict(spec.get("custom_fields", {})), lang
+        )
+        last_name_i18n = DEMO_I18N.get(template.sector or "", {}).get("last_name") or {}
         expat_step_ids = set(
             (
                 await db.execute(
@@ -469,8 +518,8 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
         ).scalar_one_or_none()
         if expat is None:
             expat = ExpatUser(
-                first_name="[Exemple]",
-                last_name=str(spec.get("last_name", "Dossier exemple")),
+                first_name=(EXAMPLE_PREFIX_I18N.get(lang) or "[Exemple]").strip(),
+                last_name=str(last_name_i18n.get(lang) or spec.get("last_name", "Dossier exemple")),
                 email=email,
                 preferred_lang=agency.default_language,
                 # Throwaway: nobody logs in as the demo client (impersonation).
@@ -489,8 +538,8 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
             origin_country=str(spec.get("origin_country", "PT")),
             dest_country=str(spec.get("dest_country", "DE")),
             status=CaseStatus.IN_PROGRESS.value,
-            source="Dossier d'exemple",
-            tags=["exemple"],
+            source=_demo_text(DEMO_COMMON_I18N["source"], lang),
+            tags=[_demo_text(DEMO_COMMON_I18N["tag"], lang)],
             is_demo=True,
             created_at=now - timedelta(days=21),
         )
@@ -501,11 +550,13 @@ async def seed_demo_case(db: AsyncSession, agency: Agency, owner: Agent) -> Clie
                 case_id=case.id,
                 kind="principal",
                 expat_user_id=expat.id,
-                nationality="Portugaise",
+                # A COUNTRY field (ISO code), as the forms and the PDF read it:
+                # « Portugaise » was a French word no country lookup knew.
+                nationality="PT",
                 date_of_birth=date(1988, 5, 14),
                 place_of_birth="Porto",
                 phone="+351 912 345 678",
-                profession="Client exemple",
+                profession=_demo_text(DEMO_COMMON_I18N["profession"], lang),
                 # Pre-filled sector fields (raw coercer forms; definitions already
                 # materialized by _clone_sector_into_agency → the values render).
                 custom_fields=custom_fields,
