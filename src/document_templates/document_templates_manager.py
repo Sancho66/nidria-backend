@@ -99,7 +99,9 @@ class DocumentTemplatesManager:
         max_bytes = settings.max_document_size_mb * 1024 * 1024
         if len(content) > max_bytes:
             raise PayloadTooLargeError(
-                f"File exceeds the {settings.max_document_size_mb} MB limit."
+                f"File exceeds the {settings.max_document_size_mb} MB limit.",
+                code="document.too_large",
+                params={"max_mb": settings.max_document_size_mb},
             )
         template_id = uuid.uuid4()
         path = (

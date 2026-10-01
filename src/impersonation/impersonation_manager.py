@@ -29,10 +29,10 @@ class ImpersonationManager:
         self, actor: Agent, target_agent_id: uuid.UUID
     ) -> ImpersonationTokenResponse:
         if target_agent_id == actor.id:
-            raise ValidationError("You cannot impersonate yourself.")
+            raise ValidationError("You cannot impersonate yourself.", code="impersonation.self")
         target = await self.repo.get_agent_in_agency(actor.agency_id, target_agent_id)
         if target is None:
-            raise NotFoundError("Agent not found.")
+            raise NotFoundError("Agent not found.", code="member.not_found")
         return await self._issue(actor, Audience.AGENT, ActorType.AGENT, target.id)
 
     async def enter_agency(self, actor: Agent, agency_id: uuid.UUID) -> ImpersonationTokenResponse:
@@ -44,10 +44,14 @@ class ImpersonationManager:
         No chaining — the actor is never itself impersonated (denied centrally).
         """
         if agency_id == actor.agency_id:
-            raise ValidationError("You are already in this agency.")
+            raise ValidationError(
+                "You are already in this agency.", code="impersonation.same_agency"
+            )
         target = await self.repo.get_an_admin_of_agency(agency_id)
         if target is None:
-            raise NotFoundError("This agency has no administrator to enter as.")
+            raise NotFoundError(
+                "This agency has no administrator to enter as.", code="impersonation.no_admin"
+            )
         return await self._issue(actor, Audience.AGENT, ActorType.AGENT, target.id)
 
     async def impersonate_expat(
@@ -62,7 +66,7 @@ class ImpersonationManager:
         if expat is None or not await self.repo.expat_is_impersonable_in_agency(
             expat_user_id, actor.agency_id
         ):
-            raise NotFoundError("Expat user not found.")
+            raise NotFoundError("Expat user not found.", code="impersonation.client_not_found")
         await UsageManager(self.db).emit(
             agency_id=actor.agency_id,
             event_type="case.viewed_as_client",

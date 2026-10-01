@@ -26,6 +26,8 @@ class HelpManager:
         if not ratelimit.allow(
             f"help-miss:{agent.id}", limit=_MISS_LIMIT[0], window_seconds=_MISS_LIMIT[1]
         ):
+            # Category code on purpose: the search-miss POST is fire-and-
+            # forget, its refusal is swallowed by the front — never shown.
             raise TooManyRequestsError("Too many search-miss reports; retry later.")
         miss = await self.repository.create_miss(
             agency_id=agent.agency_id,

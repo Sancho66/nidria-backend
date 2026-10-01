@@ -11,7 +11,7 @@ from shared.models.external_contact import ExternalContact
 from src.core import storage
 from src.core.enums import ActorType, ResponsibleType, StepStatus, StepValidatorType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
-from src.core.i18n import DEFAULT_LANG
+from src.core.i18n import DEFAULT_LANG, resolve_i18n
 from src.external.external_repository import ExternalRepository
 from src.external.external_schema import (
     ExternalAgencyResponse,
@@ -124,7 +124,8 @@ class ExternalPortalManager:
     async def _assigned_case(self, external: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await get_case_for_external(self.db, external, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")  # 404, never reveals existence
+            # 404, never reveals existence
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     def _summary(
@@ -254,7 +255,7 @@ class ExternalPortalManager:
         progress_repo = ProgressRepository(self.db)
         progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         # border 3 — THE verrou: responsible directly (agent) OR by designation
         # (the responsible external_contact designates this Agent).
         designated_ids = await _designated_contact_ids(self.db, external)
@@ -263,17 +264,21 @@ class ExternalPortalManager:
             and progress.responsible_external_id in designated_ids
         )
         if not responsible:
-            raise NotFoundError("Attachment not found.")
+            raise NotFoundError("Attachment not found.", code="journey.attachment_not_found")
         attachment = await progress_repo.get_step_attachment_in_step(  # border 4
             progress.template_step_id, attachment_id
         )
         if attachment is None:
-            raise NotFoundError("Attachment not found.")
+            raise NotFoundError("Attachment not found.", code="journey.attachment_not_found")
         content = await asyncio.to_thread(storage.download, attachment.storage_path)
         return attachment.filename, content
 
     async def validate_step(
-        self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID
+        self,
+        external: Agent,
+        case_id: uuid.UUID,
+        progress_id: uuid.UUID,
+        lang: str = DEFAULT_LANG,
     ) -> ExternalCaseDetailResponse:
         """ "Action validée par" = provider: the DESIGNATED external validator
         closes a step. Borders, all server-side:
@@ -289,21 +294,22 @@ class ExternalPortalManager:
         progress_repo = ProgressRepository(self.db)
         progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         if not (  # border 3 — the validator verrou
             progress.validated_by_type == StepValidatorType.EXTERNAL.value
             and progress.validated_by_agent_id == external.id
         ):
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         await ProgressManager(self.db).close_step_by_validation(
             case,
             progress,
             actor_type=ActorType.AGENT,  # an external IS an agent
             actor_id=external.id,
             completed_by_agent_id=external.id,
+            lang=lang,  # a blocking prerequisite is named in the provider's language
         )
         await self.db.commit()
-        return await self.get_my_case(external, case_id)
+        return await self.get_my_case(external, case_id, lang)
 
 
 class ExternalAssignmentManager:
@@ -316,7 +322,7 @@ class ExternalAssignmentManager:
     async def _case(self, actor: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await self.repo.get_case_in_agency(actor.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     def _to_response(self, agent: Agent) -> ExternalAssignmentResponse:
@@ -334,7 +340,10 @@ class ExternalAssignmentManager:
         case = await self._case(actor, case_id)
         target = await self.repo.get_external_agent_in_agency(actor.agency_id, agent_id)
         if target is None:
-            raise ValidationError("Target must be an external provider of this agency.")
+            raise ValidationError(
+                "Target must be an external provider of this agency.",
+                code="external.not_a_provider",
+            )
         existing = await self.repo.get_assignment(case.id, target.id)
         if existing is None:
             self.repo.add_assignment(
@@ -343,18 +352,37 @@ class ExternalAssignmentManager:
             await self.db.commit()
         return self._to_response(target)
 
-    async def unassign(self, actor: Agent, case_id: uuid.UUID, agent_id: uuid.UUID) -> None:
+    async def unassign(
+        self, actor: Agent, case_id: uuid.UUID, agent_id: uuid.UUID, lang: str = DEFAULT_LANG
+    ) -> None:
         case = await self._case(actor, case_id)
         assignment = await self.repo.get_assignment(case.id, agent_id)
         if assignment is None:
-            raise NotFoundError("Assignment not found.")
+            raise NotFoundError("Assignment not found.", code="external.assignment_not_found")
         # Wave-C coherence: refuse to cut access while the provider is still
         # responsible for a step (no silent mutation, no responsible without
-        # access). The agency reassigns those steps first.
-        if await self.repo.is_responsible_in_case(case.id, agent_id):
+        # access). The agency reassigns those steps first — so the refusal
+        # NAMES them, in the reader's language (request, then agency).
+        steps = await self.repo.responsible_steps_in_case(case.id, agent_id)
+        if steps:
+            provider = await self.repo.get_agent(agent_id)
+            agency = await self.db.get(Agency, case.agency_id)
+            agency_default = agency.default_language if agency is not None else DEFAULT_LANG
             raise ConflictError(
                 "This provider is still responsible for at least one step — "
-                "reassign those steps before removing their access."
+                "reassign those steps before removing their access.",
+                code="external.still_responsible",
+                params={
+                    "provider": (
+                        f"{provider.first_name} {provider.last_name}".strip()
+                        if provider is not None
+                        else ""
+                    ),
+                    "steps": [
+                        resolve_i18n(step.name_i18n, lang, agency_default, step.name) or step.name
+                        for step in steps
+                    ],
+                },
             )
         await self.repo.delete_assignment(assignment)
         await self.db.commit()

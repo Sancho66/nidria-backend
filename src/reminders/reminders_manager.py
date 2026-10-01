@@ -11,6 +11,7 @@ from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
+from shared.models.journey import JourneyTemplateStep
 from shared.models.message_template import MessageTemplate
 from shared.models.reminder import Reminder
 from src.activity.activity_manager import ActivityManager
@@ -32,6 +33,7 @@ from src.core.exceptions import (
     ValidationError,
 )
 from src.core.i18n import (
+    DEFAULT_LANG,
     apply_i18n_write,
     format_date_for_lang,
     resolve_i18n,
@@ -159,7 +161,7 @@ class RemindersManager:
     ) -> MessageTemplate:
         template = await self.repo.get_message_template_in_agency(agent.agency_id, template_id)
         if template is None:
-            raise NotFoundError("Message template not found.")
+            raise NotFoundError("Message template not found.", code="reminder.template_not_found")
         # `exclude_unset` distingue ABSENT (inchangé) de `null` (effacé) —
         # c'est ce qui permet de RETIRER une étiquette. Mais `name` et `body`
         # sont NOT NULL : un `null` explicite sur eux passait la validation
@@ -212,7 +214,7 @@ class RemindersManager:
     async def delete_message_template(self, agent: Agent, template_id: uuid.UUID) -> None:
         template = await self.repo.get_message_template_in_agency(agent.agency_id, template_id)
         if template is None:
-            raise NotFoundError("Message template not found.")
+            raise NotFoundError("Message template not found.", code="reminder.template_not_found")
         await self.repo.delete_row(template)
         await self.db.commit()
 
@@ -632,39 +634,53 @@ class RemindersManager:
         if recipient is RecipientType.EXPAT:
             if recipient_external_id is not None:
                 raise ValidationError(
-                    "recipient_external_id must be empty for recipient_type 'expat'."
+                    "recipient_external_id must be empty for recipient_type 'expat'.",
+                    code="reminder.recipient_expat_no_external",
                 )
             return
         if recipient_external_id is None:
             raise ValidationError(
-                "recipient_external_id is required for recipient_type 'external'."
+                "recipient_external_id is required for recipient_type 'external'.",
+                code="reminder.recipient_external_required",
             )
         contact = await self.repo.get_external_contact_in_case(case.id, recipient_external_id)
         if contact is None:
-            raise ValidationError("Recipient external contact must belong to this case.")
+            raise ValidationError(
+                "Recipient external contact must belong to this case.",
+                code="case.external_contact_not_found",
+            )
         if channel_value is ReminderChannel.MAIL and not contact.email:
-            raise ValidationError("The external contact has no email address.")
+            raise ValidationError(
+                "The external contact has no email address.",
+                code="reminder.recipient_no_email",
+                params={"name": contact.name},
+            )
 
     async def create_reminder(
         self, agent: Agent, case_id: uuid.UUID, payload: ReminderCreateRequest
     ) -> Reminder:
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         await self._validate_recipient(
             case, payload.channel, payload.recipient_type, payload.recipient_external_id
         )
         if payload.step_progress_id is not None and (
             await self.repo.get_progress_in_case(case.id, payload.step_progress_id) is None
         ):
-            raise ValidationError("step_progress_id does not belong to this case.")
+            raise ValidationError(
+                "step_progress_id does not belong to this case.", code="progress.step_not_found"
+            )
 
         if payload.message_template_id is not None:
             template = await self.repo.get_message_template_in_agency(
                 agent.agency_id, payload.message_template_id
             )
             if template is None:
-                raise ValidationError("Message template not found in this agency.")
+                raise ValidationError(
+                    "Message template not found in this agency.",
+                    code="reminder.template_not_found",
+                )
             raw = await self._template_body_for(
                 template,
                 case,
@@ -675,7 +691,10 @@ class RemindersManager:
         elif payload.message_body is not None:
             raw = payload.message_body
         else:
-            raise ValidationError("Either message_template_id or message_body is required.")
+            raise ValidationError(
+                "Either message_template_id or message_body is required.",
+                code="reminder.message_required",
+            )
 
         body = await self._render(
             case,
@@ -714,17 +733,21 @@ class RemindersManager:
     async def get_reminder(self, agent: Agent, reminder_id: uuid.UUID) -> Reminder:
         reminder = await self.repo.get_reminder_in_agency(agent.agency_id, reminder_id)
         if reminder is None:
-            raise NotFoundError("Reminder not found.")
+            raise NotFoundError("Reminder not found.", code="reminder.not_found")
         return reminder
 
-    async def _targets_a_done_step(self, reminder: Reminder) -> bool:
-        """True when the reminder is pinned on a step already validated. A
-        reminder without a linked step (a free note, a generic follow-up) is
-        never concerned — nothing claims a step stalled."""
+    async def _done_target_step(self, reminder: Reminder) -> JourneyTemplateStep | None:
+        """The template step the reminder is pinned on, when that step is
+        already validated — None otherwise. A reminder without a linked step
+        (a free note, a generic follow-up) is never concerned — nothing claims
+        a step stalled. The template step (not a bool) so the refusal can NAME
+        it."""
         if reminder.step_progress_id is None:
-            return False
+            return None
         progress = await self.repo.get_progress_in_case(reminder.case_id, reminder.step_progress_id)
-        return progress is not None and progress.status == StepStatus.DONE.value
+        if progress is None or progress.status != StepStatus.DONE.value:
+            return None
+        return await self.repo.get_template_step(progress.template_step_id)
 
     async def list_reminders(
         self, agent: Agent, filters: dict[str, Any], page: int, page_size: int
@@ -777,7 +800,10 @@ class RemindersManager:
             ReminderStatus.TO_APPROVE.value,
             ReminderStatus.APPROVED.value,
         ):
-            raise ConflictError("Only to_approve or approved reminders can be edited.")
+            raise ConflictError(
+                "Only to_approve or approved reminders can be edited.",
+                code="reminder.not_editable",
+            )
         case = await self.repo.get_case_in_agency(agent.agency_id, reminder.case_id)
         assert case is not None
 
@@ -793,7 +819,9 @@ class RemindersManager:
         if new_step_id is not None and (
             await self.repo.get_progress_in_case(case.id, new_step_id) is None
         ):
-            raise ValidationError("step_progress_id does not belong to this case.")
+            raise ValidationError(
+                "step_progress_id does not belong to this case.", code="progress.step_not_found"
+            )
 
         new_scheduled_at = data.get("scheduled_at", reminder.scheduled_at)
 
@@ -809,7 +837,10 @@ class RemindersManager:
                 agent.agency_id, new_template_id
             )
             if template is None:
-                raise ValidationError("Message template not found in this agency.")
+                raise ValidationError(
+                    "Message template not found in this agency.",
+                    code="reminder.template_not_found",
+                )
             # La variante suit le destinataire ÉVENTUELLEMENT ÉDITÉ : c'est
             # le nouveau routage qui décide de la langue, pas l'ancien.
             raw = await self._template_body_for(
@@ -847,15 +878,32 @@ class RemindersManager:
         await self.db.refresh(reminder)
         return reminder
 
-    async def approve_reminder(self, agent: Agent, reminder_id: uuid.UUID) -> Reminder:
+    async def approve_reminder(
+        self, agent: Agent, reminder_id: uuid.UUID, lang: str = DEFAULT_LANG
+    ) -> Reminder:
         reminder = await self.get_reminder(agent, reminder_id)
         if reminder.status != ReminderStatus.TO_APPROVE.value:
-            raise ConflictError("Only to_approve reminders can be approved.")
+            raise ConflictError(
+                "Only to_approve reminders can be approved.", code="reminder.not_approvable"
+            )
         # One reminder, one explicit gesture → an explicit answer (409). In
         # bulk the same rule ignores instead, and says how many (the batch of
         # 85 must not fail because 7 of its steps got validated meanwhile).
-        if await self._targets_a_done_step(reminder):
-            raise ConflictError(_STEP_DONE_REFUSAL)
+        done_step = await self._done_target_step(reminder)
+        if done_step is not None:
+            # The step is NAMED in the approver's language (request language,
+            # then the agency's, then the scalar) — never concatenated into the
+            # English `detail`, which stays the stable log sentence.
+            agency = await self.repo.get_agency(agent.agency_id)
+            agency_default = agency.default_language if agency is not None else DEFAULT_LANG
+            raise ConflictError(
+                _STEP_DONE_REFUSAL,
+                code="reminder.step_done",
+                params={
+                    "step": resolve_i18n(done_step.name_i18n, lang, agency_default, done_step.name)
+                    or done_step.name
+                },
+            )
         reminder.status = ReminderStatus.APPROVED.value
         reminder.approved_by_agent_id = agent.id
         self._log(
@@ -938,7 +986,10 @@ class RemindersManager:
             ReminderStatus.TO_APPROVE.value,
             ReminderStatus.APPROVED.value,
         ):
-            raise ConflictError("Only to_approve or approved reminders can be cancelled.")
+            raise ConflictError(
+                "Only to_approve or approved reminders can be cancelled.",
+                code="reminder.not_cancellable",
+            )
         reminder.status = ReminderStatus.CANCELLED.value
         self._log(reminder.case_id, agent, "reminder.cancelled", {"reminder_id": str(reminder.id)})
         await self.db.commit()
@@ -951,9 +1002,15 @@ class RemindersManager:
         confirms here. A GET never mutates."""
         reminder = await self.get_reminder(agent, reminder_id)
         if reminder.channel != ReminderChannel.WHATSAPP.value:
-            raise ValidationError("mark-sent is only for the whatsapp channel.")
+            raise ValidationError(
+                "mark-sent is only for the whatsapp channel.",
+                code="reminder.mark_sent_whatsapp_only",
+            )
         if reminder.status != ReminderStatus.APPROVED.value:
-            raise ConflictError("Only approved reminders can be marked sent.")
+            raise ConflictError(
+                "Only approved reminders can be marked sent.",
+                code="reminder.mark_sent_not_approved",
+            )
         reminder.status = ReminderStatus.SENT.value
         self._log(
             reminder.case_id,

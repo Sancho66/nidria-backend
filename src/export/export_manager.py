@@ -81,7 +81,7 @@ class ExportManager:
         per-case PDF export."""
         agency = await self.db.get(Agency, agent.agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         lang = agency.default_language or DEFAULT_LANG
         perms = await self._permission_keys(agent.role_id)
         include_cost = Permission.COST_VIEW.value in perms

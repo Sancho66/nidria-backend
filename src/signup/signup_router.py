@@ -45,7 +45,9 @@ def _limit(request: Request, bucket: str, limit: tuple[int, float]) -> None:
     if not ratelimit.allow(
         f"{bucket}:{_client_ip(request)}", limit=limit[0], window_seconds=limit[1]
     ):
-        raise TooManyRequestsError("Too many attempts; retry later.")
+        raise TooManyRequestsError(
+            "Too many attempts; retry later.", code="signup.too_many_attempts"
+        )
 
 
 @router.post("/signup", response_model=SignupAccepted)

@@ -17,7 +17,7 @@ from src.company_profiles.company_catalog import (
 )
 from src.core.enums import ActorType
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
-from src.core.i18n import DEFAULT_LANG, apply_i18n_write
+from src.core.i18n import DEFAULT_LANG, apply_i18n_write, resolve_i18n
 from src.custom_fields.custom_fields_repository import CustomFieldsRepository
 from src.custom_fields.custom_fields_schema import (
     CustomFieldBulkRefusal,
@@ -75,6 +75,17 @@ async def materialize_preset_definitions(
     return created
 
 
+def _reader_label(
+    label_i18n: dict[str, str] | None, scalar: str, lang: str | None, agency_default: str
+) -> str:
+    """A field named in a refusal the way the READER sees it: resolved in
+    the request language when the route passes it, else the agency's
+    scalar label — never the technical key."""
+    if lang is None:
+        return scalar
+    return resolve_i18n(label_i18n, lang, agency_default, scalar) or scalar
+
+
 class CustomFieldsManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -100,6 +111,7 @@ class CustomFieldsManager:
         *,
         scope: str,
         profile_section: str = "misc",
+        lang: str | None = None,
     ) -> CustomFieldDefinition:
         """Le cœur SANS COMMIT de `create` — réutilisé par la création
         depuis la grille d'import (le batch reste transactionnel, un seul
@@ -117,9 +129,21 @@ class CustomFieldsManager:
         # elle est dérivée (`_create_company`) — sur ce chemin le
         # validateur du schéma l'a déjà exigée.
         assert payload.key is not None
-        if await self.repo.get_by_key(agent.agency_id, payload.key) is not None:
-            raise ConflictError(f"A custom field with key {payload.key!r} already exists.")
         agency_default = await self.agency_default(agent.agency_id)
+        taken = await self.repo.get_by_key(agent.agency_id, payload.key)
+        if taken is not None:
+            # Same shape as `company_field.key_exists` (minus the ids): the
+            # definition in place, NAMED, and whether it is archived — an
+            # archived key is taken too (the unique covers it), the remedy
+            # is to reactivate it rather than to create a second one.
+            raise ConflictError(
+                f"A custom field with key {payload.key!r} already exists.",
+                code="custom_field.key_exists",
+                params={
+                    "label": _reader_label(taken.label_i18n, taken.label, lang, agency_default),
+                    "archived": taken.archived_at is not None,
+                },
+            )
         label_scalar, label_blob = apply_i18n_write(
             payload.label_i18n, payload.label, agency_default, None, {}
         )
@@ -138,20 +162,20 @@ class CustomFieldsManager:
         return definition
 
     async def create(
-        self, agent: Agent, payload: CustomFieldDefinitionCreate
+        self, agent: Agent, payload: CustomFieldDefinitionCreate, *, lang: str | None = None
     ) -> "CustomFieldDefinition | CompanyFieldDefinition":
         # LA FACE SOCIÉTÉ PASSE PAR LA MÊME PORTE (D9) — comme le PATCH,
         # l'archivage et la masse. Le dispatch se fait sur la portée
         # DEMANDÉE, seule information disponible avant qu'une ligne existe
         # (les trois autres gestes, eux, dispatchent sur l'id trouvé).
         if payload.scope == "company":
-            return await self._create_company(agent, payload)
+            return await self._create_company(agent, payload, lang)
         section = payload.profile_section or "misc"
         if payload.profile_section is not None:
             await assert_section_exists(self.db, agent.agency_id, "person", section)
         # La portée voulue, ou le défaut historique si l'appelant se tait.
         definition = await self.build_definition(
-            agent, payload, scope=payload.scope or "case", profile_section=section
+            agent, payload, scope=payload.scope or "case", profile_section=section, lang=lang
         )
         await UsageManager(self.db).emit(
             agency_id=agent.agency_id,
@@ -165,7 +189,7 @@ class CustomFieldsManager:
         return definition
 
     async def _create_company(
-        self, agent: Agent, payload: CustomFieldDefinitionCreate
+        self, agent: Agent, payload: CustomFieldDefinitionCreate, lang: str | None = None
     ) -> "CompanyFieldDefinition":
         """CRÉER un champ de fiche SOCIÉTÉ (D9) — le geste qui manquait à
         cette face : ses champs ne naissaient que du catalogue (les 17
@@ -231,12 +255,20 @@ class CustomFieldsManager:
         await assert_section_exists(self.db, agent.agency_id, "company", payload.profile_section)
 
         key = slugify_field_label(payload.label)
+        agency_default = await self.agency_default(agent.agency_id)
         if key in company_preset_keys():
             _type, _section, labels = company_preset_spec(key)
             raise ConflictError(
                 f"The key {key!r} derived from this label is a company preset.",
                 code="company_field.key_reserved",
-                params={"key": key, "label": labels.get("fr") or humanize(key)},
+                params={
+                    "key": key,
+                    # The preset as the READER names it (the request
+                    # language), French only as the catalogue's last word.
+                    "label": (labels.get(lang) if lang else None)
+                    or labels.get("fr")
+                    or humanize(key),
+                },
             )
         definitions = await materialize_company_definitions(
             self.db,
@@ -250,12 +282,11 @@ class CustomFieldsManager:
                 code="company_field.key_exists",
                 params={
                     "key": key,
-                    "label": taken.label,
+                    "label": _reader_label(taken.label_i18n, taken.label, lang, agency_default),
                     "field_id": str(taken.id),
                     "archived": taken.archived_at is not None,
                 },
             )
-        agency_default = await self.agency_default(agent.agency_id)
         # MÊME MÉCANIQUE i18n QUE LA FACE PERSONNE, puisque c'est la même
         # porte : le libellé seul s'ancre dans la langue de l'agence, un
         # `label_i18n` explicite est honoré tel quel. C'est ce que le PATCH
@@ -300,7 +331,10 @@ class CustomFieldsManager:
             company = await company_definition_by_id(self.db, agent.agency_id, field_id)
             if company is not None:
                 return await self._update_company(agent, company, payload)
-            raise NotFoundError("Custom field not found.")
+            # Every definition lookup that misses (archived rows ARE found:
+            # only a deleted, foreign or unknown id lands here) answers this
+            # ONE code, literal at each raise for the served-codes scan.
+            raise NotFoundError("Custom field not found.", code="custom_field.not_found")
         provided = payload.model_dump(exclude_unset=True)
         # key and field_type are immutable (not in the update schema).
         if "label" in provided or "label_i18n" in provided:
@@ -409,7 +443,7 @@ class CustomFieldsManager:
                     await self.db.commit()
                     await self.db.refresh(company)
                 return company
-            raise NotFoundError("Custom field not found.")
+            raise NotFoundError("Custom field not found.", code="custom_field.not_found")
         if definition.archived_at is None:
             if not force:
                 usage = await self.repo.journey_usage(agent.agency_id, {definition.key})
@@ -670,7 +704,7 @@ class CustomFieldsManager:
         if definition is None:
             company = await company_definition_by_id(self.db, agent.agency_id, field_id)
             if company is None:
-                raise NotFoundError("Custom field not found.")
+                raise NotFoundError("Custom field not found.", code="custom_field.not_found")
             if company.archived_at is not None:
                 company.archived_at = None
                 await self.db.commit()

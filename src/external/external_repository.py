@@ -10,6 +10,7 @@ from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
+from shared.models.journey import JourneyTemplateStep
 
 
 class ExternalRepository:
@@ -78,15 +79,23 @@ class ExternalRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def is_responsible_in_case(self, case_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
-        """True iff the agent is still responsible for at least one step of
-        the case — guards B-unassign so no externe stays responsible
-        without dossier access (wave-C coherence)."""
-        stmt = select(CaseStepProgress.id).where(
-            CaseStepProgress.case_id == case_id,
-            CaseStepProgress.responsible_agent_id == agent_id,
+    async def responsible_steps_in_case(
+        self, case_id: uuid.UUID, agent_id: uuid.UUID
+    ) -> list[JourneyTemplateStep]:
+        """The template steps (journey order) the agent is still responsible
+        for on the case — empty iff none. Guards B-unassign so no externe
+        stays responsible without dossier access (wave-C coherence), and
+        lets the refusal NAME those steps."""
+        stmt = (
+            select(JourneyTemplateStep)
+            .join(CaseStepProgress, CaseStepProgress.template_step_id == JourneyTemplateStep.id)
+            .where(
+                CaseStepProgress.case_id == case_id,
+                CaseStepProgress.responsible_agent_id == agent_id,
+            )
+            .order_by(JourneyTemplateStep.position)
         )
-        return (await self.db.execute(stmt)).first() is not None
+        return list((await self.db.execute(stmt)).scalars().all())
 
     async def get_assignment(
         self, case_id: uuid.UUID, agent_id: uuid.UUID

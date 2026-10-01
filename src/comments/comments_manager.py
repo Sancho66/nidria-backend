@@ -82,10 +82,10 @@ class CommentsManager:
     ) -> tuple[ClientCase, uuid.UUID]:
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)  # border 1
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         progress = await self.repo.get_progress_in_case(case.id, progress_id)  # thread scoped
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         return case, progress.template_step_id
 
     async def list_as_agent(
@@ -113,7 +113,7 @@ class CommentsManager:
             )
         ).scalar_one_or_none()
         if document is None:
-            raise NotFoundError("Document not found on this case.")
+            raise NotFoundError("Document not found on this case.", code="document.not_found")
         if document.step_progress_id is None:
             document.step_progress_id = progress_id
         return document.id
@@ -183,10 +183,10 @@ class CommentsManager:
     ) -> None:
         case = await get_case_for_external(self.db, external, case_id)  # border: assignment
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         progress = await self.repo.get_progress_in_case(case.id, progress_id)  # thread scoped
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
 
     async def list_as_external(
         self, external: Agent, case_id: uuid.UUID, progress_id: uuid.UUID
@@ -254,10 +254,10 @@ class CommentsManager:
     ) -> tuple[ClientCase, uuid.UUID]:
         case = await self.repo.get_case_for_expat(expat.id, case_id)  # border: ownership 404
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         progress = await self.repo.get_progress_in_case(case.id, progress_id)  # thread scoped
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         return case, progress.template_step_id
 
     async def list_as_expat(
@@ -328,7 +328,7 @@ class CommentsManager:
         comment = await self.repo.get_comment(progress_id, comment_id)
         if comment is None or comment.deleted_at is not None:
             # A deleted comment is gone from the actionable thread.
-            raise NotFoundError("Comment not found.")
+            raise NotFoundError("Comment not found.", code="comment.not_found")
         if comment.author_type != viewer_type.value or comment.author_id != viewer_id:
             # Each party touches ONLY its own messages — checked against the
             # JWT identity, never the payload.

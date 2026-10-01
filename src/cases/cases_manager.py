@@ -707,7 +707,9 @@ class CasesManager:
         if not amount_present and not currency_present:
             return {}
         if Permission.COST_MANAGE.value not in effective_permissions(agent):
-            raise ForbiddenError("Missing permission: cost.manage.")
+            raise ForbiddenError(
+                "Missing permission: cost.manage.", code="case.billed_amount_forbidden"
+            )
         new_amount = amount if amount_present else case.billed_amount
         if new_amount is None:
             # Clearing (or never set): a currency without an amount is

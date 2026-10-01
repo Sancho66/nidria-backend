@@ -211,7 +211,12 @@ class SignupManager:
         sectors = manager._validate_sectors(payload.sectors)  # enum + dedup
         slug = base_slug = _slugify(payload.agency_name).strip("-")
         if not slug:
-            raise ValidationError("Could not derive a slug from the agency name.")
+            # Only an ASCII letter or digit survives the slug: a name written
+            # entirely in another script (Cyrillic…) lands here.
+            raise ValidationError(
+                "Could not derive a slug from the agency name.",
+                code="signup.agency_name_invalid",
+            )
         # Collision → suffix (the self-serve user never picks a slug).
         suffix = 2
         while await manager.repo.get_agency_by_slug(slug) is not None:

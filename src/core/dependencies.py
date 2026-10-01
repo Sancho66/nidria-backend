@@ -47,7 +47,7 @@ def get_agent_token_payload(
     Step 4 builds `get_current_agent` (ORM load) on top of this.
     """
     if token is None:
-        raise UnauthorizedError("Missing authentication token.")
+        raise UnauthorizedError("Missing authentication token.", code="auth.session_expired")
     return decode_access_token(token, Audience.AGENT)
 
 
@@ -59,7 +59,7 @@ def get_expat_token_payload(
     Step 4 builds `get_current_expat` (ORM load) on top of this.
     """
     if token is None:
-        raise UnauthorizedError("Missing authentication token.")
+        raise UnauthorizedError("Missing authentication token.", code="auth.session_expired")
     return decode_access_token(token, Audience.EXPAT)
 
 
@@ -87,7 +87,7 @@ async def get_current_agent(
     )
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:
-        raise UnauthorizedError("Agent not found.")
+        raise UnauthorizedError("Agent not found.", code="auth.session_expired")
     return agent
 
 
@@ -109,7 +109,7 @@ async def get_current_expat(
         return actor
     expat = await db.get(ExpatUser, token_subject(payload))
     if expat is None:
-        raise UnauthorizedError("User not found.")
+        raise UnauthorizedError("User not found.", code="auth.session_expired")
     if expat.activated_at is None and payload.get("impersonator_id") is None:
-        raise UnauthorizedError("Account not activated.")
+        raise UnauthorizedError("Account not activated.", code="auth.session_expired")
     return expat

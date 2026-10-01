@@ -41,7 +41,7 @@ class ActivityManager:
         view). No manual POST: the journal records facts only."""
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         rows, total = await self.repo.list_case_activity(case.id, action_types, page, page_size)
         return ActivityListResponse(
             items=[ActivityLogResponse.model_validate(row) for row in rows],

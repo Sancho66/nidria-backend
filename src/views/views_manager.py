@@ -56,7 +56,11 @@ def _sentinel_all_name(entity: str) -> str:
 def _reject_if_default_all(view: SavedView) -> None:
     """The customizable "All" rows are managed exclusively through the
     /views/default-all endpoints — the generic CRUD and set-default
-    routes refuse to touch them (Prism guard, ported verbatim)."""
+    routes refuse to touch them (Prism guard, ported verbatim).
+
+    Category code on purpose (no `view.*`): the listing never serves these
+    rows, so only a hand-built request reaches this guard — no screen
+    shows it."""
     if view.is_default_all:
         raise ValidationError(
             "Customized 'All' views can only be modified via the "
@@ -107,10 +111,14 @@ class ViewsManager:
         its owner only (Prism semantics)."""
         view = await self.repo.get_by_id(agent.agency_id, view_id)
         if view is None:
-            raise NotFoundError(f"View {view_id} not found.")
+            # Every view lookup that misses (deleted meanwhile, another
+            # agency's id) answers this ONE code, written literally at each
+            # raise for the served-codes scan.
+            raise NotFoundError(f"View {view_id} not found.", code="view.not_found")
         _reject_if_default_all(view)
         if view.agent_id != agent.id:
-            raise ForbiddenError("Only the owner of a view can modify it.")
+            # No name param: the view may be another agent's PRIVATE one.
+            raise ForbiddenError("Only the owner of a view can modify it.", code="view.not_owner")
         return view
 
     async def update(
@@ -150,10 +158,12 @@ class ViewsManager:
         semantics). Unsets any previous default for the same entity."""
         view = await self.repo.get_by_id(agent.agency_id, view_id)
         if view is None:
-            raise NotFoundError(f"View {view_id} not found.")
+            raise NotFoundError(f"View {view_id} not found.", code="view.not_found")
         _reject_if_default_all(view)
         if view.agent_id != agent.id and not view.is_shared:
-            raise ForbiddenError("Can only default your own views or shared views.")
+            raise ForbiddenError(
+                "Can only default your own views or shared views.", code="view.not_shared"
+            )
         await self.db.execute(
             update(SavedView)
             .where(
@@ -173,10 +183,12 @@ class ViewsManager:
     async def unset_default(self, agent: Agent, view_id: uuid.UUID) -> SavedViewRead:
         view = await self.repo.get_by_id(agent.agency_id, view_id)
         if view is None:
-            raise NotFoundError(f"View {view_id} not found.")
+            raise NotFoundError(f"View {view_id} not found.", code="view.not_found")
         _reject_if_default_all(view)
         if view.agent_id != agent.id and not view.is_shared:
-            raise ForbiddenError("Can only default your own views or shared views.")
+            raise ForbiddenError(
+                "Can only default your own views or shared views.", code="view.not_shared"
+            )
         view.is_default = False
         await self.db.commit()
         full = await self.repo.get_by_id(agent.agency_id, view.id)
@@ -187,6 +199,8 @@ class ViewsManager:
 
     @staticmethod
     def _validate_all_entity(entity: str) -> None:
+        # Category code on purpose: `entity` is a constant of the front's
+        # list hooks, never a user input.
         if entity not in DEFAULT_ALL_ENTITIES:
             raise ValidationError(
                 f"Invalid default-all entity {entity!r} — allowed: {DEFAULT_ALL_ENTITIES}."

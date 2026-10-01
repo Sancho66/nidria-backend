@@ -44,21 +44,27 @@ async def admin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Agent:
 async def test_unmigrated_domain_keeps_category_code(
     ec_client: AsyncClient, admin: Agent, agent_headers: AuthHeaders
 ) -> None:
-    """The activity domain is NOT in wave 1: same english detail as the
-    migrated cases domain, but the code is still the class category."""
-    r = await ec_client.get(f"/cases/{uuid.uuid4()}/activity", headers=agent_headers(admin))
-    assert r.status_code == 404
+    """A raise left WITHOUT a specific code keeps the class category. The
+    activity 404 that stood here is migrated since wave E2 (case.not_found);
+    the default-all entity guard stays category on purpose (the entity is a
+    constant of the front, never shown)."""
+    r = await ec_client.get(
+        "/views/default-all", params={"entity": "nope"}, headers=agent_headers(admin)
+    )
+    assert r.status_code == 422
     body = r.json()
-    assert body["detail"] == "Case not found."
-    assert body["code"] == "not_found"  # category, not "case.not_found"
+    assert body["detail"].startswith("Invalid default-all entity 'nope'")
+    assert body["code"] == "validation_error"  # category, no "view.*"
     assert body["params"] == {}
 
 
-async def test_missing_token_keeps_category_code(ec_client: AsyncClient) -> None:
+async def test_missing_token_has_the_session_code(ec_client: AsyncClient) -> None:
+    # Migrated in wave E1 (accounts & access): every rejected session token
+    # shares `auth.session_expired` (tests/test_error_codes_e1.py).
     r = await ec_client.get("/cases")
     assert r.status_code == 401
     body = r.json()
-    assert body["code"] == "unauthorized"
+    assert body["code"] == "auth.session_expired"
     assert body["params"] == {}
 
 

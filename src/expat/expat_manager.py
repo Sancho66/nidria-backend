@@ -55,6 +55,9 @@ from src.progress.progress_schema import StepParticipantResponse, StepProgressRe
 # its LABEL in the reader's language, never by its technical key.
 _STEP_NOT_ACTIVE = "requirement.step_not_active"
 _VALUE_INVALID = "requirement.value_invalid"
+# A person requirement and a case-field requirement are the same thing on the
+# client's screen (an item the agency asks for): one « not found » code.
+_REQUIREMENT_NOT_FOUND = "requirement.not_found"
 
 
 def _base_field_label(reference: str, lang: str) -> str:
@@ -117,7 +120,7 @@ class ExpatPortalManager:
         # property of the link, enforced by this narrow resolver).
         row = await self.repo.get_case_for_expat(expat.id, case_id)
         if row is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return row
 
     async def _get_viewing_case(
@@ -127,7 +130,7 @@ class ExpatPortalManager:
         # member's own case_person (None for the principal → sees all).
         row = await self.repo.get_case_for_viewer(expat.id, case_id)
         if row is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return row
 
     def _summary(
@@ -293,7 +296,7 @@ class ExpatPortalManager:
         case, _, viewing_person = await self._get_viewing_case(expat, case_id)
         found = await self.repo.get_requirement_in_case(case.id, requirement_id)  # border 2
         if found is None:
-            raise NotFoundError("Requirement not found.")
+            raise NotFoundError("Requirement not found.", code=_REQUIREMENT_NOT_FOUND)
         requirement, progress = found
         # Border 2b — targeting: the principal fills everything (their own
         # case_person ALSO matches viewing_person, so the discriminant is
@@ -304,7 +307,7 @@ class ExpatPortalManager:
         # a foreign requirement).
         is_member = case.principal_expat_user_id != expat.id
         if is_member and (viewing_person is None or requirement.person_id != viewing_person.id):
-            raise NotFoundError("Requirement not found.")
+            raise NotFoundError("Requirement not found.", code=_REQUIREMENT_NOT_FOUND)
         if progress.status != StepStatus.IN_PROGRESS.value:  # border 3
             raise ConflictError(
                 "This step is not active; its requirements are read-only.", code=_STEP_NOT_ACTIVE
@@ -327,7 +330,7 @@ class ExpatPortalManager:
             )
         person = await self.repo.get_case_person(case.id, requirement.person_id)  # border 4
         if person is None:  # defensive — a materialized person can't vanish (CASCADE)
-            raise NotFoundError("Requirement not found.")
+            raise NotFoundError("Requirement not found.", code=_REQUIREMENT_NOT_FOUND)
 
         progress_mgr = ProgressManager(self.db)
         before = await progress_mgr.snapshot_active_completion(case)
@@ -398,7 +401,7 @@ class ExpatPortalManager:
         case, _ = await self._get_owned_case(expat, case_id)  # border a (ownership → 404)
         found = await self.repo.get_case_requirement_in_case(case.id, case_requirement_id)
         if found is None:  # border b (declaration on a step of THIS case → 404)
-            raise NotFoundError("Case requirement not found.")
+            raise NotFoundError("Case requirement not found.", code=_REQUIREMENT_NOT_FOUND)
         creq, progress = found
         if progress.status != StepStatus.IN_PROGRESS.value:  # border c (active → 409)
             raise ConflictError(
@@ -498,12 +501,12 @@ class ExpatPortalManager:
         progress_repo = ProgressRepository(self.db)
         progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         attachment = await progress_repo.get_step_attachment_in_step(  # border 3
             progress.template_step_id, attachment_id
         )
         if attachment is None:
-            raise NotFoundError("Attachment not found.")
+            raise NotFoundError("Attachment not found.", code="journey.attachment_not_found")
         content = await asyncio.to_thread(storage.download, attachment.storage_path)
         return attachment.filename, content
 
@@ -525,7 +528,7 @@ class ExpatPortalManager:
         progress_repo = ProgressRepository(self.db)
         progress = await progress_repo.get_progress_in_case(case.id, progress_id)  # border 2
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         if progress.validated_by_type != StepValidatorType.EXPAT.value:  # border 3
             raise ConflictError(
                 "This step is not validated by the client.",

@@ -9,7 +9,7 @@ from shared.models.agent import Agent
 from src.auth.auth_schema import MessageResponse
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience, ReminderStatus
-from src.core.i18n import Language
+from src.core.i18n import Language, RequestLang
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.journeys.journeys_schema import TranslateEstimateResponse, TranslationJobResponse
@@ -307,9 +307,12 @@ async def bulk_approve_reminders(
 
 
 @router.post("/reminders/{reminder_id}/approve", response_model=ReminderResponse)
-async def approve_reminder(reminder_id: uuid.UUID, agent: AgentDep, db: DbDep) -> ReminderResponse:
+async def approve_reminder(
+    reminder_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
+) -> ReminderResponse:
     manager = RemindersManager(db)
-    reminder = await manager.approve_reminder(agent, reminder_id)
+    # `lang` names a refused reminder's completed step in the approver's language.
+    reminder = await manager.approve_reminder(agent, reminder_id, lang)
     return await manager.to_response(reminder)
 
 

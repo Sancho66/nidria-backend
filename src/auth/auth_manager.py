@@ -46,9 +46,14 @@ from src.core.security import (
 )
 from src.usage.usage_manager import UsageManager
 
-# One generic message for every login failure (unknown email, wrong
-# password, not-activated expat): the response must not reveal which.
+# One generic message — and ONE code, `auth.invalid_credentials` — for every
+# login failure (unknown email, wrong password, not-activated expat): the
+# response must not reveal which.
 _INVALID_CREDENTIALS = "Invalid credentials."
+# Deliberately left on the CATEGORY code (`bad_request`): the front's
+# resetPasswordError branches on that exact code to offer a new link and
+# shows its own translated sentence. A dotted code here needs that front
+# branch first, or the « request a new link » exit silently disappears.
 _INVALID_RESET_TOKEN = "Invalid or expired reset token."
 _FORGOT_PASSWORD_DETAIL = "If this email exists, a reset link has been sent."
 
@@ -109,16 +114,16 @@ class AuthManager:
         # are always lowercase, whatever the caller.
         agent = await self.repo.get_agent_by_email(normalize_email(email))
         if agent is None or not verify_password(password, agent.password_hash):
-            raise UnauthorizedError(_INVALID_CREDENTIALS)
+            raise UnauthorizedError(_INVALID_CREDENTIALS, code="auth.invalid_credentials")
         # Offboarded agent: same non-revealing error as bad credentials.
         if agent.deactivated_at is not None:
-            raise UnauthorizedError(_INVALID_CREDENTIALS)
+            raise UnauthorizedError(_INVALID_CREDENTIALS, code="auth.invalid_credentials")
         # A provider whose invitation is still PENDING has an Agent row (agent_id
         # posed at invite) but NO access: refuse with the SAME error — never
         # reveal that the account exists but is not activated. The throwaway
         # password is unknowable anyway; this is the belt.
         if agent.is_external and await self.repo.has_pending_external_invitation(agent.id):
-            raise UnauthorizedError(_INVALID_CREDENTIALS)
+            raise UnauthorizedError(_INVALID_CREDENTIALS, code="auth.invalid_credentials")
         challenge = await self._mfa_challenge_if_enabled(Audience.AGENT, agent.id)
         if challenge is not None:
             return challenge
@@ -139,7 +144,7 @@ class AuthManager:
             or expat.password_hash is None
             or not verify_password(password, expat.password_hash)
         ):
-            raise UnauthorizedError(_INVALID_CREDENTIALS)
+            raise UnauthorizedError(_INVALID_CREDENTIALS, code="auth.invalid_credentials")
         challenge = await self._mfa_challenge_if_enabled(Audience.EXPAT, expat.id)
         if challenge is not None:
             return challenge
@@ -185,11 +190,13 @@ class AuthManager:
         # impersonation (expiry IS the exit) — if one ever carries the
         # claim, reject it BEFORE the jti lookup could honor it.
         if payload.get("impersonator_id") is not None:
-            raise UnauthorizedError("Impersonation tokens cannot be refreshed.")
+            raise UnauthorizedError(
+                "Impersonation tokens cannot be refreshed.", code="auth.session_expired"
+            )
         actor_id = token_subject(payload)
         raw_jti = payload.get("jti")
         if not raw_jti:
-            raise UnauthorizedError("Invalid refresh token.")
+            raise UnauthorizedError("Invalid refresh token.", code="auth.session_expired")
         jti = uuid.UUID(str(raw_jti))
 
         now = datetime.now(UTC)
@@ -197,9 +204,9 @@ class AuthManager:
         if row is None or row.revoked_at is not None or row.actor_id != actor_id:
             await self.repo.revoke_all_active_refresh_tokens(audience.value, actor_id, now)
             await self.db.commit()
-            raise UnauthorizedError("Invalid refresh token.")
+            raise UnauthorizedError("Invalid refresh token.", code="auth.session_expired")
         if row.expires_at <= now:
-            raise UnauthorizedError("Refresh token expired.")
+            raise UnauthorizedError("Refresh token expired.", code="auth.session_expired")
 
         row.revoked_at = now
         pair = self.issue_token_pair(actor_id, audience)
@@ -213,10 +220,12 @@ class AuthManager:
         per-request blocklist."""
         payload = decode_refresh_token(refresh_token, audience)
         if token_subject(payload) != actor_id:
-            raise UnauthorizedError("Refresh token does not belong to this account.")
+            raise UnauthorizedError(
+                "Refresh token does not belong to this account.", code="auth.session_expired"
+            )
         raw_jti = payload.get("jti")
         if not raw_jti:
-            raise UnauthorizedError("Invalid refresh token.")
+            raise UnauthorizedError("Invalid refresh token.", code="auth.session_expired")
         row = await self.repo.get_refresh_token(uuid.UUID(str(raw_jti)))
         if row is not None and row.actor_id == actor_id and row.revoked_at is None:
             row.revoked_at = datetime.now(UTC)
@@ -239,8 +248,9 @@ class AuthManager:
         expat = await self.repo.get_expat_by_email(invitation.email)
         if expat is None:
             # Case creation (step 9) always creates the expat row first;
-            # an orphan invitation is a broken state, not a user error path.
-            raise BadRequestError("Invalid or expired invitation token.")
+            # an orphan invitation is a broken state, not a user error path —
+            # answered like an unknown link (no repair gesture to offer).
+            raise BadRequestError("Invalid or expired invitation token.", code="invitation.invalid")
 
         invitation.status = InvitationStatus.ACCEPTED
         invitation.accepted_at = now

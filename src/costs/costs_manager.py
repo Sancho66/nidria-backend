@@ -43,7 +43,7 @@ class CostsManager:
     async def _case(self, agent: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await self.cases.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     def _log(self, case_id: uuid.UUID, agent: Agent, action: str, line: CaseStepCost) -> None:
@@ -131,7 +131,7 @@ class CostsManager:
         check_amount_decimals(payload.amount, currency)
         progress = await self.repo.get_progress_in_case(case.id, progress_id)
         if progress is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         # A manual débours: real amount + its currency, NO plan (planned_* NULL).
         line = self.repo.add_line(
             case_step_progress_id=progress.id,
@@ -153,7 +153,7 @@ class CostsManager:
         case = await self._case(agent, case_id)
         line = await self.repo.get_line_in_case(case.id, cost_id)
         if line is None:
-            raise NotFoundError("Cost line not found.")
+            raise NotFoundError("Cost line not found.", code="cost.line_not_found")
         data = payload.model_dump(exclude_unset=True)
         # Resolve the effective (amount, currency) and VALIDATE before mutating —
         # a currency change can invalidate an already-entered amount's decimals.
@@ -176,7 +176,7 @@ class CostsManager:
         case = await self._case(agent, case_id)
         line = await self.repo.get_line_in_case(case.id, cost_id)
         if line is None:
-            raise NotFoundError("Cost line not found.")
+            raise NotFoundError("Cost line not found.", code="cost.line_not_found")
         self._log(case.id, agent, "cost.deleted", line)
         await self.db.delete(line)
         await self.db.commit()

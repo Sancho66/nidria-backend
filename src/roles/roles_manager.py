@@ -21,6 +21,9 @@ from src.core.seats import assert_reader_role_locked
 from src.roles.roles_repository import RolesRepository
 
 _SYSTEM_ROLE_LOCKED = "System roles are shared across agencies and cannot be deleted."
+# Every role lookup that misses (unknown, foreign custom, platform-reserved)
+# answers ONE code, `role.not_found`, whatever the door — written literally
+# at each raise so the served-codes scan (AST, literals only) sees it.
 
 
 class RolesManager:
@@ -36,7 +39,12 @@ class RolesManager:
         indirectly through role assignment."""
         missing = sorted(set(requested_keys) - effective_permissions(actor))
         if missing:
-            raise ForbiddenError(f"Beyond your permission ceiling: {', '.join(missing)}.")
+            # The permission KEYS stay in the English detail (logs, tests):
+            # they are internal identifiers, never interpolated on screen.
+            raise ForbiddenError(
+                f"Beyond your permission ceiling: {', '.join(missing)}.",
+                code="role.beyond_ceiling",
+            )
 
     async def _resolve_permissions(
         self, permission_ids: Sequence[uuid.UUID]
@@ -45,12 +53,18 @@ class RolesManager:
         rows = await self.repo.get_permissions_by_ids(unique_ids)
         unknown = sorted(str(i) for i in set(unique_ids) - {row.id for row in rows})
         if unknown:
+            # Category code on purpose: the ids come from GET /permissions and
+            # the catalogue is insert-only — only a hand-built request misses.
             raise ValidationError(f"Unknown permission ids: {', '.join(unknown)}.")
         return rows
 
     async def _assert_name_free(self, agency_id: uuid.UUID, name: str) -> None:
         if await self.repo.get_role_by_name(agency_id, name) is not None:
-            raise ConflictError(f"A role named {name!r} already exists in this agency.")
+            raise ConflictError(
+                f"A role named {name!r} already exists in this agency.",
+                code="role.name_taken",
+                params={"name": name},
+            )
 
     async def _assert_agency_keeps_manager(
         self,
@@ -78,9 +92,12 @@ class RolesManager:
                 keys = effective_permissions(agent)
             if Permission.AGENT_MANAGE.value in keys:
                 return
+        # Raised under the ROLES code; the member flows that reuse this
+        # guard (deactivation, seat flip) may re-code it for their own screen.
         raise ConflictError(
             "This operation would leave the agency without any manager "
-            "(no agent holding agent.manage)."
+            "(no agent holding agent.manage).",
+            code="role.last_manager",
         )
 
     # --- copy-on-write -----------------------------------------------------------------
@@ -97,9 +114,12 @@ class RolesManager:
             return existing
         conflicting = await self.repo.get_role_by_name(actor.agency_id, system_role.name)
         if conflicting is not None:
+            # No name param: a system role's name is a technical key
+            # ("case_manager") the screen labels itself.
             raise ConflictError(
                 f"A custom role named {system_role.name!r} already exists in this "
-                "agency and is not a clone of the system role."
+                "agency and is not a clone of the system role.",
+                code="role.clone_name_taken",
             )
         clone = self.repo.add_role(
             actor.agency_id, system_role.name, cloned_from_role_id=system_role.id
@@ -117,11 +137,11 @@ class RolesManager:
         cross-agency existence leak)."""
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None:
-            raise NotFoundError("Role not found.")
+            raise NotFoundError("Role not found.", code="role.not_found")
         if role.is_system:
             return await self._clone_for_edit(actor, role)
         if role.agency_id != actor.agency_id:
-            raise NotFoundError("Role not found.")
+            raise NotFoundError("Role not found.", code="role.not_found")
         return role
 
     # --- catalogue ---------------------------------------------------------------------
@@ -136,7 +156,7 @@ class RolesManager:
         a foreign custom role is a 404, same rule everywhere."""
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None or (not role.is_system and role.agency_id != actor.agency_id):
-            raise NotFoundError("Role not found.")
+            raise NotFoundError("Role not found.", code="role.not_found")
         return role
 
     async def create_role(
@@ -184,17 +204,19 @@ class RolesManager:
     async def delete_role(self, actor: Agent, role_id: uuid.UUID) -> None:
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None:
-            raise NotFoundError("Role not found.")
+            raise NotFoundError("Role not found.", code="role.not_found")
         if role.is_system:
-            raise ForbiddenError(_SYSTEM_ROLE_LOCKED)
+            raise ForbiddenError(_SYSTEM_ROLE_LOCKED, code="role.system_locked")
         if role.agency_id != actor.agency_id:
-            raise NotFoundError("Role not found.")
+            raise NotFoundError("Role not found.", code="role.not_found")
 
         if role.cloned_from_role_id is not None:
             # Deleting a clone = un-masking: wearers fall back to the
             # original system role (its matrix), anti-lockout permitting.
             origin = await self.repo.get_role_with_permissions(role.cloned_from_role_id)
             if origin is None:
+                # Category code on purpose: system roles are never deleted
+                # (and the FK is SET NULL) — an integrity net, not a screen.
                 raise ConflictError("Origin system role of this clone no longer exists.")
             origin_keys = {p.key for p in origin.permissions}
             await self._assert_agency_keeps_manager(
@@ -207,7 +229,11 @@ class RolesManager:
 
         assigned = await self.repo.count_role_assignments(role.id)
         if assigned:
-            raise ConflictError(f"Role is assigned to {assigned} agent(s).")
+            raise ConflictError(
+                f"Role is assigned to {assigned} agent(s).",
+                code="role.in_use",
+                params={"name": role.name, "count": assigned},
+            )
         await self.repo.delete_role(role)
         await self.db.commit()
 
@@ -218,7 +244,7 @@ class RolesManager:
         otherwise duplicating an oversized role is the copy bypass."""
         source = await self.repo.get_role_with_permissions(role_id)
         if source is None or (not source.is_system and source.agency_id != actor.agency_id):
-            raise NotFoundError("Role not found.")
+            raise NotFoundError("Role not found.", code="role.not_found")
         self._assert_within_ceiling(actor, (p.key for p in source.permissions))
         await self._assert_name_free(actor.agency_id, name)
         duplicate = self.repo.add_role(actor.agency_id, name)
@@ -232,32 +258,41 @@ class RolesManager:
 
     async def set_member_role(self, actor: Agent, agent_id: uuid.UUID, role_id: uuid.UUID) -> Agent:
         if agent_id == actor.id:
-            raise ForbiddenError("You cannot modify your own role.")
+            raise ForbiddenError("You cannot modify your own role.", code="role.own_role_locked")
         # get_agent_in_agency excludes externals → an external target is
         # already a 404 here (they're managed via the external flow).
         target = await self.repo.get_agent_in_agency(actor.agency_id, agent_id)
         if target is None:
-            raise NotFoundError("Agent not found.")
+            raise NotFoundError("Agent not found.", code="member.not_found")
 
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None or (not role.is_system and role.agency_id != actor.agency_id):
-            raise ValidationError("Role does not exist or does not belong to this agency.")
+            raise ValidationError(
+                "Role does not exist or does not belong to this agency.", code="role.not_found"
+            )
         if role.name in PLATFORM_ROLE_NAMES:
             # Platform-reserved (superadmin): granted only via the seed —
             # never assignable through the UI, not even by a superadmin.
-            raise ValidationError("Role does not exist or does not belong to this agency.")
+            raise ValidationError(
+                "Role does not exist or does not belong to this agency.", code="role.not_found"
+            )
         if role.is_external:
             # An external (provider) role is never assignable via the
             # internal member-role flow.
-            raise ValidationError("External roles cannot be assigned to internal members.")
+            raise ValidationError(
+                "External roles cannot be assigned to internal members.",
+                code="role.external_not_assignable",
+            )
         if role.is_system:
             # Masking holds for assignment too: an agent must never wear
             # a role that GET /roles no longer lists for their agency.
             clone = await self.repo.get_clone_of(actor.agency_id, role.id)
             if clone is not None:
+                # The clone id stays in the detail only (never a param).
                 raise ConflictError(
                     f"This system role is masked by the agency clone {clone.id} — "
-                    "assign the clone instead."
+                    "assign the clone instead.",
+                    code="role.masked_by_clone",
                 )
 
         new_keys = {p.key for p in role.permissions}

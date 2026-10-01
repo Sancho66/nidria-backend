@@ -331,12 +331,25 @@ def _value_problems(verdicts: list[RowVerdict]) -> list[ImportValueProblem]:
 def _value_mapping_index(
     rules: list[ImportValueMapping], allowed: set[str]
 ) -> dict[tuple[str, str], str]:
+    # Two refusals, two codes: a rule aiming at a field outside this import
+    # (the mapping changed since the preview) names THOSE fields, like every
+    # other `import.unknown_targets`; a duplicate or blank resolution names
+    # the source value it was meant to resolve.
+    unknown = sorted({rule.target for rule in rules if rule.target not in allowed})
+    if unknown:
+        raise ValidationError(
+            "Invalid or duplicate value mapping.",
+            code="import.unknown_targets",
+            params={"targets": unknown},
+        )
     result: dict[tuple[str, str], str] = {}
     for rule in rules:
         key = (rule.target, rule.source_value.strip())
-        if rule.target not in allowed or key in result or not rule.value.strip():
+        if key in result or not rule.value.strip():
             raise ValidationError(
-                "Invalid or duplicate value mapping.", code="import.unknown_targets"
+                "Invalid or duplicate value mapping.",
+                code="import.value_mapping_invalid",
+                params={"value": rule.source_value.strip()},
             )
         result[key] = rule.value.strip()
     return result

@@ -123,9 +123,9 @@ async def download_document(
     "/{case_id}/steps/{progress_id}/validate", response_model=ExternalCaseDetailResponse
 )
 async def validate_step(
-    case_id: uuid.UUID, progress_id: uuid.UUID, agent: AgentDep, db: DbDep
+    case_id: uuid.UUID, progress_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
 ) -> ExternalCaseDetailResponse:
-    return await ExternalPortalManager(db).validate_step(agent, case_id, progress_id)
+    return await ExternalPortalManager(db).validate_step(agent, case_id, progress_id, lang)
 
 
 @external_router.get("/{case_id}/steps/{progress_id}/attachments/{attachment_id}/download")
@@ -251,7 +251,7 @@ async def create_assignment(
 
 @agency_router.delete("/{case_id}/external-assignments/{agent_id}", response_model=MessageResponse)
 async def delete_assignment(
-    case_id: uuid.UUID, agent_id: uuid.UUID, agent: AgentDep, db: DbDep
+    case_id: uuid.UUID, agent_id: uuid.UUID, agent: AgentDep, db: DbDep, lang: RequestLang
 ) -> MessageResponse:
-    await ExternalAssignmentManager(db).unassign(agent, case_id, agent_id)
+    await ExternalAssignmentManager(db).unassign(agent, case_id, agent_id, lang)
     return MessageResponse(detail="Assignment removed.")

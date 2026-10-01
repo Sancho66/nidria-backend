@@ -104,7 +104,7 @@ class TemplateTranslationManager:
     ) -> tuple[MessageTemplate, TranslationEntry, str, list[str]]:
         template = await self.repo.get_message_template_in_agency(agent.agency_id, template_id)
         if template is None:
-            raise NotFoundError("Message template not found.")
+            raise NotFoundError("Message template not found.", code="reminder.template_not_found")
         agency = await self.db.get(Agency, agent.agency_id)
         default = (agency.default_language if agency else "fr") or "fr"
         source_lang = default if default in SUPPORTED_LANGUAGES else "fr"

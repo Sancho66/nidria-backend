@@ -636,7 +636,7 @@ class JourneyImportManager:
             stmt = stmt.with_for_update()
         template = (await self.db.execute(stmt)).scalar_one_or_none()
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
         await self._assert_no_cases(template_id)
         return template
 

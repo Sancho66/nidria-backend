@@ -214,7 +214,7 @@ async def test_no_email_profile_refuses_client_access_and_cannot_receive_reminde
         },
     )
     assert reminder.status_code == 404, reminder.text
-    assert reminder.json()["code"] == "not_found"
+    assert reminder.json()["code"] == "case.not_found"
     for table in ("expat_user", "client_case", "case_invitation", "reminder"):
         assert (await db_session.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one() == 0
     assert email_module.outbox == []

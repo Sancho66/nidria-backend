@@ -273,6 +273,10 @@ class AgenciesManager:
             raise ValidationError(
                 "At least one sector is required.", code="agency.sectors_required"
             )
+        # These two 409s (and the slug 422 above) stay on the CATEGORY code
+        # on purpose: the superadmin wizard tells them apart by the word
+        # « slug » in the detail — a translated message would send the slug
+        # conflict to the email field. Dotted codes need that branch first.
         if await self.repo.get_agency_by_slug(slug) is not None:
             raise ConflictError(f"Agency slug '{slug}' is already taken.")
         # One human = one agent account at MVP (agent.email is table-unique):
@@ -438,7 +442,7 @@ class AgenciesManager:
         storage purged best-effort after commit, an audit row written."""
         agency = await self.repo.get_agency(agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         if payload.confirm_name != agency.name:
             raise ValidationError(
                 "The typed name does not match the agency name.",
@@ -580,7 +584,7 @@ class AgenciesManager:
     async def get_my_agency(self, agent: Agent) -> Agency:
         agency = await self.repo.get_agency(agent.agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         return agency
 
     # --- subscription (structure F, manual billing) ----------------------------------
@@ -701,7 +705,7 @@ class AgenciesManager:
         (le plan/converted_at font foi) → 422 nommé."""
         agency = await self.repo.get_agency(agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         if agency.plan is not None or agency.converted_at is not None:
             raise ValidationError(
                 "A converted agency has no trial to extend.",
@@ -748,7 +752,7 @@ class AgenciesManager:
         """
         agency = await self.repo.get_agency(agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         if (
             lifetime
             and agency.billing_mode == "paddle"
@@ -801,7 +805,7 @@ class AgenciesManager:
         Retourne (available, reserved) après coup."""
         agency = await self.repo.get_agency(agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         from src.signatures import ledger
 
         await ledger.grant_credits(
@@ -819,7 +823,7 @@ class AgenciesManager:
         trial_ends_at is NEVER touched here (pre-conversion marker)."""
         agency = await self.repo.get_agency(agency_id)
         if agency is None:
-            raise NotFoundError("Agency not found.")
+            raise NotFoundError("Agency not found.", code="agency.not_found")
         # A paddle-billed agency's plan/cycle/conversion are written by the
         # WEBHOOKS only — the manual hand is refused to keep one writer per
         # mode (the founding fields below stay OUR concepts, still editable).
@@ -1202,6 +1206,23 @@ class AgenciesManager:
     async def list_members(self, agent: Agent) -> list[Agent]:
         return await self.repo.list_agents_with_roles(agent.agency_id)
 
+    async def _assert_keeps_manager(
+        self, agency_id: uuid.UUID, reassigned_agent: tuple[uuid.UUID, set[str]]
+    ) -> None:
+        """The roles domain's anti-lockout guard, answered under the MEMBER
+        code: the offboarding dialog branches on `member.last_manager` for
+        its dedicated screen. It used to test for an ABSENT code, which the
+        category `conflict` never was — the screen could not show, the
+        english detail did instead."""
+        from src.roles.roles_manager import RolesManager
+
+        try:
+            await RolesManager(self.db)._assert_agency_keeps_manager(
+                agency_id, reassigned_agent=reassigned_agent
+            )
+        except ConflictError as exc:
+            raise ConflictError(exc.message, code="member.last_manager") from exc
+
     async def deactivate_member(
         self, agent: Agent, agent_id: uuid.UUID
     ) -> MemberDeactivationResponse:
@@ -1213,7 +1234,7 @@ class AgenciesManager:
         manual agency), and returns the INVENTORY to reassign."""
         target = await self.repo.get_agent_in_agency(agent.agency_id, agent_id)
         if target is None:
-            raise NotFoundError("Member not found.")
+            raise NotFoundError("Member not found.", code="member.not_found")
         if target.deactivated_at is not None:
             raise ConflictError(
                 "This member is already deactivated.", code="member.already_deactivated"
@@ -1222,11 +1243,7 @@ class AgenciesManager:
             # Anti-lockout, by CAPABILITY (reused from the roles domain,
             # deactivated managers already excluded from the capable list):
             # simulate the target with ZERO permissions = deactivated.
-            from src.roles.roles_manager import RolesManager
-
-            await RolesManager(self.db)._assert_agency_keeps_manager(
-                agent.agency_id, reassigned_agent=(target.id, set())
-            )
+            await self._assert_keeps_manager(agent.agency_id, (target.id, set()))
         now = datetime.now(UTC)
         target.deactivated_at = now
         # Live sessions die NOW: refresh revoked here, access dies at the
@@ -1281,7 +1298,7 @@ class AgenciesManager:
         invitation: coming back consumes a seat/provider slot."""
         target = await self.repo.get_agent_in_agency(agent.agency_id, agent_id)
         if target is None:
-            raise NotFoundError("Member not found.")
+            raise NotFoundError("Member not found.", code="member.not_found")
         if target.deactivated_at is None:
             raise ConflictError("This member is not deactivated.", code="member.not_deactivated")
         agency = await self.get_my_agency(agent)
@@ -1348,7 +1365,7 @@ class AgenciesManager:
         moves the member between the two Paddle quantities: one re-sync
         after commit."""
         if agent_id == agent.id:
-            raise ForbiddenError("You cannot modify your own seat type.")
+            raise ForbiddenError("You cannot modify your own seat type.", code="seat.self_change")
         from src.roles.roles_repository import RolesRepository
 
         roles_repo = RolesRepository(self.db)
@@ -1356,7 +1373,7 @@ class AgenciesManager:
         # 404 here, same as the member-role flow — no seat to speak of.
         target = await roles_repo.get_agent_in_agency(agent.agency_id, agent_id)
         if target is None:
-            raise NotFoundError("Member not found.")
+            raise NotFoundError("Member not found.", code="member.not_found")
         if target.seat_type == seat_type:
             return target  # idempotent no-op — nothing traced, nothing pushed
         agency = await self.get_my_agency(agent)
@@ -1386,11 +1403,9 @@ class AgenciesManager:
             # agent.manage and cannot flip themselves — kept like the
             # deactivation guard, capability-simulated at viewer's set).
             from src.core.rbac.permissions import Permission as _Permission
-            from src.roles.roles_manager import RolesManager
 
-            await RolesManager(self.db)._assert_agency_keeps_manager(
-                agent.agency_id,
-                reassigned_agent=(target.id, {_Permission.CASE_VIEW.value}),
+            await self._assert_keeps_manager(
+                agent.agency_id, (target.id, {_Permission.CASE_VIEW.value})
             )
             role_forced = target.role_id != viewer.id
             target.role_id = viewer.id
@@ -1553,19 +1568,33 @@ class AgenciesManager:
         # OR a role of THIS agency — never another agency's role.
         role = await self.repo.get_role(role_id)
         if role is None or (not role.is_system and role.agency_id != agent.agency_id):
-            raise ValidationError("Role does not exist or does not belong to this agency.")
+            raise ValidationError(
+                "Role does not exist or does not belong to this agency.",
+                code="invitation.role_invalid",
+            )
         # Platform-reserved (superadmin): granted ONLY via the seed, never
         # invitable. Closes the escalation path — this flow has no permission
         # ceiling (unlike member-role assignment), so without this an agency
         # admin could invite a superadmin. Opaque message: don't reveal it.
         if role.name in PLATFORM_ROLE_NAMES:
-            raise ValidationError("Role does not exist or does not belong to this agency.")
+            raise ValidationError(
+                "Role does not exist or does not belong to this agency.",
+                code="invitation.role_invalid",
+            )
         # The two flows never cross: an external role only via the external
-        # endpoint, an internal role only via the internal one.
+        # endpoint, an internal role only via the internal one. Same code as
+        # the unknown role: for the inviter, the role is not one this form
+        # can hand out — the flow distinction stays in the detail.
         if external and not role.is_external:
-            raise ValidationError("This endpoint requires one of the external provider roles.")
+            raise ValidationError(
+                "This endpoint requires one of the external provider roles.",
+                code="invitation.role_invalid",
+            )
         if not external and role.is_external:
-            raise ValidationError("External roles are invited via the external-invitation flow.")
+            raise ValidationError(
+                "External roles are invited via the external-invitation flow.",
+                code="invitation.role_invalid",
+            )
         # SEAT GATE (décision 05/08, base unifiée 08/08): an ACTIVE
         # subscription is never capped — usage.max is None, the gate
         # skips, and the seat is PAID AT THIS GESTURE (règle 08/08:
@@ -1634,11 +1663,15 @@ class AgenciesManager:
         # (agent.email is table-unique); refuse at creation, whichever
         # agency the existing account belongs to.
         if await self.repo.get_agent_by_email(email) is not None:
-            raise ConflictError(_EMAIL_TAKEN)
+            raise ConflictError(_EMAIL_TAKEN, code="member.email_taken", params={"email": email})
 
         now = datetime.now(UTC)
         if await self.repo.get_pending_invitation(agent.agency_id, email, now) is not None:
-            raise ConflictError("An invitation is already pending for this email.")
+            raise ConflictError(
+                "An invitation is already pending for this email.",
+                code="invitation.already_pending",
+                params={"email": email},
+            )
 
         # The directory external_contact this invitation designates (external
         # only): an EXISTING one (invite a named contact) or a NEW one created
@@ -1759,9 +1792,11 @@ class AgenciesManager:
         mechanics, same timing, same trace."""
         invitation = await self.repo.get_invitation_in_agency(agent.agency_id, invitation_id)
         if invitation is None:
-            raise NotFoundError("Invitation not found.")
+            raise NotFoundError("Invitation not found.", code="invitation.not_found")
         if invitation.status != InvitationStatus.PENDING:
-            raise ConflictError("Only pending invitations can be cancelled.")
+            raise ConflictError(
+                "Only pending invitations can be cancelled.", code="invitation.not_pending"
+            )
         invitation.status = InvitationStatus.CANCELLED
         role = await self.repo.get_role(invitation.role_id)
         internal = role is not None and not role.is_external
@@ -1817,12 +1852,12 @@ class AgenciesManager:
     ) -> TokenPairResponse:
         invitation = await self.repo.get_invitation_by_token(token)
         now = datetime.now(UTC)
-        if (
-            invitation is None
-            or invitation.status != InvitationStatus.PENDING
-            or invitation.expires_at <= now
-        ):
-            raise BadRequestError("Invalid or expired invitation token.")
+        # Same two refusals as the client activation link (same codes):
+        # unknown / consumed / cancelled vs lived-and-died.
+        if invitation is None or invitation.status != InvitationStatus.PENDING:
+            raise BadRequestError("Invalid or expired invitation token.", code="invitation.invalid")
+        if invitation.expires_at <= now:
+            raise BadRequestError("Invalid or expired invitation token.", code="invitation.expired")
 
         role = await self.repo.get_role(invitation.role_id)
         # The Agent PRE-CREATED at invite (new external flow): the invitation's
@@ -1887,7 +1922,11 @@ class AgenciesManager:
             # internal: create the agent. Re-check email-taken (a race between
             # invite and accept).
             if await self.repo.get_agent_by_email(invitation.email) is not None:
-                raise ConflictError(_EMAIL_TAKEN)
+                raise ConflictError(
+                    _EMAIL_TAKEN,
+                    code="member.email_taken",
+                    params={"email": invitation.email},
+                )
             agent = self.repo.add_agent(
                 agency_id=invitation.agency_id,
                 role_id=invitation.role_id,

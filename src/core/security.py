@@ -97,20 +97,28 @@ def create_refresh_token(subject: str, audience: Audience, jti: uuid.UUID) -> st
     return jwt.encode(payload, settings.jwt_refresh_secret, algorithm=settings.jwt_algorithm)
 
 
+# `auth.session_expired` is THE code of every rejected session token
+# (access or refresh: expired, tampered, wrong type/audience, unknown or
+# offboarded actor, missing). One code on purpose: the user has one gesture
+# whatever the cause — sign in again — and the cause stays in the english
+# `detail` for the logs. Literal at every raise site (the front's served-
+# codes scan reads literals only).
+
+
 def _decode(token: str, secret: str) -> dict[str, Any]:
     settings = get_settings()
     try:
         payload: dict[str, Any] = jwt.decode(token, secret, algorithms=[settings.jwt_algorithm])
     except JWTError as e:
-        raise UnauthorizedError("Invalid or expired token.") from e
+        raise UnauthorizedError("Invalid or expired token.", code="auth.session_expired") from e
     return payload
 
 
 def _check_claims(payload: dict[str, Any], expected_type: str, expected: Audience) -> None:
     if payload.get("type") != expected_type:
-        raise UnauthorizedError("Wrong token type.")
+        raise UnauthorizedError("Wrong token type.", code="auth.session_expired")
     if payload.get("audience") != expected.value:
-        raise UnauthorizedError("Wrong token audience.")
+        raise UnauthorizedError("Wrong token audience.", code="auth.session_expired")
 
 
 def create_mfa_token(subject: str, audience: Audience, jti: uuid.UUID) -> str:
@@ -131,8 +139,15 @@ def create_mfa_token(subject: str, audience: Audience, jti: uuid.UUID) -> str:
 
 
 def decode_mfa_token(token: str, expected_audience: Audience) -> dict[str, Any]:
-    payload = _decode(token, _access_secret(expected_audience))
-    _check_claims(payload, "mfa_pending", expected_audience)
+    """The login step-2 token is NOT a session: its rejection (expired,
+    tampered, foreign) sends the user back to step 1 — the code the login
+    screens branch on, never the session one (which left them on the code
+    input with an english detail)."""
+    try:
+        payload = _decode(token, _access_secret(expected_audience))
+        _check_claims(payload, "mfa_pending", expected_audience)
+    except UnauthorizedError as e:
+        raise UnauthorizedError(e.message, code="auth.mfa_token_expired") from e
     return payload
 
 
@@ -149,11 +164,11 @@ def token_subject(payload: dict[str, Any]) -> uuid.UUID:
     """Extract and validate the `sub` claim as a UUID."""
     sub = payload.get("sub")
     if not sub:
-        raise UnauthorizedError("Invalid token payload.")
+        raise UnauthorizedError("Invalid token payload.", code="auth.session_expired")
     try:
         return uuid.UUID(str(sub))
     except ValueError as e:
-        raise UnauthorizedError("Invalid token subject.") from e
+        raise UnauthorizedError("Invalid token subject.", code="auth.session_expired") from e
 
 
 def decode_refresh_token(token: str, expected_audience: Audience) -> dict[str, Any]:

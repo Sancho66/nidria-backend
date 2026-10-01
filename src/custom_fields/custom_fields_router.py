@@ -136,7 +136,7 @@ async def list_custom_fields(
 
 @router.post("", response_model=CustomFieldDefinitionResponse, status_code=201)
 async def create_custom_field(
-    body: CustomFieldDefinitionCreate, agent: AgentDep, db: DbDep
+    body: CustomFieldDefinitionCreate, agent: AgentDep, db: DbDep, lang: RequestLang
 ) -> CustomFieldDefinitionResponse:
     """`scope='company'` crée un champ de FICHE SOCIÉTÉ (D9) — même route,
     même contrat de sortie que les deux autres portées, parce que c'est le
@@ -149,7 +149,9 @@ async def create_custom_field(
     (archivée comprise) → 409 `company_field.key_exists`, qui NOMME la
     définition en place pour que l'écran propose de la renommer ou de la
     ressusciter."""
-    definition = await CustomFieldsManager(db).create(agent, body)
+    # `lang` ne sert qu'à NOMMER la définition en place dans ces refus,
+    # dans la langue de l'écran (docstring intouchée : elle EST l'openapi).
+    definition = await CustomFieldsManager(db).create(agent, body, lang=lang)
     return _definition_response(definition)
 
 

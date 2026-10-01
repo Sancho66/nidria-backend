@@ -282,6 +282,8 @@ def validate_and_merge(
     if errors:
         if coded is not None:
             raise ValidationError("; ".join(errors), code=coded.code, params=coded.params)
+        # Category code on purpose: only a plain ValueError gets here — the
+        # `unknown field type` of a definition row the enum cannot produce.
         raise ValidationError("; ".join(errors))
     return merged
 

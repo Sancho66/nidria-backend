@@ -207,6 +207,11 @@ def _initial_responsible(step: JourneyTemplateStep) -> tuple[str | None, uuid.UU
     return None, None
 
 
+def _agent_name(agent: Agent) -> str:
+    """A member named the way the agency's screens name them — never by id."""
+    return f"{agent.first_name} {agent.last_name}".strip()
+
+
 class ProgressManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -218,7 +223,7 @@ class ProgressManager:
     async def _get_case(self, agent: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     def _log(
@@ -251,10 +256,12 @@ class ProgressManager:
             # Switching processes mid-flight (what happens to DONE
             # steps? step mapping?) is a deliberate V1.5 operation,
             # not a re-POST.
-            raise ConflictError("Case already has a journey assigned.")
+            raise ConflictError(
+                "Case already has a journey assigned.", code="case.journey_already_assigned"
+            )
         template = await self.repo.get_template_in_agency(agent.agency_id, template_id)
         if template is None:
-            raise NotFoundError("Journey template not found.")
+            raise NotFoundError("Journey template not found.", code="journey.template_not_found")
 
         case.journey_template_id = template.id
         steps = await self.repo.list_template_steps(template.id)
@@ -1065,7 +1072,7 @@ class ProgressManager:
         case = await self._get_case(agent, case_id)
         row = await self.repo.get_progress_in_case(case.id, progress_id)
         if row is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
 
         if "due_at" in payload.model_fields_set:
             old = row.due_at
@@ -1103,7 +1110,7 @@ class ProgressManager:
         case = await self._get_case(agent, case_id)
         row = await self.repo.get_progress_in_case(case.id, progress_id)
         if row is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         await self._apply_responsible_change(agent, case, row, payload)
         await self.db.commit()
         timeline = await self.timeline_for_case(case, lang)
@@ -1123,7 +1130,7 @@ class ProgressManager:
         case = await self._get_case(agent, case_id)
         row = await self.repo.get_progress_in_case(case.id, progress_id)
         if row is None:
-            raise NotFoundError("Case step not found.")
+            raise NotFoundError("Case step not found.", code="progress.step_not_found")
         await self._apply_validator_change(agent, case, row, payload)
         await self.db.commit()
         timeline = await self.timeline_for_case(case, lang)
@@ -1146,20 +1153,31 @@ class ProgressManager:
             if agent_id is not None:
                 target = await self.repo.get_any_agent_in_agency(agent.agency_id, agent_id)
                 if target is None or target.is_external:
-                    raise ValidationError("Agency validator must be an internal member.")
+                    raise ValidationError(
+                        "Agency validator must be an internal member.",
+                        code="progress.validator_not_internal",
+                    )
                 # Lot lecteur: a reader seat is never a designated actor.
                 assert_not_reader_actor(target, designation="validator")
             new_values = (new_type.value, agent_id)
         else:  # EXTERNAL — a designated provider, assigned to the case
             agent_id = payload.validated_by_agent_id
             if agent_id is None:
-                raise ValidationError("validated_by_agent_id is required for type 'external'.")
+                raise ValidationError(
+                    "validated_by_agent_id is required for type 'external'.",
+                    code="progress.validator_provider_required",
+                )
             target = await self.repo.get_any_agent_in_agency(agent.agency_id, agent_id)
             if target is None or not target.is_external:
-                raise ValidationError("External validator must be a provider of this agency.")
+                raise ValidationError(
+                    "External validator must be a provider of this agency.",
+                    code="progress.validator_not_provider",
+                )
             if not await self.repo.assignment_exists(case.id, agent_id):
                 raise ValidationError(
-                    "Assign this provider to the case before naming them validator."
+                    "Assign this provider to the case before naming them validator.",
+                    code="progress.provider_not_assigned",
+                    params={"provider": _agent_name(target)},
                 )
             new_values = (new_type.value, agent_id)
 
@@ -1241,7 +1259,10 @@ class ProgressManager:
             )
         elif new_type is ResponsibleType.AGENT:
             if payload.responsible_agent_id is None:
-                raise ValidationError("responsible_agent_id is required for type 'agent'.")
+                raise ValidationError(
+                    "responsible_agent_id is required for type 'agent'.",
+                    code="progress.responsible_agent_required",
+                )
             # Wave C: a named responsible may be INTERNAL or EXTERNAL. Fetch
             # without the is_external filter; an external is then gated by
             # case ASSIGNMENT (wave-B coherence), not agency membership —
@@ -1250,10 +1271,15 @@ class ProgressManager:
                 agent.agency_id, payload.responsible_agent_id
             )
             if target is None:
-                raise ValidationError("Responsible agent must belong to this agency.")
+                raise ValidationError(
+                    "Responsible agent must belong to this agency.",
+                    code="progress.responsible_not_in_agency",
+                )
             if target.is_external and not await self.repo.assignment_exists(case.id, target.id):
                 raise ValidationError(
-                    "Assign this provider to the case before naming them responsible."
+                    "Assign this provider to the case before naming them responsible.",
+                    code="progress.provider_not_assigned",
+                    params={"provider": _agent_name(target)},
                 )
             # Lot lecteur: a reader seat is never a designated actor
             # (externals carry the default seat type and pass through).
@@ -1261,7 +1287,10 @@ class ProgressManager:
             new_values = (new_type.value, payload.responsible_agent_id, None)
         elif new_type is ResponsibleType.EXTERNAL:
             if payload.responsible_external_id is None:
-                raise ValidationError("responsible_external_id is required for type 'external'.")
+                raise ValidationError(
+                    "responsible_external_id is required for type 'external'.",
+                    code="progress.responsible_contact_required",
+                )
             if (
                 await self.repo.get_external_contact_in_case(
                     case.id, payload.responsible_external_id
@@ -1269,7 +1298,10 @@ class ProgressManager:
                 is None
             ):
                 # The CHECK cannot enforce this: Manager validation.
-                raise ValidationError("Responsible external contact must belong to this case.")
+                raise ValidationError(
+                    "Responsible external contact must belong to this case.",
+                    code="case.external_contact_not_found",
+                )
             new_values = (new_type.value, None, payload.responsible_external_id)
         else:  # EXPAT — the case principal is implicit, no FK.
             new_values = (new_type.value, None, None)

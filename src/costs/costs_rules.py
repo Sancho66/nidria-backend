@@ -44,6 +44,7 @@ def check_amount_decimals(amount: Decimal, currency: str) -> None:
         raise ValidationError(
             f"{currency} allows at most {allowed} decimal place(s).",
             code="cost.amount_decimals",
+            params={"currency": currency, "max_decimals": allowed},
         )
 
 

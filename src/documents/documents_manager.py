@@ -50,7 +50,7 @@ class DocumentsManager:
     async def _case_for_agent(self, agent: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await self.repo.get_case_in_agency(agent.agency_id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     async def _viewer_case(
@@ -64,7 +64,7 @@ class DocumentsManager:
 
         row = await ExpatRepository(self.db).get_case_for_viewer(expat.id, case_id)
         if row is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         case, _agency, viewing_person = row
         return case, viewing_person, case.principal_expat_user_id != expat.id
 
@@ -73,7 +73,7 @@ class DocumentsManager:
         # can never upload or delete (read-only is a property of the link).
         case = await self.repo.get_case_for_expat(expat.id, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     def _log(
@@ -111,7 +111,7 @@ class DocumentsManager:
             # — never a cross-case handle.
             person = await self.repo.get_person_in_case(case.id, person_id)
             if person is None:
-                raise NotFoundError("Person not found on this case.")
+                raise NotFoundError("Person not found on this case.", code="case.person_not_found")
         settings = get_settings()
         original_filename = file.filename
         if not original_filename:
@@ -136,7 +136,9 @@ class DocumentsManager:
         if step_progress_id is not None and (
             await self.repo.get_progress_in_case(case.id, step_progress_id) is None
         ):
-            raise ValidationError("step_progress_id does not belong to this case.")
+            raise ValidationError(
+                "step_progress_id does not belong to this case.", code="progress.step_not_found"
+            )
 
         # Strictly sanitized KEY; the ORIGINAL filename stays in DB for
         # display (the path is technical, the name is data).
@@ -266,7 +268,7 @@ class DocumentsManager:
         case = await self._case_for_agent(agent, case_id)  # border 1
         found = await self.repo.get_requirement_in_case(case.id, requirement_id)  # border 2
         if found is None:
-            raise NotFoundError("Requirement not found.")
+            raise NotFoundError("Requirement not found.", code="requirement.not_found")
         requirement, progress = found
         if progress.status != StepStatus.IN_PROGRESS.value:  # border 3 (mirror expat)
             raise ConflictError(
@@ -382,7 +384,7 @@ class DocumentsManager:
     async def _download(self, case: ClientCase, document_id: uuid.UUID) -> tuple[Document, bytes]:
         document = await self.repo.get_document_in_case(case.id, document_id)
         if document is None:
-            raise NotFoundError("Document not found.")
+            raise NotFoundError("Document not found.", code="document.not_found")
         content = await asyncio.to_thread(storage.download, document.storage_path)
         return document, content
 
@@ -403,7 +405,7 @@ class DocumentsManager:
                 case.id, document_id, viewing_person.id
             )
             if document is None:
-                raise NotFoundError("Document not found.")
+                raise NotFoundError("Document not found.", code="document.not_found")
             content = await asyncio.to_thread(storage.download, document.storage_path)
             return document, content
         return await self._download(case, document_id)
@@ -413,7 +415,8 @@ class DocumentsManager:
     async def _case_for_external(self, external: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await get_case_for_external(self.db, external, case_id)
         if case is None:
-            raise NotFoundError("Case not found.")  # 404, never reveals existence
+            # 404, never reveals existence
+            raise NotFoundError("Case not found.", code="case.not_found")
         return case
 
     def _external_doc(
@@ -466,7 +469,7 @@ class DocumentsManager:
         case = await self._case_for_external(external, case_id)
         found = await self.repo.get_requirement_in_case(case.id, requirement_id)
         if found is None:
-            raise NotFoundError("Requirement not found.")
+            raise NotFoundError("Requirement not found.", code="requirement.not_found")
         requirement, progress = found
         if progress.status != StepStatus.IN_PROGRESS.value:
             raise ConflictError(
@@ -506,7 +509,7 @@ class DocumentsManager:
         case = await self._case_for_agent(agent, case_id)
         document = await self.repo.get_document_in_case(case.id, document_id)
         if document is None:
-            raise NotFoundError("Document not found.")
+            raise NotFoundError("Document not found.", code="document.not_found")
         old_status = document.validation_status
         document.validation_status = payload.validation_status.value
         if "expires_at" in payload.model_fields_set:
@@ -556,7 +559,7 @@ class DocumentsManager:
         case = await self._case_for_agent(agent, case_id)
         document = await self.repo.get_document_in_case(case.id, document_id)
         if document is None:
-            raise NotFoundError("Document not found.")
+            raise NotFoundError("Document not found.", code="document.not_found")
         await self._delete(case, document, ActorType.AGENT, agent.id)
 
     async def delete_as_expat(
@@ -565,7 +568,7 @@ class DocumentsManager:
         case = await self._case_for_expat(expat, case_id)
         document = await self.repo.get_document_in_case(case.id, document_id)
         if document is None:
-            raise NotFoundError("Document not found.")
+            raise NotFoundError("Document not found.", code="document.not_found")
         if (
             document.uploaded_by_type != ActorType.EXPAT.value
             or document.uploaded_by_id != expat.id

@@ -312,7 +312,7 @@ def effective_permissions(agent: Agent) -> set[str]:
 async def _resolve_agent(request: Request, db: AsyncSession) -> tuple[Agent, dict[str, object]]:
     token = await agent_oauth2_scheme(request)
     if token is None:
-        raise UnauthorizedError("Missing authentication token.")
+        raise UnauthorizedError("Missing authentication token.", code="auth.session_expired")
     payload = decode_access_token(token, Audience.AGENT)
     agent_id = token_subject(payload)
     stmt = (
@@ -322,29 +322,29 @@ async def _resolve_agent(request: Request, db: AsyncSession) -> tuple[Agent, dic
     )
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:
-        raise UnauthorizedError("Agent not found.")
+        raise UnauthorizedError("Agent not found.", code="auth.session_expired")
     # Offboarded (deactivated_at posed): the row is re-read on EVERY
     # request, so a still-valid access token dies here immediately.
     if agent.deactivated_at is not None:
-        raise UnauthorizedError("Agent not found.")
+        raise UnauthorizedError("Agent not found.", code="auth.session_expired")
     return agent, payload
 
 
 async def _resolve_expat(request: Request, db: AsyncSession) -> tuple[ExpatUser, dict[str, object]]:
     token = await expat_oauth2_scheme(request)
     if token is None:
-        raise UnauthorizedError("Missing authentication token.")
+        raise UnauthorizedError("Missing authentication token.", code="auth.session_expired")
     payload = decode_access_token(token, Audience.EXPAT)
     expat = await db.get(ExpatUser, token_subject(payload))
     if expat is None:
-        raise UnauthorizedError("User not found.")
+        raise UnauthorizedError("User not found.", code="auth.session_expired")
     # The activated_at gate protects LOGIN, not impersonation: a non-activated
     # expat may never hold a self-minted token, but an agent MAY "see as" a
     # not-yet-activated principal (its dossier space exists). `impersonator_id`
     # is a SIGNED claim (decode_access_token verified the HMAC), unforgeable
     # without the expat secret; the read-only mask still applies downstream.
     if expat.activated_at is None and payload.get("impersonator_id") is None:
-        raise UnauthorizedError("Account not activated.")
+        raise UnauthorizedError("Account not activated.", code="auth.session_expired")
     return expat, payload
 
 
@@ -477,7 +477,10 @@ async def enforce(
         # check. Closes the permissionless "any agent" leaks (members,
         # journeys, roles, …) that zero permissions alone would not.
         if agent.is_external and (method, path) not in EXTERNAL_AGENT_ALLOWLIST:
-            raise ForbiddenError("External providers have no access to this resource yet.")
+            raise ForbiddenError(
+                "External providers have no access to this resource yet.",
+                code="permission.denied",
+            )
         _enforce_impersonation(request, payload, Audience.AGENT, method, path)
         await _enforce_consent(request, db, Audience.AGENT, agent, method, path)
         # 4th stage — billing lock: a blocked agency writes NOTHING
@@ -489,7 +492,13 @@ async def enforce(
         if binding.permission is not None and binding.permission.key not in effective_permissions(
             agent
         ):
-            raise ForbiddenError("Missing permission.")
+            # ONE code for every matrix refusal; the missing key rides in
+            # params (a permission key, never an id) for the front's label.
+            raise ForbiddenError(
+                "Missing permission.",
+                code="permission.denied",
+                params={"permission": binding.permission.key},
+            )
         request.state.actor = agent
         return
 
