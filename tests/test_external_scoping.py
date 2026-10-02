@@ -288,6 +288,8 @@ async def test_external_detail_leaks_no_internal_content(
         # "Action validée par": true only if this provider is the step's
         # designated validator (false here — see test_step_validator).
         "can_validate",
+        # The provider's OWN step (counter / badge of the portal).
+        "is_mine",
     }
     # On a step this provider is NOT responsible for, content is filtered
     # out server-side (the rich case's step has an EXPAT/unset responsible).

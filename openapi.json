@@ -28962,6 +28962,11 @@
           "can_validate": {
             "type": "boolean",
             "title": "Can Validate"
+          },
+          "is_mine": {
+            "type": "boolean",
+            "title": "Is Mine",
+            "default": false
           }
         },
         "type": "object",

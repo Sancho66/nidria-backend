@@ -189,6 +189,7 @@ async def test_external_responsible_sees_content_and_downloads(
     step = detail["timeline"][0]
     assert step["content_note"] == NOTE
     assert [a["id"] for a in step["attachments"]] == [aid]
+    assert step["is_mine"] is True
 
     dl = await rc.get(
         f"/external/cases/{case.id}/steps/{pid}/attachments/{aid}/download", headers=h
@@ -284,3 +285,46 @@ async def test_crossing_responsible_on_X_not_on_Z(
     assert dl_z.status_code == 404
 
     _ = sid  # the template step id is shared; the outcomes diverge by dossier
+
+
+# --- « N étapes vous sont assignées » : only MY steps, never another provider's -------
+
+
+async def test_another_providers_step_is_not_mine(
+    rc: AsyncClient,
+    admin: Agent,
+    external: Agent,
+    external_role: Role,
+    make_agent: MakeAgent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+) -> None:
+    """Two providers on one dossier: the step owned by the OTHER one reads
+    `responsible.type == "external"` (with its name) on my portal — the
+    front used to count it as mine. `is_mine` is the server's verdict."""
+    ah = agent_headers(admin)
+    notary = await make_agent(
+        agency_id=admin.agency_id,
+        role=external_role,
+        is_external=True,
+        email="notary@ext.com",
+        first_name="Nora",
+        last_name="Notary",
+    )
+    tid, _sid, _aid = await _template_with_content(rc, ah)
+    case, pid = await _case_with_journey(rc, ah, make_client_case, admin, expat, tid)
+    await _make_responsible(rc, ah, case.id, pid, notary)
+    assigned = await rc.post(
+        f"/cases/{case.id}/external-assignments", headers=ah, json={"agent_id": str(external.id)}
+    )
+    assert assigned.status_code == 201
+
+    mine = (await rc.get(f"/external/cases/{case.id}", headers=agent_headers(external))).json()
+    step = mine["timeline"][0]
+    assert step["responsible"]["type"] == "external"
+    assert step["is_mine"] is False
+    assert step["content_note"] is None
+
+    theirs = (await rc.get(f"/external/cases/{case.id}", headers=agent_headers(notary))).json()
+    assert theirs["timeline"][0]["is_mine"] is True

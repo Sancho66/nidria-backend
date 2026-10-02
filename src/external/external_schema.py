@@ -94,6 +94,10 @@ class ExternalTimelineStepResponse(BaseModel):
     # designated validator and the step is active (RGPD: never reveals
     # another step's validator). Re-checked server-side on the validate call.
     can_validate: bool
+    # THIS provider's own step (same rule as the content verrou): the portal
+    # counts and badges these. `responsible.type == "external"` alone also
+    # matches the steps of every OTHER provider on the dossier.
+    is_mine: bool = False
 
 
 class ExternalCaseSummaryResponse(BaseModel):

@@ -181,49 +181,7 @@ class ExternalPortalManager:
         internal_timeline = await ProgressManager(self.db).timeline_for_case(case, lang)
         designated_ids = await _designated_contact_ids(self.db, external)
         timeline = [
-            ExternalTimelineStepResponse(
-                progress_id=step.id,
-                name=step.name,
-                position=step.position,
-                status=step.status,
-                estimated_days=step.estimated_days,
-                completed_at=step.completed_at,
-                blocked_by=[b.name for b in step.blocked_by],
-                responsible=_displayable_responsible(step),
-                participants=[_displayable_participant(p) for p in step.participants],
-                completion_mode=step.completion_mode,
-                comment_count=step.comment_count,
-                counter=step.counter,
-                requirements=[
-                    ExternalRequirementResponse(
-                        id=req.id,
-                        kind=req.kind,
-                        reference=req.reference,
-                        scope=req.scope,
-                        status=req.status,
-                        person_label=req.person_label,
-                        document_id=req.document_id,
-                        # NB: req.value is DELIBERATELY not mapped — the
-                        # client's personal data never reaches a provider.
-                    )
-                    for req in step.requirements
-                    if not req.is_archived
-                ],
-                # Feature 2 (RGPD): content only on steps this provider is
-                # responsible for — server-side filter, None/[] otherwise.
-                content_note=(
-                    step.content_note
-                    if _external_sees_content(step, external, designated_ids)
-                    else None
-                ),
-                attachments=(
-                    step.attachments
-                    if _external_sees_content(step, external, designated_ids)
-                    else []
-                ),
-                can_validate=_external_can_validate(step, external),
-            )
-            for step in internal_timeline
+            self._timeline_step(step, external, designated_ids) for step in internal_timeline
         ]
         summary = self._summary(
             case,
@@ -233,6 +191,48 @@ class ExternalPortalManager:
         )
         return ExternalCaseDetailResponse(
             **summary.model_dump(), referent=referent, timeline=timeline
+        )
+
+    @staticmethod
+    def _timeline_step(
+        step: StepProgressResponse, external: Agent, designated_ids: set[uuid.UUID]
+    ) -> ExternalTimelineStepResponse:
+        # Feature 2 (RGPD): content only on steps this provider is responsible
+        # for — server-side filter, None/[] otherwise. The same verdict says
+        # which steps are ITS OWN (counter and badge of the portal).
+        mine = _external_sees_content(step, external, designated_ids)
+        return ExternalTimelineStepResponse(
+            progress_id=step.id,
+            name=step.name,
+            position=step.position,
+            status=step.status,
+            estimated_days=step.estimated_days,
+            completed_at=step.completed_at,
+            blocked_by=[b.name for b in step.blocked_by],
+            responsible=_displayable_responsible(step),
+            participants=[_displayable_participant(p) for p in step.participants],
+            completion_mode=step.completion_mode,
+            comment_count=step.comment_count,
+            counter=step.counter,
+            requirements=[
+                ExternalRequirementResponse(
+                    id=req.id,
+                    kind=req.kind,
+                    reference=req.reference,
+                    scope=req.scope,
+                    status=req.status,
+                    person_label=req.person_label,
+                    document_id=req.document_id,
+                    # NB: req.value is DELIBERATELY not mapped — the
+                    # client's personal data never reaches a provider.
+                )
+                for req in step.requirements
+                if not req.is_archived
+            ],
+            content_note=step.content_note if mine else None,
+            attachments=step.attachments if mine else [],
+            can_validate=_external_can_validate(step, external),
+            is_mine=mine,
         )
 
     async def download_step_attachment(
