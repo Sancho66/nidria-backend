@@ -144,7 +144,7 @@ async def test_provider_delivers_and_client_sees(
     agent_headers: AuthHeaders,
     expat_headers: AuthHeaders,
 ) -> None:
-    """Le prestataire assigné livre sur l'étape -> le client le voit,
+    """Le prestataire assigné livre sur SON étape -> le client le voit,
     kind=deliverable par défaut ; un dossier NON assigné -> 404."""
     external_role = (
         await db_session.execute(
@@ -159,8 +159,26 @@ async def test_provider_delivers_and_client_sees(
         CaseExternalAssignment(case_id=case.id, agent_id=provider.id, assigned_by_agent_id=admin.id)
     )
     await db_session.commit()
+    # A provider deposits on HIS steps only (02/10): the translation step is his.
+    ah = agent_headers(admin)
+    tid = (await client.post("/journeys", headers=ah, json={"name": "T"})).json()["id"]
+    await client.post(f"/journeys/{tid}/steps", headers=ah, json={"name": "Traduction"})
+    pid = (
+        await client.post(
+            f"/cases/{case.id}/journey", headers=ah, json={"journey_template_id": tid}
+        )
+    ).json()[0]["id"]
+    named = await client.put(
+        f"/cases/{case.id}/steps/{pid}/responsible",
+        headers=ah,
+        json={"responsible_type": "agent", "responsible_agent_id": str(provider.id)},
+    )
+    assert named.status_code == 200, named.text
     up = await client.post(
-        f"/external/cases/{case.id}/documents", headers=agent_headers(provider), files=_pdf()
+        f"/external/cases/{case.id}/documents",
+        headers=agent_headers(provider),
+        files=_pdf(),
+        data={"step_progress_id": pid},
     )
     assert up.status_code == 201, up.text
     client_list = (

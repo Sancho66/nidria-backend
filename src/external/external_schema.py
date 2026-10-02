@@ -98,6 +98,11 @@ class ExternalTimelineStepResponse(BaseModel):
     # counts and badges these. `responsible.type == "external"` alone also
     # matches the steps of every OTHER provider on the dossier.
     is_mine: bool = False
+    # Whether THIS provider may deposit on the step (src/external/scoping.py
+    # deposit_step_ids: responsible, or a working participant). The front
+    # hides every deposit control (requested documents, free deposit,
+    # comment attachment) elsewhere; the backend refuses them anyway.
+    can_upload: bool = False
 
 
 class ExternalCaseSummaryResponse(BaseModel):

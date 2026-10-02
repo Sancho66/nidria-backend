@@ -25,7 +25,7 @@ from src.external.external_schema import (
     ExternalResponsibleResponse,
     ExternalTimelineStepResponse,
 )
-from src.external.scoping import get_case_for_external, list_assigned_cases
+from src.external.scoping import deposit_step_ids, get_case_for_external, list_assigned_cases
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
@@ -180,8 +180,10 @@ class ExternalPortalManager:
 
         internal_timeline = await ProgressManager(self.db).timeline_for_case(case, lang)
         designated_ids = await _designated_contact_ids(self.db, external)
+        deposit_ids = await deposit_step_ids(self.db, external, case.id)
         timeline = [
-            self._timeline_step(step, external, designated_ids) for step in internal_timeline
+            self._timeline_step(step, external, designated_ids, deposit_ids)
+            for step in internal_timeline
         ]
         summary = self._summary(
             case,
@@ -195,7 +197,10 @@ class ExternalPortalManager:
 
     @staticmethod
     def _timeline_step(
-        step: StepProgressResponse, external: Agent, designated_ids: set[uuid.UUID]
+        step: StepProgressResponse,
+        external: Agent,
+        designated_ids: set[uuid.UUID],
+        deposit_ids: set[uuid.UUID],
     ) -> ExternalTimelineStepResponse:
         # Feature 2 (RGPD): content only on steps this provider is responsible
         # for — server-side filter, None/[] otherwise. The same verdict says
@@ -233,6 +238,7 @@ class ExternalPortalManager:
             attachments=step.attachments if mine else [],
             can_validate=_external_can_validate(step, external),
             is_mine=mine,
+            can_upload=step.id in deposit_ids,
         )
 
     async def download_step_attachment(

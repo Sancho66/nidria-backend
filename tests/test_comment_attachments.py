@@ -111,6 +111,13 @@ async def test_three_faces_post_with_attachment(
         CaseExternalAssignment(case_id=case.id, agent_id=provider.id, assigned_by_agent_id=admin.id)
     )
     await db_session.commit()
+    # A provider deposits on HIS steps only (02/10): he is the step's responsible.
+    named = await client.put(
+        f"/cases/{case.id}/steps/{pid}/responsible",
+        headers=ah,
+        json={"responsible_type": "agent", "responsible_agent_id": str(provider.id)},
+    )
+    assert named.status_code == 200, named.text
     ph = agent_headers(provider)
     up3 = await client.post(
         f"/external/cases/{case.id}/documents",

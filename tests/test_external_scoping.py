@@ -290,6 +290,8 @@ async def test_external_detail_leaks_no_internal_content(
         "can_validate",
         # The provider's OWN step (counter / badge of the portal).
         "is_mine",
+        # May he deposit here (responsible or working participant)?
+        "can_upload",
     }
     # On a step this provider is NOT responsible for, content is filtered
     # out server-side (the rich case's step has an EXPAT/unset responsible).
@@ -436,6 +438,13 @@ async def test_assigned_external_can_read_comment_upload(
         f"/cases/{case.id}/steps/{pid}", headers=ah, json={"status": "in_progress"}
     )
     await _assign(b_client, ah, case.id, external.id)
+    # A provider deposits on HIS steps only (02/10): the deed step is his.
+    named = await b_client.put(
+        f"/cases/{case.id}/steps/{pid}/responsible",
+        headers=ah,
+        json={"responsible_type": "agent", "responsible_agent_id": str(external.id)},
+    )
+    assert named.status_code == 200, named.text
 
     detail = (await b_client.get(f"/external/cases/{case.id}", headers=h)).json()
     rid = detail["timeline"][0]["requirements"][0]["id"]

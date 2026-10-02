@@ -29,7 +29,7 @@ from src.documents.documents_schema import (
     ExpatDocumentResponse,
 )
 from src.external.external_schema import ExternalDocumentResponse
-from src.external.scoping import get_case_for_external
+from src.external.scoping import deposit_step_ids, get_case_for_external
 from src.progress.progress_manager import ProgressManager
 from src.usage.usage_manager import UsageManager
 
@@ -213,8 +213,10 @@ class DocumentsManager:
     ) -> ExternalDocumentResponse:
         """GAP-B: the provider DELIVERS on a step of an ASSIGNED case (the
         certified translation) — same perimeter as all his accesses (the
-        assignment scope), same upload core, deliverable by default."""
+        assignment scope), same upload core, deliverable by default. ON HIS
+        STEPS ONLY (02/10): never on another provider's step, never off-step."""
         case = await self._case_for_external(external, case_id)
+        await self._assert_external_deposit_step(external, case, step_progress_id)
         document = await self._upload(
             case,
             file,
@@ -412,6 +414,28 @@ class DocumentsManager:
 
     # --- external provider (wave B): every entry scoped by assignment ---------------
 
+    async def _assert_external_deposit_step(
+        self, external: Agent, case: ClientCase, step_progress_id: uuid.UUID | None
+    ) -> None:
+        """A provider deposits on HIS steps only (scoping.deposit_step_ids),
+        checked BEFORE any file is read or stored. A step id foreign to the
+        case keeps the upload core's 422 — the refusal never says more about
+        another dossier than before."""
+        if step_progress_id is not None and step_progress_id in await deposit_step_ids(
+            self.db, external, case.id
+        ):
+            return
+        if (
+            step_progress_id is not None
+            and await self.repo.get_progress_in_case(case.id, step_progress_id) is None
+        ):
+            raise ValidationError(
+                "step_progress_id does not belong to this case.", code="progress.step_not_found"
+            )
+        raise ForbiddenError(
+            "A provider only deposits on its own steps.", code="external.step_not_yours"
+        )
+
     async def _case_for_external(self, external: Agent, case_id: uuid.UUID) -> ClientCase:
         case = await get_case_for_external(self.db, external, case_id)
         if case is None:
@@ -471,6 +495,7 @@ class DocumentsManager:
         if found is None:
             raise NotFoundError("Requirement not found.", code="requirement.not_found")
         requirement, progress = found
+        await self._assert_external_deposit_step(external, case, progress.id)
         if progress.status != StepStatus.IN_PROGRESS.value:
             raise ConflictError(
                 "This step is not active; its requirements are read-only.", code=_STEP_NOT_ACTIVE

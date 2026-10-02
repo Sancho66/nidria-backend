@@ -18,14 +18,16 @@ non-visible case's existence is not revealed). Re-queried every request.
 
 import uuid
 
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.case_external_assignment import CaseExternalAssignment
+from shared.models.case_step_participant import CaseStepParticipant
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
 from shared.models.external_contact import ExternalContact
+from src.core.enums import StepParticipantRole
 
 
 def _visible(external_agent: Agent) -> ColumnElement[bool]:
@@ -75,3 +77,43 @@ async def list_assigned_cases(db: AsyncSession, external_agent: Agent) -> list[C
         .order_by(ClientCase.created_at.desc(), ClientCase.id.desc())
     )
     return list((await db.execute(stmt)).scalars())
+
+
+async def deposit_step_ids(
+    db: AsyncSession, external_agent: Agent, case_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """THE provider deposit gate (02/10): the steps of a case on which this
+    provider may deposit a file — a free deposit, a comment attachment or a
+    requested document. HIS steps only: those he is RESPONSIBLE for
+    (directly, or through an external_contact that designates him — the
+    content verrou's rule), and those where he is a PARTICIPANT with a
+    working role (executant, provides_documents, contributor — never
+    `informed`). A step of ANOTHER provider of the dossier is not his.
+    The caller has already resolved the case through get_case_for_external."""
+    designated = select(ExternalContact.id).where(ExternalContact.agent_id == external_agent.id)
+    responsible = select(CaseStepProgress.id).where(
+        CaseStepProgress.case_id == case_id,
+        or_(
+            CaseStepProgress.responsible_agent_id == external_agent.id,
+            CaseStepProgress.responsible_external_id.in_(designated),
+        ),
+    )
+    participating = (
+        select(CaseStepParticipant.case_step_progress_id)
+        .join(CaseStepProgress, CaseStepProgress.id == CaseStepParticipant.case_step_progress_id)
+        .where(
+            CaseStepProgress.case_id == case_id,
+            CaseStepParticipant.role != StepParticipantRole.INFORMED.value,
+            or_(
+                and_(
+                    CaseStepParticipant.type == "agent",
+                    CaseStepParticipant.agent_id == external_agent.id,
+                ),
+                and_(
+                    CaseStepParticipant.type == "external",
+                    CaseStepParticipant.external_id.in_(designated),
+                ),
+            ),
+        )
+    )
+    return set((await db.execute(responsible.union(participating))).scalars())
