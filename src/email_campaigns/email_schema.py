@@ -1392,7 +1392,8 @@ class EmailOutreachRead(BaseModel):
 #: Lemlist's review), not_launched (status review or scanning), completed
 #: (status done), paused, launched (running, not contacted yet),
 #: in_sequence (running, an email sent, opened or clicked), status_unknown
-#: (no status read), uncovered (any other combination).
+#: (neither a status nor a `stateSystem` read), uncovered (any other
+#: combination, a `stateSystem` value the mapping does not know included).
 ImportRule = Literal[
     "unsubscribed",
     "bounced",
@@ -1427,15 +1428,22 @@ ImportSkipReason = Literal[
 ]
 #: Why an address goes on the agency's opposition list.
 OppositionReason = Literal["UNSUBSCRIBED", "BOUNCED"]
+#: Where the word a lead's status is read from comes from, in this order:
+#: the export's `status` (documented); its `stateSystem` (undocumented, the
+#: only one the real export gives, observed on 08/10/2026), read as the
+#: documented status it stands for; the contacts lookup's `leadState` (a
+#: lead the export did not identify).
+ImportStatusSource = Literal["status", "stateSystem", "leadState"]
 
 
 class EmailImportRuleRead(BaseModel):
     """One line of the mapping from Lemlist's words on a lead to its Nidria
     status. A lead matches when its `state` (Lemlist's listing) is one of
-    `states` or its `status` (the export) one of `statuses` (`combine`
-    either), or both (`combine` both); the first rule matching decides.
-    `proposed`: the status the membership gets, null when the lead is not
-    imported (`not_imported` says why)."""
+    `states` or its status (`ImportStatusSource`: a `stateSystem` read as
+    the status it stands for) one of `statuses` (`combine` either), or both
+    (`combine` both); the first rule matching decides. `proposed`: the
+    status the membership gets, null when the lead is not imported
+    (`not_imported` says why)."""
 
     rule: ImportRule
     states: list[str] = Field(default_factory=list)
@@ -1450,8 +1458,16 @@ class EmailImportStateRead(BaseModel):
     """One combination of Lemlist's words met in a campaign, how many leads
     carry it, and what the import does with them."""
 
+    #: The lead's last state: Lemlist's listing, else its export.
     state: str | None
+    #: The word the lead's status is read from, as Lemlist gave it, and
+    #: where (`status_source`); null when Lemlist gave none.
     status: str | None
+    status_source: ImportStatusSource | None = None
+    #: The documented status the mapping read that word as (a `stateSystem`
+    #: is read as the status it stands for); null when no word was read, or
+    #: for a `stateSystem` value the mapping does not know (rule uncovered).
+    status_read_as: str | None = None
     count: int
     rule: ImportRule
     proposed: MemberStatus | None = None

@@ -5,8 +5,9 @@ The adapter's reads run against `FakeLemlist` (httpx.MockTransport: no
 socket, the network guard counts nothing). Each route is the one the notes
 source (notes/lemlist-import-research.txt): the team's campaigns (§6), one
 campaign (§4), its sequences (§5), its leads (§1.1), its export (§1.2 a,
-under the API base), the contacts lookup (§1.2 d), its activities (§3); all
-GET. `resume_campaign` is the one write an imported campaign's resume makes.
+under the API base; its rows as the real team's answered, §17), the
+contacts lookup (§1.2 d), its activities (§3); all GET. `resume_campaign`
+is the one write an imported campaign's resume makes.
 """
 
 from datetime import UTC, datetime
@@ -14,11 +15,11 @@ from typing import Any
 
 import pytest
 
-from src.email_campaigns.email_import import RULES, propose
+from src.email_campaigns.email_import import RULES, STATE_SYSTEM_STATUS, propose, read_status
 from src.email_campaigns.providers.base import CampaignRef, ImportReader, ProviderError
 from src.email_campaigns.providers.dry_run import DryRunEmailProvider
 from src.email_campaigns.providers.lemlist import LemlistEmailProvider
-from tests.email_fakes import FakeLemlist, FakeProvider, lemlist_double
+from tests.email_fakes import FakeLemlist, FakeProvider, lemlist_double, observed_export_row
 
 Double = tuple[FakeLemlist, LemlistEmailProvider]
 
@@ -219,6 +220,72 @@ def test_the_export_is_read_under_the_api_base_in_json(fake_lemlist: Double) -> 
     _only_gets(fake)
 
 
+def test_the_real_export_says_state_and_state_system_and_no_status(fake_lemlist: Double) -> None:
+    """The export as the real team's answered on 08/10/2026 (notes §17), not
+    as documented: an array in one answer, `state` and `stateSystem`, the
+    campaign's own variables, the names only when the campaign has them,
+    never `status` nor `lastState`. Every word is optional; no variable is
+    kept."""
+    fake, provider = fake_lemlist
+    fake.queue(
+        "GET",
+        "/v2/campaigns/cam_1/export/leads",
+        200,
+        [
+            observed_export_row(
+                "lea_1",
+                "ana@acme.io",
+                "emailsSent",
+                "inProgress",
+                company="Acme",
+                objet="Votre cabinet",
+                mail1="Bonjour Ana",
+                relance1="Je me permets",
+                objet_r2="Suite",
+                cle="k1",
+                nom="Lopez",
+                parcours="avocats",
+            ),
+            observed_export_row(
+                "lea_2", "ben@acme.io", "reviewed", "reviewed", firstName="Ben", lastName="Ready"
+            ),
+            {"_id": "lea_3", "email": "cleo@acme.io"},
+        ],
+    )
+    rows = provider.export_leads(CampaignRef("cam_1"))
+    assert [
+        (r.lead_id, r.email, r.first_name, r.last_name, r.company_name)
+        + (r.status, r.last_state, r.state_system)
+        for r in rows
+    ] == [
+        ("lea_1", "ana@acme.io", None, None, "Acme", None, "emailsSent", "inProgress"),
+        ("lea_2", "ben@acme.io", "Ben", "Ready", None, None, "reviewed", "reviewed"),
+        ("lea_3", "cleo@acme.io", None, None, None, None, None, None),
+    ]
+    assert fake.urls == [
+        "https://api.lemlist.com/api/v2/campaigns/cam_1/export/leads?state=all&format=json"
+    ]
+    _only_gets(fake)
+
+
+@pytest.mark.parametrize("key", ["leads", "data"])
+def test_an_export_wrapped_in_an_object_is_read_too(fake_lemlist: Double, key: str) -> None:
+    fake, provider = fake_lemlist
+    fake.queue(
+        "GET",
+        "/v2/campaigns/cam_1/export/leads",
+        200,
+        {key: [observed_export_row("lea_1", "ana@acme.io", "emailsSent", "inProgress")]},
+    )
+    [row] = provider.export_leads(CampaignRef("cam_1"))
+    assert (row.lead_id, row.status, row.last_state, row.state_system) == (
+        "lea_1",
+        None,
+        "emailsSent",
+        "inProgress",
+    )
+
+
 def test_contacts_are_looked_up_by_a_hundred_ids_at_most(fake_lemlist: Double) -> None:
     fake, provider = fake_lemlist
     ids = [f"ctc_{i}" for i in range(150)]
@@ -303,42 +370,63 @@ def test_resuming_an_imported_campaign_only_starts_it(fake_lemlist: Double) -> N
 
 
 @pytest.mark.parametrize(
-    ("state", "status", "rule", "proposed"),
+    ("state", "status", "state_system", "rule", "proposed"),
     [
         # Blocks and replies: the state is a fact, whatever the status.
-        ("entityUnsubscribed", "running", "unsubscribed", "EMAIL_UNSUBSCRIBED"),
-        ("emailsUnsubscribed", None, "unsubscribed", "EMAIL_UNSUBSCRIBED"),
-        ("emailsSent", "unsubscribed", "unsubscribed", "EMAIL_UNSUBSCRIBED"),
-        ("emailsBounced", "running", "bounced", "EMAIL_BOUNCED"),
-        ("emailsBounced", "done", "bounced", "EMAIL_BOUNCED"),
-        ("emailsReplied", "done", "replied", "EMAIL_REPLIED"),
-        ("emailsReplied", "interested", "replied", "EMAIL_REPLIED"),
+        ("entityUnsubscribed", "running", None, "unsubscribed", "EMAIL_UNSUBSCRIBED"),
+        ("emailsUnsubscribed", None, None, "unsubscribed", "EMAIL_UNSUBSCRIBED"),
+        ("emailsSent", "unsubscribed", None, "unsubscribed", "EMAIL_UNSUBSCRIBED"),
+        ("emailsBounced", "running", None, "bounced", "EMAIL_BOUNCED"),
+        ("emailsBounced", "done", None, "bounced", "EMAIL_BOUNCED"),
+        ("emailsReplied", "done", None, "replied", "EMAIL_REPLIED"),
+        ("emailsReplied", "interested", None, "replied", "EMAIL_REPLIED"),
         # Not launched at Lemlist, or skipped there: not imported.
-        ("skipped", "running", "skipped", None),
-        ("scanned", "review", "not_launched", None),
-        ("reviewed", "scanning", "not_launched", None),
+        ("skipped", "running", None, "skipped", None),
+        ("scanned", "review", None, "not_launched", None),
+        ("reviewed", "scanning", None, "not_launched", None),
         # The status, then the state for a running lead.
-        ("emailsSent", "done", "completed", "EMAIL_COMPLETED"),
-        ("emailsSent", "paused", "paused", "EMAIL_PAUSED"),
-        ("paused", "running", "paused", "EMAIL_PAUSED"),
-        ("reviewed", "running", "launched", "EMAIL_QUEUED"),
-        ("scanned", "running", "launched", "EMAIL_QUEUED"),
-        ("emailsSent", "running", "in_sequence", "EMAIL_ACTIVE"),
-        ("emailsOpened", "running", "in_sequence", "EMAIL_ACTIVE"),
-        ("emailsClicked", "running", "in_sequence", "EMAIL_ACTIVE"),
+        ("emailsSent", "done", None, "completed", "EMAIL_COMPLETED"),
+        ("emailsSent", "paused", None, "paused", "EMAIL_PAUSED"),
+        ("paused", "running", None, "paused", "EMAIL_PAUSED"),
+        ("reviewed", "running", None, "launched", "EMAIL_QUEUED"),
+        ("scanned", "running", None, "launched", "EMAIL_QUEUED"),
+        ("emailsSent", "running", None, "in_sequence", "EMAIL_ACTIVE"),
+        ("emailsOpened", "running", None, "in_sequence", "EMAIL_ACTIVE"),
+        ("emailsClicked", "running", None, "in_sequence", "EMAIL_ACTIVE"),
+        # The real export (notes §17): no status, its `stateSystem` read as
+        # the status it stands for, with the states it came with there.
+        ("emailsSent", None, "inProgress", "in_sequence", "EMAIL_ACTIVE"),
+        ("emailsClicked", None, "inProgress", "in_sequence", "EMAIL_ACTIVE"),
+        ("reviewed", None, "reviewed", "launched", "EMAIL_QUEUED"),
+        ("emailsReplied", None, "paused", "replied", "EMAIL_REPLIED"),
+        ("emailsSent", None, "paused", "paused", "EMAIL_PAUSED"),
+        ("emailsBounced", None, "done", "bounced", "EMAIL_BOUNCED"),
+        ("emailsSent", None, "done", "completed", "EMAIL_COMPLETED"),
+        ("entityUnsubscribed", None, "unsubscribed", "unsubscribed", "EMAIL_UNSUBSCRIBED"),
+        # A status, when given, wins over the `stateSystem`.
+        ("emailsSent", "done", "inProgress", "completed", "EMAIL_COMPLETED"),
+        # A `stateSystem` value not known: not covered (a block stays one).
+        ("emailsSent", None, "onHold", "uncovered", None),
+        ("reviewed", None, "InProgress", "uncovered", None),
+        ("emailsBounced", None, "onHold", "bounced", "EMAIL_BOUNCED"),
         # Not covered: not imported, counted with the raw values.
-        ("emailsSent", "interested", "uncovered", None),
-        ("emailsInterested", "notInterested", "uncovered", None),
-        ("variableUnsubscribed", "running", "uncovered", None),
-        ("linkedinVisitDone", "running", "uncovered", None),
-        (None, "running", "uncovered", None),
-        ("emailsSent", None, "status_unknown", None),
+        ("emailsSent", "interested", None, "uncovered", None),
+        ("emailsInterested", "notInterested", None, "uncovered", None),
+        ("variableUnsubscribed", "running", None, "uncovered", None),
+        ("linkedinVisitDone", "running", None, "uncovered", None),
+        (None, "running", None, "uncovered", None),
+        # No word on its progress at all.
+        ("emailsSent", None, None, "status_unknown", None),
     ],
 )
 def test_lemlists_words_on_a_lead_map_to_one_status(
-    state: str | None, status: str | None, rule: str, proposed: str | None
+    state: str | None,
+    status: str | None,
+    state_system: str | None,
+    rule: str,
+    proposed: str | None,
 ) -> None:
-    decided = propose(state, status)
+    decided = propose(state, status, state_system)
     assert (decided.rule, decided.proposed) == (rule, proposed)
     if proposed is None:
         assert decided.not_imported is not None
@@ -346,6 +434,22 @@ def test_lemlists_words_on_a_lead_map_to_one_status(
         proposed or ""
     )
     assert decided.opposition == expected
+
+
+def test_the_state_system_values_are_read_as_documented_statuses() -> None:
+    """The five values the real team's export showed on 08/10/2026 (notes
+    §17), each read as the documented status it stands for; no other."""
+    assert STATE_SYSTEM_STATUS == {
+        "inProgress": "running",
+        "reviewed": "running",
+        "paused": "paused",
+        "done": "done",
+        "unsubscribed": "unsubscribed",
+    }
+    assert read_status(None, "inProgress") == "running"
+    assert read_status("done", "inProgress") == "done"
+    assert read_status(None, "onHold") is None
+    assert read_status(None, None) is None
 
 
 def test_the_mapping_is_ordered_and_names_each_rule_once() -> None:

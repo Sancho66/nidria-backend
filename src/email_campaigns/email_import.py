@@ -19,10 +19,12 @@ receive the placeholder, spec 9.2). The few gestures it still takes are in
    found by address (rule N2) or to create; the conflicts (a person live in
    another campaign of the agency, or in an importable campaign planned
    before); every combination of Lemlist's words met (`state` of the
-   listing, `status` of the export) with the Nidria status proposed; the
-   Lemlist calls it took and an application will take. Drafts, ended,
-   archived and erroneous campaigns are listed apart, so are the team's
-   campaigns Nidria created itself (never imported).
+   listing, and the lead's status word labelled with its source: the
+   export's `status`, else its `stateSystem`, else the contacts lookup's
+   `leadState`) with the Nidria status proposed; the Lemlist calls it took
+   and an application will take. Drafts, ended, archived and erroneous
+   campaigns are listed apart, so are the team's campaigns Nidria created
+   itself (never imported).
 2. `apply` (POST /email/import/lemlist {campaign_ids}): the plan computed
    again server side (the listing and every importable campaign read again,
    since earlier campaigns decide the conflicts of later ones), then each
@@ -55,7 +57,10 @@ application only, the campaign's activities (§3: pages of 100).
 
 A lead's status is decided by `propose` over the written mapping `RULES`
 (Lemlist's words in notes §2); a combination it does not cover is not
-imported, and counted with its raw values.
+imported, and counted with its raw values. The real export gives no
+`status` (notes §17): its undocumented `stateSystem` is read as the
+documented status it stands for (`STATE_SYSTEM_STATUS`), and a value not
+known there is not covered.
 
 History and present. The current state read at Lemlist decides each
 membership's status. The history is then replayed by `ingest` in its
@@ -132,6 +137,7 @@ from src.email_campaigns.email_schema import (
     EmailImportStepsRead,
     ImportRule,
     ImportSkipReason,
+    ImportStatusSource,
     MemberStatus,
     OppositionReason,
 )
@@ -185,10 +191,12 @@ _BLOCKING = frozenset(BLOCKING_MEMBER_STATUSES)
 
 # ── the mapping: Lemlist's words on a lead -> its Nidria status ──────────────
 #
-# `state`: the lead's last state (Lemlist's listing; the export's
-# `lastState`), an activity type or a global state, no published enum.
+# `state`: the lead's last state (Lemlist's listing; else the export's
+# `state`, or its documented `lastState`), an activity type or a global
+# state, no published enum.
 # `status`: documented, notInterested, interested, unsubscribed, review,
-# scanning, running, paused, done (notes §2.1).
+# scanning, running, paused, done (notes §2.1). The real export never gives
+# it: its `stateSystem` stands for it (`STATE_SYSTEM_STATUS`).
 
 #: Unsubscribed: the email's, the contact's (`entityUnsubscribed` since
 #: 30/03/2026), by the API or by hand. `variableUnsubscribed` is not one:
@@ -209,6 +217,25 @@ LAUNCHED_STATES = frozenset({"reviewed", "scanned", "imported"})
 CONTACTED_STATES = frozenset(
     {"emailsSent", "emailsOpened", "emailsClicked", "contacted", "hooked", "attracted"}
 )
+#: The export's `stateSystem` -> the documented status it is read as, when
+#: the export gives no `status`. Observed on 08/10/2026 on the real team,
+#: undocumented (notes §17): the real export carries `state` and
+#: `stateSystem`, never `status` nor `lastState`. Each value, with the
+#: states it came with there. Any other value is not covered.
+STATE_SYSTEM_STATUS: dict[str, str] = {
+    # emailsSent, emailsClicked: in the sequence.
+    "inProgress": "running",
+    # reviewed: launched, never contacted; running, so that rule `launched`
+    # makes it EMAIL_QUEUED.
+    "reviewed": "running",
+    # Mostly emailsReplied (Lemlist pauses a lead at its reply): rule
+    # `replied` comes first.
+    "paused": "paused",
+    # emailsBounced (2 of 2, 5 of 5): rule `bounced` comes first.
+    "done": "done",
+    # entityUnsubscribed.
+    "unsubscribed": "unsubscribed",
+}
 
 
 @dataclass(frozen=True)
@@ -256,18 +283,32 @@ RULES: tuple[Rule, ...] = (
     Rule("launched", LAUNCHED_STATES, frozenset({"running"}), "both", proposed="EMAIL_QUEUED"),
     Rule("in_sequence", CONTACTED_STATES, frozenset({"running"}), "both", proposed="EMAIL_ACTIVE"),
 )
-#: No rule matched: no status was read, or a combination not covered
-#: (interested, notInterested, another channel's state...).
+#: No rule matched: neither a status nor a `stateSystem` was read, or a
+#: combination not covered (interested, notInterested, another channel's
+#: state, a `stateSystem` value not known...).
 STATUS_UNKNOWN = Rule("status_unknown", not_imported="status_unknown")
 UNCOVERED = Rule("uncovered", not_imported="status_uncovered")
 
 
-def propose(state: str | None, status: str | None) -> Rule:
-    """The rule that decides a lead's fate from Lemlist's words on it."""
+def read_status(status: str | None, state_system: str | None) -> str | None:
+    """The status the mapping reads for a lead: Lemlist's `status` when it
+    gives one, else its `stateSystem` read as the status it stands for
+    (`STATE_SYSTEM_STATUS`); None for none, or a value not known there."""
+    if status is not None:
+        return status
+    return STATE_SYSTEM_STATUS.get(state_system) if state_system is not None else None
+
+
+def propose(state: str | None, status: str | None, state_system: str | None = None) -> Rule:
+    """The rule that decides a lead's fate from Lemlist's words on it: its
+    `state`, and its `status`, else its `stateSystem` (`read_status`). With
+    neither word, `status_unknown`; a word no rule covers (a `stateSystem`
+    value not known included), `uncovered`."""
+    read_as = read_status(status, state_system)
     for rule in RULES:
-        if rule.matches(state, status):
+        if rule.matches(state, read_as):
             return rule
-    return STATUS_UNKNOWN if status is None else UNCOVERED
+    return STATUS_UNKNOWN if status is None and state_system is None else UNCOVERED
 
 
 def rule_read(rule: Rule) -> EmailImportRuleRead:
@@ -291,10 +332,16 @@ class LeadRead:
 
     lead_id: str
     contact_id: str | None
-    #: The listing's `state`, else the export's `lastState`.
+    #: The listing's `state`, else the export's (`state`, else `lastState`).
     state: str | None
-    #: The export's `status`, else the contacts lookup's `leadState`.
+    #: Its status as Lemlist words it: the export's `status`, else (none
+    #: there, nor a `stateSystem`) the contacts lookup's `leadState`.
     status: str | None
+    #: The export's `stateSystem`, as said (`STATE_SYSTEM_STATUS`).
+    state_system: str | None = None
+    #: Where the word its status is read from comes from: "status",
+    #: "stateSystem", "leadState", or None (no word).
+    status_source: ImportStatusSource | None = None
     #: Trimmed and lower-cased; None when Lemlist gave none usable.
     email: str | None = None
     first_name: str | None = None
@@ -302,6 +349,15 @@ class LeadRead:
     company_name: str | None = None
     #: Where its identity came from: "export", "contacts", or None.
     identity: str | None = None
+
+    @property
+    def status_word(self) -> str | None:
+        """The word its status is read from (`status_source`'s), as said."""
+        return self.state_system if self.status_source == "stateSystem" else self.status
+
+    @property
+    def rule(self) -> Rule:
+        return propose(self.state, self.status, self.state_system)
 
 
 @dataclass
@@ -437,16 +493,27 @@ def _lead(
     contacts: Mapping[str, ProviderContact],
 ) -> LeadRead:
     """A listed lead with its identity: the export's, else the contacts
-    lookup's (which carries no company); its status, the export's, else the
-    lead's status in this campaign by the lookup."""
+    lookup's (which carries no company); its status word, the export's
+    `status`, else its `stateSystem`, else the lead's status in this
+    campaign by the lookup."""
     contact = contacts.get(contact_id) if contact_id else None
     found = identity or _NO_IDENTITY
+    looked_up = contact.lead_statuses.get((campaign_id, lead_id)) if contact is not None else None
+    status: str | None = None
+    source: ImportStatusSource | None = None
+    if found.status is not None:
+        status, source = found.status, "status"
+    elif found.state_system is not None:
+        source = "stateSystem"
+    elif looked_up is not None:
+        status, source = looked_up, "leadState"
     lead = LeadRead(
         lead_id=lead_id,
         contact_id=contact_id,
         state=state or found.last_state,
-        status=found.status
-        or (contact.lead_statuses.get((campaign_id, lead_id)) if contact is not None else None),
+        status=status,
+        state_system=found.state_system,
+        status_source=source,
         company_name=_text(found.company_name, _COMPANY_MAX),
     )
     if _address(found.email):
@@ -549,7 +616,7 @@ def plan_campaign(
     for lead in sorted(
         read.leads, key=lambda lead: (lead.lead_id not in own_by_lead, lead.lead_id)
     ):
-        rule = propose(lead.state, lead.status)
+        rule = lead.rule
         address = lead.email
         member = own_by_lead.get(lead.lead_id)
         verdict: Verdict
@@ -678,16 +745,22 @@ def _leads_read(plan: CampaignPlan) -> EmailImportLeadsRead:
 
 
 def _states_read(plan: CampaignPlan) -> list[EmailImportStateRead]:
-    counts = Counter((lead.state, lead.status) for lead in plan.read.leads)
+    """Every combination met: the state, the status word as said and its
+    source, the status the mapping read it as, the rule."""
+    counts = Counter((lead.state, lead.status_word, lead.status_source) for lead in plan.read.leads)
     out: list[EmailImportStateRead] = []
-    for (state, status), count in sorted(
-        counts.items(), key=lambda item: (-item[1], item[0][0] or "", item[0][1] or "")
+    for (state, word, source), count in sorted(
+        counts.items(),
+        key=lambda item: (-item[1], item[0][0] or "", item[0][1] or "", item[0][2] or ""),
     ):
-        rule = propose(state, status)
+        status, state_system = (None, word) if source == "stateSystem" else (word, None)
+        rule = propose(state, status, state_system)
         out.append(
             EmailImportStateRead(
                 state=state,
-                status=status,
+                status=word,
+                status_source=source,
+                status_read_as=read_status(status, state_system),
                 count=count,
                 rule=rule.rule,
                 proposed=rule.proposed,
@@ -732,6 +805,7 @@ def _member_metadata(
         **import_metadata(current),
         "imported_at": imported_at,
         "status": lead.status,
+        "state_system": lead.state_system,
         "last_state": lead.state,
     }
     if lead.company_name:
@@ -742,6 +816,7 @@ def _member_metadata(
             ("state", lead.state),
             ("contactId", lead.contact_id),
             ("status", lead.status),
+            ("stateSystem", lead.state_system),
         )
         if value is not None
     }

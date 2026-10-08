@@ -32877,7 +32877,7 @@
           "rule"
         ],
         "title": "EmailImportRuleRead",
-        "description": "One line of the mapping from Lemlist's words on a lead to its Nidria\nstatus. A lead matches when its `state` (Lemlist's listing) is one of\n`states` or its `status` (the export) one of `statuses` (`combine`\neither), or both (`combine` both); the first rule matching decides.\n`proposed`: the status the membership gets, null when the lead is not\nimported (`not_imported` says why)."
+        "description": "One line of the mapping from Lemlist's words on a lead to its Nidria\nstatus. A lead matches when its `state` (Lemlist's listing) is one of\n`states` or its status (`ImportStatusSource`: a `stateSystem` read as\nthe status it stands for) one of `statuses` (`combine` either), or both\n(`combine` both); the first rule matching decides. `proposed`: the\nstatus the membership gets, null when the lead is not imported\n(`not_imported` says why)."
       },
       "EmailImportStateRead": {
         "properties": {
@@ -32902,6 +32902,33 @@
               }
             ],
             "title": "Status"
+          },
+          "status_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "status",
+                  "stateSystem",
+                  "leadState"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Source"
+          },
+          "status_read_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Read As"
           },
           "count": {
             "type": "integer",

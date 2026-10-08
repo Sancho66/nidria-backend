@@ -273,8 +273,8 @@ STATUS_REASON_PARAMS_KEY = "status_reason_params"
 #: overwritten by what Lemlist says. A campaign's: `imported_at`,
 #: `imported_by_agent_id`, `unknown_leads` and `unknown_leads_at`, and
 #: `set_aside` (the lead ids the last import did not import). A
-#: membership's: `company_name` (Lemlist's), `status` and `last_state`
-#: (Lemlist's words when imported), `imported_at`.
+#: membership's: `company_name` (Lemlist's), `status`, `state_system` and
+#: `last_state` (Lemlist's words when imported), `imported_at`.
 IMPORT_METADATA_KEY = "import"
 #: Where an internal smoke test campaign (scripts/email_admin.py,
 #: `smoke-start`) keeps its mark, in its `provider_metadata`: Nidria's own

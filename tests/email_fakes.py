@@ -6,6 +6,8 @@ docstring. `FakeLemlist` answers like Lemlist's documented routes through an
 network guard counts nothing. Ported from Prism's `tests/test_email_rendering.py`
 (`FakeLemlist` L316-336, fixture L339-348), plus what Nidria's tests check on
 top: the Authorization header of each call and the waits asked of `time.sleep`.
+Where the real team answered otherwise than documented, `observed_*` builds
+the answer as observed (the export's rows, notes §17).
 
 Use: `fake, provider = lemlist_double(monkeypatch)`, or the `fake_lemlist`
 fixture once this module is listed in a `pytest_plugins`.
@@ -125,6 +127,31 @@ def lemlist_double(
 @pytest.fixture
 def fake_lemlist(monkeypatch: pytest.MonkeyPatch) -> tuple[FakeLemlist, LemlistEmailProvider]:
     return lemlist_double(monkeypatch)
+
+
+def observed_export_row(
+    lead_id: str,
+    email: str,
+    state: str,
+    state_system: str,
+    *,
+    company: str | None = None,
+    **variables: str,
+) -> dict[str, Any]:
+    """One row of `GET /v2/campaigns/{id}/export/leads?state=all&format=json`
+    as the real team's export answered on 08/10/2026 (notes §17), not as
+    documented: `email`, `_id`, `state`, `stateSystem`, `companyName`, then
+    the campaign's own variables; never `status`, `lastState`, `contactId`
+    nor `isPaused`, and `firstName` / `lastName` only when the campaign has
+    them (given here among `variables`)."""
+    return {
+        "email": email,
+        "_id": lead_id,
+        "state": state,
+        "stateSystem": state_system,
+        "companyName": company,
+        **variables,
+    }
 
 
 class FakeProvider:

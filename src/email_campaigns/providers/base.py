@@ -267,9 +267,14 @@ class ProviderLeadIdentity:
     last_name: str | None = None
     company_name: str | None = None
     #: Lemlist's `status` (notInterested, interested, unsubscribed, review,
-    #: scanning, running, paused, done) and `lastState`, as said.
+    #: scanning, running, paused, done) and the lead's last state (`state`,
+    #: else `lastState`), as said; any of them may be missing.
     status: str | None = None
     last_state: str | None = None
+    #: Lemlist's `stateSystem`, as said: undocumented, the only word on the
+    #: lead's progress the real export gives (inProgress, reviewed, paused,
+    #: done, unsubscribed).
+    state_system: str | None = None
 
 
 @dataclass(frozen=True)

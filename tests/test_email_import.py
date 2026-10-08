@@ -7,8 +7,9 @@ the pause asked for.
 
 Lemlist is `FakeProvider` (the manager's provider, scripted per campaign:
 campaigns, sequences, listing, export, contacts lookup, activities), or the
-real adapter on `FakeLemlist` where the HTTP methods are what is checked.
-No test reaches Lemlist.
+real adapter on `FakeLemlist` where the HTTP methods are what is checked,
+and where the export answers as the real team's did (notes §17). No test
+reaches Lemlist.
 """
 
 import asyncio
@@ -60,7 +61,7 @@ from src.email_campaigns.providers.base import (
     ProviderSequenceStep,
 )
 from src.email_campaigns.suppression import email_hash
-from tests.email_fakes import FakeLemlist, FakeProvider, lemlist_double
+from tests.email_fakes import FakeLemlist, FakeProvider, lemlist_double, observed_export_row
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.client_profile_plugin import MakeClientProfile
 from tests.plugins.email_plugin import (
@@ -93,6 +94,7 @@ SECRET = "s3cret-webhook"
 TEAM = "tea_current"
 LEMLIST_A = "cam_avocats_s2"
 LEMLIST_B = "cam_avocats_s4"
+LEMLIST_C = "cam_experts_s2"
 #: What reading Lemlist may call on an imported campaign (the job, a Sync,
 #: the webhook's pause re-read, the import's own reads).
 READS = {
@@ -508,6 +510,13 @@ async def test_the_plan_counts_what_an_import_would_do_campaign_by_campaign(
     states = {(s["state"], s["status"]): s for s in a["states"]}
     assert states[("emailsSent", "running")]["count"] == 3
     assert states[("emailsSent", "running")]["proposed"] == "EMAIL_ACTIVE"
+    # Each status word says where it comes from: the export's `status`, or
+    # the contacts lookup's `leadState` for the lead the export missed.
+    assert (
+        states[("emailsSent", "running")]["status_source"],
+        states[("emailsSent", "running")]["status_read_as"],
+    ) == ("status", "running")
+    assert states[("emailsClicked", "running")]["status_source"] == "leadState"
     assert states[("reviewed", "running")]["proposed"] == "EMAIL_QUEUED"
     assert states[("entityUnsubscribed", "unsubscribed")]["opposition"] == "UNSUBSCRIBED"
     assert states[("emailsBounced", "running")]["opposition"] == "BOUNCED"
@@ -1404,6 +1413,22 @@ async def test_the_sync_the_job_the_webhook_and_the_archive_only_read_an_importe
     assert opened == 2
 
 
+async def through_the_adapter(
+    db_session: AsyncSession, agency_id: uuid.UUID, monkeypatch: pytest.MonkeyPatch
+) -> FakeLemlist:
+    """The agency bound to team A and its provider the REAL adapter, on
+    `FakeLemlist`: every HTTP call is recorded with its method."""
+    fake, adapter = lemlist_double(monkeypatch, team_lookup=lambda: TEAM_A)
+
+    def _provider_for(_settings: Any, _row: Any) -> EmailProvider:
+        return adapter
+
+    monkeypatch.setattr(email_manager, "provider_for", _provider_for)
+    email_manager.clear_caches()
+    await _bind(db_session, agency_id)
+    return fake
+
+
 @pytest_asyncio.fixture
 async def adapter_live(
     db_session: AsyncSession,
@@ -1414,14 +1439,7 @@ async def adapter_live(
 ) -> tuple[EmailWorld, FakeLemlist, sessionmaker[Session]]:
     """The agency live at Lemlist through the REAL adapter, on `FakeLemlist`:
     every HTTP call is recorded with its method."""
-    fake, adapter = lemlist_double(monkeypatch, team_lookup=lambda: TEAM_A)
-
-    def _provider_for(_settings: Any, _row: Any) -> EmailProvider:
-        return adapter
-
-    monkeypatch.setattr(email_manager, "provider_for", _provider_for)
-    email_manager.clear_caches()
-    await _bind(db_session, email_world.agency_id)
+    fake = await through_the_adapter(db_session, email_world.agency_id, monkeypatch)
     await _enable_job(db_session)
     lead_rows = [
         {"_id": "lea_1", "contactId": "ctc_1", "state": "emailsSent"},
@@ -1579,3 +1597,188 @@ async def test_at_lemlist_an_imported_campaign_is_only_ever_read_but_for_the_pau
         "/activities",
     } <= read_routes
     assert "/leads" in read_routes and "/inbox/ctc_1" in read_routes
+
+
+# ── the export as the real team's answered (notes §17) ───────────────────────
+
+
+def observed_leads() -> list[tuple[str, str, str, str]]:
+    """(lead id, address, state, stateSystem): each `stateSystem` value the
+    real team's export showed on 08/10/2026, with the states it came with
+    there, and one value the mapping does not know."""
+    return [
+        ("lea_c01", "ana@cabinet.fr", "emailsSent", "inProgress"),
+        ("lea_c02", "ben@cabinet.fr", "emailsClicked", "inProgress"),
+        ("lea_c03", "cleo@cabinet.fr", "reviewed", "reviewed"),
+        ("lea_c04", "dan@cabinet.fr", "reviewed", "reviewed"),
+        ("lea_c05", "eve@cabinet.fr", "emailsReplied", "paused"),
+        ("lea_c06", "fred@cabinet.fr", "emailsSent", "paused"),
+        ("lea_c07", "gil@cabinet.fr", "emailsBounced", "done"),
+        ("lea_c08", "hugo@cabinet.fr", "emailsSent", "done"),
+        ("lea_c09", "ivy@cabinet.fr", "entityUnsubscribed", "unsubscribed"),
+        ("lea_c10", "jo@cabinet.fr", "emailsOpened", "onHold"),
+    ]
+
+
+@pytest_asyncio.fixture
+async def observed_live(
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    lemlist_live: LemlistTeamDouble,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[EmailWorld, FakeLemlist]:
+    """The agency live at Lemlist through the REAL adapter, one paused
+    campaign whose export answers as the real team's did on 08/10/2026
+    (notes §17): an array, `state` and `stateSystem`, the campaign's own
+    variables, never `status`, `lastState` nor a name. The listing omits
+    one lead's state: the export's is read."""
+    fake = await through_the_adapter(db_session, email_world.agency_id, monkeypatch)
+    name = "2026-08 · Experts-comptables · s2"
+    listing = [
+        {"_id": lead, "contactId": f"ctc_{lead}", **({"state": state} if lead != "lea_c02" else {})}
+        for lead, _address, state, _system in observed_leads()
+    ]
+    export = [
+        observed_export_row(
+            lead,
+            address,
+            state,
+            system,
+            company="Cabinet Durand",
+            objet="Votre cabinet",
+            mail1="Bonjour Madame Durand",
+            relance1="Je me permets de revenir vers vous",
+            cle=f"key_{lead}",
+            nom="Durand",
+            parcours="experts",
+        )
+        for lead, address, state, system in observed_leads()
+    ]
+    for method, path, body in (
+        (
+            "GET",
+            "/campaigns",
+            [
+                {
+                    "_id": LEMLIST_C,
+                    "name": name,
+                    "status": "paused",
+                    "createdAt": "2026-08-01T09:00:00.000Z",
+                }
+            ],
+        ),
+        (
+            "GET",
+            f"/campaigns/{LEMLIST_C}",
+            {"_id": LEMLIST_C, "name": name, "status": "paused", "sequenceId": "seq_c"},
+        ),
+        (
+            "GET",
+            f"/campaigns/{LEMLIST_C}/sequences",
+            {
+                "seq_c": {
+                    "_id": "seq_c",
+                    "level": 0,
+                    "steps": [
+                        {
+                            "_id": "stp_c1",
+                            "type": "email",
+                            "delay": 0,
+                            "index": 1,
+                            "sequenceStep": 0,
+                            "subject": "{{objet}}",
+                            "message": "<p>{{mail1}}</p><p>{{unsubscribeUrl}}</p>",
+                        }
+                    ],
+                }
+            },
+        ),
+        ("GET", f"/campaigns/{LEMLIST_C}/leads", listing),
+        ("GET", f"/v2/campaigns/{LEMLIST_C}/export/leads", export),
+    ):
+        fake.answer(method, path, 200, body)
+    return email_world, fake
+
+
+async def test_the_real_export_decides_each_lead_by_its_state_system(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    observed_live: tuple[EmailWorld, FakeLemlist],
+) -> None:
+    """Notes §17: the real export gives no `status`. Each `stateSystem`
+    value it showed is read as the status it stands for, with the state; a
+    value the mapping does not know is not covered, shown raw in the plan;
+    no lead falls into status_unknown."""
+    world, fake = observed_live
+    response = await client.get(URL, headers=world.headers)
+    assert response.status_code == 200, response.text
+    [campaign] = response.json()["campaigns"]
+    assert campaign["error"] is None
+    assert {s["status_source"] for s in campaign["states"]} == {"stateSystem"}
+    states = {
+        (s["state"], s["status"]): (s["count"], s["status_read_as"], s["rule"], s["proposed"])
+        for s in campaign["states"]
+    }
+    assert states == {
+        ("emailsSent", "inProgress"): (1, "running", "in_sequence", "EMAIL_ACTIVE"),
+        ("emailsClicked", "inProgress"): (1, "running", "in_sequence", "EMAIL_ACTIVE"),
+        ("reviewed", "reviewed"): (2, "running", "launched", "EMAIL_QUEUED"),
+        ("emailsReplied", "paused"): (1, "paused", "replied", "EMAIL_REPLIED"),
+        ("emailsSent", "paused"): (1, "paused", "paused", "EMAIL_PAUSED"),
+        ("emailsBounced", "done"): (1, "done", "bounced", "EMAIL_BOUNCED"),
+        ("emailsSent", "done"): (1, "done", "completed", "EMAIL_COMPLETED"),
+        ("entityUnsubscribed", "unsubscribed"): (
+            1,
+            "unsubscribed",
+            "unsubscribed",
+            "EMAIL_UNSUBSCRIBED",
+        ),
+        ("emailsOpened", "onHold"): (1, None, "uncovered", None),
+    }
+    leads = campaign["leads"]
+    assert (leads["listed"], leads["from_export"], leads["without_email"]) == (10, 10, 0)
+    assert (leads["to_create"], leads["not_imported"]) == (9, {"status_uncovered": 1})
+    # Counts and Lemlist's words only: no address, no name, no variable.
+    for value in ("@", "Durand", "Bonjour", "key_lea"):
+        assert value not in response.text, value
+
+    [row] = (await import_(client, world.headers, LEMLIST_C))["campaigns"]
+    assert row["ok"] is True, row
+    assert (row["members_created"], row["profiles_created"], row["not_imported"]) == (
+        9,
+        9,
+        {"status_uncovered": 1},
+    )
+    assert row["opposition_listed"] == 2
+    imported = await campaign_of(db_session, LEMLIST_C)
+    members = await members_by_lead(db_session, imported.id)
+    assert {lead: member.status for lead, member in members.items()} == {
+        "lea_c01": "EMAIL_ACTIVE",
+        "lea_c02": "EMAIL_ACTIVE",
+        "lea_c03": "EMAIL_QUEUED",
+        "lea_c04": "EMAIL_QUEUED",
+        "lea_c05": "EMAIL_REPLIED",
+        "lea_c06": "EMAIL_PAUSED",
+        "lea_c07": "EMAIL_BOUNCED",
+        "lea_c08": "EMAIL_COMPLETED",
+        "lea_c09": "EMAIL_UNSUBSCRIBED",
+    }
+    # Lemlist's words kept as said; the campaign's variables never.
+    replied = members["lea_c05"].provider_metadata or {}
+    assert (replied["state"], replied["stateSystem"], "status" in replied) == (
+        "emailsReplied",
+        "paused",
+        False,
+    )
+    assert replied["import"]["state_system"] == "paused" and replied["import"]["status"] is None
+    assert not {"nom", "mail1", "cle", "objet"} & set(replied)
+    # The export names no one: the records are made without a name.
+    names = (
+        await db_session.execute(
+            select(ClientProfile.first_name, ClientProfile.last_name).where(
+                ClientProfile.agency_id == world.agency_id, ClientProfile.source == "lemlist"
+            )
+        )
+    ).all()
+    assert len(names) == 9 and {tuple(n) for n in names} == {(None, None)}
+    assert {method for method, _p, _q, _b in fake.calls} == {"GET"}

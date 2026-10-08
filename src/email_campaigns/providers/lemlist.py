@@ -50,7 +50,8 @@ notes/lemlist-import-research.txt):
     GET    /campaigns/{id}/sequences                    `read_sequences` (§5)
     GET    /campaigns/{id}/leads?limit=&offset=          `list_contacts` (§1.1)
     GET    /v2/campaigns/{id}/export/leads?state=all&format=json
-                                                        `export_leads` (§1.2 a)
+                                                        `export_leads` (§1.2 a;
+                                                        its real rows, §17)
     GET    /contacts?idsOrEmails=                       `lookup_contacts` (§1.2 d)
     GET    /activities?version=v2&campaignId=            `read_activities` (§3)
 
@@ -916,8 +917,14 @@ class LemlistEmailProvider:
         pagination nor a size limit is documented, so the caller checks that
         every lead it listed came back. Per lead id: its email, names,
         company, `status` and `lastState` (both declared, neither required).
-        An object carrying the rows under `leads` or `data` is read too (not
-        documented). A lead id given twice is kept once."""
+        Observed on 08/10/2026 on the real team, undocumented (notes §17): an
+        array in one answer whose rows carry `email`, `_id`, `state`,
+        `stateSystem`, `companyName` and the campaign's own variables, the
+        names only when the campaign has them, and never `status`,
+        `lastState`, `contactId` nor `isPaused`; so every word is optional,
+        `state` is read before `lastState`, and `stateSystem` is kept as
+        said. An object carrying the rows under `leads` or `data` is read too
+        (not documented). A lead id given twice is kept once."""
         response = self._request(
             "GET",
             f"/v2/campaigns/{ref.campaign_id}/export/leads",
@@ -934,7 +941,8 @@ class LemlistEmailProvider:
                     last_name=_text(row.get("lastName")),
                     company_name=_text(row.get("companyName")),
                     status=_text(row.get("status")),
-                    last_state=_text(row.get("lastState")),
+                    last_state=_text(row.get("state")) or _text(row.get("lastState")),
+                    state_system=_text(row.get("stateSystem")),
                 )
         return list(found.values())
 
