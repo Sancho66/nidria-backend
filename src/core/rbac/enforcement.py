@@ -358,10 +358,11 @@ async def _resolve_expat(request: Request, db: AsyncSession) -> tuple[ExpatUser,
     return expat, payload
 
 
-def _enforce_impersonation(
-    request: Request, payload: dict[str, object], audience: Audience, method: str, path: str
+def _enforce_expat_impersonation(
+    request: Request, payload: dict[str, object], method: str, path: str
 ) -> None:
-    """Apply the per-face impersonation policy (see the constants above).
+    """Apply the EXPAT face's impersonation policy (see the constants
+    above); the AGENT face's lives in `authorize_agent`.
 
     `method` is already HEAD→GET normalized by enforce(), so the expat
     read-only rule reduces to method == "GET"."""
@@ -369,36 +370,31 @@ def _enforce_impersonation(
     request.state.impersonator_id = impersonator_id
     if impersonator_id is None:
         return
-    if audience is Audience.EXPAT:
-        if method == "GET" or (method, path) in IMPERSONATION_WRITE_ALLOWLIST:
-            return
-        # Blocked-attempt trace in the applicative log (the DB
-        # impersonation_log stays an issuance journal).
-        logger.warning(
-            "impersonation write blocked: agent=%s expat=%s %s %s",
-            impersonator_id,
-            payload.get("sub"),
-            method,
-            path,
-        )
-        raise ForbiddenError(
-            "Impersonation is read-only: write operations are not allowed.",
-            code="impersonation.read_only",
-        )
-    if (method, path) in IMPERSONATION_AGENT_DENIED:
-        raise ForbiddenError(
-            "This action is not allowed under impersonation.",
-            code="impersonation.denied",
-        )
+    if method == "GET" or (method, path) in IMPERSONATION_WRITE_ALLOWLIST:
+        return
+    # Blocked-attempt trace in the applicative log (the DB
+    # impersonation_log stays an issuance journal).
+    logger.warning(
+        "impersonation write blocked: agent=%s expat=%s %s %s",
+        impersonator_id,
+        payload.get("sub"),
+        method,
+        path,
+    )
+    raise ForbiddenError(
+        "Impersonation is read-only: write operations are not allowed.",
+        code="impersonation.read_only",
+    )
 
 
 async def _enforce_consent(
-    request: Request,
     db: AsyncSession,
     audience: Audience,
     actor: Agent | ExpatUser,
     method: str,
     path: str,
+    *,
+    impersonated: bool,
 ) -> None:
     """Blocking clickwrap (point 16): the actor must have accepted the
     latest ACTIVE version of each document required for their audience
@@ -409,7 +405,7 @@ async def _enforce_consent(
     face read-only, agent accept route in the denylist)."""
     if (method, path) in CONSENT_EXEMPT:
         return
-    if request.state.impersonator_id is not None:
+    if impersonated:
         return
     missing: list[dict[str, object]]
     if audience is Audience.AGENT:
@@ -442,6 +438,70 @@ async def _enforce_consent(
             code="consent.required",
             params={"missing": missing},
         )
+
+
+async def authorize_agent(
+    db: AsyncSession,
+    agent: Agent,
+    method: str,
+    path: str,
+    *,
+    binding: ProtectedResource | None = None,
+    impersonator_id: object = None,
+) -> ProtectedResource:
+    """The AGENT face of enforce(), without a Request: may `agent` reach
+    `method path`, the route TEMPLATE (`/email/campaigns/{campaign_id}`)?
+
+    In enforce()'s order: the route's binding (deny by default), an
+    external provider outside its allowlist, the impersonation denials,
+    the consent gate, the billing lock on a write, then the binding's
+    permission; each refusal is the very ForbiddenError a request gets.
+
+    enforce() passes the binding it resolved before reading the token (an
+    unbound route answers 403 before any 401) and the token's
+    `impersonator_id`. An in-process caller holding an agent row and no
+    token (scripts/email_admin.py) passes neither: the binding is resolved
+    here, and no mask applies. Returns the binding."""
+    if binding is None:
+        binding = await resolve_binding(db, method, path)
+        if binding is None:
+            raise ForbiddenError(f"No access binding for {method} {path}.")
+    if binding.audience != Audience.AGENT:
+        raise ForbiddenError(f"No agent access binding for {method} {path}.")
+    # FAIL-CLOSED for external providers (wave A): denied on every
+    # route outside their identity allowlist, BEFORE the permission
+    # check. Closes the permissionless "any agent" leaks (members,
+    # journeys, roles, …) that zero permissions alone would not.
+    if agent.is_external and (method, path) not in EXTERNAL_AGENT_ALLOWLIST:
+        raise ForbiddenError(
+            "External providers have no access to this resource yet.",
+            code="permission.denied",
+        )
+    if impersonator_id is not None and (method, path) in IMPERSONATION_AGENT_DENIED:
+        raise ForbiddenError(
+            "This action is not allowed under impersonation.",
+            code="impersonation.denied",
+        )
+    await _enforce_consent(
+        db, Audience.AGENT, agent, method, path, impersonated=impersonator_id is not None
+    )
+    # 4th stage, the billing lock: a blocked agency writes NOTHING
+    # (403 billing.subscription_required), before the permission
+    # check so the front gets ONE stable code whatever the role.
+    await _enforce_billing_lock(db, agent, method, path)
+    # NULL permission on an AGENT binding = any authenticated agent
+    # (identity endpoints: /me, /logout), symmetric with EXPAT.
+    if binding.permission is not None and binding.permission.key not in effective_permissions(
+        agent
+    ):
+        # ONE code for every matrix refusal; the missing key rides in
+        # params (a permission key, never an id) for the front's label.
+        raise ForbiddenError(
+            "Missing permission.",
+            code="permission.denied",
+            params={"permission": binding.permission.key},
+        )
+    return binding
 
 
 async def enforce(
@@ -482,39 +542,24 @@ async def enforce(
 
     if binding.audience == Audience.AGENT:
         agent, payload = await _resolve_agent(request, db)
-        # FAIL-CLOSED for external providers (wave A): denied on every
-        # route outside their identity allowlist, BEFORE the permission
-        # check. Closes the permissionless "any agent" leaks (members,
-        # journeys, roles, …) that zero permissions alone would not.
-        if agent.is_external and (method, path) not in EXTERNAL_AGENT_ALLOWLIST:
-            raise ForbiddenError(
-                "External providers have no access to this resource yet.",
-                code="permission.denied",
-            )
-        _enforce_impersonation(request, payload, Audience.AGENT, method, path)
-        await _enforce_consent(request, db, Audience.AGENT, agent, method, path)
-        # 4th stage — billing lock: a blocked agency writes NOTHING
-        # (403 billing.subscription_required), before the permission
-        # check so the front gets ONE stable code whatever the role.
-        await _enforce_billing_lock(db, agent, method, path)
-        # NULL permission on an AGENT binding = any authenticated agent
-        # (identity endpoints: /me, /logout) — symmetric with EXPAT.
-        if binding.permission is not None and binding.permission.key not in effective_permissions(
-            agent
-        ):
-            # ONE code for every matrix refusal; the missing key rides in
-            # params (a permission key, never an id) for the front's label.
-            raise ForbiddenError(
-                "Missing permission.",
-                code="permission.denied",
-                params={"permission": binding.permission.key},
-            )
+        impersonator_id = payload.get("impersonator_id")
+        request.state.impersonator_id = impersonator_id
+        await authorize_agent(
+            db, agent, method, path, binding=binding, impersonator_id=impersonator_id
+        )
         request.state.actor = agent
         return
 
     expat, payload = await _resolve_expat(request, db)
-    _enforce_impersonation(request, payload, Audience.EXPAT, method, path)
-    await _enforce_consent(request, db, Audience.EXPAT, expat, method, path)
+    _enforce_expat_impersonation(request, payload, method, path)
+    await _enforce_consent(
+        db,
+        Audience.EXPAT,
+        expat,
+        method,
+        path,
+        impersonated=request.state.impersonator_id is not None,
+    )
     # The canceled wall, per CASE (lot 10/08) — a closed agency's client
     # space stops accepting writes; the client's other agencies do not.
     await _enforce_expat_billing_lock(db, request, method)

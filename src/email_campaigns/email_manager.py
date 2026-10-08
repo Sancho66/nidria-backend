@@ -276,6 +276,13 @@ STATUS_REASON_PARAMS_KEY = "status_reason_params"
 #: membership's: `company_name` (Lemlist's), `status` and `last_state`
 #: (Lemlist's words when imported), `imported_at`.
 IMPORT_METADATA_KEY = "import"
+#: Where an internal smoke test campaign (scripts/email_admin.py,
+#: `smoke-start`) keeps its mark, in its `provider_metadata`: Nidria's own
+#: key, never overwritten by what Lemlist says. `created_profile_ids` (the
+#: client records the smoke test created, the only ones `smoke-cleanup`
+#: deletes), `reused_profile_ids`, `started_at`, `started_by_agent_id`, and
+#: once cleaned, `cleaned_at` and `cleaned_by_agent_id`.
+SMOKE_TEST_METADATA_KEY = "smoke_test"
 #: `status_reason` codes this module writes (see the module docstring).
 REASON_REMOVED = "removed"
 REASON_MOVED = "moved"
@@ -3342,6 +3349,7 @@ def _copy_step(
 
 __all__ = [
     "IMPORT_METADATA_KEY",
+    "SMOKE_TEST_METADATA_KEY",
     "Access",
     "EmailManager",
     "People",

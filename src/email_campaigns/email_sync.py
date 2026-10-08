@@ -137,6 +137,7 @@ from src.core.exceptions import (
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import (
     IMPORT_METADATA_KEY,
+    SMOKE_TEST_METADATA_KEY,
     STATUS_REASON_PARAMS_KEY,
     Access,
     EmailManager,
@@ -274,7 +275,9 @@ _MAX_REASON = 500
 #: what the provider says (a membership's reason params, a campaign's team,
 #: what an import noted on either).
 _MEMBER_OWN_KEYS = (STATUS_REASON_PARAMS_KEY, IMPORT_METADATA_KEY)
-_CAMPAIGN_OWN_KEYS = (CAMPAIGN_TEAM_KEY, IMPORT_METADATA_KEY)
+#: A smoke test campaign's mark (scripts/email_admin.py) is Nidria's own too:
+#: `smoke-cleanup` reads it to know which client records it may delete.
+_CAMPAIGN_OWN_KEYS = (CAMPAIGN_TEAM_KEY, IMPORT_METADATA_KEY, SMOKE_TEST_METADATA_KEY)
 #: An outbound email's content: Nidria's render, or (an imported campaign's)
 #: Lemlist's own template, personalized there and never seen by Nidria.
 _RENDERED = "RENDERED"
