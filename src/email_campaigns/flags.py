@@ -11,9 +11,15 @@ Three conditions make a real Lemlist call possible (N5): real effects
 Lemlist only when it is bound to the team the key opens (N4); an unbound
 agency runs in dry run.
 
-`external_effects_on` lives here and not in `providers/registry.py` (Prism's
-home for it): phase 1 ships no provider package. The registry of phase 2
-(`provider_for`) imports it from here.
+`external_effects_on` has its one definition here, not in
+`providers/registry.py` (Prism's home for it): the registry needs
+`email_live_for` from this module, and `lemlist_team` needs
+`external_effects_on`, so defining it in the registry would make a cycle. The
+registry re-exports it, so Prism's `from ...providers.registry import
+external_effects_on, provider_for` still reads.
+
+The dry-run prefix has its one definition in `providers/dry_run.py`
+(`DRY_RUN_PREFIX`, `is_dry_run_id`); this module reads it from there.
 """
 
 from __future__ import annotations
@@ -26,13 +32,10 @@ import httpx
 from shared.models.agency_email_module import AgencyEmailModule
 from src.core.config import Settings, get_settings
 from src.core.exceptions import ConflictError
+from src.email_campaigns.providers.dry_run import is_dry_run_id
 
 if TYPE_CHECKING:
     from src.email_campaigns.lemlist_team import LemlistTeam
-
-#: Every identifier the dry-run provider hands out starts with it, so a
-#: dry-run id is never mistaken for a real one (Prism's `DRY_RUN_PREFIX`).
-DRY_RUN_PREFIX = "dry_"
 
 #: What the module does for one agency right now. UNAVAILABLE: the agency is
 #: bound, effects are on, and Lemlist does not say which team the key opens.
@@ -80,7 +83,7 @@ def require_email_module(
 
 def is_real_provider_id(value: str | None) -> bool:
     """An identifier Lemlist handed out: present and not a dry-run one."""
-    return bool(value) and not str(value).startswith(DRY_RUN_PREFIX)
+    return bool(value) and not is_dry_run_id(value)
 
 
 def _bound_key_team(

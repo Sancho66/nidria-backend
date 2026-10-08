@@ -1,11 +1,13 @@
 """Pure database access of the Email module (no business rule here).
 
 Phase 1: the per-agency switch (`agency_email_module`) and the campaign facts
-the platform routes decide on. The agent routes add their queries later.
+the platform routes decide on. Phase 2: what the readiness rules read beyond
+a recipient's own row (`readiness.load_client_facts`). The agent routes add
+their queries later.
 """
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -14,8 +16,16 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from shared.models.agency import Agency
 from shared.models.agency_email_module import AgencyEmailModule
-from shared.models.email_campaign import EmailCampaign
-from src.email_campaigns.flags import DRY_RUN_PREFIX
+from shared.models.client_profile import ClientProfile
+from shared.models.email_campaign import (
+    BLOCKING_MEMBER_STATUSES,
+    LIVE_MEMBER_STATUSES,
+    EmailCampaign,
+    EmailCampaignMember,
+)
+from shared.models.expat_user import ExpatUser
+from src.client_profiles.identity import effective_email_sql
+from src.email_campaigns.providers.dry_run import DRY_RUN_PREFIX
 
 
 def real_provider_campaign() -> ColumnElement[bool]:
@@ -104,3 +114,83 @@ class EmailRepository:
             EmailCampaign.agency_id == agency_id, real_provider_campaign()
         )
         return int((await self.db.execute(stmt)).scalar_one())
+
+    # --- what the readiness rules read (phase 2) ----------------------------------
+
+    async def blocking_statuses(
+        self, agency_id: uuid.UUID, profile_ids: Sequence[uuid.UUID]
+    ) -> list[tuple[uuid.UUID, str]]:
+        """(client profile id, status) of every UNSUBSCRIBED or BOUNCED
+        membership of these profiles in the agency. Removed memberships
+        INCLUDED: `removed_at` is deliberately not read (decision A1, the
+        block outlives a removal)."""
+        if not profile_ids:
+            return []
+        stmt = select(EmailCampaignMember.client_profile_id, EmailCampaignMember.status).where(
+            EmailCampaignMember.agency_id == agency_id,
+            EmailCampaignMember.client_profile_id.in_(list(profile_ids)),
+            EmailCampaignMember.status.in_(BLOCKING_MEMBER_STATUSES),
+        )
+        return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]
+
+    async def live_members(
+        self, agency_id: uuid.UUID, profile_ids: Sequence[uuid.UUID]
+    ) -> list[EmailCampaignMember]:
+        """The live memberships (READY, QUEUED, ACTIVE, PAUSED) of these
+        profiles in the agency: one per profile at most
+        (`uq_email_member_live`)."""
+        if not profile_ids:
+            return []
+        stmt = select(EmailCampaignMember).where(
+            EmailCampaignMember.agency_id == agency_id,
+            EmailCampaignMember.client_profile_id.in_(list(profile_ids)),
+            EmailCampaignMember.status.in_(LIVE_MEMBER_STATUSES),
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def blocking_statuses_by_email(
+        self, agency_id: uuid.UUID, emails: Iterable[str]
+    ) -> list[tuple[str, uuid.UUID, str]]:
+        """(lower-cased effective email, client profile id, status) of every
+        UNSUBSCRIBED or BOUNCED membership of the agency whose profile's
+        effective address (rule N2) is one of `emails`, removed memberships
+        included (A1). Two records may share an address (risk R1)."""
+        wanted = sorted({email.lower() for email in emails if email})
+        if not wanted:
+            return []
+        address = func.lower(effective_email_sql())
+        stmt = (
+            select(address, EmailCampaignMember.client_profile_id, EmailCampaignMember.status)
+            .select_from(EmailCampaignMember)
+            .join(ClientProfile, ClientProfile.id == EmailCampaignMember.client_profile_id)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(
+                EmailCampaignMember.agency_id == agency_id,
+                EmailCampaignMember.status.in_(BLOCKING_MEMBER_STATUSES),
+                address.in_(wanted),
+            )
+        )
+        return [(row[0], row[1], row[2]) for row in (await self.db.execute(stmt)).all()]
+
+    async def live_members_by_email(
+        self, agency_id: uuid.UUID, emails: Iterable[str]
+    ) -> list[tuple[str, EmailCampaignMember]]:
+        """(lower-cased effective email, membership) of every live
+        membership of the agency whose profile's effective address is one of
+        `emails`, whichever profile holds it (risk R1)."""
+        wanted = sorted({email.lower() for email in emails if email})
+        if not wanted:
+            return []
+        address = func.lower(effective_email_sql())
+        stmt = (
+            select(address, EmailCampaignMember)
+            .select_from(EmailCampaignMember)
+            .join(ClientProfile, ClientProfile.id == EmailCampaignMember.client_profile_id)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(
+                EmailCampaignMember.agency_id == agency_id,
+                EmailCampaignMember.status.in_(LIVE_MEMBER_STATUSES),
+                address.in_(wanted),
+            )
+        )
+        return [(row[0], row[1]) for row in (await self.db.execute(stmt)).all()]

@@ -37,6 +37,7 @@ from src.client_profiles.client_profiles_schema import (
     ProfileCompletenessResponse,
     ProfileFieldSectionResponse,
 )
+from src.client_profiles.identity import effective_identity
 from src.core.bulk_delete import BulkDeleteReport, run_bulk_delete
 from src.core.enums import CaseStatus
 from src.core.exceptions import (
@@ -350,12 +351,13 @@ class ClientProfilesManager:
             profile_cases = by_expat.get(profile.expat_user_id, []) if profile.expat_user_id else []
             case_activity = [last_activity[c.id] for c in profile_cases if c.id in last_activity]
             account = profile.expat_user
+            identity = effective_identity(profile, account)
             items.append(
                 ClientProfileListItemResponse(
                     id=profile.id,
-                    first_name=account.first_name if account else (profile.first_name or ""),
-                    last_name=account.last_name if account else (profile.last_name or ""),
-                    email=account.email if account else (profile.email or ""),
+                    first_name=identity.first_name or "",
+                    last_name=identity.last_name or "",
+                    email=identity.email or "",
                     cases_count=len(profile_cases),
                     active_cases_count=sum(
                         1 for c in profile_cases if c.status != CaseStatus.CLOSED.value
@@ -406,12 +408,13 @@ class ClientProfilesManager:
                 else None
             )
         account = profile.expat_user
+        identity = effective_identity(profile, account)
         return ClientProfileResponse(
             id=profile.id,
             expat_user_id=profile.expat_user_id,
-            first_name=account.first_name if account else (profile.first_name or ""),
-            last_name=account.last_name if account else (profile.last_name or ""),
-            email=account.email if account else (profile.email or ""),
+            first_name=identity.first_name or "",
+            last_name=identity.last_name or "",
+            email=identity.email or "",
             # La langue : le registre de la FICHE prime, la préférence du
             # compte en repli, puis la langue de l'agence — la MÊME chaîne
             # que tous les envois au client (lot « la langue du client »,
@@ -1032,10 +1035,11 @@ class ClientProfilesManager:
                 "Complete the profile first and last names before creating client access.",
                 code="profile.missing_identity",
             )
+        identity = effective_identity(profile, account)
         request = CaseCreateRequest(
-            first_name=account.first_name if account else (profile.first_name or ""),
-            last_name=account.last_name if account else (profile.last_name or ""),
-            email=account.email if account else profile.email,
+            first_name=identity.first_name or "",
+            last_name=identity.last_name or "",
+            email=identity.email,
             # No language forced here (it used to be a hardcoded "fr" for a
             # profile without account): create_case settles it from THIS
             # record, then the account, then the agency's language — the

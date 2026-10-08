@@ -14,6 +14,13 @@ Two departures from Prism, both deliberate:
   can never switch a bound agency to dry run in silence. Failures are not
   cached: the next call asks again.
 
+One contract for the team, here and in the Lemlist adapter (`team_lookup`,
+`team_id`): a team id when Lemlist names it, `TeamUnknownError` (a
+`ProviderError`, code `TEAM_UNKNOWN`) when it does not, and None only where
+nothing is asked at all (real effects off: the dry run has no team).
+`key_team_id` is the adapter's `team_lookup`: the cached team's id, or the
+error.
+
 The key is never logged, printed nor kept in clear: the cache is indexed by
 its sha256, logs name it by `sha256[:12]`.
 """
@@ -30,10 +37,12 @@ import httpx
 
 from src.core.config import Settings, get_settings
 from src.email_campaigns.flags import external_effects_on
+from src.email_campaigns.providers.lemlist import LEMLIST_API_BASE_URL
+from src.email_campaigns.providers.lemlist import TeamUnknownError as TeamUnknownError
 
 logger = logging.getLogger(__name__)
 
-TEAM_URL = "https://api.lemlist.com/api/team"
+TEAM_URL = f"{LEMLIST_API_BASE_URL}/team"
 #: Where an Email campaign notes its team, in its provider metadata.
 CAMPAIGN_TEAM_KEY = "team_id"
 TEAM_TTL_SECONDS = 600.0
@@ -49,15 +58,6 @@ transport_override: httpx.BaseTransport | None = None
 class LemlistTeam:
     id: str
     name: str | None
-
-
-class TeamUnknownError(Exception):
-    """Lemlist did not say which team the key opens. `reason` is a short
-    stable word for logs and tests (`network`, `http_<status>`, `payload`)."""
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(f"Lemlist team unknown ({reason})")
-        self.reason = reason
 
 
 #: sha256(key) -> (monotonic time of the answer, team). Successes only.
@@ -98,6 +98,20 @@ def team_of_key(
     with _lock:
         _teams[digest] = (time.monotonic(), team)
     return team
+
+
+def key_team_id(
+    settings: Settings | None = None, *, transport: httpx.BaseTransport | None = None
+) -> str:
+    """The id of the team the platform key opens, for a caller that talks to
+    Lemlist for real (the adapter's `team_lookup`, wired by the registry).
+    Raises `TeamUnknownError` when Lemlist does not say, and also when real
+    effects are off: such a caller then has no team to stamp, which is never
+    turned into a silent None."""
+    team = team_of_key(settings, transport=transport)
+    if team is None:
+        raise TeamUnknownError("not_configured")
+    return team.id
 
 
 def _fetch_team(api_key: str, transport: httpx.BaseTransport | None) -> LemlistTeam:
