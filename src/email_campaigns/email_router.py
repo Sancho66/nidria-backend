@@ -260,7 +260,8 @@ async def delete_campaign(
 ) -> EmailCampaignDeleteRead:
     """Delete a campaign for good, with its steps, recipients, rendered emails
     and conversations. Its unsubscribed and bounced recipients stay blocked:
-    the agency's opposition list keeps their addresses. A campaign live at
+    the agency's opposition list keeps a fingerprint of their addresses,
+    never the addresses. A campaign live at
     Lemlist is paused there first (`email.sync`): Lemlist's API cannot
     delete one."""
     return await EmailManager(db).delete_campaign(agent, campaign_id)

@@ -5098,7 +5098,7 @@
           "email"
         ],
         "summary": "Delete Campaign",
-        "description": "Delete a campaign for good, with its steps, recipients, rendered emails\nand conversations. Its unsubscribed and bounced recipients stay blocked:\nthe agency's opposition list keeps their addresses. A campaign live at\nLemlist is paused there first (`email.sync`): Lemlist's API cannot\ndelete one.",
+        "description": "Delete a campaign for good, with its steps, recipients, rendered emails\nand conversations. Its unsubscribed and bounced recipients stay blocked:\nthe agency's opposition list keeps a fingerprint of their addresses,\nnever the addresses. A campaign live at\nLemlist is paused there first (`email.sync`): Lemlist's API cannot\ndelete one.",
         "operationId": "delete_campaign_email_campaigns__campaign_id__delete",
         "security": [
           {

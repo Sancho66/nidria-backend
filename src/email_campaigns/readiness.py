@@ -63,7 +63,8 @@ membership (`email_sync`); the memberships keep their history:
 2. an UNSUBSCRIBED or BOUNCED event applies to a removed membership too:
    its status changes, `removed_at` stays.
 Deleting a campaign is allowed (it was refused before the list): its
-memberships go, the list keeps their addresses. Lemlist's own unsubscribe
+memberships go, the list keeps a fingerprint of their addresses (never the
+addresses). Lemlist's own unsubscribe
 list holds the address too (spec section 18).
 
 Shared address (risk R1). `client_profile.email` is not unique in an agency,

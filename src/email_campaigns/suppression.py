@@ -2,7 +2,8 @@
 
 Alexandre's decision: no refusal to delete a campaign; a DURABLE opposition
 list instead. Each time an unsubscribe or a bounce is applied to a
-membership, the person's address goes on the list of the campaign's agency;
+membership, the fingerprint of the person's address goes on the list of the
+campaign's agency;
 the readiness rules read it (`readiness.load_client_facts`), so a person
 whose address is listed is never added nor launched again, whatever was
 deleted since (the campaign, the client record, a record merged away) and
