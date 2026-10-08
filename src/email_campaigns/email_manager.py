@@ -24,9 +24,13 @@ Rules that matter, in one place:
 - A client holds at most one live membership (ready, queued, active, paused)
   across the agency's campaigns. A move ends the old one (kept, pointing at
   the new one) and opens a new READY one: progress is never carried over.
-- The durable block (decision A1, rule N6): removing or moving an
-  UNSUBSCRIBED or BOUNCED membership ends it but keeps its status, and a
-  campaign holding one is never deleted (archive it instead).
+- The durable block (decision A1, rule N6, the opposition list of
+  08/10/2026): removing or moving an UNSUBSCRIBED or BOUNCED membership ends
+  it but keeps its status; the person's address is on the agency's
+  opposition list (`email_suppression`, written by `email_sync`), which
+  outlives the campaign and the client record, so deleting a campaign that
+  holds one is allowed. A person blocked for good is never moved to another
+  campaign (`email.member_blocked`).
 - The provider's sequence is positional: Nidria step N is the provider's Nth
   step. Until the provider holds a lead, every structural change remaps the
   provider steps by position. Once it does, Lemlist only adds steps after
@@ -222,6 +226,7 @@ from src.email_campaigns.readiness import (
     client_issues,
     daily_limit_gate,
     day_start,
+    durable_block,
     load_client_facts,
     membership_issues,
     not_launched,
@@ -1294,21 +1299,15 @@ class EmailManager:
         """Delete a campaign for good: its steps, AI variables, memberships,
         renders, messages and provider events.
 
-        Refused while it holds an unsubscribed or bounced membership
-        (decision A1: the block lives there; archive the campaign instead).
-        Lemlist's API cannot delete a campaign: one live in the current team
-        is paused there first (an archived one already is), with
-        `email.sync`, and stays there, to delete in Lemlist's app. Another
-        team's campaign goes from Nidria only."""
+        Its unsubscribed and bounced recipients stay blocked: their
+        addresses are on the agency's opposition list (`email_suppression`),
+        which only loses the membership they came from. Lemlist's API cannot
+        delete a campaign: one live in the current team is paused there
+        first (an archived one already is), with `email.sync`, and stays
+        there, to delete in Lemlist's app. Another team's campaign goes from
+        Nidria only."""
         access = await self.access(agent, Permission.EMAIL_MANAGE)
         campaign = await self.campaign_for(access, campaign_id, lock=True)
-        blocked = await self.repo.blocking_member_count(campaign.id)
-        if blocked:
-            raise ConflictError(
-                "This campaign holds unsubscribed or bounced recipients: archive it instead.",
-                code="email.campaign_has_blocked_members",
-                params={"count": blocked},
-            )
         name = campaign.name
         paused = kept = False
         if is_real_provider_id(campaign.provider_campaign_id) and not await self.team_mismatch(
@@ -2332,20 +2331,24 @@ class EmailManager:
                 code="email.campaign_archived",
             )
         rows, results = await self._owned_rows(access, ids, Permission.EMAIL_ENROLL)
+        facts = await self.client_facts(access, rows)
         for row in rows:
-            results.append(await self._move_one(access, row, target))
+            results.append(await self._move_one(access, row, target, facts))
         await self.db.commit()
         return _summary(ids, results)
 
     async def _move_one(
-        self, access: Access, row: MemberRow, target: EmailCampaign
+        self, access: Access, row: MemberRow, target: EmailCampaign, facts: ClientFacts
     ) -> EmailActionResultRow:
         member, profile = row.member, row.profile
         if row.campaign.id == target.id:
             return _row_result(member, ok=False, code="email.same_campaign")
-        if member.status in BLOCKING:
+        # Moving is enrolling elsewhere: never someone blocked for good (this
+        # membership, another of the person's, or its address on the list).
+        blocked = durable_block(profile.id, client_identity(profile, row.account).email, facts)
+        if blocked is not None:
             return _row_result(
-                member, ok=False, code="email.member_blocked", params={"status": member.status}
+                member, ok=False, code="email.member_blocked", params={"status": blocked}
             )
         if await self.repo.open_in_campaign(target.id, [profile.id]):
             return _row_result(member, ok=False, code="email.already_in_campaign")
@@ -2573,8 +2576,9 @@ class EmailManager:
         its time, in the viewer's timezone), and each launched lead's next
         emails, an estimated day in its campaign's timezone, never an hour:
         `schedule`, the one estimate the member drawer shows too. Leads
-        without a date (not launched, paused, campaign not active) are
-        counted, never placed. At most 62 days."""
+        without a date (not launched, paused, campaign not active, launched
+        in a dry run) are counted, each under its reason, never placed. At
+        most 62 days."""
         access = await self.access(agent)
         if end < start:
             raise _invalid_period()
@@ -2676,7 +2680,7 @@ class EmailManager:
                 i.full_name,
             )
         )
-        waiting, held = await self.repo.outreach_held(access.agency_id, filters)
+        waiting, held, dry_run = await self.repo.outreach_held(access.agency_id, filters)
         return EmailOutreachRead(
             start=start,
             end=end,
@@ -2685,6 +2689,7 @@ class EmailManager:
             truncated=len(items) > OUTREACH_LIMIT,
             waiting_launch=waiting,
             on_hold=held,
+            dry_run=dry_run,
             overdue=overdue,
             campaigns=[
                 EmailOutreachCampaign(
@@ -2761,20 +2766,26 @@ class EmailManager:
         client_statuses: Sequence[str],
         has_email: bool | None,
         campaign_id: uuid.UUID | str | None,
+        preferred_langs: Sequence[str] = (),
         sort_by: str,
         sort_order: str,
         page: int,
         page_size: int,
     ) -> EmailCandidateClientList:
         """The Clients page's list (its criteria, sort and paging, decision
-        A15), with where each client stands in the agency's campaigns."""
+        A15), with where each client stands in the agency's campaigns.
+        `preferred_langs`: the client's EFFECTIVE language (the record's,
+        else its account's, else the agency's) is one of them."""
         access = await self.access(agent)
+        agency = await self.agency(access) if preferred_langs else None
         rows, total = await self.repo.candidate_clients(
             access.agency_id,
             criteria,
             client_statuses=client_statuses,
             has_email=has_email,
             campaign_id=campaign_id,
+            preferred_langs=preferred_langs,
+            agency_default_lang=agency.default_language if agency is not None else None,
             sort_by=sort_by,
             sort_order=sort_order,
             page=page,

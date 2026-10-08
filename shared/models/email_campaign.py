@@ -15,6 +15,10 @@ the row because the module writes nothing to `activity_log`.
 Every column with a default carries it on BOTH sides (Python `default` and
 `server_default`): the test database is born from these models, dev and
 production from the migration, and the two must agree (lesson D15).
+
+`email_suppression` is the agency's opposition list (decision of
+08/10/2026): a fingerprint of every address that unsubscribed or bounced,
+kept whatever happens to the campaign or the client record it came from.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from typing import Any
 
 from sqlalchemy import (
     DDL,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -71,6 +76,8 @@ TERMINAL_MEMBER_STATUSES = (
 )
 #: Block the person for good within the agency (N6): Nidria writes to people.
 BLOCKING_MEMBER_STATUSES = ("EMAIL_UNSUBSCRIBED", "EMAIL_BOUNCED")
+#: Why an address is on the opposition list. An unsubscribe outranks a bounce.
+SUPPRESSION_REASONS = ("UNSUBSCRIBED", "BOUNCED")
 EVENT_TYPES = (
     "SENT",
     "OPENED",
@@ -82,6 +89,10 @@ EVENT_TYPES = (
     "PAUSED",
     "RESUMED",
     "COMPLETED",
+    # One variable of a contact unsubscribed at the provider (Lemlist's
+    # `variableUnsubscribed`): stored and counted, never applied, since the
+    # provider does not document which variable it names.
+    "VARIABLE_UNSUBSCRIBED",
 )
 DELAY_UNITS = ("DAYS", "WEEKS")
 MESSAGE_DIRECTIONS = ("OUTBOUND", "INBOUND")
@@ -344,8 +355,12 @@ class EmailMemberRender(UUIDPrimaryKeyMixin, Base):
 class EmailProviderEvent(UUIDPrimaryKeyMixin, Base):
     """What the provider reported, raw and normalized. `provider_event_id` makes
     every ingestion idempotent: an event delivered by the webhook, the job and a
-    manual sync is stored once. Only an event whose campaign is known is
-    stored, hence a NOT NULL agency."""
+    manual sync is stored once. Only an event whose agency is known is
+    stored, hence a NOT NULL agency: its campaign's, or for an event about a
+    whole contact without a campaign Nidria runs (Lemlist's
+    `entityUnsubscribed`, `variableUnsubscribed`), the agency bound to its
+    Lemlist team; `campaign_id` is then the campaign of the membership it is
+    filed under, if any."""
 
     __tablename__ = "email_provider_event"
     __table_args__ = (
@@ -468,6 +483,37 @@ class EmailMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=_EMPTY_JSON
+    )
+
+
+class EmailSuppression(UUIDPrimaryKeyMixin, Base):
+    """The agency's opposition list (decision of 08/10/2026): one row per
+    address that unsubscribed or bounced, written each time such a status
+    is applied to a membership, read wherever the durable block is
+    (`readiness`). It keeps only a fingerprint of the address
+    (`email_campaigns.suppression.email_hash`), so it outlives the campaign
+    and the client record it came from: deleting either never lifts the
+    block. It goes with its agency (CASCADE). An unsubscribe outranks a
+    bounce, never the reverse; `source_member_id` is the membership that
+    brought the reason kept, NULL once that membership is gone."""
+
+    __tablename__ = "email_suppression"
+    __table_args__ = (
+        UniqueConstraint("agency_id", "email_hash", name="uq_email_suppression_address"),
+        CheckConstraint("reason IN ('UNSUBSCRIBED', 'BOUNCED')", name="reason"),
+    )
+
+    agency_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agency.id", ondelete="CASCADE"), nullable=False
+    )
+    #: sha256, in hexadecimal, of the address lower-cased without any blank.
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_member_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("email_campaign_member.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

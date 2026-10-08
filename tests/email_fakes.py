@@ -115,9 +115,11 @@ class FakeProvider:
     process: it never opens a socket.
 
     Nidria additions: `failures` also covers the per-lead operations
-    (pause, resume, remove: keyed by lead id) and the campaign's pause and
-    step parking (keyed by campaign id and step id), so a bulk action's
-    failed row and a refused gesture can be shown."""
+    (pause, resume, remove: keyed by lead id; adding a lead: keyed by its
+    address) and the campaign's pause and step parking (keyed by campaign id
+    and step id), so a bulk action's failed row and a refused gesture can be
+    shown. An event without a campaign id (an event about a whole contact)
+    is in every campaign's read of the activities."""
 
     name = "LEMLIST"
 
@@ -236,6 +238,7 @@ class FakeProvider:
 
     def add_contact(self, ref: CampaignRef, lead: LeadSpec) -> LeadRef:
         self._op("add_contact", email=lead.email, first=lead.first_name, last=lead.last_name)
+        self._fail("add_contact", lead.email)
         added = LeadRef(self._id("lea"), self._id("ctc"))
         self.added.setdefault(ref.campaign_id, []).append(added)
         return added
@@ -295,7 +298,7 @@ class FakeProvider:
         self._op("sync_campaign", campaign=ref.campaign_id)
         self._fail("sync_campaign", ref.campaign_id)
         self.since.append(since)
-        return [e for e in self.events if e.campaign_id in (ref.campaign_id, "cam_not_ours")]
+        return [e for e in self.events if e.campaign_id in (ref.campaign_id, "cam_not_ours", None)]
 
     def sync_contact(self, ref: CampaignRef, lead: LeadRef) -> list[ProviderEvent]:
         return []

@@ -121,9 +121,40 @@ class AgencyEmailModuleResponse(BaseModel):
 
 
 class AgencyEmailModuleUpdateRequest(BaseModel):
-    """PATCH /agencies/{agency_id}/email-module: the agency's switch."""
+    """PATCH /agencies/{agency_id}/email-module: the agency's switch.
+
+    `pause_campaigns`, read when switching OFF only: every ACTIVE campaign
+    of the agency is paused first, at Lemlist and in Nidria (the
+    `pause-all` gesture), then the module is switched off. A campaign still
+    ACTIVE at Lemlist after that keeps the module on (409
+    `email.campaigns_live`). Without it, an ACTIVE campaign at Lemlist
+    refuses the switch-off, as before."""
 
     enabled: bool
+    pause_campaigns: bool = False
+
+
+class EmailPauseFailure(BaseModel):
+    """A campaign the pause could not stop, and why (an `email.*` code)."""
+
+    campaign_id: uuid.UUID
+    code: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmailPauseAllResult(BaseModel):
+    """POST /agencies/{agency_id}/email-module/pause-all: every ACTIVE
+    campaign of the agency paused, at Lemlist and in Nidria. Idempotent: a
+    second call pauses nothing more."""
+
+    #: ACTIVE campaigns paused by this call.
+    paused: int
+    #: Campaigns that were not ACTIVE (paused, draft or archived): nothing to do.
+    already_paused: int
+    #: ACTIVE campaigns left running, each with its code.
+    failed: list[EmailPauseFailure] = Field(default_factory=list)
+    #: The module's state after the call.
+    module: AgencyEmailModuleResponse
 
 
 # ── Platform: the Lemlist account (phase 4, spec 10.5) ──────────────────────
@@ -186,9 +217,12 @@ class EmailProviderHookRead(BaseModel):
 class EmailProviderWebhookResult(BaseModel):
     """POST /admin/email/provider/webhook: the team's webhook for
     EMAIL_WEBHOOK_URL, created by this call or found already (idempotent).
-    Never its secret."""
+    With `recreate`, the existing one for that URL is deleted and created
+    again with the current EMAIL_WEBHOOK_SECRET. Never its secret."""
 
     created: bool
+    #: An existing webhook of that URL was deleted, then created again.
+    recreated: bool
     webhook: EmailProviderHookRead
 
 
@@ -199,7 +233,9 @@ class EmailWebhookAck(BaseModel):
     """What the webhook did with one event (Prism's answer): stored now,
     already stored (a redelivery, or the job / a Sync read it first), and
     matched to a membership. An event of a type Nidria does not track, or
-    of no campaign Nidria runs, is acknowledged and not stored."""
+    of no campaign Nidria runs, is acknowledged and not stored; an event
+    about a whole contact (an unsubscribe since 30/03/2026) is stored for
+    the agency bound to its Lemlist team, matched or not."""
 
     stored: bool
     duplicate: bool
@@ -1295,7 +1331,11 @@ class EmailOutreachRead(BaseModel):
     truncated: bool = False
     #: Leads not launched yet: no date until someone launches them.
     waiting_launch: int
-    #: Launched leads with no next date: paused, or their campaign not active.
+    #: Launched leads with no next date: paused, or their campaign not active
+    #: (a dry run's leads are counted apart, in `dry_run`).
     on_hold: int
+    #: Leads launched in a dry run whose sequence has not ended (the hold
+    #: `dry_run`): nothing is sent to them, so they are never dated.
+    dry_run: int
     overdue: int
     campaigns: list[EmailOutreachCampaign]

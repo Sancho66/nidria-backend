@@ -3,7 +3,8 @@
 PUBLIC (a real binding line, no token), authenticated by the body's
 `secret` against EMAIL_WEBHOOK_SECRET (`hmac.compare_digest`): 403
 `email.webhook_forbidden` when it is absent, wrong, or not configured.
-Rate limited like `/webhooks/docuseal` (600 calls a minute). The answer is
+Rate limited like `/webhooks/docuseal` (600 calls a minute), per real client
+IP (the first X-Forwarded-For hop). The answer is
 Prism's `{stored, duplicate, matched}`; an event of a type Nidria does not
 track, or of no campaign Nidria runs, is acknowledged and not stored; a
 known campaign's event whose lead matches nobody is stored unmatched. The
@@ -298,17 +299,28 @@ async def test_a_pause_seen_by_the_webhook_is_read_again_from_lemlist(
 # ── the rate limit ───────────────────────────────────────────────────────────
 
 
-async def test_the_webhook_is_rate_limited(
+async def test_the_webhook_is_rate_limited_per_real_client_ip(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The mechanism of `/webhooks/docuseal` (`src/core/ratelimit.py`), per
-    client IP (behind Fly's proxy: in effect global, risk R6); 600 a minute
-    in production, 3 here. It answers before the secret is even read."""
+    REAL client IP: the first X-Forwarded-For hop behind Fly's proxy
+    (`core.http.client_ip`, the consent trace's helper; decision of
+    08/10/2026, risk R6), else the peer; 600 a minute in production, 3
+    here. It answers before the secret is even read."""
     monkeypatch.setattr(email_router, "WEBHOOK_RATE_LIMIT", 3)
+    first = {"x-forwarded-for": "203.0.113.7, 10.0.0.1"}
+    answers = [
+        (await client.post(URL, json={"secret": "x"}, headers=first)).status_code for _ in range(4)
+    ]
+    assert answers == [403, 403, 403, 429]
+    # Another client behind the same proxy hop keeps its own window...
+    other = {"x-forwarded-for": "198.51.100.9, 10.0.0.1"}
+    assert (await client.post(URL, json={"secret": "x"}, headers=other)).status_code == 403
+    # ...and so does a call without the header (the direct peer).
     answers = [(await client.post(URL, json={"secret": "x"})).status_code for _ in range(4)]
     assert answers == [403, 403, 403, 429]
-    count = await client.post(URL, json={"secret": "x"})
-    assert count.status_code == 429
+    again = await client.post(URL, json={"secret": "x"}, headers=first)
+    assert again.status_code == 429
 
 
 async def test_nothing_is_stored_twice_under_concurrent_deliveries(

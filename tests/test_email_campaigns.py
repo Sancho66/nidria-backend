@@ -901,7 +901,7 @@ async def _step_ids(db: AsyncSession, campaign_id: Any) -> list[uuid.UUID]:
     return [row[0] for row in rows.all()]
 
 
-async def test_a_removal_keeps_an_unsubscribe_and_its_campaign_is_never_deleted(
+async def test_a_removal_keeps_an_unsubscribe_and_its_campaign_can_be_deleted(
     client: AsyncClient,
     db_session: AsyncSession,
     email_world: EmailWorld,
@@ -909,9 +909,10 @@ async def test_a_removal_keeps_an_unsubscribe_and_its_campaign_is_never_deleted(
     make_client_profile: MakeClientProfile,
     make_email_member: MakeEmailMember,
 ) -> None:
-    """Decision A1 (rule N6): the block lives on the membership; a removal
-    ends it at Lemlist too but keeps its status, and the campaign holding it
-    is refused deletion (archiving stays possible)."""
+    """Decision A1 (rule N6): a removal ends the membership at Lemlist too
+    but keeps its status, and the person is never moved elsewhere. Since the
+    opposition list (08/10/2026), the campaign holding it is deleted like any
+    other (the list keeps the address: `test_email_suppression`)."""
     headers = email_world.headers
     cid = (await campaign_via_api(client, headers, "Blocked"))["id"]
     await make_live(db_session, cid)
@@ -940,15 +941,11 @@ async def test_a_removal_keeps_an_unsubscribe_and_its_campaign_is_never_deleted(
     assert moved["rows"][0]["code"] == "email.member_blocked"
     assert moved["rows"][0]["params"] == {"status": "EMAIL_UNSUBSCRIBED"}
 
-    refused = await client.delete(f"/email/campaigns/{cid}", headers=headers)
-    assert refused.status_code == 409
-    assert refused.json()["code"] == "email.campaign_has_blocked_members"
-    assert refused.json()["params"] == {"count": 1}
-    assert "pause_campaign" not in fake_email_provider.names()
-    archived = await client.patch(
-        f"/email/campaigns/{cid}", json={"status": "ARCHIVED"}, headers=headers
-    )
-    assert archived.status_code == 200 and archived.json()["status"] == "ARCHIVED"
+    deleted = await client.delete(f"/email/campaigns/{cid}", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+    assert (deleted.json()["provider_paused"], deleted.json()["provider_kept"]) == (True, True)
+    assert ("pause_campaign", {"campaign": "cam_live"}) in fake_email_provider.ops
+    assert await members_of(db_session, cid) == []
 
 
 async def test_moving_an_ended_membership_of_someone_live_elsewhere_is_refused(

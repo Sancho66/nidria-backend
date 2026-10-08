@@ -99,6 +99,7 @@ async def test_the_queue_shows_what_happened_and_what_comes_next(
     # Cleo is paused, Dan not launched: no date for them, counted apart.
     assert not any(i["full_name"] in ("Cleo Paused", "Dan Waiting") for i in queue["items"])
     assert (queue["waiting_launch"], queue["on_hold"], queue["overdue"]) == (1, 1, 0)
+    assert queue["dry_run"] == 0  # launched for real
     # The past keeps its real time; an estimate has a day only.
     sent = next(i for i in queue["items"] if i["kind"] == "SENT" and i["full_name"] == "Ana Lopez")
     assert sent["at"] is not None and sent["estimated"] is False
@@ -297,21 +298,46 @@ async def test_the_queue_filters_on_the_sender_chosen_in_nidria(
     assert senders == {"Sent from": "sender@nidria.test", "Default": None}
 
 
-async def test_a_dry_run_lead_is_never_dated(
+async def test_a_dry_run_lead_is_never_dated_and_counted_apart(
     client: AsyncClient,
     db_session: AsyncSession,
     email_world: EmailWorld,
     make_client_profile: MakeClientProfile,
 ) -> None:
+    """A lead launched in a dry run (its hold `dry_run`) is counted in
+    `dry_run`, filters respected, and only there: never "on hold", even
+    paused or in a paused campaign (`schedule.hold_of` says dry_run first)."""
     cid, _, lead = await ready_campaign(
-        client, db_session, email_world, make_client_profile, ("Ana Dry",)
+        client, db_session, email_world, make_client_profile, ("Ana Dry", "Ben Dry")
     )
     result = (await launch_via_api(client, email_world.headers, cid)).json()
-    assert result["external"] is False
+    assert result["external"] is False and result["members_pushed"] == 2
     queue = await _queue(client, email_world, **_window())
     assert queue["items"] == [] and queue["overdue"] == 0
+    assert (queue["dry_run"], queue["on_hold"], queue["waiting_launch"]) == (2, 0, 0)
     drawer = await _drawer(client, email_world, lead["Ana Dry"])
     assert drawer["schedule_hold"] == {"code": "dry_run", "params": {}}
+    # The queue's filters hold for the count too.
+    assert (await _queue(client, email_world, **_window(), campaign_id=cid))["dry_run"] == 2
+    other = await _queue(client, email_world, **_window(), campaign_id=str(uuid.uuid4()))
+    assert other["dry_run"] == 0
+    searched = await _queue(client, email_world, **_window(), search="ben@acme")
+    assert searched["dry_run"] == 1
+    ended = await _queue(client, email_world, **_window(), status=["EMAIL_REPLIED"])
+    assert ended["dry_run"] == 0
+    # Paused, or in a paused campaign: still a dry run's, never on hold.
+    assert (await act(client, email_world.headers, "pause", [lead["Ana Dry"]]))["done"] == 1
+    await set_status(client, email_world.headers, cid, "PAUSED")
+    held = await _queue(client, email_world, **_window())
+    assert (held["dry_run"], held["on_hold"]) == (2, 0)
+    # A sequence that ended is nobody's simulation any more.
+    await db_session.execute(
+        update(EmailCampaignMember)
+        .where(EmailCampaignMember.id == lead["Ben Dry"])
+        .values(status="EMAIL_COMPLETED")
+    )
+    await db_session.commit()
+    assert (await _queue(client, email_world, **_window()))["dry_run"] == 1
 
 
 async def test_a_paused_campaigns_leads_are_on_hold_not_dated(

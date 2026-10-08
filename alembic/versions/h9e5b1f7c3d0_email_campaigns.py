@@ -1,12 +1,16 @@
 """Email module: per-agency activation, campaigns, steps, AI variables,
-memberships, renders, provider events and messages.
+memberships, renders, provider events, messages and the opposition list.
 
 Ported from Prism, where it took two revisions (d1e7a5c3b9f2 + f4c2a8d6b1e3);
-Nidria merges them into this one. Additive only: eight new tables, their
+Nidria merges them into this one. Additive only: nine new tables, their
 indexes, deny-all row-level security on each (no policy, the Nidria rule),
 and the trigger that freezes a render once its email is sent. No existing
 table is touched, nothing to backfill: the tables are born empty and the
 module is closed by default (EMAIL_MODULE_ENABLED=false, no agency row).
+
+`email_suppression` (the agency's opposition list, decision of 08/10/2026)
+was added to this revision in place: it had only run on throwaway
+databases.
 
 Every constraint and index carries an explicit name, identical to what the
 models produce through the naming convention, so a schema born from this
@@ -503,11 +507,45 @@ def upgrade() -> None:
     )
     op.execute("ALTER TABLE email_message ENABLE ROW LEVEL SECURITY")
 
+    # --- email_suppression: the agency's opposition list (no updated_at) ----------
+    op.create_table(
+        "email_suppression",
+        sa.Column("id", _UUID, nullable=False),
+        sa.Column("agency_id", _UUID, nullable=False),
+        sa.Column("email_hash", sa.String(64), nullable=False),
+        sa.Column("reason", sa.String(20), nullable=False),
+        sa.Column("source_member_id", _UUID, nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=_NOW),
+        sa.PrimaryKeyConstraint("id", name="pk_email_suppression"),
+        sa.ForeignKeyConstraint(
+            ["agency_id"],
+            ["agency.id"],
+            name="fk_email_suppression_agency_id_agency",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_member_id"],
+            ["email_campaign_member.id"],
+            name="fk_email_suppression_source_member_id_email_campaign_member",
+            ondelete="SET NULL",
+        ),
+        # One row per address and agency: an unsubscribe outranks a bounce.
+        sa.UniqueConstraint("agency_id", "email_hash", name="uq_email_suppression_address"),
+        sa.CheckConstraint(
+            "reason IN ('UNSUBSCRIBED', 'BOUNCED')", name=op.f("ck_email_suppression_reason")
+        ),
+    )
+    op.create_index(
+        "ix_email_suppression_source_member_id", "email_suppression", ["source_member_id"]
+    )
+    op.execute("ALTER TABLE email_suppression ENABLE ROW LEVEL SECURITY")
+
 
 def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS email_render_freeze ON email_member_render")
     op.execute("DROP FUNCTION IF EXISTS email_render_freeze()")
     # Children first; dropping a table drops its indexes and constraints.
+    op.drop_table("email_suppression")
     op.drop_table("email_message")
     op.drop_table("email_provider_event")
     op.drop_table("email_member_render")

@@ -14,6 +14,7 @@ from src.consents.consents_schema import (
 )
 from src.core.dependencies import get_current_agent, get_current_expat, get_db
 from src.core.enums import Audience
+from src.core.http import client_ip
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 
@@ -44,15 +45,6 @@ AgentDep = Annotated[Agent, Depends(get_current_agent)]
 ExpatDep = Annotated[ExpatUser, Depends(get_current_expat)]
 
 
-def _client_ip(request: Request) -> str | None:
-    """First X-Forwarded-For hop (the original client, behind Fly's
-    proxy), else the direct peer."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
-
-
 @router.get("/preview", response_model=PendingDocumentResponse)
 async def preview_canonical_document(
     agent: AgentDep, db: DbDep, type: str
@@ -79,7 +71,7 @@ async def agent_pending(agent: AgentDep, db: DbDep) -> list[PendingDocumentRespo
 async def agent_accept(
     body: ConsentAcceptRequest, request: Request, agent: AgentDep, db: DbDep
 ) -> ConsentAcceptResponse:
-    return await ConsentsManager(db).accept_as_agent(agent, body, _client_ip(request))
+    return await ConsentsManager(db).accept_as_agent(agent, body, client_ip(request))
 
 
 @router.get("/expat/pending", response_model=list[ExpatAgencyPendingResponse])
@@ -93,7 +85,7 @@ async def expat_pending(expat: ExpatDep, db: DbDep) -> list[ExpatAgencyPendingRe
 async def expat_accept(
     body: ConsentAcceptRequest, request: Request, expat: ExpatDep, db: DbDep
 ) -> ConsentAcceptResponse:
-    return await ConsentsManager(db).accept_as_expat(expat, body, _client_ip(request))
+    return await ConsentsManager(db).accept_as_expat(expat, body, client_ip(request))
 
 
 @router.get("/external/pending", response_model=list[ExpatAgencyPendingResponse])
@@ -107,4 +99,4 @@ async def external_pending(agent: AgentDep, db: DbDep) -> list[ExpatAgencyPendin
 async def external_accept(
     body: ConsentAcceptRequest, request: Request, agent: AgentDep, db: DbDep
 ) -> ConsentAcceptResponse:
-    return await ConsentsManager(db).accept_as_external(agent, body, _client_ip(request))
+    return await ConsentsManager(db).accept_as_external(agent, body, client_ip(request))

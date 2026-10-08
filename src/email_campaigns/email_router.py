@@ -16,9 +16,10 @@ parameters are repeated (`?status=A&status=B`), never comma-joined.
 Phase 4: Lemlist's activity webhook, `POST /webhooks/lemlist`, on its own
 router (`webhook_router`, bindings `WEBHOOK_BINDINGS`): audience PUBLIC (a
 real, auditable binding line), authenticated by the body's `secret`, rate
-limited like `/webhooks/docuseal` (`src/core/ratelimit.py`, per client IP:
-behind Fly's proxy the IP is likely the proxy's, so the limit is in effect
-global, risk R6), 600 calls a minute since Lemlist retries in bursts.
+limited like `/webhooks/docuseal` (`src/core/ratelimit.py`), 600 calls a
+minute since Lemlist retries in bursts, counted per REAL client IP: the
+first X-Forwarded-For hop behind Fly's proxy (`core.http.client_ip`, the
+helper of the consent trace; decision of 08/10/2026, risk R6).
 """
 
 import json
@@ -36,6 +37,8 @@ from src.core import ratelimit
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.exceptions import TooManyRequestsError
+from src.core.http import client_ip
+from src.core.i18n import Language
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import EmailManager
@@ -145,7 +148,8 @@ BINDINGS = [
 #: Lemlist's activity webhook: no token, its secret is in the body.
 webhook_router = APIRouter(tags=["email"])
 WEBHOOK_BINDINGS = [RouteBinding("POST", "/webhooks/lemlist", Audience.PUBLIC)]
-#: Calls a minute per client IP (Lemlist retries a failed delivery in bursts).
+#: Calls a minute per client IP, the real one (`core.http.client_ip`):
+#: Lemlist retries a failed delivery in bursts.
 WEBHOOK_RATE_LIMIT = 600
 WEBHOOK_RATE_WINDOW_SECONDS = 60
 
@@ -242,9 +246,10 @@ async def delete_campaign(
     campaign_id: uuid.UUID, agent: AgentDep, db: DbDep
 ) -> EmailCampaignDeleteRead:
     """Delete a campaign for good, with its steps, recipients, rendered emails
-    and conversations. Refused while it holds unsubscribed or bounced
-    recipients (archive it). A campaign live at Lemlist is paused there
-    first (`email.sync`): Lemlist's API cannot delete one."""
+    and conversations. Its unsubscribed and bounced recipients stay blocked:
+    the agency's opposition list keeps their addresses. A campaign live at
+    Lemlist is paused there first (`email.sync`): Lemlist's API cannot
+    delete one."""
     return await EmailManager(db).delete_campaign(agent, campaign_id)
 
 
@@ -577,6 +582,15 @@ async def candidate_client_profiles(
         list[Literal["prospect", "client"]] | None,
         Query(description="Repeated; the derived client status, as on the Leads list."),
     ] = None,
+    preferred_lang: Annotated[
+        list[Language] | None,
+        Query(
+            description=(
+                "Repeated; the client's EFFECTIVE language: the record's, else its "
+                "account's, else the agency's."
+            )
+        ),
+    ] = None,
 ) -> EmailCandidateClientList:
     """Clients to add, with the Clients page's filters, sort and paging, and
     the wizard's own; by default only clients with an email."""
@@ -593,6 +607,7 @@ async def candidate_client_profiles(
         client_statuses=client_status or [],
         has_email=None if has_email == "any" else has_email,
         campaign_id=campaign_id,
+        preferred_langs=preferred_lang or [],
         sort_by=sort_by,
         sort_order=sort_order,
         page=page,
@@ -671,15 +686,16 @@ async def add_members(
     },
 )
 async def lemlist_webhook(request: Request, db: DbDep) -> EmailWebhookAck:
-    """Lemlist's activity webhook. 429 past 600 calls a minute; 403
-    `email.webhook_forbidden` unless EMAIL_WEBHOOK_SECRET is set and the
-    body's `secret` matches it. Each event is stored once (whoever reads it
-    first: this webhook, the job or a Sync); an event of a type Nidria does
-    not track, or of no campaign Nidria runs, is acknowledged and not
-    stored. Depends on the env only, never on an agency's switch."""
-    client_ip = request.client.host if request.client else "unknown"
+    """Lemlist's activity webhook. 429 past 600 calls a minute from one
+    client IP; 403 `email.webhook_forbidden` unless EMAIL_WEBHOOK_SECRET is
+    set and the body's `secret` matches it. Each event is stored once
+    (whoever reads it first: this webhook, the job or a Sync); an event of a
+    type Nidria does not track, or of no campaign Nidria runs, is
+    acknowledged and not stored, unless it is about a whole contact
+    (`entityUnsubscribed`, `variableUnsubscribed`) of a team bound to an
+    agency. Depends on the env only, never on an agency's switch."""
     if not ratelimit.allow(
-        f"lemlist-webhook:{client_ip}",
+        f"lemlist-webhook:{client_ip(request) or 'unknown'}",
         limit=WEBHOOK_RATE_LIMIT,
         window_seconds=WEBHOOK_RATE_WINDOW_SECONDS,
     ):

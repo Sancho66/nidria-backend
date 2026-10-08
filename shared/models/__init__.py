@@ -34,6 +34,7 @@ from shared.models.email_campaign import (
     EmailMemberRender,
     EmailMessage,
     EmailProviderEvent,
+    EmailSuppression,
 )
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
@@ -92,6 +93,7 @@ __all__ = [
     "EmailMemberRender",
     "EmailMessage",
     "EmailProviderEvent",
+    "EmailSuppression",
     "CaseNote",
     "CaseStepCost",
     "CaseStepParticipant",

@@ -17,9 +17,11 @@ from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.company_profile import CompanyProfileRole
 from shared.models.email_campaign import EmailCampaignMember
 from tests.plugins.case_plugin import MakeClientCase
@@ -348,6 +350,60 @@ async def test_the_wizard_lists_clients_exactly_as_the_clients_page_does(
     assert shown[str(dan.id)]["client_status"] == "client"
     assert shown[str(ben.id)]["client_status"] == "client"
     assert shown[str(ana.id)]["client_status"] == "prospect"
+
+
+async def test_the_wizard_filters_clients_on_their_effective_language(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    make_client_profile: MakeClientProfile,
+    make_expat_user: MakeExpatUser,
+) -> None:
+    """`preferred_lang`, repeated: the language a client's emails go in, the
+    record's, else its linked account's, else the agency's (the chain of
+    every client send, `resolve_notification_lang_client`); values checked
+    as a record's `preferred_lang` is."""
+    agency, headers = email_world.agency_id, email_world.headers
+    await db_session.execute(
+        update(Agency).where(Agency.id == agency).values(default_language="it")
+    )
+    await db_session.commit()
+    ana = await make_client_profile(
+        agency_id=agency, first_name="Ana", last_name="A", email="ana@x.io", preferred_lang="es"
+    )
+    pt_account = await make_expat_user(activated=False, preferred_lang="pt", email="ben@x.io")
+    ben = await make_client_profile(
+        agency_id=agency, first_name="Ben", last_name="B", expat_user_id=pt_account.id
+    )
+    cleo = await make_client_profile(agency_id=agency, first_name="Cleo", last_name="C")
+    de_account = await make_expat_user(activated=False, preferred_lang="de", email="dan@x.io")
+    dan = await make_client_profile(
+        agency_id=agency, first_name="Dan", last_name="D", expat_user_id=de_account.id
+    )
+    # The record's language wins over its account's.
+    fr_account = await make_expat_user(activated=False, preferred_lang="fr", email="eve@x.io")
+    eve = await make_client_profile(
+        agency_id=agency,
+        first_name="Eve",
+        last_name="E",
+        expat_user_id=fr_account.id,
+        preferred_lang="hu",
+    )
+    path = "/email/candidates/client-profiles"
+
+    async def langs(*values: str) -> list[str]:
+        return await _ids(client, headers, path, {"preferred_lang": list(values)})
+
+    assert await langs("es") == [str(ana.id)]
+    assert await langs("pt") == [str(ben.id)]
+    assert await langs("it") == [str(cleo.id)]  # no language known: the agency's
+    assert await langs("en") == [str(dan.id)]  # an unsupported one: English
+    assert await langs("hu") == [str(eve.id)]
+    assert await langs("fr") == []
+    assert await langs("es", "pt") == [str(ana.id), str(ben.id)]
+    assert len(await _ids(client, headers, path, {})) == 5
+    refused = await client.get(path, params={"preferred_lang": "de"}, headers=headers)
+    assert refused.status_code == 422
 
 
 async def test_the_wizard_lists_companies_as_the_companies_page_does_with_their_counts(

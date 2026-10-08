@@ -49,6 +49,7 @@ EMAIL_KEYS = {
 ACTIVATION_ROUTES = {
     ("GET", "/agencies/{agency_id}/email-module"),
     ("PATCH", "/agencies/{agency_id}/email-module"),
+    ("POST", "/agencies/{agency_id}/email-module/pause-all"),
     ("PUT", "/agencies/{agency_id}/email-module/team"),
     ("DELETE", "/agencies/{agency_id}/email-module/team"),
 }

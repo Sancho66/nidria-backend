@@ -885,6 +885,138 @@ def test_the_webhook_is_created_once_for_every_event(fake_lemlist: Double) -> No
     assert no_id.value.code == "BAD_RESPONSE"
 
 
+def test_a_webhook_is_deleted_by_its_id_and_recreated_for_its_url_only(
+    fake_lemlist: Double,
+) -> None:
+    """`DELETE /hooks/{hookId}` (developer.lemlist.com, webhooks/delete-webhook):
+    a 404 "Webhook not found" is a webhook gone already. Recreating deletes
+    the webhook of exactly that URL, never another one, then creates it."""
+    fake, provider = fake_lemlist
+    url = "https://api.nidria.example/webhooks/lemlist"
+    fake.queue("DELETE", "/hooks/hoo_gone", 404, "Webhook not found")
+    provider.delete_hook("hoo_gone")
+    fake.queue("DELETE", "/hooks/hoo_bad", 400, "Bad team")
+    with pytest.raises(ProviderError):
+        provider.delete_hook("hoo_bad")
+    fake.calls.clear()
+    fake.queue(
+        "GET",
+        "/hooks",
+        200,
+        [
+            {"_id": "hoo_other", "targetUrl": "https://elsewhere.example/hook"},
+            {"_id": "hoo_1", "targetUrl": url},
+        ],
+    )
+    fake.queue("POST", "/hooks", 200, {"_id": "hoo_2", "targetUrl": url})
+    assert provider.recreate_hook(url, "n3w-secret") == (LemlistHook("hoo_2", url, None), True)
+    assert fake.routes() == [("GET", "/hooks"), ("DELETE", "/hooks/hoo_1"), ("POST", "/hooks")]
+    assert fake.calls[-1][3] == {"targetUrl": url, "secret": "n3w-secret"}
+    fake.calls.clear()
+    fake.queue("GET", "/hooks", 200, [])
+    fake.queue("POST", "/hooks", 200, {"_id": "hoo_3", "targetUrl": url})
+    assert provider.recreate_hook(url, "n3w-secret") == (LemlistHook("hoo_3", url, None), False)
+    assert fake.routes() == [("GET", "/hooks"), ("POST", "/hooks")]
+
+
+# ── unsubscribes since 30/03/2026 ────────────────────────────────────────
+
+
+def _activity(event_id: str, kind: str, **fields: Any) -> dict[str, Any]:
+    """An activity as Lemlist documents it (webhooks/add-webhook, common
+    fields): `campaignId`, `leadId` and `leadEmail` only on a campaign event,
+    `contactId` on every one."""
+    return {
+        "_id": event_id,
+        "type": kind,
+        "teamId": "tea_1",
+        "createdAt": "2026-10-08T09:00:00.000Z",
+        **fields,
+    }
+
+
+def test_a_contacts_unsubscribe_is_an_unsubscribe_and_a_variables_is_its_own(
+    fake_lemlist: Double,
+) -> None:
+    """Since 30/03/2026 a contact unsubscribing emits `entityUnsubscribed`
+    (whole contact) or `variableUnsubscribed` (one variable) instead of
+    `emailsUnsubscribed`, which "also matches `apiUnsubscribed` and
+    `manualUnsubscribed`". A variable's carries no documented field saying
+    which: VARIABLE_UNSUBSCRIBED (kept, never applied). A re-subscription is
+    not tracked: nothing ever lifts a block."""
+    fake, provider = fake_lemlist
+    fake.queue(
+        "GET",
+        "/activities",
+        200,
+        [
+            _activity(
+                "act_1",
+                "entityUnsubscribed",
+                campaignId="cam_1",
+                leadId="lea_1",
+                leadEmail="ana@example.com",
+                contactId="ctc_1",
+            ),
+            _activity("act_2", "entityUnsubscribed", contactId="ctc_2", email="ben@example.com"),
+            _activity("act_3", "variableUnsubscribed", contactId="ctc_3"),
+            _activity("act_4", "apiUnsubscribed", campaignId="cam_1", leadId="lea_4"),
+            _activity("act_5", "manualUnsubscribed", campaignId="cam_1", leadId="lea_5"),
+            _activity("act_6", "entitySubscribed", contactId="ctc_1"),
+            _activity("act_7", "variableSubscribed", contactId="ctc_3"),
+        ],
+    )
+    events = provider.sync_campaign(CampaignRef("cam_1"), None)
+    assert [(e.event_id, e.type, e.provider_type) for e in events] == [
+        ("act_1", "UNSUBSCRIBED", "entityUnsubscribed"),
+        ("act_2", "UNSUBSCRIBED", "entityUnsubscribed"),
+        ("act_3", "VARIABLE_UNSUBSCRIBED", "variableUnsubscribed"),
+        ("act_4", "UNSUBSCRIBED", "apiUnsubscribed"),
+        ("act_5", "UNSUBSCRIBED", "manualUnsubscribed"),
+    ]
+    contact = events[1]
+    assert (contact.campaign_id, contact.lead_id, contact.email) == (
+        None,
+        None,
+        "ben@example.com",
+    )
+    assert contact.payload["contactId"] == "ctc_2" and contact.payload["teamId"] == "tea_1"
+    assert events[0].email == "ana@example.com"
+    contact_types = {"entityUnsubscribed", "variableUnsubscribed"}
+    assert contact_types == lemlist_module.CONTACT_ACTIVITY_TYPES
+
+
+def test_a_lead_whose_state_says_it_unsubscribed_is_read_unsubscribed(
+    fake_lemlist: Double,
+) -> None:
+    """The listing's `state` is the lead's last activity type: seen live on
+    08/10/2026, `entityUnsubscribed`; `status` "unsubscribed" is documented
+    too. A variable's unsubscribe is not the lead's."""
+    fake, provider = fake_lemlist
+    fake.queue(
+        "GET",
+        "/campaigns/cam_1/leads",
+        200,
+        [
+            {"_id": "l1", "contactId": "c1", "state": "entityUnsubscribed"},
+            {"_id": "l2", "contactId": "c2", "state": "emailsUnsubscribed"},
+            {"_id": "l3", "contactId": "c3", "state": "variableUnsubscribed"},
+            {"_id": "l4", "contactId": "c4", "state": "emailsSent"},
+            {"_id": "l5", "contactId": "c5", "state": "reviewed", "status": "unsubscribed"},
+            {"_id": "l6", "contactId": "c6", "isUnsubscribed": True},
+        ],
+    )
+    leads = provider.list_contacts(CampaignRef("cam_1")).leads
+    assert {lead.lead_id: lead.unsubscribed for lead in leads} == {
+        "l1": True,
+        "l2": True,
+        "l3": False,
+        "l4": False,
+        "l5": True,
+        "l6": True,
+    }
+
+
 # ── dry run ──────────────────────────────────────────────────────────────
 
 

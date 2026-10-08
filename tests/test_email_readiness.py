@@ -5,8 +5,9 @@ Ported from Prism's `tests/test_email_readiness.py` (reference 629a2b0):
 the syntax check and its cases as they are. Not ported: Prism's Apollo
 verification and legacy workflow (spec 8.6), and its API test of the Leads
 list (the routes come in phase 3). Nidria's own: issues are codes with
-params, DEMO_RECIPIENT, TEAM_MISMATCH, the durable block (decision A1) and
-the address two records share (risk R1), every fact read in one agency.
+params, DEMO_RECIPIENT, TEAM_MISMATCH, the durable block (decision A1, and
+the agency's opposition list of 08/10/2026) and the address two records
+share (risk R1), every fact read in one agency.
 
 No provider, no model, no network: the facts are rows written by the
 email plugin's factories; the rules are pure.
@@ -40,6 +41,7 @@ from src.email_campaigns.readiness import (
     client_issues,
     daily_limit_gate,
     day_start,
+    durable_block,
     email_syntax_ok,
     load_client_facts,
     membership_issues,
@@ -51,7 +53,13 @@ from src.email_campaigns.readiness import (
 from src.email_campaigns.variables import RenderContext
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.client_profile_plugin import MakeClientProfile
-from tests.plugins.email_plugin import TEAM_A, TEAM_B, MakeEmailCampaign, MakeEmailMember
+from tests.plugins.email_plugin import (
+    TEAM_A,
+    TEAM_B,
+    MakeEmailCampaign,
+    MakeEmailMember,
+    MakeEmailSuppression,
+)
 from tests.plugins.expat_plugin import MakeExpatUser
 
 NOW = datetime(2026, 10, 7, 9, 0, tzinfo=UTC)
@@ -196,10 +204,13 @@ async def test_a_second_record_with_the_same_address_is_held_like_the_first(
     make_expat_user: MakeExpatUser,
     make_email_campaign: MakeEmailCampaign,
     make_email_member: MakeEmailMember,
+    make_email_suppression: MakeEmailSuppression,
 ) -> None:
     """Risk R1: two records of the agency can carry the same effective
     address (a column, or a linked account's); Lemlist would refuse the
-    second as a duplicate lead. The address is read like the record."""
+    second as a duplicate lead. The address is read like the record: a live
+    membership through it, and the agency's opposition list by its
+    fingerprint."""
     agency = await make_agency()
     campaign = await make_email_campaign(agency_id=agency.id)
     # Live through a first, unlinked record.
@@ -213,23 +224,29 @@ async def test_a_second_record_with_the_same_address_is_held_like_the_first(
     )
     shared = effective_email(linked, account)
     assert shared == "shared@example.com"
-    # Unsubscribed (then removed) through a third record; a fourth has the
-    # same address typed differently.
+    # Unsubscribed (then removed) through a third record, which listed its
+    # address; a fourth has the same address typed differently.
     unsubscribed = await make_client_profile(agency_id=agency.id, email="gone@example.com")
-    await make_email_member(
+    gone = await make_email_member(
         campaign_id=campaign.id,
         client_profile_id=unsubscribed.id,
         status="EMAIL_UNSUBSCRIBED",
         removed_at=NOW,
     )
+    await make_email_suppression(
+        agency_id=agency.id, email="gone@example.com", source_member_id=gone.id
+    )
     twin = await make_client_profile(agency_id=agency.id, email=" Gone@Example.COM")
     # Another agency's record with the same address blocks nothing here.
     elsewhere = await make_agency()
     stranger = await make_client_profile(agency_id=elsewhere.id, email="clean@example.com")
-    await make_email_member(
+    theirs = await make_email_member(
         campaign_id=(await make_email_campaign(agency_id=elsewhere.id)).id,
         client_profile_id=stranger.id,
         status="EMAIL_UNSUBSCRIBED",
+    )
+    await make_email_suppression(
+        agency_id=elsewhere.id, email="clean@example.com", source_member_id=theirs.id
     )
     clean = await make_client_profile(agency_id=agency.id, email="clean@example.com")
 
@@ -253,6 +270,55 @@ async def test_a_second_record_with_the_same_address_is_held_like_the_first(
     assert client_issues(clean.id, clean.email, facts) == []
     # The live record's own membership is not held by its own address.
     assert membership_issues(live_member, live_one.email, facts) == []
+
+
+async def test_an_address_on_the_opposition_list_blocks_whoever_carries_it(
+    db_session: AsyncSession,
+    make_agency: MakeAgency,
+    make_client_profile: MakeClientProfile,
+    make_email_campaign: MakeEmailCampaign,
+    make_email_member: MakeEmailMember,
+    make_email_suppression: MakeEmailSuppression,
+) -> None:
+    """The opposition list (decision of 08/10/2026) is the source of truth
+    for an address: whoever carries it now is blocked, with the reason as
+    its code, even when the record it came from is gone (`source` NULL:
+    no `via`). A person's own unsubscribe still blocks it once its address
+    changed (rule N6 blocks the person); only the agency's list counts."""
+    agency = await make_agency()
+    campaign = await make_email_campaign(agency_id=agency.id)
+    recreated = await make_client_profile(agency_id=agency.id, email="Gone@Example.com")
+    bounced = await make_client_profile(agency_id=agency.id, email="bounced@example.com")
+    moved_on = await make_client_profile(agency_id=agency.id, email="new@example.com")
+    await make_email_member(
+        campaign_id=campaign.id, client_profile_id=moved_on.id, status="EMAIL_UNSUBSCRIBED"
+    )
+    itself = await make_client_profile(agency_id=agency.id, email="itself@example.com")
+    own = await make_email_member(
+        campaign_id=campaign.id, client_profile_id=itself.id, status="EMAIL_BOUNCED"
+    )
+    # Listed through records deleted since, and one through itself.
+    await make_email_suppression(agency_id=agency.id, email="gone@example.com")
+    await make_email_suppression(agency_id=agency.id, email="bounced@example.com", reason="BOUNCED")
+    await make_email_suppression(
+        agency_id=agency.id,
+        email="itself@example.com",
+        reason="BOUNCED",
+        source_member_id=own.id,
+    )
+    elsewhere = await make_agency()
+    await make_email_suppression(agency_id=elsewhere.id, email="free@example.com")
+    free = await make_client_profile(agency_id=agency.id, email="free@example.com")
+
+    people = [(p, p.email) for p in (recreated, bounced, moved_on, itself, free)]
+    facts = await _facts(db_session, agency, *people)
+    assert client_issues(recreated.id, recreated.email, facts) == [Issue("UNSUBSCRIBED")]
+    assert client_issues(bounced.id, bounced.email, facts) == [Issue("BOUNCED")]
+    assert client_issues(moved_on.id, moved_on.email, facts) == [Issue("UNSUBSCRIBED")]
+    assert client_issues(itself.id, itself.email, facts) == [Issue("BOUNCED")]
+    assert client_issues(free.id, free.email, facts) == []
+    assert durable_block(recreated.id, recreated.email, facts) == "EMAIL_UNSUBSCRIBED"
+    assert durable_block(free.id, free.email, facts) is None
 
 
 async def test_a_lead_not_launched_carries_its_own_state(

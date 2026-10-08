@@ -33,7 +33,12 @@ from src.email_campaigns.providers.base import (
 )
 from tests.email_fakes import FakeProvider
 from tests.plugins.client_profile_plugin import MakeClientProfile
-from tests.plugins.email_plugin import EmailWorld, MakeCompanyLink, MakeEmailMember
+from tests.plugins.email_plugin import (
+    EmailWorld,
+    MakeCompanyLink,
+    MakeEmailMember,
+    MakeEmailSuppression,
+)
 from tests.test_email_campaigns import (
     act,
     campaign_via_api,
@@ -773,18 +778,23 @@ async def test_the_add_preview_refuses_a_malformed_a_demo_and_a_known_bounced_ad
     email_world: EmailWorld,
     make_client_profile: MakeClientProfile,
     make_email_member: MakeEmailMember,
+    make_email_suppression: MakeEmailSuppression,
 ) -> None:
     agency = email_world.agency_id
     odd = await make_client_profile(agency_id=agency, first_name="Odd", email="odd@mail")
     demo = await make_client_profile(agency_id=agency, first_name="Demo", email=DEMO)
-    # Another record bounced on this very address (risk R1): held the same.
+    # Another record bounced on this very address (risk R1), which put it on
+    # the agency's opposition list: held the same.
     earlier = (await campaign_via_api(client, email_world.headers, "Earlier"))["id"]
     first = await make_client_profile(agency_id=agency, first_name="First", email="Same@acme.io")
-    await make_email_member(
+    bounced = await make_email_member(
         campaign_id=uuid.UUID(earlier),
         client_profile_id=first.id,
         agency_id=agency,
         status="EMAIL_BOUNCED",
+    )
+    await make_email_suppression(
+        agency_id=agency, email="Same@acme.io", reason="BOUNCED", source_member_id=bounced.id
     )
     second = await make_client_profile(agency_id=agency, first_name="Second", email="same@acme.io")
     fine = await make_client_profile(agency_id=agency, first_name="Fine", email="fine@acme.io")

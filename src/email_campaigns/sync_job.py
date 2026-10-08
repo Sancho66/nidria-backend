@@ -38,7 +38,9 @@ Statistics (Prism's, without `legacy`): `campaigns`, `campaigns_failed`,
 `pause_changes`, `dry_run_campaigns`, `errors`, `error_messages` (codes with
 the agency and campaign they are about, never sentences, at most ten), plus
 `agencies` (read) and `agencies_skipped` (switched on but not bound to the
-key's team, or busy). Log lines carry ids, counts and codes only.
+key's team, or busy), and `variable_unsubscribed` (a contact's variable
+unsubscribed at Lemlist: stored, never applied). Log lines carry ids,
+counts and codes only.
 """
 
 from __future__ import annotations
@@ -90,6 +92,7 @@ STAT_KEYS = (
     "replies",
     "bounces",
     "unsubscribed",
+    "variable_unsubscribed",
     "reply_contents",
     "missing_leads",
     "pause_changes",
@@ -172,6 +175,7 @@ def _add(stats: dict[str, Any], report: AgencyReconcile) -> None:
         stats["missing_leads"] += campaign.leads_missing
         stats["pause_changes"] += campaign.pause_changes
         stats["unsubscribed"] += campaign.unsubscribed
+        stats["variable_unsubscribed"] += campaign.variable_unsubscribed
         for code in campaign.errors:
             _error(stats, code, agency_id=report.agency_id, campaign_id=campaign.campaign_id)
     stats["sent"] += by_type["SENT"]

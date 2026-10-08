@@ -1,6 +1,7 @@
 """Platform routes of the Email module: switch it on per agency, bind the
-agency to the platform's Lemlist team (phase 1), and read the platform's
-Lemlist account or create its webhook (phase 4, spec 10.5).
+agency to the platform's Lemlist team (phase 1), pause all its campaigns
+(decision of 08/10/2026), and read the platform's Lemlist account or create
+(or recreate) its webhook (phase 4, spec 10.5).
 
 Superadmin only, exactly like PATCH /agencies/{agency_id}/subscription: the
 bindings carry `agency.create` (activation, binding) and
@@ -14,7 +15,7 @@ shown (its sha256[:12] only), the webhook secret never.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
@@ -26,6 +27,7 @@ from src.email_campaigns.email_admin_manager import EmailAdminManager
 from src.email_campaigns.email_schema import (
     AgencyEmailModuleResponse,
     AgencyEmailModuleUpdateRequest,
+    EmailPauseAllResult,
     EmailProviderAccountRead,
     EmailProviderWebhookResult,
 )
@@ -39,6 +41,12 @@ BINDINGS = [
     ),
     RouteBinding(
         "PATCH", "/agencies/{agency_id}/email-module", Audience.AGENT, Permission.AGENCY_CREATE
+    ),
+    RouteBinding(
+        "POST",
+        "/agencies/{agency_id}/email-module/pause-all",
+        Audience.AGENT,
+        Permission.AGENCY_CREATE,
     ),
     RouteBinding(
         "PUT", "/agencies/{agency_id}/email-module/team", Audience.AGENT, Permission.AGENCY_CREATE
@@ -73,8 +81,26 @@ async def set_agency_email_module(
     agency_id: uuid.UUID, body: AgencyEmailModuleUpdateRequest, agent: AgentDep, db: DbDep
 ) -> AgencyEmailModuleResponse:
     """Switch the module on or off for the agency. Off is refused while one
-    of its campaigns is ACTIVE at Lemlist (409 `email.campaigns_live`)."""
-    return await EmailAdminManager(db).set_enabled(agent, agency_id, body.enabled)
+    of its campaigns is ACTIVE at Lemlist (409 `email.campaigns_live`);
+    with `pause_campaigns`, every ACTIVE campaign is paused first (as
+    `pause-all` does), and the refusal holds only for one still ACTIVE at
+    Lemlist after that (the module stays on)."""
+    return await EmailAdminManager(db).set_enabled(
+        agent, agency_id, body.enabled, pause_campaigns=body.pause_campaigns
+    )
+
+
+@router.post("/{agency_id}/email-module/pause-all", response_model=EmailPauseAllResult)
+async def pause_agency_email_campaigns(
+    agency_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> EmailPauseAllResult:
+    """Pause every ACTIVE campaign of the agency, at Lemlist and in Nidria
+    (one commit per campaign; a dry run's campaign in Nidria only).
+    Idempotent. A campaign that cannot be paused is told in `failed` with
+    its code (`email.provider_unavailable`, `email.team_mismatch`,
+    `email.provider_*`), and the others go on. Allowed for an agency under
+    a billing lock: the lock reads the caller's agency."""
+    return await EmailAdminManager(db).pause_all(agency_id)
 
 
 @router.put("/{agency_id}/email-module/team", response_model=AgencyEmailModuleResponse)
@@ -111,10 +137,25 @@ async def get_email_provider_account(agent: AgentDep, db: DbDep) -> EmailProvide
 
 
 @provider_router.post("/provider/webhook", response_model=EmailProviderWebhookResult)
-async def ensure_email_provider_webhook(agent: AgentDep, db: DbDep) -> EmailProviderWebhookResult:
+async def ensure_email_provider_webhook(
+    agent: AgentDep,
+    db: DbDep,
+    recreate: Annotated[
+        bool,
+        Query(
+            description=(
+                "true: the webhook of EMAIL_WEBHOOK_URL is deleted at Lemlist, then "
+                "created again with the current EMAIL_WEBHOOK_SECRET (its rotation)."
+            )
+        ),
+    ] = False,
+) -> EmailProviderWebhookResult:
     """Create the team's webhook (every event, no type) at EMAIL_WEBHOOK_URL
     with EMAIL_WEBHOOK_SECRET; idempotent: an existing one is returned, not
-    created again. 409 `email.webhook_not_configured` when the URL or the
-    secret is missing, 409 `email.provider_unavailable` without real
-    effects. The secret is never returned."""
-    return await EmailAdminManager(db).ensure_webhook()
+    created again. With `?recreate=true`, the one of that URL is deleted
+    (`DELETE /hooks/{hookId}`) and created again (`recreated` says one was
+    deleted); a webhook of any other URL is never touched. 409
+    `email.webhook_not_configured` when the URL or the secret is missing,
+    409 `email.provider_unavailable` without real effects. The secret is
+    never returned."""
+    return await EmailAdminManager(db).ensure_webhook(recreate=recreate)

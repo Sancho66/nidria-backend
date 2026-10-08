@@ -4491,7 +4491,7 @@
           "email"
         ],
         "summary": "Set Agency Email Module",
-        "description": "Switch the module on or off for the agency. Off is refused while one\nof its campaigns is ACTIVE at Lemlist (409 `email.campaigns_live`).",
+        "description": "Switch the module on or off for the agency. Off is refused while one\nof its campaigns is ACTIVE at Lemlist (409 `email.campaigns_live`);\nwith `pause_campaigns`, every ACTIVE campaign is paused first (as\n`pause-all` does), and the refusal holds only for one still ACTIVE at\nLemlist after that (the module stays on).",
         "operationId": "set_agency_email_module_agencies__agency_id__email_module_patch",
         "security": [
           {
@@ -4527,6 +4527,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgencyEmailModuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agency_id}/email-module/pause-all": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Pause Agency Email Campaigns",
+        "description": "Pause every ACTIVE campaign of the agency, at Lemlist and in Nidria\n(one commit per campaign; a dry run's campaign in Nidria only).\nIdempotent. A campaign that cannot be paused is told in `failed` with\nits code (`email.provider_unavailable`, `email.team_mismatch`,\n`email.provider_*`), and the others go on. Allowed for an agency under\na billing lock: the lock reads the caller's agency.",
+        "operationId": "pause_agency_email_campaigns_agencies__agency_id__email_module_pause_all_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPauseAllResult"
                 }
               }
             }
@@ -4673,8 +4722,27 @@
           "email"
         ],
         "summary": "Ensure Email Provider Webhook",
-        "description": "Create the team's webhook (every event, no type) at EMAIL_WEBHOOK_URL\nwith EMAIL_WEBHOOK_SECRET; idempotent: an existing one is returned, not\ncreated again. 409 `email.webhook_not_configured` when the URL or the\nsecret is missing, 409 `email.provider_unavailable` without real\neffects. The secret is never returned.",
+        "description": "Create the team's webhook (every event, no type) at EMAIL_WEBHOOK_URL\nwith EMAIL_WEBHOOK_SECRET; idempotent: an existing one is returned, not\ncreated again. With `?recreate=true`, the one of that URL is deleted\n(`DELETE /hooks/{hookId}`) and created again (`recreated` says one was\ndeleted); a webhook of any other URL is never touched. 409\n`email.webhook_not_configured` when the URL or the secret is missing,\n409 `email.provider_unavailable` without real effects. The secret is\nnever returned.",
         "operationId": "ensure_email_provider_webhook_admin_email_provider_webhook_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "recreate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "true: the webhook of EMAIL_WEBHOOK_URL is deleted at Lemlist, then created again with the current EMAIL_WEBHOOK_SECRET (its rotation).",
+              "default": false,
+              "title": "Recreate"
+            },
+            "description": "true: the webhook of EMAIL_WEBHOOK_URL is deleted at Lemlist, then created again with the current EMAIL_WEBHOOK_SECRET (its rotation)."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4685,13 +4753,18 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/email/meta": {
@@ -5025,7 +5098,7 @@
           "email"
         ],
         "summary": "Delete Campaign",
-        "description": "Delete a campaign for good, with its steps, recipients, rendered emails\nand conversations. Refused while it holds unsubscribed or bounced\nrecipients (archive it). A campaign live at Lemlist is paused there\nfirst (`email.sync`): Lemlist's API cannot delete one.",
+        "description": "Delete a campaign for good, with its steps, recipients, rendered emails\nand conversations. Its unsubscribed and bounced recipients stay blocked:\nthe agency's opposition list keeps their addresses. A campaign live at\nLemlist is paused there first (`email.sync`): Lemlist's API cannot\ndelete one.",
         "operationId": "delete_campaign_email_campaigns__campaign_id__delete",
         "security": [
           {
@@ -7053,6 +7126,36 @@
               "title": "Client Status"
             },
             "description": "Repeated; the derived client status, as on the Leads list."
+          },
+          {
+            "name": "preferred_lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "fr",
+                      "en",
+                      "es",
+                      "ru",
+                      "pt",
+                      "it",
+                      "hu"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeated; the client's EFFECTIVE language: the record's, else its account's, else the agency's.",
+              "title": "Preferred Lang"
+            },
+            "description": "Repeated; the client's EFFECTIVE language: the record's, else its account's, else the agency's."
           }
         ],
         "responses": {
@@ -7385,7 +7488,7 @@
           "email"
         ],
         "summary": "Lemlist Webhook",
-        "description": "Lemlist's activity webhook. 429 past 600 calls a minute; 403\n`email.webhook_forbidden` unless EMAIL_WEBHOOK_SECRET is set and the\nbody's `secret` matches it. Each event is stored once (whoever reads it\nfirst: this webhook, the job or a Sync); an event of a type Nidria does\nnot track, or of no campaign Nidria runs, is acknowledged and not\nstored. Depends on the env only, never on an agency's switch.",
+        "description": "Lemlist's activity webhook. 429 past 600 calls a minute from one\nclient IP; 403 `email.webhook_forbidden` unless EMAIL_WEBHOOK_SECRET is\nset and the body's `secret` matches it. Each event is stored once\n(whoever reads it first: this webhook, the job or a Sync); an event of a\ntype Nidria does not track, or of no campaign Nidria runs, is\nacknowledged and not stored, unless it is about a whole contact\n(`entityUnsubscribed`, `variableUnsubscribed`) of a team bound to an\nagency. Depends on the env only, never on an agency's switch.",
         "operationId": "lemlist_webhook_webhooks_lemlist_post",
         "requestBody": {
           "content": {
@@ -22773,6 +22876,11 @@
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
+          },
+          "pause_campaigns": {
+            "type": "boolean",
+            "title": "Pause Campaigns",
+            "default": false
           }
         },
         "type": "object",
@@ -22780,7 +22888,7 @@
           "enabled"
         ],
         "title": "AgencyEmailModuleUpdateRequest",
-        "description": "PATCH /agencies/{agency_id}/email-module: the agency's switch."
+        "description": "PATCH /agencies/{agency_id}/email-module: the agency's switch.\n\n`pause_campaigns`, read when switching OFF only: every ACTIVE campaign\nof the agency is paused first, at Lemlist and in Nidria (the\n`pause-all` gesture), then the module is switched off. A campaign still\nACTIVE at Lemlist after that keeps the module on (409\n`email.campaigns_live`). Without it, an ACTIVE campaign at Lemlist\nrefuses the switch-off, as before."
       },
       "AgencyMemberResponse": {
         "properties": {
@@ -33715,6 +33823,10 @@
             "type": "integer",
             "title": "On Hold"
           },
+          "dry_run": {
+            "type": "integer",
+            "title": "Dry Run"
+          },
           "overdue": {
             "type": "integer",
             "title": "Overdue"
@@ -33735,11 +33847,67 @@
           "items",
           "waiting_launch",
           "on_hold",
+          "dry_run",
           "overdue",
           "campaigns"
         ],
         "title": "EmailOutreachRead",
         "description": "The agency's outreach across its campaigns, day by day, read from\nNidria's records only, never the provider."
+      },
+      "EmailPauseAllResult": {
+        "properties": {
+          "paused": {
+            "type": "integer",
+            "title": "Paused"
+          },
+          "already_paused": {
+            "type": "integer",
+            "title": "Already Paused"
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/components/schemas/EmailPauseFailure"
+            },
+            "type": "array",
+            "title": "Failed"
+          },
+          "module": {
+            "$ref": "#/components/schemas/AgencyEmailModuleResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paused",
+          "already_paused",
+          "module"
+        ],
+        "title": "EmailPauseAllResult",
+        "description": "POST /agencies/{agency_id}/email-module/pause-all: every ACTIVE\ncampaign of the agency paused, at Lemlist and in Nidria. Idempotent: a\nsecond call pauses nothing more."
+      },
+      "EmailPauseFailure": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "code"
+        ],
+        "title": "EmailPauseFailure",
+        "description": "A campaign the pause could not stop, and why (an `email.*` code)."
       },
       "EmailPerformanceDay": {
         "properties": {
@@ -34386,6 +34554,10 @@
             "type": "boolean",
             "title": "Created"
           },
+          "recreated": {
+            "type": "boolean",
+            "title": "Recreated"
+          },
           "webhook": {
             "$ref": "#/components/schemas/EmailProviderHookRead"
           }
@@ -34393,10 +34565,11 @@
         "type": "object",
         "required": [
           "created",
+          "recreated",
           "webhook"
         ],
         "title": "EmailProviderWebhookResult",
-        "description": "POST /admin/email/provider/webhook: the team's webhook for\nEMAIL_WEBHOOK_URL, created by this call or found already (idempotent).\nNever its secret."
+        "description": "POST /admin/email/provider/webhook: the team's webhook for\nEMAIL_WEBHOOK_URL, created by this call or found already (idempotent).\nWith `recreate`, the existing one for that URL is deleted and created\nagain with the current EMAIL_WEBHOOK_SECRET. Never its secret."
       },
       "EmailQuotaResponse": {
         "properties": {
@@ -35983,7 +36156,7 @@
           "matched"
         ],
         "title": "EmailWebhookAck",
-        "description": "What the webhook did with one event (Prism's answer): stored now,\nalready stored (a redelivery, or the job / a Sync read it first), and\nmatched to a membership. An event of a type Nidria does not track, or\nof no campaign Nidria runs, is acknowledged and not stored."
+        "description": "What the webhook did with one event (Prism's answer): stored now,\nalready stored (a redelivery, or the job / a Sync read it first), and\nmatched to a membership. An event of a type Nidria does not track, or\nof no campaign Nidria runs, is acknowledged and not stored; an event\nabout a whole contact (an unsubscribe since 30/03/2026) is stored for\nthe agency bound to its Lemlist team, matched or not."
       },
       "ExpatAgencyPendingResponse": {
         "properties": {

@@ -10,6 +10,9 @@ and `POST /admin/email/provider/webhook`, superadmin only
 - The POST creates the webhook for EMAIL_WEBHOOK_URL with no type, once:
   an existing one is returned untouched. 409 `email.webhook_not_configured`
   without the URL or the secret. The secret is never returned nor logged.
+- `?recreate=true` deletes the webhook of that URL (`DELETE /hooks/{hookId}`,
+  a 404 meaning gone already) and creates it again with the current secret
+  (its rotation); a webhook of any other URL is never touched.
 
 Lemlist answers through `FakeLemlist` (an `httpx.MockTransport`): no socket.
 """
@@ -246,6 +249,7 @@ async def test_the_webhook_is_created_once_without_a_type_and_its_secret_never_s
         assert created.status_code == 200, created.text
         assert created.json() == {
             "created": True,
+            "recreated": False,
             "webhook": {"hook_id": "hoo_1", "target_url": HOOK_URL, "has_type": False},
         }
         # Lemlist got the URL and the secret, and no type: every event.
@@ -257,6 +261,7 @@ async def test_the_webhook_is_created_once_without_a_type_and_its_secret_never_s
         again = await client.post(POST, headers=root)
         assert again.json() == {
             "created": False,
+            "recreated": False,
             "webhook": {"hook_id": "hoo_1", "target_url": HOOK_URL, "has_type": False},
         }
     assert [c[0] for c in lemlist.calls].count("POST") == 1
@@ -279,3 +284,86 @@ async def test_a_refused_creation_never_carries_the_secret(
     assert refused.status_code == 409
     assert refused.json()["code"] == "email.provider_error"
     assert SECRET not in refused.text and SECRET not in caplog.text
+
+
+# ── recreate: the secret's rotation ──────────────────────────────────────────
+
+
+async def test_recreate_deletes_the_webhook_of_its_url_only_then_creates_it_again(
+    client: AsyncClient,
+    root: dict[str, str],
+    lemlist: FakeLemlist,
+    lemlist_live: LemlistTeamDouble,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    hooks = [
+        {"_id": "hoo_other", "targetUrl": "https://else.example/hook"},
+        {"_id": "hoo_1", "targetUrl": HOOK_URL},
+    ]
+    lemlist.queue("GET", "/hooks", 200, hooks)
+    lemlist.queue("DELETE", "/hooks/hoo_1", 200, {"_id": "hoo_1", "targetUrl": HOOK_URL})
+    lemlist.queue("POST", "/hooks", 200, {"_id": "hoo_2", "targetUrl": HOOK_URL})
+    with email_env(EMAIL_WEBHOOK_URL=HOOK_URL, EMAIL_WEBHOOK_SECRET=SECRET):
+        answer = await client.post(POST, params={"recreate": "true"}, headers=root)
+    assert answer.status_code == 200, answer.text
+    assert answer.json() == {
+        "created": True,
+        "recreated": True,
+        "webhook": {"hook_id": "hoo_2", "target_url": HOOK_URL, "has_type": False},
+    }
+    # Its URL's webhook only, deleted BEFORE the new one, with the current secret.
+    assert lemlist.routes() == [("GET", "/hooks"), ("DELETE", "/hooks/hoo_1"), ("POST", "/hooks")]
+    [post] = [c for c in lemlist.calls if c[0] == "POST"]
+    assert post[3] == {"targetUrl": HOOK_URL, "secret": SECRET}
+    for text in (answer.text, caplog.text):
+        assert SECRET not in text and FAKE_LEMLIST_KEY not in text
+
+
+async def test_recreate_without_a_webhook_creates_one_and_a_gone_one_is_no_error(
+    client: AsyncClient,
+    root: dict[str, str],
+    lemlist: FakeLemlist,
+    lemlist_live: LemlistTeamDouble,
+) -> None:
+    lemlist.queue("GET", "/hooks", 200, [])
+    lemlist.queue("POST", "/hooks", 200, {"_id": "hoo_1", "targetUrl": HOOK_URL})
+    with email_env(EMAIL_WEBHOOK_URL=HOOK_URL, EMAIL_WEBHOOK_SECRET=SECRET):
+        fresh = await client.post(POST, params={"recreate": "true"}, headers=root)
+        assert fresh.status_code == 200, fresh.text
+        assert (fresh.json()["created"], fresh.json()["recreated"]) == (True, False)
+        assert "DELETE" not in [method for method, _ in lemlist.routes()]
+
+        # Listed, then gone when deleted (Lemlist: 404 "Webhook not found").
+        lemlist.queue("GET", "/hooks", 200, [{"_id": "hoo_1", "targetUrl": HOOK_URL}])
+        lemlist.queue("DELETE", "/hooks/hoo_1", 404, "Webhook not found")
+        lemlist.queue("POST", "/hooks", 200, {"_id": "hoo_2", "targetUrl": HOOK_URL})
+        again = await client.post(POST, params={"recreate": "true"}, headers=root)
+    assert again.status_code == 200, again.text
+    assert (again.json()["recreated"], again.json()["webhook"]["hook_id"]) == (True, "hoo_2")
+
+
+async def test_a_refused_deletion_recreates_nothing(
+    client: AsyncClient,
+    root: dict[str, str],
+    lemlist: FakeLemlist,
+    lemlist_live: LemlistTeamDouble,
+) -> None:
+    lemlist.queue("GET", "/hooks", 200, [{"_id": "hoo_1", "targetUrl": HOOK_URL}])
+    lemlist.queue("DELETE", "/hooks/hoo_1", 400, "Bad team")
+    with email_env(EMAIL_WEBHOOK_URL=HOOK_URL, EMAIL_WEBHOOK_SECRET=SECRET):
+        refused = await client.post(POST, params={"recreate": "true"}, headers=root)
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "email.provider_error"
+    assert "POST" not in [method for method, _ in lemlist.routes()]
+    assert SECRET not in refused.text
+
+
+async def test_recreate_needs_real_effects_and_the_env_like_a_creation(
+    client: AsyncClient, root: dict[str, str], lemlist: FakeLemlist
+) -> None:
+    with email_env(EMAIL_WEBHOOK_URL=HOOK_URL, EMAIL_WEBHOOK_SECRET=SECRET):
+        refused = await client.post(POST, params={"recreate": "true"}, headers=root)
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "email.provider_unavailable"
+    assert lemlist.calls == []

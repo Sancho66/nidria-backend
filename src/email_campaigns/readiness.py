@@ -16,13 +16,15 @@ Ported from Prism's `readiness.py` (reference commit 629a2b0). Changes:
   `client_profiles.identity`), passed in by the caller;
 - an unsubscribe is never overridable (rule N6: Prism's
   `include_unsubscribed` is gone);
-- the durable block (A1) and the shared address (R1), below.
+- the durable block (A1, the opposition list) and the shared address (R1),
+  below.
 
 Codes, by level, with their params:
 - person: NO_EMAIL, INVALID_EMAIL, DEMO_RECIPIENT; UNSUBSCRIBED and BOUNCED
-  (`via_client_profile_id` when the block is another record's with the same
-  address); IN_OTHER_CAMPAIGN (`campaign_id`, plus `via_client_profile_id`
-  when another record with the same address holds the live membership);
+  (`via_client_profile_id` when the address was listed through another
+  record that still exists); IN_OTHER_CAMPAIGN (`campaign_id`, plus
+  `via_client_profile_id` when another record with the same address holds
+  the live membership);
 - membership: PAUSED; LAST_ATTEMPT, a warning (`reason`: the code the last
   hand-over left in `status_reason`);
 - campaign: TEAM_MISMATCH, ARCHIVED, NO_STEPS, EXTERNAL_EFFECTS_OFF,
@@ -43,31 +45,37 @@ carries each template problem in the same issue list as the person's, so the
 Launch page shows one list; AI_AT_LAUNCH tells the AI passages are written at
 launch, then frozen.
 
-Durable block (decision A1, rule N6). Whether a person unsubscribed or
-bounced is read from EVERY membership of the agency, removed ones included:
-`EmailRepository.blocking_statuses` deliberately ignores `removed_at`. For
-the block to hold, phase 3 (manager) and phase 4 (sync) must keep it:
+Durable block (decision A1, rule N6, and the opposition list of 08/10/2026).
+A person is blocked for good when:
+- one of ITS OWN memberships unsubscribed or bounced, removed ones included
+  (`EmailRepository.blocking_statuses` deliberately ignores `removed_at`):
+  the person stays blocked even once its address changed; or
+- its effective ADDRESS is on the agency's opposition list
+  (`email_suppression`, `suppression.email_hash`), the source of truth for
+  addresses: whichever record carries the address now (a second record, or
+  one created again after the first was deleted), whatever campaign or
+  record was deleted since.
+The list is written each time an unsubscribe or a bounce is applied to a
+membership (`email_sync`); the memberships keep their history:
 1. removing (or moving) an UNSUBSCRIBED or BOUNCED membership sets
    `removed_at` and `removed_by_agent_id` and KEEPS its status (never
    EMAIL_REMOVED);
 2. an UNSUBSCRIBED or BOUNCED event applies to a removed membership too:
-   its status changes, `removed_at` stays;
-3. deleting a campaign that holds a blocking membership is refused, 409
-   `email.campaign_has_blocked_members` (archiving it stays possible).
-Not covered by these tables: deleting the client record itself cascades its
-memberships, so its block goes with it (an erasure); Lemlist's own
-unsubscribe list still holds the address (spec section 18).
+   its status changes, `removed_at` stays.
+Deleting a campaign is allowed (it was refused before the list): its
+memberships go, the list keeps their addresses. Lemlist's own unsubscribe
+list holds the address too (spec section 18).
 
 Shared address (risk R1). `client_profile.email` is not unique in an agency,
 and a linked record reads its account's address: two records can carry the
 same effective address. Lemlist deduplicates leads by address in its team,
-so the rules read the address as well as the record: a block on record for
-any record of the agency with the same address blocks this one (an address
-that unsubscribed or bounced is never written to again), and a live
-membership of another record with the same address is IN_OTHER_CAMPAIGN,
-whichever campaign holds it (this one included: `campaign_id` says which).
-An address is compared trimmed and lower-cased; the add preview still has to
-deduplicate the addresses of one batch among themselves (phase 3).
+so the rules read the address as well as the record: a listed address
+blocks every record that carries it (an address that unsubscribed or
+bounced is never written to again), and a live membership of another
+record with the same address is IN_OTHER_CAMPAIGN, whichever campaign holds
+it (this one included: `campaign_id` says which). An address is compared
+trimmed and lower-cased (the list: its fingerprint); the add preview still
+has to deduplicate the addresses of one batch among themselves (phase 3).
 """
 
 from __future__ import annotations
@@ -91,6 +99,7 @@ from src.email_campaigns.flags import is_real_provider_id
 from src.email_campaigns.lemlist_team import CAMPAIGN_TEAM_KEY
 from src.email_campaigns.renderer import EmailTemplateRenderer, RenderResult, tokens_in
 from src.email_campaigns.schedule import zone_of
+from src.email_campaigns.suppression import email_hash
 from src.email_campaigns.variables import RenderContext
 
 _LOCAL = re.compile(r"[^\s@<>()\[\],;:\"]{1,64}")
@@ -192,17 +201,19 @@ def _worst(first: str | None, second: str) -> str:
 @dataclass(frozen=True)
 class ClientFacts:
     """What the database knows of a batch of clients beyond their rows, in
-    one agency: blocks on record and live memberships, by record and by
-    effective address (risk R1). Built by `load_client_facts`."""
+    one agency: their own blocks, the opposition list's entries for their
+    addresses, and live memberships, by record and by effective address
+    (risk R1). Built by `load_client_facts`."""
 
     #: client profile id -> EMAIL_UNSUBSCRIBED or EMAIL_BOUNCED, from ANY of
     #: its memberships, removed ones included (A1); an unsubscribe wins.
     blocked: Mapping[uuid.UUID, str] = field(default_factory=dict)
     #: client profile id -> its live membership (one at most, any campaign).
     live: Mapping[uuid.UUID, EmailCampaignMember] = field(default_factory=dict)
-    #: address -> (client profile id, blocking status) of every block on
-    #: record for a record of the agency with that effective address.
-    blocked_addresses: Mapping[str, Sequence[tuple[uuid.UUID, str]]] = field(default_factory=dict)
+    #: address fingerprint (`suppression.email_hash`) -> (EMAIL_UNSUBSCRIBED
+    #: or EMAIL_BOUNCED, the client record the listed membership belonged
+    #: to, None once it is gone): the agency's opposition list.
+    suppressed: Mapping[str, tuple[str, uuid.UUID | None]] = field(default_factory=dict)
     #: address -> the live memberships of the records with that address.
     live_addresses: Mapping[str, Sequence[EmailCampaignMember]] = field(default_factory=dict)
 
@@ -222,35 +233,42 @@ async def load_client_facts(
     for profile_id, status in await repo.blocking_statuses(agency_id, ids):
         blocked[profile_id] = _worst(blocked.get(profile_id), status)
     live = {m.client_profile_id: m for m in await repo.live_members(agency_id, ids)}
-    blocked_addresses: dict[str, list[tuple[uuid.UUID, str]]] = {}
-    for email, profile_id, status in await repo.blocking_statuses_by_email(agency_id, addresses):
-        blocked_addresses.setdefault(email, []).append((profile_id, status))
+    digests = sorted({d for d in (email_hash(email) for _, email in people) if d is not None})
+    suppressed = await repo.suppressed(agency_id, digests)
     live_addresses: dict[str, list[EmailCampaignMember]] = {}
     for email, member in await repo.live_members_by_email(agency_id, addresses):
         live_addresses.setdefault(email, []).append(member)
-    return ClientFacts(blocked, live, blocked_addresses, live_addresses)
+    return ClientFacts(blocked, live, suppressed, live_addresses)
 
 
 def _block_of(
-    profile_id: uuid.UUID, address: str | None, facts: ClientFacts
+    profile_id: uuid.UUID, email: str | None, facts: ClientFacts
 ) -> tuple[str, uuid.UUID | None] | None:
-    """The block that applies: (status, None) for the record's own, (status,
-    other record) for another record's with the same address. An unsubscribe
-    outranks a bounce; the record's own outranks another's."""
+    """The block that applies: (status, None) for the record's own, or for
+    its address listed through itself or a record gone since; (status,
+    other record) for its address listed through another record. An
+    unsubscribe outranks a bounce; the record's own outranks another's."""
     found: list[tuple[str, uuid.UUID | None]] = []
     own = facts.blocked.get(profile_id)
     if own is not None:
         found.append((own, None))
-    if address is not None:
-        found.extend(
-            (status, other)
-            for other, status in facts.blocked_addresses.get(address, ())
-            if other != profile_id
-        )
+    digest = email_hash(email)
+    listed = facts.suppressed.get(digest) if digest is not None else None
+    if listed is not None:
+        status, source = listed
+        found.append((status, source if source != profile_id else None))
     if not found:
         return None
     found.sort(key=lambda b: (b[0] != _UNSUBSCRIBED_STATUS, b[1] is not None, str(b[1] or "")))
     return found[0]
+
+
+def durable_block(profile_id: uuid.UUID, email: str | None, facts: ClientFacts) -> str | None:
+    """EMAIL_UNSUBSCRIBED or EMAIL_BOUNCED when the person is blocked for
+    good (its own memberships, or its address on the opposition list),
+    else None: what refuses a move to another campaign."""
+    block = _block_of(profile_id, email, facts)
+    return block[0] if block is not None else None
 
 
 def _live_elsewhere(
@@ -298,7 +316,7 @@ def client_issues(
     elif is_demo_recipient(shown):
         issues.append(Issue(DEMO_RECIPIENT))
     address = _address(email)
-    block = _block_of(profile_id, address, facts)
+    block = _block_of(profile_id, email, facts)
     if block is not None:
         status, via = block
         code = UNSUBSCRIBED if status == _UNSUBSCRIBED_STATUS else BOUNCED

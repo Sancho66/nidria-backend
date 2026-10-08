@@ -23,18 +23,24 @@ read ONE query per call whatever the number of recipients (a digest or a
 dispatch tick never pays N lookups). The only client send WITHOUT an agency
 context is the expat password reset (auth_manager.forgot_password): an
 account may belong to several agencies, none of which owns that mail, so it
-keeps the account's own language."""
+keeps the account's own language.
+
+The same chain in SQL (`effective_lang_sql`), for a list that FILTERS on a
+client's language (the Email module's add wizard): one definition beside the
+Python one, the two kept equal by a test."""
 
 import uuid
 from collections.abc import Iterable, Mapping
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from shared.models.agency import Agency
 from shared.models.client_profile import ClientProfile
-from src.core.i18n import resolve_notification_lang_client
+from shared.models.expat_user import ExpatUser
+from src.core.i18n import SUPPORTED_LANGUAGES, resolve_notification_lang_client, supported_lang
 
 
 def _profile_langs_stmt(
@@ -58,6 +64,25 @@ def _resolve_all(
         )
         for expat_id, account_lang in accounts.items()
     }
+
+
+def effective_lang_sql(agency_default: str | None) -> ColumnElement[str]:
+    """`resolve_notification_lang_client` in SQL, for a query over
+    `client_profile` OUTER JOINed to `expat_user` on its `expat_user_id`:
+    the record's language, else the account's, else "en" when the account
+    states one the product does not speak, else `agency_default` (the
+    agency's, given: one agency per query), else "en". A value counts as
+    `supported_lang` reads it: its first two letters, lower-cased."""
+    supported = list(SUPPORTED_LANGUAGES)
+    record = func.lower(func.left(ClientProfile.preferred_lang, 2))
+    account = func.lower(func.left(ExpatUser.preferred_lang, 2))
+    result: ColumnElement[str] = case(
+        (record.in_(supported), record),
+        (account.in_(supported), account),
+        (func.coalesce(ExpatUser.preferred_lang, "") != "", literal("en")),
+        else_=literal(supported_lang(agency_default) or "en"),
+    )
+    return result
 
 
 # --- async (managers) -------------------------------------------------------------

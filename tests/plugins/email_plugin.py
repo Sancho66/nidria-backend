@@ -3,8 +3,9 @@
 manager (`fake_email_provider`) and a two-agency world for the agent routes.
 
 Factories write rows straight to the database (`make_*(**overrides)`), so a
-test can stand a campaign, a membership, a render, a message or an event up
-without the agent routes (the provider's events are phase 4's ingestion). The
+test can stand a campaign, a membership, a render, a message, an event or an
+entry of the opposition list up without the agent routes (the provider's
+events are phase 4's ingestion, which writes the list itself). The
 conftest forces Lemlist mocked and real effects off; the `lemlist_live`
 fixture is the ONLY way a test turns them on, and it installs the `GET /team`
 double in the same gesture; `fake_email_provider` replaces the manager's provider
@@ -36,11 +37,13 @@ from shared.models.email_campaign import (
     EmailMemberRender,
     EmailMessage,
     EmailProviderEvent,
+    EmailSuppression,
 )
 from shared.models.rbac import Role
 from src.core.config import get_settings
 from src.email_campaigns import email_manager, lemlist_team
 from src.email_campaigns.providers.base import EmailProvider
+from src.email_campaigns.suppression import email_hash
 from tests.email_fakes import FakeProvider
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -59,6 +62,7 @@ MakeEmailMember = Callable[..., Awaitable[EmailCampaignMember]]
 MakeEmailRender = Callable[..., Awaitable[EmailMemberRender]]
 MakeEmailMessage = Callable[..., Awaitable[EmailMessage]]
 MakeEmailEvent = Callable[..., Awaitable[EmailProviderEvent]]
+MakeEmailSuppression = Callable[..., Awaitable[EmailSuppression]]
 MakeCompanyLink = Callable[..., Awaitable[CompanyProfile]]
 
 
@@ -339,6 +343,34 @@ async def make_email_event(
         await db_session.commit()
         await db_session.refresh(event)
         return event
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def make_email_suppression(db_session: AsyncSession) -> MakeEmailSuppression:
+    """An address on an agency's opposition list, as an applied unsubscribe
+    or bounce leaves it: `email` is fingerprinted here, never stored."""
+
+    async def _make(
+        *,
+        agency_id: uuid.UUID,
+        email: str,
+        reason: str = "UNSUBSCRIBED",
+        source_member_id: uuid.UUID | None = None,
+    ) -> EmailSuppression:
+        digest = email_hash(email)
+        assert digest is not None
+        row = EmailSuppression(
+            agency_id=agency_id,
+            email_hash=digest,
+            reason=reason,
+            source_member_id=source_member_id,
+        )
+        db_session.add(row)
+        await db_session.commit()
+        await db_session.refresh(row)
+        return row
 
     return _make
 

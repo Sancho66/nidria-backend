@@ -42,7 +42,7 @@ from shared.models.journey import JourneyTemplate
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
 from src.core import email
-from src.core.client_lang import client_langs, client_langs_sync
+from src.core.client_lang import client_langs, client_langs_sync, effective_lang_sql
 from src.core.email_templates import auto_reminder_body, reminder_email
 from src.core.i18n import resolve_notification_lang_client, resolve_step_name_for_notif
 from src.digest.digest_job import run_notification_digest
@@ -110,6 +110,39 @@ def test_resolver_order_record_then_account_then_agency_then_english() -> None:
     # No agency context (the expat password reset): the historical meaning.
     assert r("ko") == "en"
     assert r("hu") == "hu"
+
+
+async def test_the_sql_chain_reads_every_record_like_the_python_resolver(
+    db_session: AsyncSession, make_agency: MakeAgency, make_expat_user: MakeExpatUser
+) -> None:
+    """`effective_lang_sql` (a list that FILTERS on the language: the Email
+    module's add wizard) and `resolve_notification_lang_client` (every send)
+    are one chain: the same language for every record, account and agency
+    default, unsupported and odd values included."""
+    agency = await make_agency(name="Chain")
+    expected: dict[uuid.UUID, tuple[str | None, str | None]] = {}
+    for record in (None, "", "es", "PT-br", "de", " fr"):
+        for account in (None, "it", "de", "EN", " "):
+            expat = (
+                await make_expat_user(activated=False, preferred_lang=account)
+                if account is not None
+                else None
+            )
+            profile = await _record(
+                db_session, agency.id, expat.id if expat is not None else None, record
+            )
+            expected[profile.id] = (record, account)
+    for default in ("hu", "pt-BR", "de", None):
+        rows = await db_session.execute(
+            select(ClientProfile.id, effective_lang_sql(default))
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(ClientProfile.agency_id == agency.id)
+        )
+        found = dict(rows.tuples().all())
+        for profile_id, (record, account) in expected.items():
+            assert found[profile_id] == resolve_notification_lang_client(
+                account, profile_lang=record, agency_default=default
+            ), (record, account, default)
 
 
 def test_step_names_fall_back_to_the_agency_language_before_french() -> None:

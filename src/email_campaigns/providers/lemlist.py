@@ -37,6 +37,8 @@ routes of spec section 10.5 need them, and only Lemlist has them):
     GET    /hooks ; POST /hooks                         `list_hooks`, `create_hook`,
                                                         `ensure_hook` (no `type`:
                                                         every event)
+    DELETE /hooks/{hookId}                              `delete_hook`, `recreate_hook`
+                                                        (a secret's rotation)
 
 What Lemlist does not have, and what this adapter does instead:
 - no archive route: archiving pauses the campaign;
@@ -131,6 +133,15 @@ _LEAD_KEYS = ("state", "isPaused", "isUnsubscribed", "contactId", "status")
 #: The campaign fields kept verbatim on a campaign.
 _CAMPAIGN_KEYS = ("status", "hasError", "errors", "timezone", "createdAt", "archived", "name")
 #: Lemlist activity types, mapped to Nidria event types. Others are not email events.
+#: Unsubscribes (developer.lemlist.com, webhooks/add-webhook, read 08/10/2026):
+#: "Since March 30, 2026, a contact unsubscribing emits `entityUnsubscribed`
+#: (whole contact) or `variableUnsubscribed` (single variable) instead of
+#: `emailsUnsubscribed`", and `emailsUnsubscribed` "also matches
+#: `apiUnsubscribed` and `manualUnsubscribed` activities". A
+#: `variableUnsubscribed` is "a specific contact variable (email address,
+#: phone number, LinkedIn profile)" whose payload names no documented field
+#: saying which: it is VARIABLE_UNSUBSCRIBED, stored and counted, never
+#: applied (nothing is guessed).
 ACTIVITY_TYPES: dict[str, str] = {
     "emailsSent": "SENT",
     "emailsOpened": "OPENED",
@@ -139,9 +150,30 @@ ACTIVITY_TYPES: dict[str, str] = {
     "emailsBounced": "BOUNCED",
     "emailsFailed": "FAILED",
     "emailsUnsubscribed": "UNSUBSCRIBED",
+    "apiUnsubscribed": "UNSUBSCRIBED",
+    "manualUnsubscribed": "UNSUBSCRIBED",
+    "entityUnsubscribed": "UNSUBSCRIBED",
+    "variableUnsubscribed": "VARIABLE_UNSUBSCRIBED",
     "paused": "PAUSED",
     "resumed": "RESUMED",
 }
+#: Activity types about a whole CONTACT rather than one lead of a campaign:
+#: they may come without `campaignId` or `leadId` (Lemlist documents
+#: `campaignId` "absent for non-campaign events" and `leadId` for "campaign
+#: events only"), and an unsubscribe of the contact reaches every one of its
+#: leads.
+CONTACT_ACTIVITY_TYPES = frozenset({"entityUnsubscribed", "variableUnsubscribed"})
+#: A lead state that says it unsubscribed (`state` is the lead's last
+#: activity type; seen live on 08/10/2026: `entityUnsubscribed`).
+_UNSUBSCRIBED_STATES = frozenset(
+    {
+        "unsubscribed",
+        "emailsunsubscribed",
+        "entityunsubscribed",
+        "apiunsubscribed",
+        "manualunsubscribed",
+    }
+)
 #: A parked step waits this long (Lemlist's maximum): no lead ever reaches it.
 PARKED_DELAY_DAYS = 1500
 
@@ -879,6 +911,25 @@ class LemlistEmailProvider:
                 return hook, False
         return self.create_hook(target_url, secret), True
 
+    def delete_hook(self, hook_id: str) -> None:
+        """Delete one webhook (`DELETE /hooks/{hookId}`, developer.lemlist.com,
+        webhooks/delete-webhook): a 404 ("Webhook not found") means it is
+        gone already."""
+        self._request("DELETE", f"/hooks/{hook_id}", ok_codes=(404,))
+
+    def recreate_hook(self, target_url: str, secret: str) -> tuple[LemlistHook, bool]:
+        """The webhook for exactly `target_url`, created again with `secret`:
+        the existing one for that URL deleted first (a secret is immutable at
+        Lemlist: rotating it means deleting and recreating the hook), then a
+        new one. A webhook of any other URL is never touched. True when one
+        was deleted."""
+        deleted = False
+        for hook in self.list_hooks():
+            if hook.target_url == target_url:
+                self.delete_hook(hook.hook_id)
+                deleted = True
+        return self.create_hook(target_url, secret), deleted
+
 
 def _hook(row: dict[str, Any]) -> LemlistHook | None:
     hook_id = row.get("_id")
@@ -945,7 +996,11 @@ def _lead(row: dict[str, Any], fallback_id: str | None = None) -> ProviderLead |
         is_paused=bool(row.get("isPaused")) or lowered == "paused",
         state=state,
         contact_id=str(row["contactId"]) if row.get("contactId") else None,
-        unsubscribed=bool(row.get("isUnsubscribed")) or lowered == "unsubscribed",
+        # The state is the lead's last activity type (an unsubscribe, the
+        # contact's included); `status` "unsubscribed" is documented too.
+        unsubscribed=bool(row.get("isUnsubscribed"))
+        or lowered in _UNSUBSCRIBED_STATES
+        or str(row.get("status") or "").lower() == "unsubscribed",
         raw={k: row[k] for k in _LEAD_KEYS if k in row},
     )
 

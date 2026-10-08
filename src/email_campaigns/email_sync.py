@@ -59,7 +59,17 @@ the campaign's (rule N1), the webhook's `secret` never kept; then applied
   the last step sent completes it; REPLIED, BOUNCED and UNSUBSCRIBED end
   the sequence; the last time of each kind. BOUNCED and UNSUBSCRIBED reach
   a removed membership too, its `removed_at` kept (decision A1, rule N6),
-  and nothing ever lifts them;
+  nothing ever lifts them, and the person's address goes on the agency's
+  opposition list (`email_suppression`, decision of 08/10/2026), as it does
+  when the reconciliation reads an unsubscribed lead and when a Launch
+  meets an address Lemlist's unsubscribe list holds;
+- an event about a whole CONTACT (Lemlist's `entityUnsubscribed` and
+  `variableUnsubscribed`, emitted instead of `emailsUnsubscribed` since
+  30/03/2026) is filed even without a campaign or a lead: in the agency
+  bound to its team, under the membership of its contact id or address. A
+  contact's unsubscribe ends every live membership of that contact in the
+  agency; a variable's is stored and counted, never applied (Lemlist does
+  not document which variable it names);
 - to the email messages: one OUTBOUND message per step (opens and clicks
   counted on it, the first fixing `first_*`), one INBOUND message per
   reply, whose text comes ONLY from the provider's inbox (`GET
@@ -155,7 +165,7 @@ from src.email_campaigns.providers.base import (
     StepSpec,
 )
 from src.email_campaigns.providers.dry_run import is_dry_run_id
-from src.email_campaigns.providers.lemlist import normalize_activity
+from src.email_campaigns.providers.lemlist import CONTACT_ACTIVITY_TYPES, normalize_activity
 from src.email_campaigns.readiness import (
     ARCHIVED,
     EXTERNAL_EFFECTS_OFF,
@@ -174,6 +184,7 @@ from src.email_campaigns.readiness import (
 from src.email_campaigns.readiness import team_mismatch as on_other_team
 from src.email_campaigns.renderer import EmailTemplateRenderer, body_to_html, tokens_in
 from src.email_campaigns.schedule import delay_days
+from src.email_campaigns.suppression import REASON_OF_STATUS, email_hash
 from src.email_campaigns.variables import client_identity
 
 #: `status_reason` of a running lead the sync paused: its email for a step
@@ -205,6 +216,15 @@ _RUNNING = ("EMAIL_QUEUED", "EMAIL_ACTIVE")
 _TERMINAL = frozenset(TERMINAL_MEMBER_STATUSES)
 _BLOCKING = frozenset(BLOCKING_MEMBER_STATUSES)
 _UNSUBSCRIBED = "EMAIL_UNSUBSCRIBED"
+#: Event types that put an address on the opposition list, and its reason.
+_EVENT_REASON = {
+    "UNSUBSCRIBED": REASON_OF_STATUS[_UNSUBSCRIBED],
+    "BOUNCED": REASON_OF_STATUS["EMAIL_BOUNCED"],
+}
+_BLOCKING_EVENTS = frozenset(_EVENT_REASON)
+#: A contact's variable unsubscribed (Lemlist's `variableUnsubscribed`):
+#: stored and counted, never applied.
+VARIABLE_UNSUBSCRIBED = "VARIABLE_UNSUBSCRIBED"
 #: Activities are read again over this window behind the checkpoint, and
 #: over a day on the first read of each UTC day: late-indexed activities are
 #: not missed, and storing is idempotent (Prism's values).
@@ -320,12 +340,16 @@ class IngestStats:
     stored: int = 0
     duplicates: int = 0
     #: Not Nidria's: no campaign id, a third party's reply, a campaign Nidria
-    #: does not run, or another campaign than the one being read.
+    #: does not run, or another campaign than the one being read; a
+    #: contact's event no agency bound to its team can take.
     ignored: int = 0
-    #: Stored for a known campaign whose lead matches no membership.
+    #: Stored for a known campaign (or a known team's contact) whose lead
+    #: or contact matches no membership.
     unmatched: int = 0
     #: New events applied, per type.
     by_type: Counter[str] = field(default_factory=Counter)
+    #: New `variableUnsubscribed` events: stored, never applied.
+    variable_unsubscribed: int = 0
     #: Memberships whose pause state the provider changed: re-read from it.
     pause_changes: set[uuid.UUID] = field(default_factory=set)
 
@@ -342,6 +366,8 @@ class CampaignReconcile:
     reply_contents: int = 0
     leads_missing: int = 0
     unsubscribed: int = 0
+    #: A contact's variable unsubscribed: stored, never applied.
+    variable_unsubscribed: int = 0
     pause_changes: int = 0
     #: Nothing of this run was kept for the campaign (its checkpoint stays).
     failed: bool = False
@@ -383,6 +409,13 @@ def _third_party(payload: Mapping[str, Any]) -> bool:
     """A reply Lemlist attributes to someone else than the lead: it belongs
     to no lead of Nidria's (spec 8.9)."""
     return payload.get("isThirdPartyReply") is True
+
+
+def _contact_id(payload: Mapping[str, Any]) -> str | None:
+    """The provider's contact id an event carries (Lemlist: `contactId`,
+    "present on every activity, campaign or not")."""
+    contact = payload.get("contactId")
+    return contact if isinstance(contact, str) and contact else None
 
 
 def _reason_params(reason: str | None) -> Params:
@@ -463,6 +496,8 @@ def describe(report: CampaignReconcile) -> str:
     )
     if report.leads_missing:
         line += f", {report.leads_missing} missing at the provider"
+    if report.variable_unsubscribed:
+        line += f", {report.variable_unsubscribed} variable unsubscribes (not applied)"
     if report.errors:
         line += f", errors: {', '.join(report.errors)}"
     return line
@@ -609,32 +644,67 @@ class EmailSyncManager:
         applied; with `campaign` (a campaign's own read), an event of any
         other campaign (another agency's included) is ignored as well.
         `provider`: the one that read them, to re-read a pause state; the
-        webhook has none and asks the campaign's agency's own."""
+        webhook has none and asks the campaign's agency's own.
+
+        An event about a whole CONTACT (`CONTACT_ACTIVITY_TYPES`) is filed
+        even without a campaign Nidria runs: in the campaign's agency when
+        it names one, else in the agency being read, else in the agency
+        bound to its Lemlist team (`teamId`); under the membership of its
+        lead, else of its contact id, else of its address. A contact's
+        unsubscribe ends every live membership of that contact or address
+        in the agency (`_unsubscribe_contact`). A variable's unsubscribe is
+        stored and counted, never applied (`ACTIVITY_TYPES`)."""
         stats = IngestStats()
         found: dict[str, EmailCampaign | None] = {}
+        teams: dict[str, uuid.UUID | None] = {}
         for event in sorted(events, key=lambda e: e.occurred_at):
-            if not event.campaign_id or _third_party(event.payload):
+            if _third_party(event.payload):
                 stats.ignored += 1
                 continue
-            target: EmailCampaign | None
-            if campaign is not None:
-                target = campaign if event.campaign_id == campaign.provider_campaign_id else None
+            whole_contact = event.provider_type in CONTACT_ACTIVITY_TYPES
+            contact = _contact_id(event.payload)
+            target: EmailCampaign | None = None
+            if event.campaign_id:
+                if campaign is not None:
+                    if event.campaign_id != campaign.provider_campaign_id:
+                        stats.ignored += 1
+                        continue
+                    target = campaign
+                else:
+                    if event.campaign_id not in found:
+                        found[event.campaign_id] = await self.repo.campaign_by_provider_id(
+                            provider_name, event.campaign_id
+                        )
+                    target = found[event.campaign_id]
+            member: EmailCampaignMember | None
+            if target is not None:
+                agency_id = target.agency_id
+                member = await self.repo.member_for_event(
+                    target.id, event.lead_id, event.email, contact
+                )
+            elif whole_contact:
+                if campaign is not None:
+                    agency_id = campaign.agency_id
+                else:
+                    team_agency = await self._team_agency(provider_name, event.payload, teams)
+                    if team_agency is None:
+                        stats.ignored += 1
+                        continue
+                    agency_id = team_agency
+                member = await self.repo.member_for_contact(agency_id, contact, event.email)
             else:
-                if event.campaign_id not in found:
-                    found[event.campaign_id] = await self.repo.campaign_by_provider_id(
-                        provider_name, event.campaign_id
-                    )
-                target = found[event.campaign_id]
-            if target is None:
                 stats.ignored += 1
                 continue
-            member = await self.repo.member_for_event(target.id, event.lead_id, event.email)
+            # A contact's event filed under a membership is its campaign's.
+            filed_under = target.id if target is not None else None
+            if filed_under is None and member is not None:
+                filed_under = member.campaign_id
             stored = await self.repo.store_event(
                 {
                     "provider": provider_name,
                     "provider_event_id": event.event_id,
-                    "agency_id": target.agency_id,
-                    "campaign_id": target.id,
+                    "agency_id": agency_id,
+                    "campaign_id": filed_under,
                     "campaign_member_id": member.id if member is not None else None,
                     "type": event.type,
                     "provider_type": event.provider_type,
@@ -650,13 +720,103 @@ class EmailSyncManager:
             stats.stored += 1
             if member is None:
                 stats.unmatched += 1
+            if event.type == VARIABLE_UNSUBSCRIBED:
+                # Lemlist does not document which variable it names: kept
+                # and counted, nothing applied, nothing invented.
+                stats.variable_unsubscribed += 1
                 continue
-            stats.by_type[event.type] += 1
-            await self._apply(target, member, event, stats)
+            if member is not None:
+                stats.by_type[event.type] += 1
+                home = target
+                if home is None:
+                    # A contact's event: the campaign of the membership it is filed under.
+                    if campaign is not None and member.campaign_id == campaign.id:
+                        home = campaign
+                    else:
+                        home = await self.repo.campaign(agency_id, member.campaign_id)
+                assert home is not None  # the membership's own campaign, same agency
+                await self._apply(home, member, event, stats)
+            elif event.type in _BLOCKING_EVENTS and event.email:
+                # A lead of a campaign Nidria runs, or a contact of its
+                # team, that no membership carries: its address is listed.
+                await self._suppress(agency_id, event.email, _EVENT_REASON[event.type], None)
+            if whole_contact and event.type == "UNSUBSCRIBED":
+                await self._unsubscribe_contact(agency_id, contact, event.email, member)
         await self._reconcile_pauses(stats, provider)
         if commit:
             await self.db.commit()
         return stats
+
+    async def _team_agency(
+        self, provider_name: str, payload: Mapping[str, Any], cache: dict[str, uuid.UUID | None]
+    ) -> uuid.UUID | None:
+        """The agency bound to the Lemlist team an event names (`teamId`,
+        documented on every activity), or None (no team said, or a team no
+        agency is bound to)."""
+        team = payload.get("teamId")
+        if not isinstance(team, str) or not team:
+            return None
+        if team not in cache:
+            owner = await self.repo.team_owner(provider_name, team)
+            cache[team] = owner[0] if owner is not None else None
+        return cache[team]
+
+    async def _suppress(
+        self,
+        agency_id: uuid.UUID,
+        address: str | None,
+        reason: str,
+        source_member_id: uuid.UUID | None,
+    ) -> None:
+        """One address on the agency's opposition list (decision of
+        08/10/2026); nothing for no address."""
+        digest = email_hash(address)
+        if digest is not None:
+            await self.repo.suppress(agency_id, digest, reason, source_member_id)
+
+    async def _block(self, member: EmailCampaignMember, *also: str | None) -> None:
+        """A membership just unsubscribed or bounced: the person's EFFECTIVE
+        address (rule N2), and every address the provider named for it, go
+        on its agency's opposition list with the reason its status says."""
+        reason = REASON_OF_STATUS.get(member.status)
+        if reason is None:
+            return
+        addresses = [await self.repo.effective_email(member.client_profile_id), *also]
+        for address in dict.fromkeys(a for a in addresses if a):
+            await self._suppress(member.agency_id, address, reason, member.id)
+
+    async def _unsubscribe_contact(
+        self,
+        agency_id: uuid.UUID,
+        contact: str | None,
+        address: str | None,
+        member: EmailCampaignMember | None,
+    ) -> None:
+        """A whole contact unsubscribed at the provider (`entityUnsubscribed`:
+        "unsubscribed from all communications"): every LIVE membership of
+        that contact (its contact id) or of its addresses (the event's, and
+        the effective address of the membership it was filed under) in the
+        agency ends UNSUBSCRIBED, and each address goes on the opposition
+        list. Ended memberships of other campaigns keep their history: the
+        list blocks the person from now on."""
+        addresses = [address]
+        if member is not None:
+            addresses.append(await self.repo.effective_email(member.client_profile_id))
+        wanted = [a for a in dict.fromkeys(addresses) if a]
+        digests = [d for d in (email_hash(a) for a in wanted) if d is not None]
+        for other in await self.repo.live_members_of_contact(agency_id, contact, digests):
+            if member is not None and other.id == member.id:
+                continue
+            other.status = _UNSUBSCRIBED
+            set_status_reason(other, REASON_UNSUBSCRIBED_AT_PROVIDER)
+            await self._block(other)
+        for each in wanted:
+            await self._suppress(
+                agency_id,
+                each,
+                _EVENT_REASON["UNSUBSCRIBED"],
+                member.id if member is not None else None,
+            )
 
     async def _apply(
         self,
@@ -713,15 +873,18 @@ class EmailSyncManager:
                 set_status_reason(member, None)
         elif event.type == "BOUNCED":
             # Decision A1: a removed membership takes it too, `removed_at`
-            # kept. An unsubscribe outranks a bounce.
+            # kept. An unsubscribe outranks a bounce. The address goes on
+            # the opposition list (decision of 08/10/2026).
             if member.status != _UNSUBSCRIBED:
                 member.status = "EMAIL_BOUNCED"
             if not removed:
                 set_status_reason(member, REASON_BOUNCED, _reason_params(event.reason))
+            await self._block(member, event.email)
         elif event.type == "UNSUBSCRIBED":
             member.status = _UNSUBSCRIBED
             if not removed:
                 set_status_reason(member, None)
+            await self._block(member, event.email)
         elif event.type == "FAILED" and not ended:
             set_status_reason(member, REASON_SEND_FAILED, _reason_params(event.reason))
         elif event.type in ("PAUSED", "RESUMED") and not ended:
@@ -978,6 +1141,7 @@ class EmailSyncManager:
         report.events_new = stats.stored
         report.events_duplicate = stats.duplicates
         report.by_type = stats.by_type
+        report.variable_unsubscribed = stats.variable_unsubscribed
         campaign.last_activity_sync_at = started
         await self._read_replies(provider, campaign, report)
         campaign.last_provider_sync_at = datetime.now(UTC)
@@ -1023,6 +1187,7 @@ class EmailSyncManager:
             if lead.unsubscribed:
                 member.status = _UNSUBSCRIBED
                 set_status_reason(member, REASON_UNSUBSCRIBED_AT_PROVIDER)
+                await self._block(member, lead.email)
                 report.unsubscribed += 1
             elif set_paused(member, lead.is_paused):
                 report.pause_changes += 1
@@ -1947,8 +2112,10 @@ class EmailSyncManager:
         except ProviderError as exc:
             code = provider_error_code(exc)
             if exc.code == "EMAIL_UNSUBSCRIBED":
-                # The address is on the provider's unsubscribe list: a fact, kept.
+                # The address is on the provider's unsubscribe list: a fact,
+                # kept, and on the agency's opposition list too.
                 member.status = "EMAIL_UNSUBSCRIBED"
+                await self._block(member, email)
             failure = PushFailure(
                 code, _scalars(provider_params(exc)), stop=code == PLAN_REFUSED_CODE
             )

@@ -1,9 +1,19 @@
-"""Shared HTTP response helpers."""
+"""Shared HTTP helpers: a file download response, and the caller's IP."""
 
 import mimetypes
 from urllib.parse import quote
 
-from fastapi import Response
+from fastapi import Request, Response
+
+
+def client_ip(request: Request) -> str | None:
+    """The caller's IP: the first X-Forwarded-For hop (the original client,
+    behind Fly's proxy), else the direct peer, else None. One definition for
+    every reader: the consent trace and the Lemlist webhook's rate limit."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 def file_download_response(

@@ -26,6 +26,8 @@ from shared.models.client_case import ClientCase
 from shared.models.client_profile import ClientProfile
 from shared.models.company_profile import CompanyProfile, CompanyProfileRole
 from shared.models.expat_user import ExpatUser
+from src.core.languages import language_name
+from src.core.numbers import format_integer
 from src.email_campaigns.html_text import html_to_text
 from src.email_campaigns.renderer import (
     EmailTemplateRenderer,
@@ -356,6 +358,9 @@ def test_the_client_status_is_the_derived_status_named_in_the_agency_language() 
 
 
 def test_the_client_language_follows_the_record_then_the_account_then_the_agency() -> None:
+    """The language is the chain's (record, account, agency), NAMED in the
+    agency's language (question R8, 08/10/2026), never its code."""
+
     def language(**overrides: Any) -> str | None:
         return (
             EmailTemplateRenderer()
@@ -364,10 +369,103 @@ def test_the_client_language_follows_the_record_then_the_account_then_the_agency
         )
 
     account = ExpatUser(first_name="Ana", last_name="S", email="a@example.com", preferred_lang="pt")
-    assert language(client=_client(preferred_lang="es"), account=account) == "es"
-    assert language(client=_client(preferred_lang=None), account=account) == "pt"
-    assert language(agency=_agency(default_language="it")) == "it"
-    assert language(agency=None) == "en"
+    assert language(client=_client(preferred_lang="es"), account=account) == "Espagnol"
+    assert language(client=_client(preferred_lang=None), account=account) == "Portugais"
+    assert language(agency=_agency(default_language="it")) == "Italiano"
+    hungarian = _agency(default_language="hu")
+    assert language(agency=hungarian, client=_client(preferred_lang="es")) == "spanyol"
+    # No agency: the platform's language names the platform's fallback.
+    assert language(agency=None) == "Anglais"
+
+
+@pytest.mark.parametrize(
+    ("lang", "names"),
+    [
+        ("fr", ["Français", "Anglais", "Espagnol", "Russe", "Portugais", "Italien", "Hongrois"]),
+        ("en", ["French", "English", "Spanish", "Russian", "Portuguese", "Italian", "Hungarian"]),
+        ("es", ["Francés", "Inglés", "Español", "Ruso", "Portugués", "Italiano", "Húngaro"]),
+        (
+            "ru",
+            [
+                "французский",
+                "английский",
+                "испанский",
+                "русский",
+                "португальский",
+                "итальянский",
+                "венгерский",
+            ],
+        ),
+        ("pt", ["Francês", "Inglês", "Espanhol", "Russo", "Português", "Italiano", "Húngaro"]),
+        ("it", ["Francese", "Inglese", "Spagnolo", "Russo", "Portoghese", "Italiano", "Ungherese"]),
+        ("hu", ["francia", "angol", "spanyol", "orosz", "portugál", "olasz", "magyar"]),
+    ],
+)
+def test_the_seven_languages_are_named_in_the_agency_language(lang: str, names: list[str]) -> None:
+    """pycountry's ISO 639 catalogs (`core.languages`), never a hand-kept
+    list: each interface language named in each of them."""
+    codes = ["fr", "en", "es", "ru", "pt", "it", "hu"]
+    rendered = [
+        EmailTemplateRenderer()
+        .render(
+            "",
+            "{{client.preferred_lang}}",
+            _context(client=_client(preferred_lang=code), agency=_agency(default_language=lang)),
+        )
+        .body
+        for code in codes
+    ]
+    assert rendered == names
+    assert [language_name(code, lang) for code in codes] == names
+
+
+def test_an_unknown_language_code_is_rendered_as_written() -> None:
+    assert language_name("xx", "fr") == "xx"
+    assert language_name(" ZZZ ", "fr") == "ZZZ"
+    assert language_name("FR", "en") == "French"
+    assert language_name("", "fr") is None
+    assert language_name(None, "fr") is None
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        # ICU (CLDR 48, Node 22.22.2): see src/core/numbers.py.
+        ("fr", ["1\u202f234", "12\u202f345", "1\u202f234\u202f567"]),
+        ("en", ["1,234", "12,345", "1,234,567"]),
+        ("es", ["1234", "12.345", "1.234.567"]),
+        ("ru", ["1\u00a0234", "12\u00a0345", "1\u00a0234\u00a0567"]),
+        ("pt", ["1234", "12\u00a0345", "1\u00a0234\u00a0567"]),
+        ("it", ["1234", "12.345", "1.234.567"]),
+        ("hu", ["1234", "12\u00a0345", "1\u00a0234\u00a0567"]),
+    ],
+)
+def test_the_headcount_is_grouped_as_the_agency_language_writes_it(
+    lang: str, expected: list[str]
+) -> None:
+    def headcount(value: object) -> str | None:
+        return (
+            EmailTemplateRenderer()
+            .render(
+                "",
+                "{{company.employee_count}}",
+                _context(
+                    companies=(_company("Acme", employee_count=value),),
+                    agency=_agency(default_language=lang),
+                ),
+            )
+            .resolved_map()["company.employee_count"]
+        )
+
+    assert [headcount(n) for n in (1234, 12345, 1234567)] == expected
+    assert [format_integer(n, lang) for n in (1234, 12345, 1234567)] == expected
+    assert format_integer(-1234567, lang) == "-" + expected[2]
+    assert headcount(1234567.0) == expected[2]  # a whole number stored as a float
+    assert headcount(42) == "42"
+    # Anything else reads as before: a decimal, a text.
+    assert headcount(1234.5) == "1234.5"
+    assert headcount("about 1234") == "about 1234"
+    assert headcount("1234") == "1234"
 
 
 def test_company_values_come_from_the_preset_keys_as_stored() -> None:
@@ -450,7 +548,7 @@ def test_countries_are_named_in_the_agency_language(lang: str, france: str, port
     assert result.body == f"{france} | {france} | {portugal}"
 
 
-def test_a_country_value_that_is_not_a_code_is_kept_and_the_language_stays_a_code() -> None:
+def test_a_country_value_that_is_not_a_code_is_kept_and_the_language_is_named() -> None:
     result = EmailTemplateRenderer().render(
         "",
         "{{client.nationality}} | {{company.country}} | {{client.preferred_lang}}",
@@ -459,9 +557,9 @@ def test_a_country_value_that_is_not_a_code_is_kept_and_the_language_stays_a_cod
             companies=(_company("Acme", country="fr"),),
         ),
     )
-    # Free text stays as typed; a lower-case code is still named; the
-    # language has no name table in the backend: its code.
-    assert result.body == "Française | France | es"
+    # Free text stays as typed; a lower-case code is still named; so is the
+    # language, in the agency's language (question R8).
+    assert result.body == "Française | France | Espagnol"
     assert result.resolved_map()["client.nationality"] == "Française"
 
 
@@ -535,7 +633,8 @@ async def test_rows_read_back_from_the_database_render(
     assert result.ok, result.errors
     assert result.subject == "Ana"
     assert result.body == (
-        "ana.souza@example.com · 36 · pt · Prospect · Acme · 12 · France · Horizon Expat Portugal"
+        "ana.souza@example.com · 36 · Portugais · Prospect · Acme · 12 · France · "
+        "Horizon Expat Portugal"
     )
 
 

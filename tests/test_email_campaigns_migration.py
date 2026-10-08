@@ -1,5 +1,5 @@
 """The Email module's migration (h9e5b1f7c3d0): reversible, deny-all RLS on
-its eight tables, and a schema IDENTICAL to the one the models produce.
+its nine tables, and a schema IDENTICAL to the one the models produce.
 
 The test database is born from the models (`create_all`, trigger included
 through `after_create`); dev and production are born from this migration. The
@@ -30,6 +30,7 @@ TABLES = (
     "email_member_render",
     "email_provider_event",
     "email_message",
+    "email_suppression",
 )
 
 

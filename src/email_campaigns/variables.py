@@ -25,23 +25,28 @@ neutral example; the frontend translates each token's label.
 `VariableDef.fallback_label` is a technical English name, for logs and for a
 token the frontend does not know yet, never a translated label.
 
-Names, not codes (question R8): an email NAMES what Nidria stores as a code.
-`client.status` reads as its label (`Prospect` / `Client`, the client
-records' own labels, `CLIENT_STATUS_LABELS`), and `client.nationality`,
-`company.country` and `agency.country` as the country's name
-(`src.core.countries.country_name`; a value that is not a country code is
-kept as written). Both are named in the AGENCY's default language
-(`agency.default_language`, `RenderContext.label_lang`). Provisional
-decision: in V1 a campaign is written in one language (spec section 16:
-per-language variants are V2), the agency's, so its labels follow that
-language rather than each client's. `client.preferred_lang` stays the
-language CODE: the backend has no table of language names (only the import
-side's recognition forms, `imports.value_normalizers`), and none is
-invented here.
+Names, not codes (question R8, answered on 08/10/2026): an email NAMES what
+Nidria stores as a code, in the AGENCY's default language
+(`agency.default_language`, `RenderContext.label_lang`).
+- `client.status` reads as its label (`Prospect` / `Client`, the client
+  records' own labels, `CLIENT_STATUS_LABELS`);
+- `client.nationality`, `company.country` and `agency.country` as the
+  country's name (`src.core.countries.country_name`; a value that is not a
+  country code is kept as written);
+- `client.preferred_lang` as the language's name, spelled out
+  (`src.core.languages.language_name`, pycountry's ISO 639 catalogs: « es »
+  reads « Espagnol » for a French agency; an unknown code as written);
+- `company.employee_count`, a whole number, with the agency language's
+  digit grouping (`src.core.numbers.format_integer`, ICU's); any other value
+  (a decimal, a text) reads as before.
+Provisional decision: in V1 a campaign is written in one language (spec
+section 16: per-language variants are V2), the agency's, so its labels
+follow that language rather than each client's.
 
-For the frontend's variable picker, the example of a `country` or `status`
-variable is the stored CODE (`FR`, `client`): the frontend names it in the
-interface's language, as the email names it in the agency's.
+For the frontend's variable picker, the example of a `country`, `language`
+or `status` variable is the stored CODE (`FR`, `fr`, `client`): the
+frontend names it in the interface's language (its `Intl` names for a
+country or a language), as the email names it in the agency's.
 
 Not ported from Prism: the CFO, M&A and LinkedIn variables, `split_name`
 (Nidria stores first and last names apart), the money, percent and date
@@ -67,6 +72,8 @@ from src.core.i18n import (
     resolve_notification_lang_client,
     supported_lang,
 )
+from src.core.languages import language_name
+from src.core.numbers import format_integer
 
 #: Where a variable's value comes from: its token's namespace.
 VariableSource = Literal["client", "company", "agency"]
@@ -256,14 +263,16 @@ def _client_age(ctx: RenderContext) -> str | None:
 def _client_language(ctx: RenderContext) -> str | None:
     """The language the client's emails go in: the record's, else the
     account's, else the agency's (the chain every client send follows,
-    `resolve_notification_lang_client`)."""
+    `resolve_notification_lang_client`), NAMED in the email's label
+    language (« Espagnol », never « es »)."""
     if ctx.client is None:
         return None
-    return resolve_notification_lang_client(
+    code = resolve_notification_lang_client(
         ctx.account.preferred_lang if ctx.account is not None else None,
         profile_lang=ctx.client.preferred_lang,
         agency_default=ctx.agency.default_language if ctx.agency is not None else None,
     )
+    return language_name(code, ctx.label_lang)
 
 
 def _client_status(ctx: RenderContext) -> str | None:
@@ -299,7 +308,14 @@ def _company_field(key: str) -> Callable[[RenderContext], Any]:
 
 
 def _company_headcount(ctx: RenderContext) -> str | None:
-    return _number(_company_value(ctx, "employee_count"))
+    """A whole number of employees, grouped as the email's label language
+    writes it (« 1 234 » in French); a decimal or a text as stored."""
+    value = _company_value(ctx, "employee_count")
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return format_integer(value, ctx.label_lang)
+    return _number(value)
 
 
 # ── agency.* ───────────────────────────────────────────────────────────────

@@ -9,7 +9,10 @@ performance and outreach figures (all computed in SQL) and the deletion
 hooks' reads. Phase 4: the provider's events (stored once,
 `uq_email_provider_event`), the memberships and messages they reach, and
 the Email Sync job's reads. The webhook and the job have no agent: they find
-a campaign by its provider id, and the agency is the campaign's (rule N1).
+a campaign by its provider id, and the agency is the campaign's (rule N1);
+an event about a whole contact, without a campaign Nidria runs, is the
+agency's bound to its Lemlist team. The opposition list (`email_suppression`,
+decision of 08/10/2026): written once per address, read by fingerprint.
 
 The wizard reuses the Clients and Companies pages' own predicates
 (`ClientProfilesRepository.filter_predicates`,
@@ -66,6 +69,7 @@ from shared.models.email_campaign import (
     EmailMemberRender,
     EmailMessage,
     EmailProviderEvent,
+    EmailSuppression,
 )
 from shared.models.expat_user import ExpatUser
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
@@ -73,7 +77,13 @@ from src.client_profiles.client_profiles_schema import ProfileListFilter
 from src.client_profiles.identity import effective_email_sql
 from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
 from src.company_profiles.company_profiles_schema import CompanyListFilter
+from src.core.client_lang import effective_lang_sql
 from src.email_campaigns.providers.dry_run import DRY_RUN_PREFIX
+from src.email_campaigns.suppression import (
+    REASON_UNSUBSCRIBED,
+    STATUS_OF_REASON,
+    email_hash_sql,
+)
 
 _FUNNEL_KEYS = (
     "launched",
@@ -207,6 +217,15 @@ class EmailRepository:
         )
         return {status: count for status, count in (await self.db.execute(stmt)).all()}
 
+    async def campaign_ids(self, agency_id: uuid.UUID, status: str) -> list[uuid.UUID]:
+        """The agency's campaigns in this status, oldest first."""
+        rows = await self.db.execute(
+            select(EmailCampaign.id)
+            .where(EmailCampaign.agency_id == agency_id, EmailCampaign.status == status)
+            .order_by(EmailCampaign.created_at, EmailCampaign.id)
+        )
+        return list(rows.scalars().all())
+
     async def count_live_provider_campaigns(self, agency_id: uuid.UUID) -> int:
         """ACTIVE campaigns that exist at Lemlist: sending may be under way."""
         stmt = select(func.count()).where(
@@ -257,29 +276,87 @@ class EmailRepository:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def blocking_statuses_by_email(
-        self, agency_id: uuid.UUID, emails: Iterable[str]
-    ) -> list[tuple[str, uuid.UUID, str]]:
-        """(lower-cased effective email, client profile id, status) of every
-        UNSUBSCRIBED or BOUNCED membership of the agency whose profile's
-        effective address (rule N2) is one of `emails`, removed memberships
-        included (A1). Two records may share an address (risk R1)."""
-        wanted = sorted({email.lower() for email in emails if email})
+    async def suppressed(
+        self, agency_id: uuid.UUID, digests: Iterable[str]
+    ) -> dict[str, tuple[str, uuid.UUID | None]]:
+        """The agency's opposition list for these address fingerprints:
+        fingerprint -> (EMAIL_UNSUBSCRIBED or EMAIL_BOUNCED, the client
+        record of the membership that listed it, None once it is gone)."""
+        wanted = sorted({digest for digest in digests if digest})
         if not wanted:
-            return []
-        address = func.lower(effective_email_sql())
+            return {}
         stmt = (
-            select(address, EmailCampaignMember.client_profile_id, EmailCampaignMember.status)
-            .select_from(EmailCampaignMember)
-            .join(ClientProfile, ClientProfile.id == EmailCampaignMember.client_profile_id)
-            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
-            .where(
-                EmailCampaignMember.agency_id == agency_id,
-                EmailCampaignMember.status.in_(BLOCKING_MEMBER_STATUSES),
-                address.in_(wanted),
+            select(
+                EmailSuppression.email_hash,
+                EmailSuppression.reason,
+                EmailCampaignMember.client_profile_id,
+            )
+            .outerjoin(
+                EmailCampaignMember, EmailCampaignMember.id == EmailSuppression.source_member_id
+            )
+            .where(EmailSuppression.agency_id == agency_id, EmailSuppression.email_hash.in_(wanted))
+        )
+        return {
+            digest: (STATUS_OF_REASON[reason], profile_id)
+            for digest, reason, profile_id in (await self.db.execute(stmt)).all()
+        }
+
+    async def suppress(
+        self,
+        agency_id: uuid.UUID,
+        digest: str,
+        reason: str,
+        source_member_id: uuid.UUID | None,
+    ) -> None:
+        """Put an address fingerprint on the agency's opposition list, or
+        keep it there: an unsubscribe outranks a bounce, never the reverse,
+        and the source follows the reason kept (a listed source gone since
+        is filled again by the next one of the same reason). One statement:
+        two writers at once never make two rows (`uq_email_suppression_address`)."""
+        row = insert(EmailSuppression).values(
+            id=uuid.uuid4(),
+            agency_id=agency_id,
+            email_hash=digest,
+            reason=reason,
+            source_member_id=source_member_id,
+        )
+        current = EmailSuppression.__table__.c
+        upgraded = and_(
+            current.reason != REASON_UNSUBSCRIBED, row.excluded.reason == REASON_UNSUBSCRIBED
+        )
+        await self.db.execute(
+            row.on_conflict_do_update(
+                constraint="uq_email_suppression_address",
+                set_={
+                    "reason": case(
+                        (
+                            or_(
+                                current.reason == REASON_UNSUBSCRIBED,
+                                row.excluded.reason == REASON_UNSUBSCRIBED,
+                            ),
+                            REASON_UNSUBSCRIBED,
+                        ),
+                        else_=current.reason,
+                    ),
+                    "source_member_id": case(
+                        (upgraded, row.excluded.source_member_id),
+                        else_=func.coalesce(
+                            current.source_member_id, row.excluded.source_member_id
+                        ),
+                    ),
+                },
             )
         )
-        return [(row[0], row[1], row[2]) for row in (await self.db.execute(stmt)).all()]
+
+    async def effective_email(self, profile_id: uuid.UUID) -> str | None:
+        """The address Nidria writes to for this client record (rule N2)."""
+        value = await self.db.scalar(
+            select(effective_email_sql())
+            .select_from(ClientProfile)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(ClientProfile.id == profile_id)
+        )
+        return str(value) if value else None
 
     async def live_members_by_email(
         self, agency_id: uuid.UUID, emails: Iterable[str]
@@ -564,23 +641,11 @@ class EmailRepository:
         )
         return int(getattr(result, "rowcount", 0) or 0)
 
-    async def blocking_member_count(self, campaign_id: uuid.UUID) -> int:
-        """Memberships of the campaign that unsubscribed or bounced, removed
-        ones included (decision A1: the block lives on these rows)."""
-        value = await self.db.scalar(
-            select(func.count())
-            .select_from(EmailCampaignMember)
-            .where(
-                EmailCampaignMember.campaign_id == campaign_id,
-                EmailCampaignMember.status.in_(BLOCKING_MEMBER_STATUSES),
-            )
-        )
-        return int(value or 0)
-
     async def delete_campaign(self, campaign_id: uuid.UUID) -> None:
         """The campaign and everything of it: steps, AI variables, memberships,
         renders and messages follow by cascade; provider events would only be
-        detached (SET NULL), so they go explicitly."""
+        detached (SET NULL), so they go explicitly. The opposition list stays:
+        its rows only lose their source membership (SET NULL)."""
         await self.db.execute(
             delete(EmailProviderEvent).where(EmailProviderEvent.campaign_id == campaign_id)
         )
@@ -1019,6 +1084,8 @@ class EmailRepository:
         client_statuses: Sequence[str],
         has_email: bool | None,
         campaign_id: uuid.UUID | str | None,
+        preferred_langs: Sequence[str] = (),
+        agency_default_lang: str | None = None,
         sort_by: str,
         sort_order: str,
         page: int,
@@ -1031,7 +1098,10 @@ class EmailRepository:
         `client_statuses`: the derived status, through the same projection
         (one value filters, both or none do not); `has_email`: an effective
         address (rule N2) or none; `campaign_id`: live in that campaign, or
-        `"none"` for no live membership at all."""
+        `"none"` for no live membership at all; `preferred_langs`: the
+        client's EFFECTIVE language is one of them (the record's, else its
+        account's, else the agency's `agency_default_lang`: the chain every
+        client send follows, `core.client_lang.effective_lang_sql`)."""
         profiles = ClientProfilesRepository(self.db)
         predicates: list[Any] = profiles.filter_predicates(
             agency_id, **criteria.model_dump(exclude_none=True)
@@ -1044,6 +1114,10 @@ class EmailRepository:
             predicates.append(address != "")
         elif has_email is False:
             predicates.append(address == "")
+        if preferred_langs:
+            predicates.append(
+                effective_lang_sql(agency_default_lang).in_(sorted(set(preferred_langs)))
+            )
         live = self._live_profiles(agency_id)
         if campaign_id == "none":
             predicates.append(ClientProfile.id.not_in(live))
@@ -1094,16 +1168,24 @@ class EmailRepository:
     ) -> tuple[list[tuple[CompanyProfile, int, int, int]], int]:
         """The Companies page's list for the wizard (its predicates, sort and
         paging), each company with its linked clients, those with an
-        effective address and no block on record (eligible), and those also
-        in no live campaign (ready). A client counts once per company,
-        whatever its roles there. `only_with_ready`: a ready client at
-        least; `with_email`: a client with an address at least."""
+        effective address and no block on record (eligible: none of their
+        own memberships unsubscribed or bounced, and their address is not
+        on the opposition list), and those also in no live campaign (ready).
+        A client counts once per company, whatever its roles there.
+        `only_with_ready`: a ready client at least; `with_email`: a client
+        with an address at least."""
         has_email = func.coalesce(func.trim(effective_email_sql()), "") != ""
         blocked = select(EmailCampaignMember.client_profile_id).where(
             EmailCampaignMember.agency_id == agency_id,
             EmailCampaignMember.status.in_(BLOCKING_MEMBER_STATUSES),
         )
-        eligible = and_(has_email, ClientProfile.id.not_in(blocked))
+        listed = exists(
+            select(EmailSuppression.id).where(
+                EmailSuppression.agency_id == agency_id,
+                EmailSuppression.email_hash == email_hash_sql(effective_email_sql()),
+            )
+        )
+        eligible = and_(has_email, ClientProfile.id.not_in(blocked), not_(listed))
         ready = and_(eligible, ClientProfile.id.not_in(self._live_profiles(agency_id)))
         person = ClientProfile.id
         counts = (
@@ -1513,12 +1595,18 @@ class EmailRepository:
             sent.setdefault(member_id, {}).setdefault(position, at)
         return sent
 
-    async def outreach_held(self, agency_id: uuid.UUID, filters: dict[str, Any]) -> tuple[int, int]:
-        """(waiting launch, on hold): leads never launched yet; launched
-        leads paused, or whose campaign is not active."""
+    async def outreach_held(
+        self, agency_id: uuid.UUID, filters: dict[str, Any]
+    ) -> tuple[int, int, int]:
+        """(waiting launch, on hold, dry run): leads never launched yet;
+        launched leads paused, or whose campaign is not active; leads
+        launched in a dry run whose sequence has not ended. Each lead is
+        counted once, under the reason `schedule.hold_of` gives it: a dry
+        run's lead is never "on hold", whatever its pause or campaign."""
         base = self._in_agency(select(func.count(EmailCampaignMember.id)), agency_id).where(
             *self._outreach_scope(agency_id, filters)
         )
+        simulated = _dry_run_id(EmailCampaignMember.provider_lead_id)
         waiting = await self.db.scalar(
             base.where(
                 EmailCampaignMember.status == "EMAIL_READY",
@@ -1528,6 +1616,7 @@ class EmailRepository:
         held = await self.db.scalar(
             base.where(
                 EmailCampaignMember.queued_at.is_not(None),
+                or_(EmailCampaignMember.provider_lead_id.is_(None), not_(simulated)),
                 or_(
                     EmailCampaignMember.status == "EMAIL_PAUSED",
                     and_(
@@ -1537,7 +1626,14 @@ class EmailRepository:
                 ),
             )
         )
-        return int(waiting or 0), int(held or 0)
+        dry_run = await self.db.scalar(
+            base.where(
+                EmailCampaignMember.queued_at.is_not(None),
+                simulated,
+                EmailCampaignMember.status.in_(LIVE_MEMBER_STATUSES),
+            )
+        )
+        return int(waiting or 0), int(held or 0), int(dry_run or 0)
 
     # --- the deletion hooks (spec 8.11) --------------------------------------------
 
@@ -1626,11 +1722,16 @@ class EmailRepository:
         return (await self.db.execute(stmt)).scalars().first()
 
     async def member_for_event(
-        self, campaign_id: uuid.UUID, lead_id: str | None, email: str | None
+        self,
+        campaign_id: uuid.UUID,
+        lead_id: str | None,
+        email: str | None,
+        contact_id: str | None = None,
     ) -> EmailCampaignMember | None:
         """The membership an event is about, locked (the webhook and the job
         may apply events to the same one at once): by its lead id, else by
-        the client's EFFECTIVE address (rule N2), an open membership first."""
+        its provider contact id, else by the client's EFFECTIVE address
+        (rule N2), an open membership first."""
         if lead_id:
             found = (
                 (
@@ -1650,6 +1751,54 @@ class EmailRepository:
             )
             if found is not None:
                 return found
+        return await self._member_of(
+            [EmailCampaignMember.campaign_id == campaign_id], contact_id, email, live_first=False
+        )
+
+    async def member_for_contact(
+        self, agency_id: uuid.UUID, contact_id: str | None, email: str | None
+    ) -> EmailCampaignMember | None:
+        """The membership a provider event about a whole CONTACT is filed
+        under, in the agency, locked: by the provider contact id, else by
+        the client's effective address; a live membership first, then an
+        open one, then the latest."""
+        return await self._member_of(
+            [EmailCampaignMember.agency_id == agency_id], contact_id, email, live_first=True
+        )
+
+    async def _member_of(
+        self,
+        scope: Sequence[ColumnElement[bool]],
+        contact_id: str | None,
+        email: str | None,
+        *,
+        live_first: bool,
+    ) -> EmailCampaignMember | None:
+        """The membership in `scope` holding this provider contact id, else
+        one whose client's effective address is `email`, locked."""
+        order: list[Any] = [
+            EmailCampaignMember.removed_at.is_(None).desc(),
+            EmailCampaignMember.added_at.desc(),
+            EmailCampaignMember.id,
+        ]
+        if live_first:
+            order.insert(0, EmailCampaignMember.status.in_(LIVE_MEMBER_STATUSES).desc())
+        if contact_id:
+            found = (
+                (
+                    await self.db.execute(
+                        select(EmailCampaignMember)
+                        .where(*scope, EmailCampaignMember.provider_contact_id == contact_id)
+                        .order_by(*order)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if found is not None:
+                return found
         address = (email or "").strip().lower()
         if not address:
             return None
@@ -1659,15 +1808,8 @@ class EmailRepository:
                     select(EmailCampaignMember)
                     .join(ClientProfile, ClientProfile.id == EmailCampaignMember.client_profile_id)
                     .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
-                    .where(
-                        EmailCampaignMember.campaign_id == campaign_id,
-                        func.lower(effective_email_sql()) == address,
-                    )
-                    .order_by(
-                        EmailCampaignMember.removed_at.is_(None).desc(),
-                        EmailCampaignMember.added_at.desc(),
-                        EmailCampaignMember.id,
-                    )
+                    .where(*scope, func.lower(effective_email_sql()) == address)
+                    .order_by(*order)
                     .with_for_update(of=EmailCampaignMember)
                     .execution_options(populate_existing=True)
                 )
@@ -1675,6 +1817,36 @@ class EmailRepository:
             .scalars()
             .first()
         )
+
+    async def live_members_of_contact(
+        self, agency_id: uuid.UUID, contact_id: str | None, digests: Iterable[str]
+    ) -> list[EmailCampaignMember]:
+        """The agency's live memberships of one provider contact: those
+        holding its contact id, and those whose client's effective address
+        has one of these fingerprints (`suppression.email_hash`, the
+        opposition list's own comparison), locked."""
+        wanted = sorted({digest for digest in digests if digest})
+        reached: list[ColumnElement[bool]] = []
+        if contact_id:
+            reached.append(EmailCampaignMember.provider_contact_id == contact_id)
+        if wanted:
+            reached.append(email_hash_sql(effective_email_sql()).in_(wanted))
+        if not reached:
+            return []
+        rows = await self.db.execute(
+            select(EmailCampaignMember)
+            .join(ClientProfile, ClientProfile.id == EmailCampaignMember.client_profile_id)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(
+                EmailCampaignMember.agency_id == agency_id,
+                EmailCampaignMember.status.in_(LIVE_MEMBER_STATUSES),
+                or_(*reached),
+            )
+            .order_by(EmailCampaignMember.id)
+            .with_for_update(of=EmailCampaignMember)
+            .execution_options(populate_existing=True)
+        )
+        return list(rows.scalars().all())
 
     async def member_locked(self, member_id: uuid.UUID) -> EmailCampaignMember | None:
         """One membership, locked and fresh (a pause state re-read)."""

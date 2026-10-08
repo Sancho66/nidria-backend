@@ -3,7 +3,8 @@
 
 Platform routes (superadmin only, `agency.create`):
     GET    /agencies/{agency_id}/email-module
-    PATCH  /agencies/{agency_id}/email-module        {enabled}
+    PATCH  /agencies/{agency_id}/email-module        {enabled, pause_campaigns}
+    POST   /agencies/{agency_id}/email-module/pause-all
     PUT    /agencies/{agency_id}/email-module/team
     DELETE /agencies/{agency_id}/email-module/team
 
@@ -13,6 +14,7 @@ the network guard stays at zero for the whole file.
 
 import base64
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -25,7 +27,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agency import Agency
 from shared.models.agency_email_module import AgencyEmailModule
 from shared.models.agent import Agent
+from shared.models.email_campaign import EmailCampaign
 from shared.models.rbac import Role
+from src.email_campaigns.providers.base import ProviderError
+from tests.email_fakes import FakeProvider
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.email_plugin import (
@@ -43,6 +48,7 @@ pytestmark = pytest.mark.usefixtures("rbac_baseline")
 ROUTES = [
     ("GET", "/agencies/{id}/email-module", None),
     ("PATCH", "/agencies/{id}/email-module", {"enabled": True}),
+    ("POST", "/agencies/{id}/email-module/pause-all", None),
     ("PUT", "/agencies/{id}/email-module/team", None),
     ("DELETE", "/agencies/{id}/email-module/team", None),
 ]
@@ -627,3 +633,262 @@ async def test_the_platform_agency_list_serves_each_agency_switch(
     assert flags[str(target.id)] is True
     assert flags[str(off.id)] is False
     assert flags[str(superadmin.agency_id)] is False
+
+
+# --- POST pause-all: stop an agency's sends (decision of 08/10/2026) ---------------------
+
+
+async def _statuses(db: AsyncSession, agency_id: uuid.UUID) -> dict[str, str]:
+    rows = await db.execute(
+        select(EmailCampaign.name, EmailCampaign.status)
+        .where(EmailCampaign.agency_id == agency_id)
+        .execution_options(populate_existing=True)
+    )
+    return dict(rows.tuples().all())
+
+
+async def _campaigns(
+    make_email_campaign: MakeEmailCampaign,
+    agency_id: uuid.UUID,
+    *specs: tuple[str, str, str | None, str | None],
+) -> dict[str, uuid.UUID]:
+    """(name, status, provider campaign id, Lemlist team) -> campaign ids."""
+    made = {}
+    for name, status, provider_id, team in specs:
+        campaign = await make_email_campaign(
+            agency_id=agency_id,
+            name=name,
+            status=status,
+            provider_campaign_id=provider_id,
+            provider_metadata={"team_id": team} if team else {},
+        )
+        made[name] = campaign.id
+    return made
+
+
+async def test_pause_all_pauses_every_active_campaign_at_lemlist_and_in_nidria(
+    client: AsyncClient,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    target: Agency,
+    db_session: AsyncSession,
+    make_agency: MakeAgency,
+    make_agency_email_module: MakeAgencyEmailModule,
+    make_email_campaign: MakeEmailCampaign,
+    fake_email_provider: FakeProvider,
+) -> None:
+    """At Lemlist through the agency's provider for a campaign that lives
+    there (never another team's: its ids are not the current team's), in
+    Nidria only for a dry run's or one never synced. One commit per
+    campaign: a failure is told with its code, the others go on. Imported
+    campaigns are ACTIVE campaigns like any other (no filter on origin)."""
+    # Plain values: a failed pause rolls the shared session back.
+    target_id, headers = target.id, agent_headers(superadmin)
+    await make_agency_email_module(agency_id=target_id)
+    ids = await _campaigns(
+        make_email_campaign,
+        target_id,
+        ("Live", "ACTIVE", "cam_live", "tea_current"),
+        ("Dry", "ACTIVE", "dry_cam_1", None),
+        ("Never synced", "ACTIVE", None, None),
+        ("Other team", "ACTIVE", "cam_other", "tea_other"),
+        ("Broken", "ACTIVE", "cam_broken", "tea_current"),
+        ("Paused", "PAUSED", "cam_paused", "tea_current"),
+        ("Draft", "DRAFT", None, None),
+        ("Archived", "ARCHIVED", "cam_archived", "tea_current"),
+    )
+    elsewhere_id = (await make_agency(name="Elsewhere")).id
+    await make_email_campaign(
+        agency_id=elsewhere_id,
+        name="Theirs",
+        status="ACTIVE",
+        provider_campaign_id="cam_theirs",
+        provider_metadata={"team_id": "tea_current"},
+    )
+    fake_email_provider.failures[("pause_campaign", "cam_broken")] = ProviderError(
+        "Lemlist did not answer in time.", code="TIMEOUT"
+    )
+    url = f"/agencies/{target_id}/email-module/pause-all"
+    first = await client.post(url, headers=headers)
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert (body["paused"], body["already_paused"]) == (3, 3)
+    assert body["failed"] == [
+        {"campaign_id": str(ids["Other team"]), "code": "email.team_mismatch", "params": {}},
+        {"campaign_id": str(ids["Broken"]), "code": "email.provider_unreachable", "params": {}},
+    ]
+    assert body["module"]["campaigns"]["active"] == 2
+    assert body["module"]["campaigns"]["paused"] == 4
+    assert fake_email_provider.ops == [
+        ("pause_campaign", {"campaign": "cam_live"}),
+        ("pause_campaign", {"campaign": "cam_broken"}),
+    ]
+    statuses = await _statuses(db_session, target_id)
+    assert statuses == {
+        "Live": "PAUSED",
+        "Dry": "PAUSED",
+        "Never synced": "PAUSED",
+        "Other team": "ACTIVE",
+        "Broken": "ACTIVE",
+        "Paused": "PAUSED",
+        "Draft": "DRAFT",
+        "Archived": "ARCHIVED",
+    }
+    assert (await _statuses(db_session, elsewhere_id)) == {"Theirs": "ACTIVE"}
+
+    # Idempotent: again, Lemlist answering now; another team's stays as it is.
+    fake_email_provider.failures.clear()
+    fake_email_provider.ops.clear()
+    second = (await client.post(url, headers=headers)).json()
+    assert (second["paused"], second["already_paused"]) == (1, 6)
+    assert [f["code"] for f in second["failed"]] == ["email.team_mismatch"]
+    assert fake_email_provider.ops == [("pause_campaign", {"campaign": "cam_broken"})]
+    fake_email_provider.ops.clear()
+    third = (await client.post(url, headers=headers)).json()
+    assert (third["paused"], third["already_paused"], len(third["failed"])) == (0, 7, 1)
+    assert fake_email_provider.ops == []
+
+
+async def test_pause_all_never_reaches_lemlist_while_the_agency_runs_dry(
+    client: AsyncClient,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    target: Agency,
+    db_session: AsyncSession,
+    make_agency_email_module: MakeAgencyEmailModule,
+    make_email_campaign: MakeEmailCampaign,
+    fake_email_provider: FakeProvider,
+) -> None:
+    """The agency does not talk to Lemlist for real (the rules of a status
+    change): its real campaign stays ACTIVE with the code saying why, its
+    dry run's is paused in Nidria."""
+    target_id, headers = target.id, agent_headers(superadmin)
+    await make_agency_email_module(agency_id=target_id)
+    fake_email_provider.external = False
+    ids = await _campaigns(
+        make_email_campaign,
+        target_id,
+        ("Live", "ACTIVE", "cam_live", "tea_current"),
+        ("Dry", "ACTIVE", "dry_cam_1", None),
+    )
+    answer = await client.post(f"/agencies/{target_id}/email-module/pause-all", headers=headers)
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["paused"] == 1
+    assert answer.json()["failed"] == [
+        {
+            "campaign_id": str(ids["Live"]),
+            "code": "email.provider_unavailable",
+            "params": {"reason": "external_effects_off"},
+        }
+    ]
+    assert fake_email_provider.ops == []
+    assert await _statuses(db_session, target_id) == {"Live": "ACTIVE", "Dry": "PAUSED"}
+
+
+async def test_pause_all_stops_an_agency_under_a_billing_lock(
+    client: AsyncClient,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    db_session: AsyncSession,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    make_agency_email_module: MakeAgencyEmailModule,
+    make_email_campaign: MakeEmailCampaign,
+    fake_email_provider: FakeProvider,
+) -> None:
+    """The billing lock reads the ACTOR's agency (the superadmin's, exempt
+    anyway): a locked agency is paused all the same (gap E7), while its own
+    admin writes nothing."""
+    locked = await make_agency(
+        name="Trial over", trial_ends_at=datetime.now(UTC) - timedelta(days=2)
+    )
+    locked_id = locked.id
+    await make_agency_email_module(agency_id=locked_id)
+    await _campaigns(make_email_campaign, locked_id, ("Live", "ACTIVE", "cam_live", "tea_current"))
+    admin = await make_agent(agency_id=locked_id, role=system_roles["admin"])
+    refused = await client.patch(
+        "/agencies/me", headers=agent_headers(admin), json={"name": "Renamed"}
+    )
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "billing.subscription_required"
+    answer = await client.post(
+        f"/agencies/{locked_id}/email-module/pause-all", headers=agent_headers(superadmin)
+    )
+    assert answer.status_code == 200, answer.text
+    assert (answer.json()["paused"], answer.json()["failed"]) == (1, [])
+    assert fake_email_provider.ops == [("pause_campaign", {"campaign": "cam_live"})]
+    assert await _statuses(db_session, locked_id) == {"Live": "PAUSED"}
+
+
+async def test_switching_off_with_pause_campaigns_pauses_them_then_switches_off(
+    client: AsyncClient,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    target: Agency,
+    db_session: AsyncSession,
+    make_agency_email_module: MakeAgencyEmailModule,
+    make_email_campaign: MakeEmailCampaign,
+    fake_email_provider: FakeProvider,
+) -> None:
+    target_id = target.id
+    await make_agency_email_module(agency_id=target_id)
+    await _campaigns(
+        make_email_campaign,
+        target_id,
+        ("Live", "ACTIVE", "cam_live", "tea_current"),
+        ("Dry", "ACTIVE", "dry_cam_1", None),
+    )
+    url = f"/agencies/{target_id}/email-module"
+    headers = agent_headers(superadmin)
+    # The flag is read when switching OFF only.
+    kept_on = await client.patch(
+        url, headers=headers, json={"enabled": True, "pause_campaigns": True}
+    )
+    assert kept_on.status_code == 200 and kept_on.json()["enabled"] is True
+    assert fake_email_provider.ops == []
+    # Without it, a campaign live at Lemlist still refuses the switch-off.
+    refused = await client.patch(url, headers=headers, json={"enabled": False})
+    assert refused.status_code == 409 and refused.json()["code"] == "email.campaigns_live"
+    off = await client.patch(url, headers=headers, json={"enabled": False, "pause_campaigns": True})
+    assert off.status_code == 200, off.text
+    assert (off.json()["enabled"], off.json()["campaigns"]["live_at_provider"]) == (False, 0)
+    assert fake_email_provider.ops == [("pause_campaign", {"campaign": "cam_live"})]
+    assert await _statuses(db_session, target_id) == {"Live": "PAUSED", "Dry": "PAUSED"}
+
+
+async def test_a_campaign_still_live_after_the_pause_keeps_the_module_on(
+    client: AsyncClient,
+    superadmin: Agent,
+    agent_headers: AuthHeaders,
+    target: Agency,
+    db_session: AsyncSession,
+    make_agency_email_module: MakeAgencyEmailModule,
+    make_email_campaign: MakeEmailCampaign,
+    fake_email_provider: FakeProvider,
+) -> None:
+    target_id, headers = target.id, agent_headers(superadmin)
+    await make_agency_email_module(agency_id=target_id)
+    await _campaigns(
+        make_email_campaign,
+        target_id,
+        ("Live", "ACTIVE", "cam_live", "tea_current"),
+        ("Stuck", "ACTIVE", "cam_stuck", "tea_current"),
+    )
+    fake_email_provider.failures[("pause_campaign", "cam_stuck")] = ProviderError(
+        "Lemlist: server error", code="PROVIDER_ERROR", status=500
+    )
+    refused = await client.patch(
+        f"/agencies/{target_id}/email-module",
+        headers=headers,
+        json={"enabled": False, "pause_campaigns": True},
+    )
+    assert refused.status_code == 409
+    assert (refused.json()["code"], refused.json()["params"]) == (
+        "email.campaigns_live",
+        {"count": 1},
+    )
+    row = await _module_row(db_session, target_id)
+    assert row is not None and row.enabled is True and row.disabled_at is None
+    # What could be paused stays paused.
+    assert await _statuses(db_session, target_id) == {"Live": "PAUSED", "Stuck": "ACTIVE"}
