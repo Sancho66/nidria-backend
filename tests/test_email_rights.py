@@ -11,7 +11,10 @@
   role is never written: the agency's copy-on-write clone carries the grant
   (made if needed, its wearers moved onto it), another agency is untouched.
   The platform role, an external role and another agency's role answer like
-  an unknown role. Allowed while the module is off.
+  an unknown role. Allowed while the module is off. The reader seat's role,
+  the system viewer or a clone of it, is listed `grantable: false` and
+  refused (409 `email.role_not_grantable` {reason: viewer_seat}) before
+  anything is made: a reader stays read only.
 - No agency door adds or removes an Email key, whoever acts (an operator in
   its home agency included): creating a role with one, or editing a matrix
   to add or remove one, is refused (`role.platform_managed`, params `keys`);
@@ -74,6 +77,12 @@ EMAIL_KEYS = [
 ]
 PLATFORM_KEYS = {p.value for p in PLATFORM_PERMISSIONS}
 ROLE_NOT_FOUND = {"detail": "Role not found.", "code": "role.not_found", "params": {}}
+NOT_GRANTABLE = {
+    "detail": "The platform never grants the reader seat's role (the system viewer "
+    "or a clone of it).",
+    "code": "email.role_not_grantable",
+    "params": {"reason": "viewer_seat"},
+}
 
 
 def _matrix(name: str) -> set[str]:
@@ -283,6 +292,8 @@ async def test_the_list_shows_the_roles_the_agency_hands_out(
         "cloned_from_role_id": None,
         "active_agents": 1,
         "email_permissions": [],
+        "grantable": True,
+        "not_grantable_reason": None,
     }
     assert rows[str(role_ids["case_manager"])]["active_agents"] == 1
     assert rows[str(role_ids["member"])]["active_agents"] == 0
@@ -323,6 +334,8 @@ async def test_a_grant_on_a_system_role_lands_on_this_agencys_clone_only(
         "cloned_from_role_id": str(role_ids["admin"]),
         "active_agents": 1,
         "email_permissions": ["email.manage", "email.view"],
+        "grantable": True,
+        "not_grantable_reason": None,
     }
     # The clone masks the system role in the agency's list.
     assert str(role_ids["admin"]) not in {row["id"] for row in granted.json()}
@@ -463,6 +476,94 @@ async def test_a_custom_role_bearing_the_system_name_blocks_the_clone(
     response = await _grant(client, root, office.agency_id, role_ids["member"], EMAIL_KEYS)
     assert response.status_code == 409, response.text
     assert response.json()["code"] == "role.clone_name_taken"
+
+
+async def test_the_reader_seats_role_is_listed_but_never_granted(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    make_office: MakeOffice,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    root: dict[str, str],
+    role_ids: dict[str, uuid.UUID],
+) -> None:
+    """The system viewer, the one role a reader seat wears (decision of
+    08/10/2026): listed `grantable: false`, and refused by the PUT, a
+    withdrawal included, before anything is made. The agency's readers stay
+    on the system viewer, read only."""
+    office = await make_office()
+    reader = await make_agent(
+        agency_id=office.agency_id, role=system_roles["viewer"], seat_type="reader"
+    )
+    reader_id = reader.id
+    listing = await client.get(_roles_url(office.agency_id), headers=root)
+    assert listing.status_code == 200, listing.text
+    rows = {row["id"]: row for row in listing.json()}
+    viewer = rows.pop(str(role_ids["viewer"]))
+    assert (viewer["grantable"], viewer["not_grantable_reason"]) == (False, "viewer_seat")
+    assert viewer["active_agents"] == 1
+    assert all(row["grantable"] and row["not_grantable_reason"] is None for row in rows.values())
+
+    for keys in (EMAIL_KEYS, ["email.view"], []):
+        refused = await _grant(client, root, office.agency_id, role_ids["viewer"], keys)
+        assert refused.status_code == 409, refused.text
+        assert refused.json() == NOT_GRANTABLE
+    made = await db_session.execute(select(Role.id).where(Role.agency_id == office.agency_id))
+    assert made.scalars().all() == []
+    assert await _role_of(db_session, reader_id) == role_ids["viewer"]
+    assert await _keys_of(db_session, role_ids["viewer"]) == _matrix("viewer")
+
+
+async def test_a_clone_of_the_viewer_is_never_granted_either(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    make_office: MakeOffice,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    root: dict[str, str],
+    role_ids: dict[str, uuid.UUID],
+) -> None:
+    """An agency's edit of viewer cloned it and moved its readers onto the
+    clone: the clone is the reader seat's role too, refused by its own id
+    and through the system viewer's. Identity, never a matrix: an explicit
+    duplicate of viewer (no copy-on-write link) is an ordinary role of the
+    agency, granted like any other."""
+    office = await make_office()
+    reader = await make_agent(
+        agency_id=office.agency_id, role=system_roles["viewer"], seat_type="reader"
+    )
+    reader_id = reader.id
+    edited = await client.patch(
+        f"/agencies/me/roles/{role_ids['viewer']}",
+        headers=office.admin,
+        json={"name": "Observateur"},
+    )
+    assert edited.status_code == 200, edited.text
+    clone_id = uuid.UUID(edited.json()["id"])
+    assert await _role_of(db_session, reader_id) == clone_id  # the edit moved the reader
+    duplicated = await client.post(
+        f"/agencies/me/roles/{role_ids['viewer']}/duplicate",
+        headers=office.admin,
+        json={"name": "Lecture seule"},
+    )
+    assert duplicated.status_code == 201, duplicated.text
+    duplicate_id = uuid.UUID(duplicated.json()["id"])
+
+    listing = await client.get(_roles_url(office.agency_id), headers=root)
+    rows = {row["id"]: row for row in listing.json()}
+    assert str(role_ids["viewer"]) not in rows  # masked by the agency's clone
+    clone, duplicate = rows[str(clone_id)], rows[str(duplicate_id)]
+    assert (clone["grantable"], clone["not_grantable_reason"]) == (False, "viewer_seat")
+    assert (duplicate["grantable"], duplicate["not_grantable_reason"]) == (True, None)
+
+    for role_id in (clone_id, role_ids["viewer"]):
+        refused = await _grant(client, root, office.agency_id, role_id, ["email.view"])
+        assert refused.status_code == 409, refused.text
+        assert refused.json() == NOT_GRANTABLE
+    assert await _keys_of(db_session, clone_id) == _matrix("viewer")
+    granted = await _grant(client, root, office.agency_id, duplicate_id, ["email.view"])
+    assert granted.status_code == 200, granted.text
+    assert await _keys_of(db_session, duplicate_id) == _matrix("viewer") | {"email.view"}
 
 
 @pytest.mark.parametrize("role_name", ["admin", "case_manager", "member", "viewer"])

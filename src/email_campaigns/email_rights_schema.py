@@ -4,6 +4,7 @@
 `PUT /agencies/{agency_id}/email-module/roles/{role_id}`."""
 
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -28,6 +29,12 @@ class EmailModuleRoleRead(BaseModel):
     #: The `email.*` keys it carries, sorted. Empty: its wearers do not
     #: reach the module.
     email_permissions: list[Permission]
+    #: False: the platform never grants it the Email keys (its PUT answers
+    #: 409 `email.role_not_grantable`), for `not_grantable_reason`.
+    grantable: bool
+    #: `viewer_seat`: the system viewer, the one role a reader seat wears, or
+    #: a clone of it. A reader stays read-only.
+    not_grantable_reason: Literal["viewer_seat"] | None
 
 
 class EmailModuleRolePermissionsUpdate(BaseModel):

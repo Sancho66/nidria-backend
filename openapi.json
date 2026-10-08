@@ -4550,7 +4550,7 @@
           "email"
         ],
         "summary": "Pause Agency Email Campaigns",
-        "description": "Pause every ACTIVE campaign of the agency, at Lemlist and in Nidria\n(one commit per campaign; a dry run's campaign in Nidria only).\nIdempotent. A campaign that cannot be paused is told in `failed` with\nits code (`email.provider_unavailable`, `email.team_mismatch`,\n`email.provider_*`), and the others go on. Allowed for an agency under\na billing lock: the lock reads the caller's agency.",
+        "description": "Pause every ACTIVE campaign of the agency, at Lemlist and in Nidria\n(one commit per campaign; a dry run's campaign in Nidria only).\nIdempotent. A campaign that cannot be paused is told in `failed` with\nits name and its code (`email.provider_unavailable`,\n`email.team_mismatch`, `email.provider_*`), and the others go on.\nAllowed for an agency under a billing lock: the lock reads the caller's\nagency.",
         "operationId": "pause_agency_email_campaigns_agencies__agency_id__email_module_pause_all_post",
         "security": [
           {
@@ -4695,7 +4695,7 @@
           "email"
         ],
         "summary": "List Agency Email Roles",
-        "description": "The roles the agency hands out to its members, as its own role list\nshows them (its internal system roles, the platform role left out, and\nits own roles; a system role through the agency's copy-on-write clone\nonce it has one), each with its active wearers in the agency and the\nEmail keys it carries. Nobody holds `email.*` until the platform grants\nit here, the agency admin included.",
+        "description": "The roles the agency hands out to its members, as its own role list\nshows them (its internal system roles, the platform role left out, and\nits own roles; a system role through the agency's copy-on-write clone\nonce it has one), each with its active wearers in the agency and the\nEmail keys it carries. Nobody holds `email.*` until the platform grants\nit here, the agency admin included. The reader seat's role, the system\nviewer or a clone of it, is listed `grantable: false`\n(`not_grantable_reason: viewer_seat`).",
         "operationId": "list_agency_email_roles_agencies__agency_id__email_module_roles_get",
         "security": [
           {
@@ -4748,7 +4748,7 @@
           "email"
         ],
         "summary": "Set Agency Email Role Permissions",
-        "description": "The role carries exactly these Email keys from now on (empty: none),\nits other permissions untouched; the answer is the updated list. A\nshared system role is never written: the agency's copy-on-write clone\ncarries the grant (made if needed, the agency's wearers of the system\nrole moved onto it), and no other agency is touched. 404\n`role.not_found` for the platform role, an external role or another\nagency's role; 409 `role.clone_name_taken` when a custom role of the\nagency already bears the system role's name. Allowed while the module\nis off for the agency: the rights are prepared before switching it on.",
+        "description": "The role carries exactly these Email keys from now on (empty: none),\nits other permissions untouched; the answer is the updated list. A\nshared system role is never written: the agency's copy-on-write clone\ncarries the grant (made if needed, the agency's wearers of the system\nrole moved onto it), and no other agency is touched. 404\n`role.not_found` for the platform role, an external role or another\nagency's role; 409 `email.role_not_grantable` {reason: viewer_seat} for\nthe system viewer or a clone of it, nothing made (a reader seat stays\nread only, and cloning viewer would break the reader-seat rule); 409\n`role.clone_name_taken` when a custom role of the agency already bears\nthe system role's name. Allowed while the module is off for the agency:\nthe rights are prepared before switching it on.",
         "operationId": "set_agency_email_role_permissions_agencies__agency_id__email_module_roles__role_id__put",
         "security": [
           {
@@ -34692,6 +34692,22 @@
             },
             "type": "array",
             "title": "Email Permissions"
+          },
+          "grantable": {
+            "type": "boolean",
+            "title": "Grantable"
+          },
+          "not_grantable_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "viewer_seat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Grantable Reason"
           }
         },
         "type": "object",
@@ -34701,7 +34717,9 @@
           "is_system",
           "cloned_from_role_id",
           "active_agents",
-          "email_permissions"
+          "email_permissions",
+          "grantable",
+          "not_grantable_reason"
         ],
         "title": "EmailModuleRoleRead",
         "description": "A role the agency hands out to its members, as the agency sees it (a\nsystem role through the agency's copy-on-write clone once it has one),\nand the Email keys the platform granted it."
@@ -35019,6 +35037,10 @@
             "format": "uuid",
             "title": "Campaign Id"
           },
+          "campaign_name": {
+            "type": "string",
+            "title": "Campaign Name"
+          },
           "code": {
             "type": "string",
             "title": "Code"
@@ -35032,6 +35054,7 @@
         "type": "object",
         "required": [
           "campaign_id",
+          "campaign_name",
           "code"
         ],
         "title": "EmailPauseFailure",

@@ -225,7 +225,8 @@ class EmailAdminManager:
         nor for a campaign of another Lemlist team (`email.team_mismatch`,
         its ids are never sent to the current team). A dry run's campaign,
         or one never synced, is paused in Nidria only. A failure is told
-        with its code and the next campaign goes on."""
+        with the campaign's name and its code, and the next campaign goes
+        on."""
         # Imported here: the agent manager is heavy and reads this module's peers.
         from src.email_campaigns.email_manager import (
             EmailManager,
@@ -281,9 +282,16 @@ class EmailAdminManager:
                     except ProviderError as exc:
                         refusal = (provider_error_code(exc), provider_params(exc))
             if refusal is not None:
+                # Read before the rollback, which expires the campaign.
+                name = campaign.name
                 await self.db.rollback()
                 failed.append(
-                    EmailPauseFailure(campaign_id=campaign_id, code=refusal[0], params=refusal[1])
+                    EmailPauseFailure(
+                        campaign_id=campaign_id,
+                        campaign_name=name,
+                        code=refusal[0],
+                        params=refusal[1],
+                    )
                 )
                 continue
             campaign.status = "PAUSED"

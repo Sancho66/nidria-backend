@@ -1,12 +1,14 @@
 import uuid
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.rbac import Permission as PermissionRow
 from shared.models.rbac import Role
+from src.agencies.agencies_repository import AgenciesRepository
 from src.core.enums import SeatType
 from src.core.exceptions import (
     ConflictError,
@@ -24,13 +26,18 @@ from src.core.rbac.delegation import (
 )
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
-from src.core.seats import assert_reader_role_locked
+from src.core.seats import READER_ROLE_NAME, assert_reader_role_locked, is_the_system_viewer
 from src.roles.roles_repository import RolesRepository
 
 _SYSTEM_ROLE_LOCKED = "System roles are shared across agencies and cannot be deleted."
 # Every role lookup that misses (unknown, foreign custom, platform-reserved)
 # answers ONE code, `role.not_found`, whatever the door — written literally
 # at each raise so the served-codes scan (AST, literals only) sees it.
+
+#: Why the platform never grants a role its platform-managed keys: it is the
+#: reader seat's role (the system viewer, or a clone of it).
+GrantRefusal = Literal["viewer_seat"]
+VIEWER_SEAT: GrantRefusal = "viewer_seat"
 
 
 class RolesManager:
@@ -337,6 +344,22 @@ class RolesManager:
 
     # --- the platform's grant of the platform-managed keys ------------------------------
 
+    async def platform_grant_refusals(self, roles: Iterable[Role]) -> dict[uuid.UUID, GrantRefusal]:
+        """{role_id: why} for the roles among `roles` the platform never
+        grants a platform-managed key to: THE system viewer, the one role a
+        reader seat wears (the identity of `seats.is_the_system_viewer`, the
+        seat flip's), and its copy-on-write clones, onto which an agency's
+        edit of viewer moves its readers. Decision of 08/10/2026: a reader
+        stays read-only, and a grant on the system viewer would clone it,
+        breaking the reader-seat rule."""
+        viewer = await AgenciesRepository(self.db).get_system_role(READER_ROLE_NAME)
+        return {
+            role.id: VIEWER_SEAT
+            for role in roles
+            if is_the_system_viewer(role)
+            or (viewer is not None and role.cloned_from_role_id == viewer.id)
+        }
+
     async def set_platform_managed_permissions(
         self, agency_id: uuid.UUID, role_id: uuid.UUID, keys: Iterable[str]
     ) -> Role:
@@ -352,8 +375,11 @@ class RolesManager:
         `role.clone_name_taken` when a custom role of the agency already
         bears the system role's name). The platform role, an external role
         or another agency's role answers like an unknown role (404
-        `role.not_found`). `permissions_reviewed_at` is not bumped: a grant
-        is not the agency's matrix decision."""
+        `role.not_found`). The reader seat's role, the system viewer or a
+        clone of it, is refused before anything is made (409
+        `email.role_not_grantable` {reason}, see `platform_grant_refusals`).
+        `permissions_reviewed_at` is not bumped: a grant is not the
+        agency's matrix decision."""
         wanted = set(keys)
         outside = sorted(wanted - PLATFORM_MANAGED_PERMISSION_KEYS)
         if outside:
@@ -363,6 +389,16 @@ class RolesManager:
         role = await self.repo.get_role_with_permissions(role_id)
         if role is None or not is_reachable_role(role, agency_id) or role.is_external:
             raise NotFoundError("Role not found.", code="role.not_found")
+        refusal = (await self.platform_grant_refusals([role])).get(role.id)
+        if refusal is not None:
+            # The Email keys are the only platform-managed ones: the code is
+            # the Email module's, read on its platform screen.
+            raise ConflictError(
+                "The platform never grants the reader seat's role (the system viewer "
+                "or a clone of it).",
+                code="email.role_not_grantable",
+                params={"reason": refusal},
+            )
         if role.is_system:
             role = await self._clone_for_edit(agency_id, role)
         granted = await self.repo.get_permissions_by_keys(sorted(wanted))

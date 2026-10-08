@@ -114,9 +114,10 @@ async def pause_agency_email_campaigns(
     """Pause every ACTIVE campaign of the agency, at Lemlist and in Nidria
     (one commit per campaign; a dry run's campaign in Nidria only).
     Idempotent. A campaign that cannot be paused is told in `failed` with
-    its code (`email.provider_unavailable`, `email.team_mismatch`,
-    `email.provider_*`), and the others go on. Allowed for an agency under
-    a billing lock: the lock reads the caller's agency."""
+    its name and its code (`email.provider_unavailable`,
+    `email.team_mismatch`, `email.provider_*`), and the others go on.
+    Allowed for an agency under a billing lock: the lock reads the caller's
+    agency."""
     return await EmailAdminManager(db).pause_all(agency_id)
 
 
@@ -153,7 +154,9 @@ async def list_agency_email_roles(
     its own roles; a system role through the agency's copy-on-write clone
     once it has one), each with its active wearers in the agency and the
     Email keys it carries. Nobody holds `email.*` until the platform grants
-    it here, the agency admin included."""
+    it here, the agency admin included. The reader seat's role, the system
+    viewer or a clone of it, is listed `grantable: false`
+    (`not_grantable_reason: viewer_seat`)."""
     return await EmailRightsManager(db).roles_of(agency_id)
 
 
@@ -171,9 +174,12 @@ async def set_agency_email_role_permissions(
     carries the grant (made if needed, the agency's wearers of the system
     role moved onto it), and no other agency is touched. 404
     `role.not_found` for the platform role, an external role or another
-    agency's role; 409 `role.clone_name_taken` when a custom role of the
-    agency already bears the system role's name. Allowed while the module
-    is off for the agency: the rights are prepared before switching it on."""
+    agency's role; 409 `email.role_not_grantable` {reason: viewer_seat} for
+    the system viewer or a clone of it, nothing made (a reader seat stays
+    read only, and cloning viewer would break the reader-seat rule); 409
+    `role.clone_name_taken` when a custom role of the agency already bears
+    the system role's name. Allowed while the module is off for the agency:
+    the rights are prepared before switching it on."""
     return await EmailRightsManager(db).set_role_permissions(agency_id, role_id, body.permissions)
 
 

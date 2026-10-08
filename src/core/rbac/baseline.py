@@ -86,8 +86,8 @@ EMAIL_PERMISSIONS: tuple[Permission, ...] = (
 # 08/10/2026, replacing the spec's N3 ("admin and superadmin receive them,
 # the agency grants them role by role"): nobody holds the Email keys by
 # default, the agency admin included; a superadmin chooses, agency by agency,
-# which roles (admin included) receive them (PUT
-# /agencies/{agency_id}/email-module/roles/{role_id}). So no system role but
+# which roles (admin included, never the reader seat's viewer) receive them
+# (PUT /agencies/{agency_id}/email-module/roles/{role_id}). So no system role but
 # superadmin lists them below, no agency flow adds or removes one, and the
 # boot never propagates one (src/core/rbac/delegation.py holds the rule every
 # door reads). Unlike PLATFORM_PERMISSIONS, they do open agency work: the

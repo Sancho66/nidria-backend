@@ -10,12 +10,14 @@ superadmin chooses, for one agency, which of its roles carry which keys
   list of GET /agencies/me/roles (its internal system roles, the platform
   role left out, and its own roles; a system role through the agency's
   copy-on-write clone once it has one), with their active wearers in the
-  agency and their Email keys;
+  agency, their Email keys, and whether the platform may grant them any
+  (never the reader seat's role: the system viewer or a clone of it);
 - `set_role_permissions`: the role carries exactly these Email keys from
   now on, nothing else of it changes. A shared system role is never
   written: the agency's copy-on-write clone carries the grant
   (RolesManager.set_platform_managed_permissions), so no other agency is
-  touched.
+  touched. The reader seat's role is refused before anything is made
+  (409 `email.role_not_grantable` {reason: viewer_seat}).
 
 Allowed while the module is off for the agency: the rights are prepared
 before the switch is turned on, and open nothing until it is.
@@ -49,6 +51,7 @@ class EmailRightsManager:
         ids = [role.id for role in roles]
         wearers = await self.roles.count_active_wearers(agency_id, ids)
         held = await self.roles.keys_of_roles(ids, _EMAIL_KEYS)
+        refusals = await RolesManager(self.db).platform_grant_refusals(roles)
         return [
             EmailModuleRoleRead(
                 id=role.id,
@@ -57,6 +60,8 @@ class EmailRightsManager:
                 cloned_from_role_id=role.cloned_from_role_id,
                 active_agents=wearers[role.id],
                 email_permissions=sorted(Permission(key) for key in held[role.id]),
+                grantable=role.id not in refusals,
+                not_grantable_reason=refusals.get(role.id),
             )
             for role in roles
         ]

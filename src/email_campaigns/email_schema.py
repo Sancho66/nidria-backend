@@ -146,6 +146,9 @@ class EmailPauseFailure(BaseModel):
     """A campaign the pause could not stop, and why (an `email.*` code)."""
 
     campaign_id: uuid.UUID
+    #: Its name, for the platform's card: the superadmin reads none of the
+    #: agency's campaign lists.
+    campaign_name: str
     code: str
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -159,7 +162,7 @@ class EmailPauseAllResult(BaseModel):
     paused: int
     #: Campaigns that were not ACTIVE (paused, draft or archived): nothing to do.
     already_paused: int
-    #: ACTIVE campaigns left running, each with its code.
+    #: ACTIVE campaigns left running, each with its name and its code.
     failed: list[EmailPauseFailure] = Field(default_factory=list)
     #: The module's state after the call.
     module: AgencyEmailModuleResponse

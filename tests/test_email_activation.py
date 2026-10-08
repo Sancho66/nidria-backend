@@ -713,9 +713,20 @@ async def test_pause_all_pauses_every_active_campaign_at_lemlist_and_in_nidria(
     assert first.status_code == 200, first.text
     body = first.json()
     assert (body["paused"], body["already_paused"]) == (3, 3)
+    # Each failure names its campaign: the platform's card shows the name.
     assert body["failed"] == [
-        {"campaign_id": str(ids["Other team"]), "code": "email.team_mismatch", "params": {}},
-        {"campaign_id": str(ids["Broken"]), "code": "email.provider_unreachable", "params": {}},
+        {
+            "campaign_id": str(ids["Other team"]),
+            "campaign_name": "Other team",
+            "code": "email.team_mismatch",
+            "params": {},
+        },
+        {
+            "campaign_id": str(ids["Broken"]),
+            "campaign_name": "Broken",
+            "code": "email.provider_unreachable",
+            "params": {},
+        },
     ]
     assert body["module"]["campaigns"]["active"] == 2
     assert body["module"]["campaigns"]["paused"] == 4
@@ -777,6 +788,7 @@ async def test_pause_all_never_reaches_lemlist_while_the_agency_runs_dry(
     assert answer.json()["failed"] == [
         {
             "campaign_id": str(ids["Live"]),
+            "campaign_name": "Live",
             "code": "email.provider_unavailable",
             "params": {"reason": "external_effects_off"},
         }

@@ -70,6 +70,7 @@ from tests.plugins.email_plugin import (
     EmailWorld,
     LemlistTeamDouble,
     MakeCompanyLink,
+    MakeEmailAdmin,
     MakeEmailAiVariable,
     MakeEmailCampaign,
     MakeEmailMember,
@@ -1221,10 +1222,9 @@ async def test_an_import_takes_sync_manage_and_creating_client_records(
 async def test_an_import_is_refused_under_impersonation(
     client: AsyncClient,
     team: Team,
-    make_agent: MakeAgent,
-    system_roles: dict[str, Any],
+    make_email_admin: MakeEmailAdmin,
 ) -> None:
-    target = await make_agent(agency_id=team.world.agency_id, role=system_roles["admin"])
+    target = await make_email_admin(agency_id=team.world.agency_id)
     issued = await client.post(
         f"/agencies/me/members/{target.id}/impersonate", headers=team.world.headers
     )
