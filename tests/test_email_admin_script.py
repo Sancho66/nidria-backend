@@ -998,6 +998,7 @@ async def test_job_run_on_a_disabled_job_is_skipped_until_job_enable(
     db_session: AsyncSession,
     sync_session_local: sessionmaker[Session],
     root: Agent,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await seed_job_configs(db_session)
     skipped = await script(
@@ -1018,7 +1019,12 @@ async def test_job_run_on_a_disabled_job_is_skipped_until_job_enable(
     assert enabled.code == 0, enabled.doc
     assert enabled.doc["result"]["job"]["is_enabled"] is True
     assert enabled.doc["result"]["job"]["job_id"] == "email_sync"
-    assert enabled.doc["result"]["running_api_scheduler_reloaded"] is False
+    # SCHEDULER_ENABLED off (the tests'): no running scheduler takes it.
+    assert enabled.doc["result"]["running_api_picks_up_within_seconds"] is None
+    # On: the running API's next reconciliation, within a minute.
+    monkeypatch.setattr(get_settings(), "scheduler_enabled", True)
+    again = await script(sessions, "--as", ROOT_EMAIL, "job-enable")
+    assert again.doc["result"]["running_api_picks_up_within_seconds"] == 60
 
     ran = await script(sessions, "--as", ROOT_EMAIL, "job-run", sync_sessions=sync_session_local)
     assert ran.code == 0, ran.doc

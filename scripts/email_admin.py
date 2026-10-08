@@ -53,9 +53,10 @@ Going live, in this order (spec 15, corrected by E1):
    (`duplicate_events`), the imported campaigns followed. E1: the PATCH
    `{"is_enabled": true}` switches the job on, never `resume` (which only
    lifts a pause), and a manual run of a disabled job is SKIPPED, hence
-   this order. This process cannot reach the running API's scheduler: the
-   cron of `email_sync` is programmed at the API's next start (a release);
-   until then, `job-run` runs it by hand;
+   this order. The running API's scheduler (when SCHEDULER_ENABLED) reads
+   `job_config` again every minute: the cron of `email_sync` starts within
+   60 s, without a restart (`running_api_picks_up_within_seconds`); `job-run`
+   runs it at once;
 8. `smoke-cleanup`.
 Locally, the smoke test also runs with A and B and a follow-up at J+0
 (`--followup-days 0`), and `smoke-status --sync` reads Lemlist without a
@@ -96,7 +97,8 @@ What each command may change:
   deleted at Lemlist), the campaign archived (paused at Lemlist), then the
   client records the smoke test created deleted, never a reused one;
   refused for a campaign without the mark;
-- `job-enable`: `job_config.is_enabled` of `email_sync`;
+- `job-enable`: `job_config.is_enabled` of `email_sync`, taken by the running
+  API's scheduler within a minute;
 - `job-run`: one run of `email_sync` (a `job_run` row; Lemlist read only);
   its `log_output`, which may name recipients, is never printed;
 - `platform-roles-audit`: nothing (whether the flaw of the superadmin role,
@@ -189,7 +191,7 @@ from src.core.rbac.baseline import PLATFORM_PERMISSION_KEYS, PLATFORM_ROLE_NAMES
 from src.core.rbac.delegation import is_platform_role  # noqa: E402
 from src.core.rbac.enforcement import authorize_agent, effective_permissions  # noqa: E402
 from src.core.rbac.permissions import Permission  # noqa: E402
-from src.core.scheduler import make_session_local  # noqa: E402
+from src.core.scheduler import RECONCILE_INTERVAL_SECONDS, make_session_local  # noqa: E402
 from src.email_campaigns.email_admin_manager import EmailAdminManager  # noqa: E402
 from src.email_campaigns.email_import import EmailImportManager  # noqa: E402
 from src.email_campaigns.email_manager import (  # noqa: E402
@@ -1640,16 +1642,27 @@ async def cmd_smoke_cleanup(ctx: Context, args: argparse.Namespace) -> Outcome:
 
 async def cmd_job_enable(ctx: Context, args: argparse.Namespace) -> Outcome:
     """PATCH /jobs/email_sync {"is_enabled": true} (E1). The route reloads
-    the API's running scheduler from `request.app.state`; this process has
-    none, so the cron starts with the API's next start."""
+    the scheduler of the API that serves it (`request.app.state`); this
+    process has none. An API whose scheduler runs (SCHEDULER_ENABLED) brings
+    it in line with `job_config` every RECONCILE_INTERVAL_SECONDS
+    (`reconcile_jobs`): `running_api_picks_up_within_seconds`, null when
+    SCHEDULER_ENABLED is off in this environment (on the API's machine, the
+    API's own): no cron then, `job-run` only."""
     body = JobConfigUpdateRequest(is_enabled=True)
 
     async def update(db: AsyncSession, _agent: Agent) -> dict[str, Any]:
         config = await JobsManager(db).update_job(JOB_ID, body, None, None)
         return JobConfigResponse.model_validate(config).model_dump()
 
+    job = await through(ctx, JOB_UPDATE, update)
+    scheduled = get_settings().scheduler_enabled
     return Outcome(
-        {"job": await through(ctx, JOB_UPDATE, update), "running_api_scheduler_reloaded": False}
+        {
+            "job": job,
+            "running_api_picks_up_within_seconds": (
+                RECONCILE_INTERVAL_SECONDS if scheduled else None
+            ),
+        }
     )
 
 
