@@ -4438,6 +4438,208 @@
         }
       }
     },
+    "/agencies/{agency_id}/email-module": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Get Agency Email Module",
+        "description": "The module's state for one agency: its switch, the effective state,\nthe bound Lemlist team, live or dry run, and its campaigns by status.",
+        "operationId": "get_agency_email_module_agencies__agency_id__email_module_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyEmailModuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Set Agency Email Module",
+        "description": "Switch the module on or off for the agency. Off is refused while one\nof its campaigns is ACTIVE at Lemlist (409 `email.campaigns_live`).",
+        "operationId": "set_agency_email_module_agencies__agency_id__email_module_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgencyEmailModuleUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyEmailModuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agency_id}/email-module/team": {
+      "put": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Bind Agency Email Team",
+        "description": "Bind the agency to the Lemlist team the platform key opens now. 409\n`email.provider_unavailable` without real effects, a key or an answer\nfrom Lemlist; 409 `email.team_bound_elsewhere` when the team serves\nanother agency; 409 `email.team_has_history` to move an agency whose\ncampaigns already exist at Lemlist.",
+        "operationId": "bind_agency_email_team_agencies__agency_id__email_module_team_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyEmailModuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Unbind Agency Email Team",
+        "description": "Unbind the agency's Lemlist team: it runs in dry run again. 409\n`email.team_has_history` once one of its campaigns exists at Lemlist.",
+        "operationId": "unbind_agency_email_team_agencies__agency_id__email_module_team_delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyEmailModuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/profile-sections": {
       "get": {
         "tags": [
@@ -19685,6 +19887,129 @@
         "title": "AgencyDeletedResponse",
         "description": "The outcome of a hard deletion (also the trace's payload)."
       },
+      "AgencyEmailModuleResponse": {
+        "properties": {
+          "agency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agency Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "master_enabled": {
+            "type": "boolean",
+            "title": "Master Enabled"
+          },
+          "effective": {
+            "type": "boolean",
+            "title": "Effective"
+          },
+          "external_effects": {
+            "type": "boolean",
+            "title": "External Effects"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailTeamInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider_mode": {
+            "type": "string",
+            "enum": [
+              "LIVE",
+              "DRY_RUN",
+              "UNAVAILABLE"
+            ],
+            "title": "Provider Mode"
+          },
+          "team_mismatch": {
+            "type": "boolean",
+            "title": "Team Mismatch"
+          },
+          "enabled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled At"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "changed_by_agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By Agent Id"
+          },
+          "campaigns": {
+            "$ref": "#/components/schemas/EmailCampaignCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency_id",
+          "enabled",
+          "master_enabled",
+          "effective",
+          "external_effects",
+          "provider",
+          "team",
+          "provider_mode",
+          "team_mismatch",
+          "enabled_at",
+          "disabled_at",
+          "changed_by_agent_id",
+          "campaigns"
+        ],
+        "title": "AgencyEmailModuleResponse",
+        "description": "The Email module's state for one agency, as the platform sees it."
+      },
+      "AgencyEmailModuleUpdateRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AgencyEmailModuleUpdateRequest",
+        "description": "PATCH /agencies/{agency_id}/email-module: the agency's switch."
+      },
       "AgencyMemberResponse": {
         "properties": {
           "id": {
@@ -19838,6 +20163,11 @@
           "signatures_enabled": {
             "type": "boolean",
             "title": "Signatures Enabled",
+            "default": false
+          },
+          "email_enabled": {
+            "type": "boolean",
+            "title": "Email Enabled",
             "default": false
           },
           "client_terms_md": {
@@ -27193,6 +27523,38 @@
         ],
         "title": "DocumentValidationRequest"
       },
+      "EmailCampaignCounts": {
+        "properties": {
+          "draft": {
+            "type": "integer",
+            "title": "Draft",
+            "default": 0
+          },
+          "active": {
+            "type": "integer",
+            "title": "Active",
+            "default": 0
+          },
+          "paused": {
+            "type": "integer",
+            "title": "Paused",
+            "default": 0
+          },
+          "archived": {
+            "type": "integer",
+            "title": "Archived",
+            "default": 0
+          },
+          "live_at_provider": {
+            "type": "integer",
+            "title": "Live At Provider",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "EmailCampaignCounts",
+        "description": "An agency's campaigns by status, every status present (0 when none)."
+      },
       "EmailQuotaResponse": {
         "properties": {
           "used": {
@@ -27266,6 +27628,31 @@
           "status"
         ],
         "title": "EmailQuotaResponse"
+      },
+      "EmailTeamInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "EmailTeamInfo",
+        "description": "A Lemlist team: its id and, when Lemlist gave one, its name."
       },
       "EmailUsageResponse": {
         "properties": {
@@ -32004,6 +32391,12 @@
           "job.manage",
           "field.manage",
           "import.manage",
+          "email.view",
+          "email.manage",
+          "email.enroll",
+          "email.pause",
+          "email.remove",
+          "email.sync",
           "agency.create",
           "platform.task_manage",
           "external.case.view",

@@ -44,6 +44,7 @@ from src.document_templates.document_templates_router import (
 )
 from src.documents.documents_router import agent_router as documents_agent_router
 from src.documents.documents_router import expat_router as documents_expat_router
+from src.email_campaigns.email_admin_router import router as email_admin_router
 from src.expat.expat_router import router as expat_portal_router
 from src.export.export_router import router as export_router
 from src.external.external_router import agency_router as external_agency_router
@@ -205,6 +206,7 @@ app.include_router(activity_stats_router)
 app.include_router(admin_router)
 app.include_router(help_router)
 app.include_router(agencies_router)
+app.include_router(email_admin_router)
 app.include_router(profile_sections_router)
 app.include_router(agencies_public_router)
 app.include_router(export_router)

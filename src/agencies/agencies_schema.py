@@ -384,6 +384,12 @@ class AgencyResponse(BaseModel):
     # trial_ends_at : ce payload n'est pas manager-gated). Rempli sur
     # GET/PATCH /agencies/me.
     signatures_enabled: bool = False
+    # Email module: the EFFECTIVE switch (env EMAIL_MODULE_ENABLED AND the
+    # agency's row, posed by a superadmin), served to every agent so the
+    # front anchors the menu entry here. Filled on every route returning
+    # this payload (GET/PATCH /me, client-terms validate, logo/cover, the
+    # platform list and create), so no response erases it in the front store.
+    email_enabled: bool = False
     # The agency's OWN client documents, shown to ITS clients (lot 13/08 —
     # the Nidria fallback is dead, every agency has its own). Filled on
     # GET/PATCH /agencies/me from the active consent_document; the Settings

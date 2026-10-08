@@ -250,9 +250,16 @@ async def test_system_role_matrix_seeded_as_specified(
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in case_manager
     assert Permission.AGENCY_CREATE.value not in case_manager  # platform-only
     assert external_keys.isdisjoint(case_manager)  # no external.* on an internal role
+    # The Email module is admin-only by default (the "right to activate"):
+    # case_manager is built by exclusion and must exclude all six keys.
+    email_keys = {p.value for p in Permission if p.value.startswith("email.")}
+    assert len(email_keys) == 6
+    assert email_keys <= admin
+    assert email_keys.isdisjoint(case_manager)
     member = await keys_of(system_roles["member"])
     assert Permission.REMINDER_APPROVE.value in member
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in member
+    assert email_keys.isdisjoint(member)
     assert await keys_of(system_roles["viewer"]) == {Permission.CASE_VIEW.value}
     # superadmin = the PLATFORM-OWNER role: EVERY internal permission PLUS
     # agency.create — i.e. all permissions except the external.* ones. It is

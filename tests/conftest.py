@@ -48,6 +48,15 @@ os.environ.setdefault("BCRYPT_ROUNDS", "4")
 # the suite must never silently hit real APIs).
 os.environ["MOCK_SERVICES"] = "true"
 os.environ["MOCK_EMAIL"] = "true"
+# Email module (Lemlist): simulated, no external effect, no key, no webhook
+# secret and the master switch closed, whatever the developer's env says. A
+# test that needs the module on, or a live-looking Lemlist, says so through
+# the email_plugin fixtures (the live one installs an httpx.MockTransport).
+os.environ["MOCK_LEMLIST"] = "true"
+os.environ["EMAIL_PROVIDER_EXTERNAL_EFFECTS"] = "false"
+os.environ["LEMLIST_API_KEY"] = ""
+os.environ["EMAIL_WEBHOOK_SECRET"] = ""
+os.environ["EMAIL_MODULE_ENABLED"] = "false"
 # AI translation: a blank key means the REAL client refuses to call out
 # (ai.not_configured) — no test can ever hit Z.ai; list prices pinned so
 # the points math never depends on a developer's .env.
@@ -84,6 +93,8 @@ pytest_plugins = [
     "tests.plugins.agency_plugin",
     "tests.plugins.agent_plugin",
     "tests.plugins.case_plugin",
+    "tests.plugins.client_profile_plugin",
+    "tests.plugins.email_plugin",
     "tests.plugins.expat_plugin",
     "tests.plugins.journey_plugin",
     "tests.plugins.rbac_plugin",

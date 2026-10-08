@@ -56,6 +56,7 @@ from src.core.notification_prefs import (
 )
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
+from src.email_campaigns.email_admin_manager import EmailAdminManager
 from src.referral.referral_manager import ReferralManager
 from src.referral.referral_schema import ReferrerViewResponse
 from src.reminders.reminder_tokens import token_values as reminder_token_values
@@ -196,6 +197,16 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 AgentDep = Annotated[Agent, Depends(get_current_agent)]
 
 
+async def _agency_response(agency: Agency, db: AsyncSession) -> AgencyResponse:
+    """The agency payload with its Email module switch filled: EVERY route
+    returning AgencyResponse goes through here, so a logo upload can never
+    answer `email_enabled: false` and erase the menu entry in the front
+    store (the signatures flag has that pre-existing gap on logo/cover)."""
+    response = AgencyResponse.model_validate(agency)
+    response.email_enabled = await EmailAdminManager(db).email_enabled_for(agency.id)
+    return response
+
+
 @router.post("", response_model=AgencyCreateResponse, status_code=201)
 async def create_agency(
     body: AgencyCreateRequest, agent: AgentDep, db: DbDep, background: BackgroundTasks
@@ -212,7 +223,7 @@ async def create_agency(
         result.email.html,
     )
     return AgencyCreateResponse(
-        agency=AgencyResponse.model_validate(result.agency),
+        agency=await _agency_response(result.agency, db),
         admin=CreatedAdminResponse(
             id=result.admin.id,
             email=result.admin.email,
@@ -228,7 +239,12 @@ async def list_agencies(agent: AgentDep, db: DbDep) -> list[AgencyResponse]:
     """Platform agency switcher (superadmin-only, agency.create): EVERY agency.
     The one read that deliberately crosses the tenant boundary."""
     agencies = await AgenciesManager(db).list_all_agencies()
-    return [AgencyResponse.model_validate(a) for a in agencies]
+    # One query for the whole list (never one per agency).
+    email_on = await EmailAdminManager(db).email_enabled_agency_ids(a.id for a in agencies)
+    responses = [AgencyResponse.model_validate(a) for a in agencies]
+    for response in responses:
+        response.email_enabled = response.id in email_on
+    return responses
 
 
 @router.delete("/{agency_id}", response_model=AgencyDeletedResponse)
@@ -257,12 +273,12 @@ async def get_my_agency_logo(agent: AgentDep, db: DbDep) -> Response:
 @router.post("/me/logo", response_model=AgencyResponse)
 async def upload_agency_logo(file: UploadFile, agent: AgentDep, db: DbDep) -> AgencyResponse:
     agency = await AgenciesManager(db).upload_logo(agent, file.content_type, await file.read())
-    return AgencyResponse.model_validate(agency)
+    return await _agency_response(agency, db)
 
 
 @router.delete("/me/logo", response_model=AgencyResponse)
 async def delete_agency_logo(agent: AgentDep, db: DbDep) -> AgencyResponse:
-    return AgencyResponse.model_validate(await AgenciesManager(db).delete_logo(agent))
+    return await _agency_response(await AgenciesManager(db).delete_logo(agent), db)
 
 
 @router.get("/me/cover")
@@ -275,12 +291,12 @@ async def get_my_agency_cover(agent: AgentDep, db: DbDep) -> Response:
 @router.post("/me/cover", response_model=AgencyResponse)
 async def upload_agency_cover(file: UploadFile, agent: AgentDep, db: DbDep) -> AgencyResponse:
     agency = await AgenciesManager(db).upload_cover(agent, file.content_type, await file.read())
-    return AgencyResponse.model_validate(agency)
+    return await _agency_response(agency, db)
 
 
 @router.delete("/me/cover", response_model=AgencyResponse)
 async def delete_agency_cover(agent: AgentDep, db: DbDep) -> AgencyResponse:
-    return AgencyResponse.model_validate(await AgenciesManager(db).delete_cover(agent))
+    return await _agency_response(await AgenciesManager(db).delete_cover(agent), db)
 
 
 # THE assumed public exception (see BINDINGS comment): its own router so
@@ -357,7 +373,7 @@ async def _fill_client_documents(
 async def get_my_agency(agent: AgentDep, db: DbDep) -> AgencyResponse:
     manager = AgenciesManager(db)
     agency = await manager.get_my_agency(agent)
-    response = AgencyResponse.model_validate(agency)
+    response = await _agency_response(agency, db)
     # Read-only settings block: the agency SEES where it stands
     # (plan, cycle, seats); the conversion itself goes through Eric.
     response.subscription = await manager.subscription_info(agency)
@@ -431,7 +447,7 @@ async def grant_agency_signature_credits(
 async def update_my_agency(body: AgencyUpdateRequest, agent: AgentDep, db: DbDep) -> AgencyResponse:
     manager = AgenciesManager(db)
     agency = await manager.update_my_agency(agent, body)
-    response = AgencyResponse.model_validate(agency)
+    response = await _agency_response(agency, db)
     await _fill_client_documents(response, agency, manager)
     # LOT 6 : l'EFFECTIF (env maître AND sous-interrupteur agence) — le
     # front n'a qu'une vérité à lire.
@@ -450,7 +466,7 @@ async def validate_client_terms(agent: AgentDep, db: DbDep) -> AgencyResponse:
     onboarding step. Blocks nothing."""
     manager = AgenciesManager(db)
     agency = await manager.validate_client_terms(agent)
-    response = AgencyResponse.model_validate(agency)
+    response = await _agency_response(agency, db)
     await _fill_client_documents(response, agency, manager)
     response.signatures_enabled = signatures_effectively_enabled(agency)
     response.notification_prefs = effective_client_prefs(agency)

@@ -63,6 +63,20 @@ PLATFORM_PERMISSIONS: tuple[Permission, ...] = (
 )
 _PLATFORM_SET = set(PLATFORM_PERMISSIONS)
 
+# The Email module's permissions (the "right to activate", N3): admin and
+# superadmin receive them by construction; case_manager EXCLUDES them below
+# (it is built by exclusion and would silently inherit them); member and
+# viewer never list them; external roles never hold them. An agency admin
+# grants them role by role, within its own ceiling.
+EMAIL_PERMISSIONS: tuple[Permission, ...] = (
+    Permission.EMAIL_VIEW,
+    Permission.EMAIL_MANAGE,
+    Permission.EMAIL_ENROLL,
+    Permission.EMAIL_PAUSE,
+    Permission.EMAIL_REMOVE,
+    Permission.EMAIL_SYNC,
+)
+
 SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     # admin = everything EXCEPT the external-provider AND platform-scope
     # permissions (the former belong only to external roles, the latter only
@@ -87,6 +101,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # imports dossiers (bulk onboarding is case work). An agency can
             # still revoke it via the matrix (data, no deploy).
             Permission.NOTE_VIEW_CONFIDENTIAL,
+            # The Email module is admin-only by default: only the admin (and
+            # superadmin) holds it from the start, the agency grants it on.
+            *EMAIL_PERMISSIONS,
             *_EXTERNAL_SET,
             # agency.create is platform-only — case_manager never creates
             # agencies (see _PLATFORM_SET; mirrors the admin exclusion).
@@ -166,6 +183,7 @@ def collect_bindings() -> list[RouteBinding]:
         BINDINGS as document_templates_bindings,
     )
     from src.documents.documents_router import BINDINGS as documents_bindings
+    from src.email_campaigns.email_admin_router import BINDINGS as email_admin_bindings
     from src.expat.expat_router import BINDINGS as expat_bindings
     from src.export.export_router import BINDINGS as export_bindings
     from src.external.external_router import BINDINGS as external_bindings
@@ -214,6 +232,7 @@ def collect_bindings() -> list[RouteBinding]:
         *costs_bindings,
         *signatures_bindings,
         *document_templates_bindings,
+        *email_admin_bindings,
     ]
 
 

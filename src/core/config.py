@@ -145,6 +145,9 @@ class Settings(BaseSettings):
     #   False → force real calls even if the global is True
     mock_email: bool | None = None
     mock_storage: bool | None = None
+    # Lemlist (Email module): None follows `mock_services`. A mocked Lemlist
+    # is never called, whatever the other email settings say.
+    mock_lemlist: bool | None = None
 
     # Documents (immigration pieces: scanned passports, certificates,
     # photos — doc/docx waits for a real ask)
@@ -306,7 +309,27 @@ class Settings(BaseSettings):
         "profile_imported": 2,
     }
 
-    @field_validator("paddle_webhook_url", mode="before")
+    # Email module (Lemlist campaigns, ported from Prism). MASTER switch,
+    # default FALSE, same closed-by-default doctrine as signatures and KPIs:
+    # env off = off for every agency, whatever its `agency_email_module` row
+    # says. Both locks are needed (N3): this switch AND a row enabled by a
+    # superadmin.
+    email_module_enabled: bool = False
+    # The platform's Lemlist team key. Blank = no real call is possible.
+    # Never logged, printed or quoted: designate it by its sha256[:12].
+    lemlist_api_key: str = ""
+    # Real writes at Lemlist need THIS flag AND Lemlist not mocked AND a key
+    # (external_effects_on), then an agency bound to the key's team. Anything
+    # less runs the dry-run provider: the module works and nothing leaves.
+    email_provider_external_effects: bool = False
+    # Shared secret of the Lemlist webhook (`secret` in the body). Blank =
+    # every webhook call is refused.
+    email_webhook_secret: str = ""
+    # The PUBLIC URL of /webhooks/lemlist, for the webhook creation (same
+    # role as paddle_webhook_url: only the env knows a URL).
+    email_webhook_url: str | None = None
+
+    @field_validator("paddle_webhook_url", "email_webhook_url", mode="before")
     @classmethod
     def _empty_url_is_none(cls, v: str | None) -> str | None:
         # An EMPTY env var means "absent" — it must override a .env value

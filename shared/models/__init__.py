@@ -1,6 +1,7 @@
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
 from shared.models.agency_deletion_log import AgencyDeletionLog
+from shared.models.agency_email_module import AgencyEmailModule
 from shared.models.agent import Agent
 from shared.models.ai_translation_job import AiTranslationJob, AiTranslationSource
 from shared.models.ai_usage import AgencyAiUsage
@@ -25,6 +26,15 @@ from shared.models.digest import DigestCursor
 from shared.models.document import Document
 from shared.models.document_template import DocumentTemplate
 from shared.models.email_account_state import EmailAccountState
+from shared.models.email_campaign import (
+    EmailCampaign,
+    EmailCampaignAiVariable,
+    EmailCampaignMember,
+    EmailCampaignStep,
+    EmailMemberRender,
+    EmailMessage,
+    EmailProviderEvent,
+)
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.help_search_miss import HelpSearchMiss
@@ -74,6 +84,14 @@ __all__ = [
     "CaseExternalAssignment",
     "CaseInvitation",
     "EmailAccountState",
+    "AgencyEmailModule",
+    "EmailCampaign",
+    "EmailCampaignAiVariable",
+    "EmailCampaignMember",
+    "EmailCampaignStep",
+    "EmailMemberRender",
+    "EmailMessage",
+    "EmailProviderEvent",
     "CaseNote",
     "CaseStepCost",
     "CaseStepParticipant",

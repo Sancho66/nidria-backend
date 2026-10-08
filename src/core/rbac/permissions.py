@@ -43,6 +43,27 @@ class Permission(StrEnum):
     # capability like field.manage / journey.configure: admin and
     # case_manager hold it by default; viewer/member do not.
     IMPORT_MANAGE = "import.manage"
+    # Email module (Lemlist campaigns, ported from Prism's outreach.*). The
+    # "right to activate": an agency the platform switched on still grants
+    # these one by one (Settings > Roles). Only admin and superadmin hold
+    # them by default; case_manager EXCLUDES them (baseline.py), member and
+    # viewer never list them, external roles never hold them. email.view
+    # goes with case.view (checked by the module's Manager, like Prism's
+    # outreach.view + contacts.view): the module shows client names and
+    # email addresses.
+    EMAIL_VIEW = "email.view"
+    # Create, edit, duplicate, archive, delete campaigns, steps and AI
+    # variables; previews and AI tests; senders.
+    EMAIL_MANAGE = "email.manage"
+    # Add client profiles or companies to a campaign; move between campaigns.
+    EMAIL_ENROLL = "email.enroll"
+    # Pause and resume a recipient.
+    EMAIL_PAUSE = "email.pause"
+    # Remove a recipient from a campaign.
+    EMAIL_REMOVE = "email.remove"
+    # Sync and Launch at Lemlist, and (with email.manage) any state change of
+    # a campaign that lives at Lemlist: the gestures that send real email.
+    EMAIL_SYNC = "email.sync"
     # PLATFORM-scope permission (NOT agency-scoped). Held ONLY by the
     # `superadmin` system role: creating an agency is a platform operation,
     # not agency work — admin/case_manager are explicitly excluded from it
