@@ -162,7 +162,7 @@ async def test_beyond_ceiling_keeps_the_permission_keys_out_of_params(
     matrix = await ec_client.post(
         "/agencies/me/roles",
         headers=headers,
-        json={"name": "Trop large", "permission_ids": [perm_ids["job.manage"]]},
+        json={"name": "Trop large", "permission_ids": [perm_ids["agency.manage"]]},
     )
     assign = await ec_client.put(
         f"/agencies/me/members/{colleague.id}/role",
@@ -173,7 +173,7 @@ async def test_beyond_ceiling_keeps_the_permission_keys_out_of_params(
         assert response.status_code == 403, response.text
         code, params, detail = _envelope(response)
         assert (code, params) == ("role.beyond_ceiling", {})
-        assert "job.manage" in detail  # the detail still names the keys
+        assert "agency.manage" in detail  # the detail still names the keys
 
 
 async def test_system_role_refusals(

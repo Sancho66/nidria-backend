@@ -780,10 +780,11 @@ async def test_a_dry_run_or_effects_off_is_skipped_without_any_call(
     ):
         asked = await _run(job_db, dry_run=True)
         assert asked.stats == {"skipped": True, "reason": "dry_run"}
-        # The manual trigger passes `dry_run` through the API too.
-        admin = await make_agent(agency_id=email_world.agency_id, role=system_roles["admin"])
+        # The manual trigger passes `dry_run` through the API too — a
+        # superadmin gesture (job.manage is platform-only).
+        superadmin = await make_agent(role=system_roles["superadmin"])
         triggered = await client.post(
-            "/jobs/email_sync/trigger", json={"dry_run": True}, headers=agent_headers(admin)
+            "/jobs/email_sync/trigger", json={"dry_run": True}, headers=agent_headers(superadmin)
         )
         assert triggered.status_code == 200, triggered.text
         assert triggered.json()["stats"] == {"skipped": True, "reason": "dry_run"}

@@ -54,12 +54,17 @@ _EXTERNAL_SET = set(EXTERNAL_PERMISSIONS)
 # never by an agency role. Same matrix-level barrier as _EXTERNAL_SET —
 # excluded from admin/case_manager below so a NEW platform permission can
 # never silently land on an agency admin (deny-by-default at the matrix).
-# These gate platform endpoints (agency creation); they convey NO
-# cross-agency data access — the agency_id scoping in repositories and
-# enforce()'s agency-blindness are both untouched.
+# These gate platform endpoints (agency creation, the task backlog, the
+# scheduler); they open no agency's dossiers — the agency_id scoping in
+# repositories and enforce()'s agency-blindness are both untouched.
+# job.manage joined on 08/10/2026: the scheduler serves EVERY agency (a
+# pause, a trigger or an enable acts platform-wide) and its run logs name
+# agencies and recipients. Moving a permission here does not touch the
+# rows already granted: a migration removes them (j7d3f9b5e1c4).
 PLATFORM_PERMISSIONS: tuple[Permission, ...] = (
     Permission.AGENCY_CREATE,
     Permission.PLATFORM_TASK_MANAGE,
+    Permission.JOB_MANAGE,
 )
 _PLATFORM_SET = set(PLATFORM_PERMISSIONS)
 
@@ -93,7 +98,6 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # listed here or case_manager silently inherits it.
             Permission.AGENT_IMPERSONATE,
             Permission.ROLE_MANAGE,
-            Permission.JOB_MANAGE,
             # Configuring custom fields is admin config, not case work —
             # case_manager fills values (case.edit), it doesn't define.
             Permission.FIELD_MANAGE,
@@ -105,8 +109,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # superadmin) holds it from the start, the agency grants it on.
             *EMAIL_PERMISSIONS,
             *_EXTERNAL_SET,
-            # agency.create is platform-only — case_manager never creates
-            # agencies (see _PLATFORM_SET; mirrors the admin exclusion).
+            # agency.create, platform.task_manage and job.manage are
+            # platform-only — case_manager never holds them (see
+            # _PLATFORM_SET; mirrors the admin exclusion).
             *_PLATFORM_SET,
         }
     ),

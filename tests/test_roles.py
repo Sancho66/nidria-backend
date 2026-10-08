@@ -4,17 +4,23 @@ masking in listing AND assignment, delete = unmask), anti-lockout,
 self-mutation ban, tenant scoping, migration backfill semantics."""
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.rbac import Permission as PermissionRow
-from shared.models.rbac import Role
-from src.core.rbac.baseline import PLATFORM_PERMISSIONS, SYSTEM_ROLE_MATRIX
+from shared.models.rbac import Role, RolePermission
+from src.core.rbac.baseline import (
+    PLATFORM_PERMISSIONS,
+    SYSTEM_ROLE_MATRIX,
+    collect_bindings,
+    seed_rbac_baseline,
+)
 from src.core.rbac.permissions import Permission
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -78,6 +84,7 @@ async def test_permissions_catalogue(
     platform_keys = {p.value for p in PLATFORM_PERMISSIONS}
     assert keys == {p.value for p in Permission} - platform_keys
     assert "agency.create" not in keys
+    assert "job.manage" not in keys  # the scheduler is platform ops (08/10/2026)
     sample = next(p for p in body if p["key"] == "case.view")
     assert sample["category"] == "case"
     assert sample["label"]
@@ -706,6 +713,134 @@ async def test_get_role_requires_role_manage(
         f"/agencies/me/roles/{system_roles['member'].id}", headers=agent_headers(member)
     )
     assert response.status_code == 403
+
+
+# --- job.manage is platform-only (decision 08/10/2026) ------------------------------
+
+
+async def _keys_of(db: AsyncSession, role_id: uuid.UUID) -> set[str]:
+    stmt = (
+        select(PermissionRow.key)
+        .join(RolePermission, RolePermission.permission_id == PermissionRow.id)
+        .where(RolePermission.role_id == role_id)
+    )
+    return set((await db.execute(stmt)).scalars())
+
+
+async def test_an_agency_admin_cannot_grant_job_manage(
+    roles_client: AsyncClient,
+    admin: Agent,
+    make_agent: MakeAgent,
+    make_role: MakeRole,
+    system_roles: dict[str, Role],
+    perm_ids: dict[str, str],
+    agent_headers: AuthHeaders,
+) -> None:
+    """No door hands job.manage to an agency role: not a new matrix, not an
+    edit, not the assignment of a role carrying it (as agency roles did
+    before the migration), not a duplicate of superadmin. The delegation
+    ceiling refuses each, since the admin no longer holds it."""
+    headers = agent_headers(admin)
+    own = await make_role(permissions=[Permission.CASE_VIEW], agency_id=admin.agency_id)
+    carrier = await make_role(
+        permissions=[Permission.CASE_VIEW, Permission.JOB_MANAGE], agency_id=admin.agency_id
+    )
+    colleague = await make_agent(agency_id=admin.agency_id)
+    asked = [perm_ids["case.view"], perm_ids["job.manage"]]
+    responses = [
+        await roles_client.post(
+            "/agencies/me/roles", headers=headers, json={"name": "ops", "permission_ids": asked}
+        ),
+        await roles_client.put(
+            f"/agencies/me/roles/{own.id}/permissions",
+            headers=headers,
+            json={"permission_ids": asked},
+        ),
+        await roles_client.put(
+            f"/agencies/me/members/{colleague.id}/role",
+            headers=headers,
+            json={"role_id": str(carrier.id)},
+        ),
+    ]
+    for response in responses:
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "role.beyond_ceiling"
+        assert response.json()["detail"] == "Beyond your permission ceiling: job.manage."
+    duplicate = await roles_client.post(
+        f"/agencies/me/roles/{system_roles['superadmin'].id}/duplicate",
+        headers=headers,
+        json={"name": "copie"},
+    )
+    assert duplicate.status_code == 403, duplicate.text
+    assert "job.manage" in duplicate.json()["detail"]
+
+
+async def test_the_boot_never_gives_job_manage_back_to_an_agency_role(
+    roles_client: AsyncClient,
+    db_session: AsyncSession,
+    admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """seed_system_roles is additive and no longer lists job.manage for
+    admin; propagate_new_permissions_to_clones only fills a permission born
+    AFTER a clone's last matrix decision. job.manage predates every clone,
+    so the migration's removal is a decision the boot keeps — even on a
+    clone of superadmin, whose origin still holds it."""
+    # Ids read up front: expire_all() below would lazy-load them otherwise.
+    admin_role_id = system_roles["admin"].id
+    superadmin_role_id = system_roles["superadmin"].id
+    superadmin = await make_agent(role=system_roles["superadmin"])
+    admin_clone = await roles_client.patch(
+        f"/agencies/me/roles/{admin_role_id}",
+        headers=agent_headers(admin),
+        json={"name": "Direction"},
+    )
+    # A superadmin renaming its own role in its home agency: copy-on-write.
+    operator_clone = await roles_client.patch(
+        f"/agencies/me/roles/{superadmin_role_id}",
+        headers=agent_headers(superadmin),
+        json={"name": "Opérateurs"},
+    )
+    assert admin_clone.status_code == 200, admin_clone.text
+    assert operator_clone.status_code == 200, operator_clone.text
+    admin_clone_id = uuid.UUID(admin_clone.json()["id"])
+    operator_clone_id = uuid.UUID(operator_clone.json()["id"])
+    assert "job.manage" not in await _keys_of(db_session, admin_clone_id)
+    assert "job.manage" in await _keys_of(db_session, operator_clone_id)  # copied from origin
+    job_manage_id = (
+        await db_session.execute(
+            select(PermissionRow.id).where(PermissionRow.key == Permission.JOB_MANAGE.value)
+        )
+    ).scalar_one()
+    # What the migration leaves: job.manage on no role but the system superadmin.
+    await db_session.execute(
+        delete(RolePermission).where(
+            RolePermission.role_id == operator_clone_id,
+            RolePermission.permission_id == job_manage_id,
+        )
+    )
+    await db_session.commit()
+
+    await seed_rbac_baseline(db_session, bindings=collect_bindings())  # the next boot
+    db_session.expire_all()
+    assert "job.manage" not in await _keys_of(db_session, admin_role_id)
+    assert "job.manage" not in await _keys_of(db_session, admin_clone_id)
+    assert "job.manage" not in await _keys_of(db_session, operator_clone_id)
+    assert "job.manage" in await _keys_of(db_session, superadmin_role_id)
+
+    # Counter-proof: the birth-date rule keeps it out, not a silent seed. A
+    # clone whose last decision PREDATES job.manage's birth would receive it.
+    await db_session.execute(
+        update(Role)
+        .where(Role.id == operator_clone_id)
+        .values(permissions_reviewed_at=datetime(2020, 1, 1, tzinfo=UTC))
+    )
+    await db_session.commit()
+    await seed_rbac_baseline(db_session, bindings=collect_bindings())
+    db_session.expire_all()
+    assert "job.manage" in await _keys_of(db_session, operator_clone_id)
 
 
 # --- migration backfill semantics ---------------------------------------------------

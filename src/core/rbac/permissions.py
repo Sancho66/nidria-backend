@@ -37,6 +37,11 @@ class Permission(StrEnum):
     AGENT_MANAGE = "agent.manage"
     AGENT_IMPERSONATE = "agent.impersonate"
     ROLE_MANAGE = "role.manage"
+    # PLATFORM-scope since 08/10/2026 (same barrier as AGENCY_CREATE below,
+    # see PLATFORM_PERMISSIONS in baseline.py): the scheduler (/jobs/*) serves
+    # every agency, so pausing, triggering or enabling a job is a platform
+    # act. Held ONLY by superadmin; kept at this position because the enum
+    # order is the order of the openapi `Permission` enum.
     JOB_MANAGE = "job.manage"
     FIELD_MANAGE = "field.manage"
     # Preparing/running a CRM import (the import socle, BLOC 1+). A config

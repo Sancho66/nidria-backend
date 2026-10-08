@@ -300,11 +300,12 @@ async def test_trigger_endpoint_runs_the_job(
 ) -> None:
     await seed_job_configs(db_session)
     await trial_agency(days_ago=7)
-    admin = await make_agent(role=system_roles["admin"])
+    # /jobs is superadmin-only (job.manage is a platform permission).
+    superadmin = await make_agent(role=system_roles["superadmin"])
 
     response = await client.post(
         "/jobs/trial_nurture/trigger",
-        headers=agent_headers(admin),
+        headers=agent_headers(superadmin),
         json={"dry_run": True},
     )
     assert response.status_code == 200, response.text

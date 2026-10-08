@@ -244,11 +244,15 @@ async def test_system_role_matrix_seeded_as_specified(
     admin = await keys_of(system_roles["admin"])
     assert admin == {p.value for p in Permission} - external_keys - platform_keys
     assert Permission.AGENCY_CREATE.value not in admin  # platform-only, never an agency admin
+    # The scheduler serves every agency: platform-only since 08/10/2026.
+    assert Permission.JOB_MANAGE.value in platform_keys
+    assert Permission.JOB_MANAGE.value not in admin
     case_manager = await keys_of(system_roles["case_manager"])
     assert Permission.AGENT_MANAGE.value not in case_manager
     assert Permission.ROLE_MANAGE.value not in case_manager
     assert Permission.NOTE_VIEW_CONFIDENTIAL.value not in case_manager
     assert Permission.AGENCY_CREATE.value not in case_manager  # platform-only
+    assert Permission.JOB_MANAGE.value not in case_manager  # platform-only
     assert external_keys.isdisjoint(case_manager)  # no external.* on an internal role
     # The Email module is admin-only by default (the "right to activate"):
     # case_manager is built by exclusion and must exclude all six keys.
@@ -268,6 +272,7 @@ async def test_system_role_matrix_seeded_as_specified(
     superadmin = await keys_of(system_roles["superadmin"])
     assert superadmin == {p.value for p in Permission} - external_keys
     assert Permission.AGENCY_CREATE.value in superadmin
+    assert Permission.JOB_MANAGE.value in superadmin  # the scheduler's only operator
     # The 6 external system roles hold EXACTLY the 3 external.* permissions
     # (wave B: permission ∧ scoping — every external route is assignment-scoped).
     for name in EXTERNAL_ROLE_NAMES:

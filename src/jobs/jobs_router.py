@@ -23,7 +23,9 @@ from src.jobs.jobs_schema import (
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 # Everything (reads included) under job.manage: this is platform ops,
-# not tenant reference data. Admin-only in the default matrix.
+# not tenant reference data — a job serves every agency and its run logs
+# name them. job.manage is a PLATFORM permission (PLATFORM_PERMISSIONS):
+# superadmin only, never an agency role (decision 08/10/2026).
 _MANAGE = Permission.JOB_MANAGE
 
 BINDINGS = [
