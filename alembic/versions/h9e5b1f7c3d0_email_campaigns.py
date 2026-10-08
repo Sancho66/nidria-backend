@@ -10,7 +10,11 @@ module is closed by default (EMAIL_MODULE_ENABLED=false, no agency row).
 
 `email_suppression` (the agency's opposition list, decision of 08/10/2026)
 was added to this revision in place: it had only run on throwaway
-databases.
+databases. So were, for the import of the Lemlist campaigns already
+running (lot C, same day), `email_campaign.origin` (NIDRIA or
+LEMLIST_IMPORT, checked), `email_campaign_step.provider_content` (the raw
+Lemlist step of an imported campaign) and the unique index of one
+campaign per real provider campaign id.
 
 Every constraint and index carries an explicit name, identical to what the
 models produce through the naming convention, so a schema born from this
@@ -84,6 +88,13 @@ _RENDER_FREEZE_TRIGGER = """
     BEFORE UPDATE ON email_member_render
     FOR EACH ROW EXECUTE FUNCTION email_render_freeze()
 """
+# Frozen copies of shared/models/email_campaign.py `_REAL_PROVIDER_CAMPAIGN`
+# and `_ORIGIN_CHECK`.
+_REAL_PROVIDER_CAMPAIGN = (
+    "provider_campaign_id IS NOT NULL AND provider_campaign_id <> '' "
+    "AND left(provider_campaign_id, 4) <> 'dry_'"
+)
+_ORIGIN_CHECK = "origin IN ('NIDRIA', 'LEMLIST_IMPORT')"
 
 
 def upgrade() -> None:
@@ -130,6 +141,7 @@ def upgrade() -> None:
         sa.Column("agency_id", _UUID, nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("provider", sa.String(30), nullable=False, server_default="LEMLIST"),
+        sa.Column("origin", sa.String(20), nullable=False, server_default="NIDRIA"),
         sa.Column("provider_campaign_id", sa.String(100), nullable=True),
         sa.Column("provider_sequence_id", sa.String(100), nullable=True),
         sa.Column("provider_schedule_id", sa.String(100), nullable=True),
@@ -157,12 +169,21 @@ def upgrade() -> None:
             name="fk_email_campaign_created_by_agent_id_agent",
             ondelete="SET NULL",
         ),
+        sa.CheckConstraint(_ORIGIN_CHECK, name=op.f("ck_email_campaign_origin")),
     )
     op.create_index("ix_email_campaign_agency_id", "email_campaign", ["agency_id"])
     op.create_index(
         "ix_email_campaign_provider_campaign",
         "email_campaign",
         ["provider", "provider_campaign_id"],
+    )
+    # One campaign per real provider campaign (an import stays idempotent).
+    op.create_index(
+        "uq_email_campaign_provider_campaign_real",
+        "email_campaign",
+        ["provider", "provider_campaign_id"],
+        unique=True,
+        postgresql_where=sa.text(_REAL_PROVIDER_CAMPAIGN),
     )
     op.execute("ALTER TABLE email_campaign ENABLE ROW LEVEL SECURITY")
 
@@ -182,6 +203,9 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False, server_default=sa.text("1")),
         sa.Column("content_hash", sa.String(64), nullable=False, server_default=""),
         sa.Column("provider_synced_hash", sa.String(64), nullable=True),
+        sa.Column(
+            "provider_content", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         *_timestamps(),
         sa.PrimaryKeyConstraint("id", name="pk_email_campaign_step"),
         sa.ForeignKeyConstraint(

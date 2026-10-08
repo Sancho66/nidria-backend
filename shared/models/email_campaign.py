@@ -19,6 +19,12 @@ production from the migration, and the two must agree (lesson D15).
 `email_suppression` is the agency's opposition list (decision of
 08/10/2026): a fingerprint of every address that unsubscribed or bounced,
 kept whatever happens to the campaign or the client record it came from.
+
+A campaign has an `origin` (decision of 08/10/2026, lot C): NIDRIA, made
+in Nidria as above, or LEMLIST_IMPORT, a campaign that already ran in the
+agency's Lemlist team and is mirrored read only. An imported campaign's
+content belongs to Lemlist: its steps keep the raw Lemlist step in
+`provider_content`, and no render exists for its emails.
 """
 
 from __future__ import annotations
@@ -48,6 +54,20 @@ from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 #: The only provider today.
 PROVIDER_LEMLIST = "LEMLIST"
+
+#: Where a campaign comes from. NIDRIA: made in Nidria, which renders every
+#: email and pushes it. LEMLIST_IMPORT: a campaign that already ran in the
+#: agency's Lemlist team, mirrored read only; its content is Lemlist's and
+#: Nidria never writes it there (only a pause, a resume or an archive of
+#: the campaign, and a lead's pause, resume or removal).
+ORIGIN_NIDRIA = "NIDRIA"
+ORIGIN_LEMLIST_IMPORT = "LEMLIST_IMPORT"
+CAMPAIGN_ORIGINS = (ORIGIN_NIDRIA, ORIGIN_LEMLIST_IMPORT)
+#: A step's channel: an email, or another channel an imported campaign runs
+#: at Lemlist (LinkedIn, a call, a task...), whose exact Lemlist type stays
+#: in `provider_content`.
+STEP_TYPE_EMAIL = "EMAIL"
+STEP_TYPE_OTHER = "OTHER_CHANNEL"
 
 #: Campaign lifecycle.
 CAMPAIGN_STATUSES = ("DRAFT", "ACTIVE", "PAUSED", "ARCHIVED")
@@ -103,18 +123,39 @@ MESSAGE_STATUSES = ("QUEUED", "SENT", "DELIVERED", "BOUNCED", "OPENED", "CLICKED
 #: Where a message's content is. RENDERED: an outbound email, whose exact
 #: content is its frozen render. PENDING / AVAILABLE / UNAVAILABLE: a reply's
 #: content, read from the provider's inbox when it provides it.
-CONTENT_STATES = ("RENDERED", "PENDING", "AVAILABLE", "UNAVAILABLE")
+#: PROVIDER_ONLY: an outbound email of an imported campaign, sent by Lemlist
+#: from its own template: its personalized content is not in Nidria.
+CONTENT_STATES = ("RENDERED", "PENDING", "AVAILABLE", "UNAVAILABLE", "PROVIDER_ONLY")
 
 _EMPTY_JSON = text("'{}'::jsonb")
 _LIVE_MEMBER_PREDICATE = "status IN ({})".format(
     ", ".join(f"'{status}'" for status in LIVE_MEMBER_STATUSES)
 )
+#: A campaign Lemlist knows: a provider id that is not a dry run's (the
+#: `dry_` prefix of `providers.dry_run.DRY_RUN_PREFIX`, spelled here: a
+#: model never imports application code).
+_REAL_PROVIDER_CAMPAIGN = (
+    "provider_campaign_id IS NOT NULL AND provider_campaign_id <> '' "
+    "AND left(provider_campaign_id, 4) <> 'dry_'"
+)
+_ORIGIN_CHECK = "origin IN ({})".format(", ".join(f"'{origin}'" for origin in CAMPAIGN_ORIGINS))
 
 
 class EmailCampaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "email_campaign"
     __table_args__ = (
         Index("ix_email_campaign_provider_campaign", "provider", "provider_campaign_id"),
+        # One campaign per real provider campaign: what keeps an import
+        # idempotent, two concurrent ones included. A dry run's ids are
+        # left out (they exist in Nidria only).
+        Index(
+            "uq_email_campaign_provider_campaign_real",
+            "provider",
+            "provider_campaign_id",
+            unique=True,
+            postgresql_where=text(_REAL_PROVIDER_CAMPAIGN),
+        ),
+        CheckConstraint(_ORIGIN_CHECK, name="origin"),
     )
 
     agency_id: Mapped[uuid.UUID] = mapped_column(
@@ -123,6 +164,10 @@ class EmailCampaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     provider: Mapped[str] = mapped_column(
         String(30), nullable=False, default=PROVIDER_LEMLIST, server_default=PROVIDER_LEMLIST
+    )
+    # NIDRIA, or LEMLIST_IMPORT: a mirror of a Lemlist campaign (read only).
+    origin: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=ORIGIN_NIDRIA, server_default=ORIGIN_NIDRIA
     )
     provider_campaign_id: Mapped[str | None] = mapped_column(String(100))
     # Lemlist builds one sequence and one schedule per campaign; the steps hang
@@ -197,6 +242,10 @@ class EmailCampaignStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # The content the provider last received; differing from `content_hash`
     # means unsynced changes.
     provider_synced_hash: Mapped[str | None] = mapped_column(String(64))
+    # An imported campaign's step as Lemlist returned it (its type, subject,
+    # message, delay, index, A/B flag...): the content Lemlist sends. NULL
+    # for a step made in Nidria, whose templates are the content.
+    provider_content: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     campaign: Mapped[EmailCampaign] = relationship(back_populates="steps")
     ai_variables: Mapped[list[EmailCampaignAiVariable]] = relationship(

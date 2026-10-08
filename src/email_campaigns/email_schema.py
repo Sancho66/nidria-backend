@@ -9,7 +9,9 @@ Three surfaces:
   variables, previews and recipients (memberships), then the add wizard, a
   client record's email state, the Sync, the Launch, the performance and the
   outreach page, ported from Prism's `email_schema.py` (reference commit
-  629a2b0).
+  629a2b0); and the import of the Lemlist campaigns already running,
+  `/email/import/lemlist` (lot C): its plan, in counts only, and its
+  application, per campaign.
 
 Adaptations to Nidria: UUID identifiers; no project, scope, legacy workflow
 or address verification; a recipient is a client record (`client_profile`),
@@ -50,23 +52,29 @@ DelayUnit = Literal["DAYS", "WEEKS"]
 #: Where a campaign lives at the provider. NONE: not there yet; DRY_RUN:
 #: only simulated (a `dry_` id); LIVE: a real Lemlist campaign.
 CampaignProviderMode = Literal["NONE", "DRY_RUN", "LIVE"]
+#: Where a campaign comes from: made in Nidria, or a mirror of a campaign
+#: that already ran in the agency's Lemlist team (read only, lot C).
+CampaignOrigin = Literal["NIDRIA", "LEMLIST_IMPORT"]
 #: An email's furthest state; QUEUED = handed to the provider, not sent yet.
 MessageStatus = Literal["QUEUED", "SENT", "DELIVERED", "OPENED", "CLICKED", "REPLIED", "BOUNCED"]
 #: RENDERED = Nidria's frozen render is the content; a reply's content is
-#: PENDING (read at the next sync), AVAILABLE, or UNAVAILABLE from the provider.
-ContentState = Literal["RENDERED", "PENDING", "AVAILABLE", "UNAVAILABLE"]
+#: PENDING (read at the next sync), AVAILABLE, or UNAVAILABLE from the provider;
+#: PROVIDER_ONLY = an email of an imported campaign, sent by Lemlist from its
+#: own template: its personalized content is not in Nidria.
+ContentState = Literal["RENDERED", "PENDING", "AVAILABLE", "UNAVAILABLE", "PROVIDER_ONLY"]
 #: Why one step cannot be deleted now (`EmailStepCapabilities.delete_reason`).
 #: first_step_in_use: the first email of a sequence Lemlist holds leads of;
 #: not_last_at_provider: a later step exists at Lemlist (it removes none);
 #: already_sent: someone got this email, it stays with its history;
-#: team_mismatch: the campaign lives in another Lemlist team (read only).
+#: team_mismatch: the campaign lives in another Lemlist team (read only);
+#: imported: the campaign mirrors Lemlist's, whose steps are Lemlist's.
 StepDeleteReason = Literal[
-    "first_step_in_use", "not_last_at_provider", "already_sent", "team_mismatch"
+    "first_step_in_use", "not_last_at_provider", "already_sent", "team_mismatch", "imported"
 ]
 #: Why a step cannot be skipped through Nidria: only Lemlist's app can.
 StepSkipReason = Literal["provider_app_only"]
 #: Why a sequence capability is off (`EmailSequenceCapabilities.reasons`).
-SequenceReason = Literal["insert_in_use", "reorder_in_use", "archived", "team_mismatch"]
+SequenceReason = Literal["insert_in_use", "reorder_in_use", "archived", "team_mismatch", "imported"]
 #: Why the senders list is empty or partial (`EmailSendersRead.note`).
 SendersNote = Literal["dry_run", "no_sender", "provider_error"]
 
@@ -466,10 +474,14 @@ class EmailStepRead(BaseModel):
     id: uuid.UUID
     campaign_id: uuid.UUID
     position: int
+    #: Empty for an imported campaign's step: Lemlist names no step.
     name: str
+    #: EMAIL, or OTHER_CHANNEL for an imported step of another channel.
     type: str
     delay_value: int
     delay_unit: DelayUnit
+    #: Nidria's templates; empty for an imported campaign's step, whose
+    #: content is Lemlist's (`raw_subject`, `raw_body_text`).
     subject_template: str
     body_template: str
     provider_step_id: str | None
@@ -481,6 +493,13 @@ class EmailStepRead(BaseModel):
     ai_variables: list[EmailAiVariableRead]
     #: Filled on a campaign's detail.
     capabilities: EmailStepCapabilities | None = None
+    #: An imported campaign's step: its Lemlist type (email, linkedinSend,
+    #: manual...), and Lemlist's own template, its subject as written and
+    #: its message read as text (never its HTML). That template is what
+    #: Lemlist personalizes for each lead, never the text a lead received.
+    provider_type: str | None = None
+    raw_subject: str | None = None
+    raw_body_text: str | None = None
 
 
 class EmailCampaignLeadStats(BaseModel):
@@ -521,6 +540,17 @@ class EmailCampaignRead(BaseModel):
     team_mismatch: bool = False
     #: The campaign list's leads and replies; not read on a single campaign.
     lead_stats: EmailCampaignLeadStats | None = None
+    #: NIDRIA, or LEMLIST_IMPORT: a mirror of a Lemlist campaign, whose
+    #: content, settings and recipients are Lemlist's (lot C).
+    origin: CampaignOrigin = "NIDRIA"
+    #: An imported campaign: the leads Lemlist lists that Nidria does not
+    #: know (neither imported nor set aside by the last import), as last
+    #: counted (the import, the Email Sync job, a Sync); null when never
+    #: counted or when Lemlist's listing was incomplete. Above zero, running
+    #: the import again brings them in.
+    unknown_leads: int | None = None
+    #: An imported campaign: when it was last imported.
+    last_imported_at: datetime | None = None
     created_by_agent_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
@@ -699,7 +729,9 @@ class EmailMemberRead(BaseModel):
     last_name: str | None
     full_name: str
     email: str | None
-    #: The client's company when exactly one is linked.
+    #: The client's company when exactly one is linked; for a lead imported
+    #: from Lemlist whose record has none, the company Lemlist gave
+    #: (`company_from_provider`, no company record behind it).
     company_id: uuid.UUID | None
     company_name: str | None
     client_status: ClientStatus
@@ -737,6 +769,9 @@ class EmailMemberRead(BaseModel):
     removed_by_agent_id: uuid.UUID | None = None
     #: The membership a move opened in the target campaign.
     moved_to_id: uuid.UUID | None = None
+    #: `company_name` is the one Lemlist gave an imported lead (no company
+    #: record of the agency is linked to the client).
+    company_from_provider: bool = False
 
 
 class EmailEventRead(BaseModel):
@@ -775,6 +810,12 @@ class EmailStepTimeline(BaseModel):
     planned_overdue: bool = False
     #: None while the provider has not received this email.
     status: MessageStatus | None
+    #: Where this email's content is: RENDERED (`subject` and `body` are the
+    #: email Nidria rendered for this lead), PROVIDER_ONLY (an imported
+    #: campaign's: sent by Lemlist from its own template, its personalized
+    #: content is not in Nidria, `subject` and `body` are null), or null
+    #: (nothing for this step yet).
+    content_state: ContentState | None = None
     subject: str | None
     body: str | None
     #: The AI values this email carries, frozen with its render.
@@ -1095,6 +1136,9 @@ class EmailSyncResult(BaseModel):
     errors: list[EmailSyncError] = Field(default_factory=list)
     notes: list[EmailSyncNote] = Field(default_factory=list)
     last_synced_at: datetime | None = None
+    #: An imported campaign (whose Sync only reads Lemlist): the leads
+    #: Lemlist lists that Nidria does not know; null when not counted.
+    unknown_leads: int | None = None
 
 
 class EmailLaunchRequest(BaseModel):
@@ -1339,3 +1383,260 @@ class EmailOutreachRead(BaseModel):
     dry_run: int
     overdue: int
     campaigns: list[EmailOutreachCampaign]
+
+
+# ── The import of the Lemlist campaigns already running (lot C) ─────────────
+
+#: The rule of the written mapping that decided a lead's fate (`RULES` of
+#: `email_import`): unsubscribed, bounced, replied, skipped (during
+#: Lemlist's review), not_launched (status review or scanning), completed
+#: (status done), paused, launched (running, not contacted yet),
+#: in_sequence (running, an email sent, opened or clicked), status_unknown
+#: (no status read), uncovered (any other combination).
+ImportRule = Literal[
+    "unsubscribed",
+    "bounced",
+    "replied",
+    "skipped",
+    "not_launched",
+    "completed",
+    "paused",
+    "launched",
+    "in_sequence",
+    "status_unknown",
+    "uncovered",
+]
+#: Why a lead of a Lemlist campaign is not imported, counted. no_email: no
+#: address in the export nor the contacts lookup; duplicate_email: another
+#: lead of the campaign carries the address; already_in_campaign: the
+#: person already holds another membership of this campaign; conflict: the
+#: person is live in another campaign of the agency; conflict_in_plan: live
+#: in an importable campaign planned before (older at Lemlist);
+#: skipped_at_provider, not_launched, status_unknown, status_uncovered: the
+#: mapping's own (see `ImportRule`).
+ImportSkipReason = Literal[
+    "no_email",
+    "duplicate_email",
+    "already_in_campaign",
+    "conflict",
+    "conflict_in_plan",
+    "skipped_at_provider",
+    "not_launched",
+    "status_unknown",
+    "status_uncovered",
+]
+#: Why an address goes on the agency's opposition list.
+OppositionReason = Literal["UNSUBSCRIBED", "BOUNCED"]
+
+
+class EmailImportRuleRead(BaseModel):
+    """One line of the mapping from Lemlist's words on a lead to its Nidria
+    status. A lead matches when its `state` (Lemlist's listing) is one of
+    `states` or its `status` (the export) one of `statuses` (`combine`
+    either), or both (`combine` both); the first rule matching decides.
+    `proposed`: the status the membership gets, null when the lead is not
+    imported (`not_imported` says why)."""
+
+    rule: ImportRule
+    states: list[str] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
+    combine: Literal["either", "both"] = "either"
+    proposed: MemberStatus | None = None
+    opposition: OppositionReason | None = None
+    not_imported: ImportSkipReason | None = None
+
+
+class EmailImportStateRead(BaseModel):
+    """One combination of Lemlist's words met in a campaign, how many leads
+    carry it, and what the import does with them."""
+
+    state: str | None
+    status: str | None
+    count: int
+    rule: ImportRule
+    proposed: MemberStatus | None = None
+    #: These leads' addresses go on the agency's opposition list (an
+    #: unsubscribe, a bounce), imported or not.
+    opposition: OppositionReason | None = None
+
+
+class EmailImportStepsRead(BaseModel):
+    """A campaign's steps at Lemlist: its main sequence's, imported (by
+    Lemlist type), and what is not imported (the conditional branches and
+    their steps). Under an A/B test, the text imported is variant A's."""
+
+    by_type: dict[str, int]
+    imported: int
+    branches: int
+    branch_steps: int
+    ab_tests: int
+
+
+class EmailImportLeadsRead(BaseModel):
+    """A campaign's leads, in counts only."""
+
+    #: Distinct leads of Lemlist's listing, whether it was read in full,
+    #: and its rows naming a lead already read (a page shifting meanwhile).
+    listed: int
+    listing_complete: bool
+    listing_duplicates: int
+    #: Leads whose identity was found: by the campaign's export, else by
+    #: the contacts lookup; and those left without an address.
+    identities: int
+    from_export: int
+    from_contacts: int
+    without_email: int
+    #: Among the memberships to create: leads matched to a client record of
+    #: the agency by their address (rule N2), records to create, and records
+    #: an importable campaign planned before creates (shared people).
+    existing_profiles: int
+    profiles_to_create: int
+    profiles_planned_before: int
+    #: Live in another campaign of the agency, or in an importable campaign
+    #: planned before: not imported.
+    conflicts: int
+    conflicts_in_plan: int
+    #: Another lead of the campaign carries the same address.
+    duplicate_emails: int
+    #: Memberships the import creates, and those it refreshes (imported
+    #: before).
+    to_create: int
+    to_update: int
+    #: Leads not imported, by reason.
+    not_imported: dict[str, int]
+
+
+class EmailImportCallsRead(BaseModel):
+    """Lemlist calls, retries aside. `reads`: this campaign's in the plan:
+    the campaign (1), its sequences (1), its listing (one page per 100
+    leads, plus the short or empty page that ends it), its export (1) and
+    its contacts lookups (one per 100 leads the export did not identify).
+    `apply_min`: its share of an application: the same reads again (an
+    application computes the whole plan again) and its activities, read
+    only then, one page per 100 activities: counted 1 here."""
+
+    reads: int
+    apply_min: int
+
+
+class EmailImportCampaignPlan(BaseModel):
+    """What importing one Lemlist campaign (running or paused there) would
+    do. Counts only: never an address nor a person's name."""
+
+    provider_campaign_id: str
+    name: str | None
+    #: Lemlist's word on the campaign (running, paused).
+    status: str | None
+    #: Imported before: an import refreshes it.
+    already_imported: bool
+    #: Lemlist could not be read for it (an `email.provider_*` code): not
+    #: importable now, the rest of the plan is empty.
+    error: str | None = None
+    steps: EmailImportStepsRead | None = None
+    leads: EmailImportLeadsRead | None = None
+    states: list[EmailImportStateRead] = Field(default_factory=list)
+    calls: EmailImportCallsRead
+
+
+class EmailImportCampaignRef(BaseModel):
+    """A campaign of the team listed apart, never imported: a draft, an
+    ended, archived or erroneous one, or one Nidria created itself."""
+
+    provider_campaign_id: str
+    name: str | None
+    status: str | None
+
+
+class EmailImportPlanCallsRead(BaseModel):
+    """The plan's Lemlist calls (retries aside): the team's campaign list
+    (one page per 100 campaigns, plus the page that ends it) and every
+    importable campaign's reads (`EmailImportCallsRead`). `apply_min`: what
+    one application of every importable campaign costs at least. Any
+    application reads the list and every importable campaign again (each
+    one's conflicts depend on those planned before it), then the
+    activities of the campaigns it imports."""
+
+    listing_pages: int
+    reads: int
+    total: int
+    apply_min: int
+
+
+class EmailImportPlanRead(BaseModel):
+    """GET /email/import/lemlist: the plan, reads only. Counts, Lemlist
+    campaign ids and campaign names: never an address nor a person's name.
+    `campaigns`: the importable ones (running or paused at Lemlist), in the
+    order an import processes them (Lemlist's creation, oldest first),
+    which decides `conflicts_in_plan`."""
+
+    listing_complete: bool
+    campaigns: list[EmailImportCampaignPlan]
+    not_importable: list[EmailImportCampaignRef]
+    created_by_nidria: list[EmailImportCampaignRef]
+    rules: list[EmailImportRuleRead]
+    calls: EmailImportPlanCallsRead
+
+
+class EmailImportRequest(BaseModel):
+    """POST /email/import/lemlist: the Lemlist campaign ids to import, taken
+    from the plan."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    campaign_ids: list[str] = Field(min_length=1, max_length=50)
+
+    @field_validator("campaign_ids")
+    @classmethod
+    def _ids(cls, value: list[str]) -> list[str]:
+        ids = [item.strip() for item in value]
+        if any(not item or len(item) > 100 for item in ids):
+            raise ValueError("campaign ids are 1 to 100 characters")
+        return list(dict.fromkeys(ids))
+
+
+class EmailImportCampaignResult(BaseModel):
+    """What the import did for one Lemlist campaign, in its own transaction:
+    `ok` false means nothing of it was written (`code`, `params`)."""
+
+    provider_campaign_id: str
+    name: str | None = None
+    ok: bool
+    #: Why it was refused or failed: `email.import_campaign_not_found`,
+    #: `email.import_not_importable` {status}, `email.import_created_by_nidria`,
+    #: an `email.provider_*` code (Lemlist could not be read), or
+    #: `email.import_failed`.
+    code: str | None = None
+    params: dict[str, str | int] = Field(default_factory=dict)
+    #: The Nidria campaign, created by this import or refreshed.
+    campaign_id: uuid.UUID | None = None
+    created: bool = False
+    steps_created: int = 0
+    steps_updated: int = 0
+    members_created: int = 0
+    members_updated: int = 0
+    profiles_created: int = 0
+    #: Not imported: live in another campaign, or in one planned before.
+    conflicts: int = 0
+    #: Leads not imported, by reason.
+    not_imported: dict[str, int] = Field(default_factory=dict)
+    #: Addresses the mapping put (or kept) on the agency's opposition list.
+    opposition_listed: int = 0
+    #: The campaign's history: events stored now, and already stored ones
+    #: (a run again, or the webhook first).
+    events_stored: int = 0
+    events_duplicate: int = 0
+    activities_read: int = 0
+    activity_pages: int = 0
+    activities_complete: bool = True
+    #: Replies whose text the Email Sync job reads next (PENDING).
+    replies_pending: int = 0
+    unknown_leads: int | None = None
+
+
+class EmailImportResult(BaseModel):
+    """POST /email/import/lemlist: one result per campaign asked for, in
+    the plan's order (unknown ids last). `calls`: Lemlist calls made, by the
+    plan's definition, activities included."""
+
+    campaigns: list[EmailImportCampaignResult]
+    calls: int

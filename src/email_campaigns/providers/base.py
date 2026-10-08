@@ -8,11 +8,17 @@ step and each lead receives its own exact content for each of them.
 Ported from Prism's `providers/base.py` (reference commit 629a2b0). One
 addition: `ProviderError.params`, the named values a refusal carries so the
 frontend composes the sentence (Nidria rule N9: errors are codes plus params).
+
+Lot C (decision of 08/10/2026): the import of the campaigns already running
+in the agency's provider workspace reads them through `ImportReader`, reads
+only; and `EmailProvider.resume_campaign` starts again a campaign Nidria
+does not own (an imported one) without touching its senders.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 
 class ProviderError(Exception):
@@ -159,6 +165,8 @@ class ProviderCampaign:
     #: ended, archived, errors), kept as said.
     status: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    #: The campaign's main sequence (Lemlist: `sequenceId`, "Main sequence ID").
+    sequence_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +204,113 @@ class ProviderEvent:
     payload: dict[str, Any] = field(default_factory=dict)
 
 
+# ── what the import reads of the provider's own campaigns (lot C) ──────────
+
+
+@dataclass(frozen=True)
+class ProviderCampaignRow:
+    """One campaign of the provider workspace's list, as the provider said
+    it: its lifecycle word (Lemlist: running, paused, draft, ended,
+    archived, errors) and its creation time (ISO), the import's order."""
+
+    campaign_id: str
+    name: str | None
+    status: str | None
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderCampaignListing:
+    """The workspace's campaigns, and whether all of them were read."""
+
+    campaigns: list[ProviderCampaignRow]
+    complete: bool
+    #: Pages read, one call each.
+    pages: int = 1
+
+
+@dataclass(frozen=True)
+class ProviderSequenceStep:
+    """One step of a campaign's main sequence, in its order, with the step
+    as the provider returned it: its content is the provider's own."""
+
+    step_id: str
+    #: 1-based place in the main sequence.
+    position: int
+    #: The provider's step type (Lemlist: email, linkedinSend, manual...).
+    type: str | None
+    delay_days: int
+    #: Under an A/B test: the content kept is variant A's.
+    ab_test: bool = False
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProviderSequences:
+    """A campaign's sequences: the main one's steps in order, and the
+    conditional branches, counted only (they are not imported)."""
+
+    main_sequence_id: str | None
+    steps: list[ProviderSequenceStep]
+    branches: int = 0
+    branch_steps: int = 0
+
+
+@dataclass(frozen=True)
+class ProviderLeadIdentity:
+    """Who one lead of a campaign is, and where it stands (Lemlist: a row
+    of the campaign's export)."""
+
+    lead_id: str
+    email: str | None
+    first_name: str | None = None
+    last_name: str | None = None
+    company_name: str | None = None
+    #: Lemlist's `status` (notInterested, interested, unsubscribed, review,
+    #: scanning, running, paused, done) and `lastState`, as said.
+    status: str | None = None
+    last_state: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderContact:
+    """A workspace contact: its address, its names and, per (campaign id,
+    lead id), the lead's status in that campaign."""
+
+    contact_id: str
+    email: str | None
+    first_name: str | None = None
+    last_name: str | None = None
+    lead_statuses: dict[tuple[str, str], str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProviderActivityRead:
+    """A campaign's whole history: the email events Nidria tracks, the
+    activities read (every type), the pages, and whether all were read."""
+
+    events: list[ProviderEvent]
+    rows: int
+    pages: int
+    complete: bool
+
+
+@runtime_checkable
+class ImportReader(Protocol):
+    """What the import of the campaigns already running in the provider
+    workspace reads, and only reads. Outside `EmailProvider`: the dry run
+    has nothing to import, and an import needs the agency to talk to the
+    provider for real."""
+
+    def list_campaigns(self) -> ProviderCampaignListing: ...
+    def read_campaign(self, ref: CampaignRef) -> ProviderCampaign: ...
+    def read_sequences(self, ref: CampaignRef) -> ProviderSequences: ...
+    def list_contacts(self, ref: CampaignRef) -> ProviderLeadListing: ...
+    def export_leads(self, ref: CampaignRef) -> list[ProviderLeadIdentity]: ...
+    def lookup_contacts(self, contact_ids: Sequence[str]) -> list[ProviderContact]: ...
+    def read_activities(self, ref: CampaignRef) -> ProviderActivityRead: ...
+
+
 class EmailProvider(Protocol):
     name: str
     #: False for the dry-run provider: the UI says so and nothing leaves Nidria.
@@ -205,6 +320,9 @@ class EmailProvider(Protocol):
     def update_campaign(self, ref: CampaignRef, spec: CampaignSpec) -> None: ...
     #: `mailbox`: the one chosen in Nidria; nothing starts until it sends.
     def start_campaign(self, ref: CampaignRef, *, mailbox: str | None = None) -> None: ...
+    #: Start again, as it stands at the provider, a campaign Nidria does not
+    #: own (an imported one): no sender assigned, no mailbox checked.
+    def resume_campaign(self, ref: CampaignRef) -> None: ...
     def pause_campaign(self, ref: CampaignRef) -> None: ...
     def archive_campaign(self, ref: CampaignRef) -> None: ...
     def read_campaign(self, ref: CampaignRef) -> ProviderCampaign: ...

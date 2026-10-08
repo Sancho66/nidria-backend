@@ -1960,6 +1960,90 @@ class EmailRepository:
         )
         return result.scalar() is not None
 
+    async def pending_reply_count(self, campaign_id: uuid.UUID) -> int:
+        """Replies of the campaign whose content the job still has to read."""
+        value = await self.db.scalar(
+            select(func.count())
+            .select_from(EmailMessage)
+            .where(
+                EmailMessage.campaign_id == campaign_id,
+                EmailMessage.content_state == "PENDING",
+            )
+        )
+        return int(value or 0)
+
+    # --- the import of the Lemlist campaigns already running (lot C) -----------------
+
+    async def lock_import(self, agency_id: uuid.UUID) -> None:
+        """Hold the agency's import until the transaction ends: two imports
+        of one agency never interleave (one campaign, its client records and
+        memberships at a time), whoever runs them."""
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended('email_import:' || :agency, 0))"),
+            {"agency": str(agency_id)},
+        )
+
+    async def campaigns_by_provider_ids(
+        self, provider: str, provider_campaign_ids: Iterable[str]
+    ) -> list[EmailCampaign]:
+        """The campaigns, of any agency, that carry these provider ids."""
+        ids = sorted(set(provider_campaign_ids))
+        if not ids:
+            return []
+        rows = await self.db.execute(
+            select(EmailCampaign)
+            .where(
+                EmailCampaign.provider == provider,
+                EmailCampaign.provider_campaign_id.in_(ids),
+            )
+            .order_by(EmailCampaign.created_at, EmailCampaign.id)
+            .execution_options(populate_existing=True)
+        )
+        return list(rows.scalars().all())
+
+    async def open_members(
+        self, campaign_ids: Sequence[uuid.UUID], *, lock: bool = False
+    ) -> list[EmailCampaignMember]:
+        """The open (not ended by a removal or a move) memberships of these
+        campaigns; locked when asked."""
+        if not campaign_ids:
+            return []
+        stmt = (
+            select(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id.in_(list(campaign_ids)),
+                EmailCampaignMember.removed_at.is_(None),
+            )
+            .order_by(EmailCampaignMember.id)
+            .execution_options(populate_existing=True)
+        )
+        if lock:
+            stmt = stmt.with_for_update()
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def lead_ids_of_campaign(self, campaign_id: uuid.UUID) -> set[str]:
+        """Every provider lead id the campaign's memberships hold, ended
+        ones included."""
+        rows = await self.db.execute(
+            select(EmailCampaignMember.provider_lead_id).where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.provider_lead_id.is_not(None),
+            )
+        )
+        return {str(lead_id) for lead_id in rows.scalars().all()}
+
+    async def first_event_times(self, campaign_id: uuid.UUID) -> dict[uuid.UUID, datetime]:
+        """Membership -> the time of its first provider event."""
+        rows = await self.db.execute(
+            select(EmailProviderEvent.campaign_member_id, func.min(EmailProviderEvent.occurred_at))
+            .where(
+                EmailProviderEvent.campaign_id == campaign_id,
+                EmailProviderEvent.campaign_member_id.is_not(None),
+            )
+            .group_by(EmailProviderEvent.campaign_member_id)
+        )
+        return {member_id: at for member_id, at in rows.all() if member_id is not None}
+
     async def pending_replies(self, campaign_id: uuid.UUID, limit: int) -> list[EmailMessage]:
         """Replies of the campaign whose content was not read from the
         provider yet, newest first, locked."""

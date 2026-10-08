@@ -80,6 +80,19 @@ nothing and is ignored. No business status is written (no
 `status_override`, nothing the derived prospect / client status reads), and
 nothing in `activity_log` (rule N7).
 
+An imported campaign (lot C, `email_import`) is only READ, by everything
+here: its Sync is the reconciliation (`_sync_imported`), never a push; the
+job and the webhook read it as any other. On it, an event's step is the one
+Lemlist names (`stepId`), else its rank in the main sequence, and none for
+a conditional branch (not imported); an email it sent has no render
+(`PROVIDER_ONLY`). The import replays a campaign's whole history through
+`ingest` in its `history` mode: events, messages, times and the steps sent
+are kept, the opposition list is fed, but no status moves (the import set
+each one from what Lemlist says now, and a block is never lifted). The job
+and a Sync count its `unknown_leads`, and since Lemlist's listing proves a
+pause (`state` paused) but never its end, they never resume an imported
+lead from it (an event or the import does).
+
 `webhook`: Lemlist's activity webhook (`POST /webhooks/lemlist`, PUBLIC):
 the body's `secret` against EMAIL_WEBHOOK_SECRET (`hmac.compare_digest`),
 then the same ingestion. It depends on the env only, never on an agency's
@@ -98,7 +111,7 @@ import logging
 import uuid
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -123,12 +136,16 @@ from src.core.exceptions import (
 )
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import (
+    IMPORT_METADATA_KEY,
     STATUS_REASON_PARAMS_KEY,
     Access,
     EmailManager,
     People,
+    campaign_imported,
     campaign_ref,
     chosen_mailbox,
+    import_metadata,
+    is_imported,
     lead_ref,
     prompt_hash,
     provider_error_code,
@@ -254,9 +271,14 @@ MAX_REPLY_HTML = 500_000
 #: The provider's words kept in a `status_reason` param, at most.
 _MAX_REASON = 500
 #: The keys Nidria itself keeps in a provider metadata, never overwritten by
-#: what the provider says (a membership's reason params, a campaign's team).
-_MEMBER_OWN_KEYS = (STATUS_REASON_PARAMS_KEY,)
-_CAMPAIGN_OWN_KEYS = (CAMPAIGN_TEAM_KEY,)
+#: what the provider says (a membership's reason params, a campaign's team,
+#: what an import noted on either).
+_MEMBER_OWN_KEYS = (STATUS_REASON_PARAMS_KEY, IMPORT_METADATA_KEY)
+_CAMPAIGN_OWN_KEYS = (CAMPAIGN_TEAM_KEY, IMPORT_METADATA_KEY)
+#: An outbound email's content: Nidria's render, or (an imported campaign's)
+#: Lemlist's own template, personalized there and never seen by Nidria.
+_RENDERED = "RENDERED"
+_PROVIDER_ONLY = "PROVIDER_ONLY"
 
 logger = logging.getLogger(__name__)
 
@@ -369,6 +391,9 @@ class CampaignReconcile:
     #: A contact's variable unsubscribed: stored, never applied.
     variable_unsubscribed: int = 0
     pause_changes: int = 0
+    #: An imported campaign: the leads Lemlist lists that Nidria does not
+    #: know (None: not counted, the listing being incomplete).
+    unknown_leads: int | None = None
     #: Nothing of this run was kept for the campaign (its checkpoint stays).
     failed: bool = False
     #: Not read at all: a campaign of another Lemlist team (read only, N4).
@@ -405,6 +430,11 @@ def _later(current: datetime | None, candidate: datetime) -> datetime:
     return candidate if current is None or candidate > current else current
 
 
+def _step_id_at(campaign: EmailCampaign, position: int) -> uuid.UUID | None:
+    """The campaign's step at this position, if it has one."""
+    return next((s.id for s in campaign.steps if s.position == position), None)
+
+
 def _third_party(payload: Mapping[str, Any]) -> bool:
     """A reply Lemlist attributes to someone else than the lead: it belongs
     to no lead of Nidria's (spec 8.9)."""
@@ -420,6 +450,32 @@ def _contact_id(payload: Mapping[str, Any]) -> str | None:
 
 def _reason_params(reason: str | None) -> Params:
     return {"reason": reason[:_MAX_REASON]} if reason else {}
+
+
+def imported_step_position(campaign: EmailCampaign, event: ProviderEvent) -> int | None:
+    """Where an event of an imported campaign stands in the steps Nidria
+    imported (Lemlist's main sequence): the step Lemlist names (`stepId`,
+    stable, "present on every activity created from now on") when it is one
+    of them; otherwise its rank (`sequenceStep` + 1, the adapter's
+    position) only when it belongs to the main sequence (`sequenceId`
+    absent or the main one): `sequenceStep` is relative to its own
+    sequence, so an event of a conditional branch (not imported) has no
+    step."""
+    payload = event.payload
+    step_id = payload.get("stepId")
+    if isinstance(step_id, str) and step_id:
+        for step in campaign.steps:
+            if step.provider_step_id == step_id:
+                return step.position
+    sequence_id = payload.get("sequenceId")
+    if (
+        isinstance(sequence_id, str)
+        and sequence_id
+        and campaign.provider_sequence_id
+        and sequence_id != campaign.provider_sequence_id
+    ):
+        return None
+    return event.step_position
 
 
 def merged_metadata(
@@ -496,6 +552,8 @@ def describe(report: CampaignReconcile) -> str:
     )
     if report.leads_missing:
         line += f", {report.leads_missing} missing at the provider"
+    if report.unknown_leads:
+        line += f", {report.unknown_leads} leads unknown to Nidria"
     if report.variable_unsubscribed:
         line += f", {report.variable_unsubscribed} variable unsubscribes (not applied)"
     if report.errors:
@@ -638,6 +696,8 @@ class EmailSyncManager:
         commit: bool = True,
         campaign: EmailCampaign | None = None,
         provider: EmailProvider | None = None,
+        history: bool = False,
+        members: Mapping[str, EmailCampaignMember] | None = None,
     ) -> IngestStats:
         """Store and apply provider events, in time order, each once. An
         event of a campaign Nidria does not run is neither stored nor
@@ -645,6 +705,11 @@ class EmailSyncManager:
         other campaign (another agency's included) is ignored as well.
         `provider`: the one that read them, to re-read a pause state; the
         webhook has none and asks the campaign's agency's own.
+
+        `history`: an import replaying a campaign's past (`_apply`): no
+        status moves, the record and the messages are filled. `members`:
+        the campaign's memberships by lead id, already locked by the caller
+        (an import's thousands of events then cost no lookup each).
 
         An event about a whole CONTACT (`CONTACT_ACTIVITY_TYPES`) is filed
         even without a campaign Nidria runs: in the campaign's agency when
@@ -679,9 +744,13 @@ class EmailSyncManager:
             member: EmailCampaignMember | None
             if target is not None:
                 agency_id = target.agency_id
-                member = await self.repo.member_for_event(
-                    target.id, event.lead_id, event.email, contact
-                )
+                if is_imported(target):
+                    event = replace(event, step_position=imported_step_position(target, event))
+                member = (members or {}).get(event.lead_id or "")
+                if member is None:
+                    member = await self.repo.member_for_event(
+                        target.id, event.lead_id, event.email, contact
+                    )
             elif whole_contact:
                 if campaign is not None:
                     agency_id = campaign.agency_id
@@ -735,7 +804,7 @@ class EmailSyncManager:
                     else:
                         home = await self.repo.campaign(agency_id, member.campaign_id)
                 assert home is not None  # the membership's own campaign, same agency
-                await self._apply(home, member, event, stats)
+                await self._apply(home, member, event, stats, history=history)
             elif event.type in _BLOCKING_EVENTS and event.email:
                 # A lead of a campaign Nidria runs, or a contact of its
                 # team, that no membership carries: its address is listed.
@@ -774,11 +843,14 @@ class EmailSyncManager:
         if digest is not None:
             await self.repo.suppress(agency_id, digest, reason, source_member_id)
 
-    async def _block(self, member: EmailCampaignMember, *also: str | None) -> None:
+    async def _block(
+        self, member: EmailCampaignMember, *also: str | None, reason: str | None = None
+    ) -> None:
         """A membership just unsubscribed or bounced: the person's EFFECTIVE
         address (rule N2), and every address the provider named for it, go
-        on its agency's opposition list with the reason its status says."""
-        reason = REASON_OF_STATUS.get(member.status)
+        on its agency's opposition list with the reason its status says (or
+        `reason`, for a past event an import replays)."""
+        reason = reason or REASON_OF_STATUS.get(member.status)
         if reason is None:
             return
         addresses = [await self.repo.effective_email(member.client_profile_id), *also]
@@ -824,9 +896,18 @@ class EmailSyncManager:
         member: EmailCampaignMember,
         event: ProviderEvent,
         stats: IngestStats,
+        *,
+        history: bool = False,
     ) -> None:
         """One new event on its membership and messages. Never a business
-        status, never `activity_log` (rules N7, spec 8.9)."""
+        status, never `activity_log` (rules N7, spec 8.9).
+
+        `history` (an import's replay): the membership's status is what
+        Lemlist says NOW, set by the import; a past event never moves it,
+        so it neither contradicts that state nor lifts a block. It keeps
+        the record (times, the steps sent, the first send) and the
+        messages, and a past bounce or unsubscribe still puts the address
+        on the opposition list (nothing ever lifts that)."""
         at = event.occurred_at
         if member.last_event_at is None or at >= member.last_event_at:
             member.last_event_at = at
@@ -844,10 +925,21 @@ class EmailSyncManager:
         elif event.type == "REPLIED":
             member.last_replied_at = _later(member.last_replied_at, at)
         render: EmailMemberRender | None = None
-        if event.step_position is not None:
+        if event.step_position is not None and not is_imported(campaign):
+            # An imported campaign's emails have no render.
             render = (await self.repo.renders(member.id)).get(event.step_position)
         removed = member.removed_at is not None
         ended = removed or member.status in _TERMINAL
+
+        if history:
+            if event.type == "SENT" and not removed:
+                member.started_at = _earlier(member.started_at, at)
+                if event.step_position is not None:
+                    member.current_step = max(member.current_step or 0, event.step_position)
+            elif event.type in _BLOCKING_EVENTS:
+                await self._block(member, event.email, reason=_EVENT_REASON[event.type])
+            await self._record_message(campaign, member, event, render)
+            return
 
         if event.type == "SENT":
             if render is not None and render.sent_at is None:
@@ -917,15 +1009,24 @@ class EmailSyncManager:
             "content_attempts": 0,
         }
         if event.type in _OUTBOUND_EVENTS and event.step_position is not None:
+            imported = is_imported(campaign)
             message = await self.repo.outbound_message(
                 {
                     **common,
                     "step_position": event.step_position,
-                    "campaign_step_id": render.campaign_step_id if render else None,
+                    "campaign_step_id": (
+                        render.campaign_step_id
+                        if render
+                        else _step_id_at(campaign, event.step_position)
+                        if imported
+                        else None
+                    ),
                     "render_id": render.id if render else None,
                     "direction": "OUTBOUND",
                     "status": "SENT",
-                    "content_state": "RENDERED",
+                    # Lemlist sent an imported campaign's emails from its own
+                    # template: their personalized content is not in Nidria.
+                    "content_state": _PROVIDER_ONLY if imported else _RENDERED,
                     "payload": {},
                 }
             )
@@ -959,7 +1060,13 @@ class EmailSyncManager:
                 {
                     **common,
                     "step_position": event.step_position,
-                    "campaign_step_id": render.campaign_step_id if render else None,
+                    "campaign_step_id": (
+                        render.campaign_step_id
+                        if render
+                        else _step_id_at(campaign, event.step_position)
+                        if is_imported(campaign) and event.step_position is not None
+                        else None
+                    ),
                     "provider_message_id": event.event_id,
                     "direction": "INBOUND",
                     "status": "REPLIED",
@@ -1156,11 +1263,20 @@ class EmailSyncManager:
         (Nidria's own keys untouched), a pause or resume done in Lemlist's
         app mirrored, an unsubscribe applied. A lead it no longer lists is
         flagged, never ended: absence is not a removal, and it counts only
-        from a complete listing that is not empty while leads are held."""
+        from a complete listing that is not empty while leads are held.
+
+        An imported campaign: its leads are only ever paused from the
+        listing (`state` paused proves a pause; no state proves its end, and
+        the import set the status from Lemlist's own `status`), and the
+        leads Lemlist lists that Nidria does not know are counted
+        (`unknown_leads`)."""
+        imported = is_imported(campaign)
         members = await self.repo.at_provider(campaign.id)
         report.contacts = len(members)
         remote = {lead.lead_id: lead for lead in listing.leads}
         absence_counts = listing.complete and (bool(remote) or not members)
+        if imported:
+            report.unknown_leads = await self.count_unknown_leads(campaign, listing)
         for member in members:
             lead = remote.get(member.provider_lead_id or "")
             if lead is None:
@@ -1189,8 +1305,31 @@ class EmailSyncManager:
                 set_status_reason(member, REASON_UNSUBSCRIBED_AT_PROVIDER)
                 await self._block(member, lead.email)
                 report.unsubscribed += 1
+            elif imported and not lead.is_paused:
+                continue
             elif set_paused(member, lead.is_paused):
                 report.pause_changes += 1
+
+    async def count_unknown_leads(
+        self, campaign: EmailCampaign, listing: ProviderLeadListing
+    ) -> int | None:
+        """The leads of an imported campaign that Lemlist lists and Nidria
+        does not know: no membership of the campaign holds them and the
+        last import did not set them aside. Kept on the campaign (its
+        import metadata) with when it was counted; None (not counted) from
+        an incomplete listing. Writes the campaign, never commits."""
+        count: int | None = None
+        noted = import_metadata(campaign.provider_metadata)
+        if listing.complete:
+            known = await self.repo.lead_ids_of_campaign(campaign.id)
+            aside = {str(lead_id) for lead_id in noted.get("set_aside") or []}
+            count = len({lead.lead_id for lead in listing.leads} - known - aside)
+        noted.update(unknown_leads=count, unknown_leads_at=datetime.now(UTC).isoformat())
+        campaign.provider_metadata = {
+            **(campaign.provider_metadata or {}),
+            IMPORT_METADATA_KEY: noted,
+        }
+        return count
 
     async def _read_replies(
         self, provider: EmailProvider, campaign: EmailCampaign, report: CampaignReconcile
@@ -1264,6 +1403,8 @@ class EmailSyncManager:
         launch: EmailLaunchRequest | None,
     ) -> EmailSyncResult:
         campaign = await self.manager.campaign_for(access, campaign_id, lock=True)
+        if is_imported(campaign):
+            return await self._sync_imported(access, campaign, launch)
         steps = sorted(campaign.steps, key=lambda s: s.position)
         provider = await self.manager.provider(access)
         # The campaign's gates (readiness): the same the Launch page shows.
@@ -1345,6 +1486,53 @@ class EmailSyncManager:
             for step in steps:
                 step.provider_synced_hash = step.content_hash
         campaign.sync_error = result.errors[0].code if result.errors else None
+        await self.db.commit()
+        result.last_synced_at = now
+        return result
+
+    async def _sync_imported(
+        self, access: Access, campaign: EmailCampaign, launch: EmailLaunchRequest | None
+    ) -> EmailSyncResult:
+        """The Sync of an imported campaign: READ ONLY at Lemlist, the job's
+        own reconciliation (`reconcile_campaign`): the campaign's state there,
+        its leads (a pause mirrored, an unsubscribe applied, a lead gone
+        flagged, the unknown ones counted), its events since the checkpoint
+        and the text of its new replies. Never a campaign or schedule PATCH,
+        a step, a personalization, a sender, an added lead nor a launch: the
+        Launch itself is refused (409 `email.campaign_imported`)."""
+        if launch is not None:
+            raise campaign_imported()
+        provider = await self.manager.provider(access)
+        key_team = await self.manager.key_team_id(access)
+        for gate in campaign_gates(
+            campaign,
+            list(campaign.steps),
+            external=provider.external,
+            key_team_id=key_team,
+            launching=False,
+        ):
+            # Lemlist's steps are Lemlist's: a campaign without any is read too.
+            if gate.blocking and gate.code != NO_STEPS:
+                raise gate_error(gate, campaign)
+        campaign_id = campaign.id
+        report = await self.reconcile_campaign(
+            campaign_id, access.agency_id, provider=provider, key_team=key_team
+        )
+        result = EmailSyncResult(
+            campaign_id=campaign_id,
+            external=provider.external,
+            events_ingested=report.events_new,
+            unknown_leads=report.unknown_leads,
+            errors=[
+                EmailSyncError(code="events_not_read", params={"code": code})
+                for code in report.errors
+            ],
+        )
+        fresh = await self.repo.campaign(access.agency_id, campaign_id, lock=True)
+        now = datetime.now(UTC)
+        if fresh is not None:
+            fresh.last_synced_at = now
+            fresh.sync_error = result.errors[0].code if result.errors else None
         await self.db.commit()
         result.last_synced_at = now
         return result

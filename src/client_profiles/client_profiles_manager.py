@@ -7,6 +7,8 @@ sont des péages explicites tracés ; toute requête est scopée agence
 (non-révélation cross-agence, patron prefill-source)."""
 
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -300,6 +302,55 @@ async def auto_promote_person_gaps(
     return promoted
 
 
+@dataclass(frozen=True)
+class ProfileSeed:
+    """A person to file as a new client record, as its creator knows them:
+    names taken as given, the address lower-cased, and where the client
+    comes from (`source`, the record's CRM block)."""
+
+    first_name: str | None
+    last_name: str | None
+    email: str | None
+    source: str | None = None
+
+
+async def seed_client_profiles(
+    repo: ClientProfilesRepository, agency_id: uuid.UUID, seeds: Sequence[ProfileSeed]
+) -> tuple[dict[str, uuid.UUID], list[ClientProfile]]:
+    """The core of a direct creation (F4), shared by `create_profile` and the
+    Email module's Lemlist import: the agency's directory is read ONCE for
+    these addresses (`profile_ids_for_emails`, the same match as
+    `profile_id_for_email`: the account's address when the record is
+    linked, else its own, case-insensitive), and an unlinked record is built
+    for each person whose address it does not hold. Returns (address
+    already held -> its record id, the records built, in order): a person
+    without an address is always built, a repeated address once. Nothing
+    is added to the session nor committed; no account, invitation or email
+    is ever made here."""
+    addresses = {seed.email.lower() for seed in seeds if seed.email}
+    existing = await repo.profile_ids_for_emails(agency_id, addresses)
+    seen: set[str] = set()
+    built: list[ClientProfile] = []
+    for seed in seeds:
+        email = seed.email.lower() if seed.email else None
+        if email is not None:
+            if email in existing or email in seen:
+                continue
+            seen.add(email)
+        built.append(
+            ClientProfile(
+                id=uuid.uuid4(),
+                agency_id=agency_id,
+                expat_user_id=None,
+                first_name=seed.first_name,
+                last_name=seed.last_name,
+                email=email,
+                source=seed.source,
+            )
+        )
+    return existing, built
+
+
 class ClientProfilesManager:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -483,22 +534,19 @@ class ClientProfilesManager:
         non) → 409 nommé."""
         from src.client_profiles.backfill import CIVIL_COLUMNS
 
-        if payload.email is not None:
-            existing_id = await self.repo.profile_id_for_email(agent.agency_id, payload.email)
-            if existing_id is not None:
-                # 409 AVEC RÉFÉRENCE (V1a) : le front pointe la fiche existante.
-                raise ConflictError(
-                    "A client profile with this email already exists in this agency.",
-                    code="profile.email_taken",
-                    params={"email": payload.email, "profile_id": str(existing_id)},
-                )
-        profile = ClientProfile(
-            agency_id=agent.agency_id,
-            expat_user_id=None,
-            first_name=payload.first_name,
-            last_name=payload.last_name,
-            email=payload.email.lower() if payload.email else None,
+        existing, built = await seed_client_profiles(
+            self.repo,
+            agent.agency_id,
+            [ProfileSeed(payload.first_name, payload.last_name, payload.email)],
         )
+        if existing:
+            # 409 AVEC RÉFÉRENCE (V1a) : le front pointe la fiche existante.
+            raise ConflictError(
+                "A client profile with this email already exists in this agency.",
+                code="profile.email_taken",
+                params={"email": payload.email, "profile_id": str(next(iter(existing.values())))},
+            )
+        [profile] = built
         provided = payload.model_dump(exclude_unset=True)
         for field in (*CIVIL_COLUMNS, "preferred_channels"):
             if field not in provided:

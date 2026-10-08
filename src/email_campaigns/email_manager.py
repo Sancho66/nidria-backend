@@ -49,6 +49,17 @@ Rules that matter, in one place:
   (`ProviderError`) becomes an `email.provider_*` code (`provider_error_code`).
 - No `activity_log` write (rule N7): the gestures are kept on the membership
   (`added_by_agent_id`, `paused_by_agent_id`, `removed_by_agent_id`).
+- An imported campaign (origin LEMLIST_IMPORT, lot C) mirrors a campaign of
+  the agency's Lemlist team: its content, settings and recipients are
+  Lemlist's. One guard, `editable`, refuses every write on it (409
+  `email.campaign_imported`): name, settings, sender, steps and AI
+  variables, a preview of its steps, adding recipients or moving some into
+  it, the Launch and its page, duplicating and deleting it (archive it
+  instead). Only these remain: ACTIVE <-> PAUSED and -> ARCHIVED (archiving
+  pauses it at Lemlist; resuming starts it there as it stands,
+  `resume_campaign`), and per lead a pause, a resume (no render asked: the
+  content is Lemlist's), a removal (the lead is deleted at Lemlist) and a
+  move to a Nidria campaign. The import itself lives in `email_import`.
 
 `status_reason` format (decision A12). A membership's `status_reason` holds a
 stable CODE, never a sentence; its params, when it has some, live in
@@ -106,6 +117,7 @@ from shared.models.company_profile import CompanyProfile
 from shared.models.email_campaign import (
     BLOCKING_MEMBER_STATUSES,
     LIVE_MEMBER_STATUSES,
+    ORIGIN_LEMLIST_IMPORT,
     PROVIDER_LEMLIST,
     EmailCampaign,
     EmailCampaignAiVariable,
@@ -130,6 +142,7 @@ from src.email_campaigns.email_schema import (
     CampaignStatus,
     ClientEmailStatus,
     ClientStatus,
+    ContentState,
     Eligibility,
     EmailActionResult,
     EmailActionResultRow,
@@ -255,6 +268,14 @@ BLOCKING = frozenset(BLOCKING_MEMBER_STATUSES)
 
 #: Where a membership's `status_reason` params live, in its `provider_metadata`.
 STATUS_REASON_PARAMS_KEY = "status_reason_params"
+#: Where an imported campaign (and each of its memberships) keeps what the
+#: import noted, in its `provider_metadata`: Nidria's own key, never
+#: overwritten by what Lemlist says. A campaign's: `imported_at`,
+#: `imported_by_agent_id`, `unknown_leads` and `unknown_leads_at`, and
+#: `set_aside` (the lead ids the last import did not import). A
+#: membership's: `company_name` (Lemlist's), `status` and `last_state`
+#: (Lemlist's words when imported), `imported_at`.
+IMPORT_METADATA_KEY = "import"
 #: `status_reason` codes this module writes (see the module docstring).
 REASON_REMOVED = "removed"
 REASON_MOVED = "moved"
@@ -272,6 +293,11 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "ACTIVE": frozenset({"PAUSED", "ARCHIVED"}),
     "PAUSED": frozenset({"ACTIVE", "ARCHIVED"}),
     "ARCHIVED": frozenset({"PAUSED"}),
+}
+#: An imported campaign's only ones: a pause, a resume, an archive.
+_IMPORTED_TRANSITIONS: dict[str, frozenset[str]] = {
+    "ACTIVE": frozenset({"PAUSED", "ARCHIVED"}),
+    "PAUSED": frozenset({"ACTIVE", "ARCHIVED"}),
 }
 #: A ProviderError's code -> the `email.*` code the agent gets (rule N9).
 _PROVIDER_CODES: dict[str, str] = {
@@ -359,6 +385,37 @@ def provider_refusal(exc: ProviderError) -> ConflictError:
     )
 
 
+def is_imported(campaign: EmailCampaign) -> bool:
+    """A mirror of a campaign of the agency's Lemlist team (lot C)."""
+    return campaign.origin == ORIGIN_LEMLIST_IMPORT
+
+
+def campaign_imported() -> ConflictError:
+    """The refusal of every write an imported campaign does not take."""
+    return ConflictError(
+        "This campaign mirrors a Lemlist campaign: its content, settings and recipients "
+        "are Lemlist's. Pause, resume or archive it; pause, resume, remove or move its "
+        "recipients.",
+        code="email.campaign_imported",
+    )
+
+
+def import_metadata(provider_metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What the import noted on a campaign or a membership
+    (`IMPORT_METADATA_KEY`); empty for one made in Nidria."""
+    found = (provider_metadata or {}).get(IMPORT_METADATA_KEY)
+    return dict(found) if isinstance(found, dict) else {}
+
+
+def _parsed_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 # ── pure rules ──────────────────────────────────────────────────────────────
 
 
@@ -437,14 +494,16 @@ class SequenceFacts:
 
 
 def sequence_capabilities(
-    status: str, facts: SequenceFacts, *, team_mismatch: bool = False
+    status: str, facts: SequenceFacts, *, team_mismatch: bool = False, imported: bool = False
 ) -> EmailSequenceCapabilities:
     """What a campaign's sequence allows now. Everything until the provider
     holds a lead; then content, delays and a step at the end (Lemlist refuses
-    an insert and a removal, and has no reorder). Nothing for another team's
-    campaign, nor an archived one."""
-    if team_mismatch or status == "ARCHIVED":
-        reason: SequenceReason = "team_mismatch" if team_mismatch else "archived"
+    an insert and a removal, and has no reorder). Nothing for an imported
+    campaign (Lemlist's steps), another team's campaign, nor an archived one."""
+    if imported or team_mismatch or status == "ARCHIVED":
+        reason: SequenceReason = (
+            "imported" if imported else "team_mismatch" if team_mismatch else "archived"
+        )
         return EmailSequenceCapabilities(
             active_sequence=facts.in_use,
             **dict.fromkeys(_SEQUENCE_KEYS, False),
@@ -471,11 +530,12 @@ def step_capabilities(
     facts: SequenceFacts,
     *,
     team_mismatch: bool = False,
+    imported: bool = False,
 ) -> EmailStepCapabilities:
     """What can happen to one step. Once the sequence is in use, only a step
     not at the provider yet goes freely; the provider's last one is parked
     there if nobody got it (Lemlist removes nothing then), and skipping is
-    Lemlist's app's."""
+    Lemlist's app's. An imported campaign's steps are Lemlist's: nothing."""
     reached = facts.reached(step.position)
     added = bool(
         facts.launched_at is not None
@@ -483,6 +543,13 @@ def step_capabilities(
         and step.created_at > facts.launched_at
     )
     pending = facts.in_use and not step.provider_step_id
+    if imported:
+        return EmailStepCapabilities(
+            can_delete=False,
+            delete_reason="imported",
+            skip_reason="provider_app_only",
+            reached=reached,
+        )
     if team_mismatch:
         return EmailStepCapabilities(
             can_delete=False,
@@ -912,6 +979,15 @@ class EmailManager:
                 code="email.team_mismatch",
             )
 
+    @staticmethod
+    def editable(campaign: EmailCampaign) -> None:
+        """The one guard of an imported campaign (lot C): its content,
+        settings and recipients are Lemlist's, so every write of Nidria's
+        own is refused, 409 `email.campaign_imported` (see the module
+        docstring for the few gestures it still takes)."""
+        if is_imported(campaign):
+            raise campaign_imported()
+
     async def campaign_for(
         self, access: Access, campaign_id: uuid.UUID, *, lock: bool = False
     ) -> EmailCampaign:
@@ -931,6 +1007,7 @@ class EmailManager:
             raise NotFoundError("Step not found.", code="email.step_not_found")
         campaign = await self.campaign_for(access, found.campaign_id, lock=True)
         await self.writable(access, campaign)
+        self.editable(campaign)
         step = next(s for s in campaign.steps if s.id == step_id)
         return step, campaign
 
@@ -1086,6 +1163,10 @@ class EmailManager:
     def step_read(
         self, step: EmailCampaignStep, capabilities: EmailStepCapabilities | None = None
     ) -> EmailStepRead:
+        raw = step.provider_content if isinstance(step.provider_content, dict) else None
+        subject = raw.get("subject") if raw is not None else None
+        message = raw.get("message") if raw is not None else None
+        kind = raw.get("type") if raw is not None else None
         return EmailStepRead(
             id=step.id,
             campaign_id=step.campaign_id,
@@ -1110,6 +1191,13 @@ class EmailManager:
             ),
             ai_variables=[EmailAiVariableRead.model_validate(v) for v in step.ai_variables],
             capabilities=capabilities,
+            provider_type=kind if isinstance(kind, str) else None,
+            raw_subject=subject if isinstance(subject, str) else None,
+            # Lemlist's HTML (or a LinkedIn step's text) read as text: never
+            # sent to the browser as HTML.
+            raw_body_text=(
+                html_to_text(message, drop_quotes=False) if isinstance(message, str) else None
+            ),
         )
 
     def campaign_read(
@@ -1121,6 +1209,8 @@ class EmailManager:
         team_mismatch: bool,
     ) -> EmailCampaignRead:
         steps = list(campaign.steps)
+        imported = import_metadata(campaign.provider_metadata)
+        unknown = imported.get("unknown_leads")
         return EmailCampaignRead(
             id=campaign.id,
             name=campaign.name,
@@ -1151,6 +1241,11 @@ class EmailManager:
             last_provider_sync_at=campaign.last_provider_sync_at,
             last_provider_error=campaign.last_provider_error,
             team_mismatch=team_mismatch,
+            origin=campaign.origin,
+            unknown_leads=unknown if isinstance(unknown, int) and is_imported(campaign) else None,
+            last_imported_at=(
+                _parsed_time(imported.get("imported_at")) if is_imported(campaign) else None
+            ),
             created_by_agent_id=campaign.created_by_agent_id,
             created_at=campaign.created_at,
             updated_at=campaign.updated_at,
@@ -1172,15 +1267,21 @@ class EmailManager:
         base = self.campaign_read(campaign, counts, metrics, team_mismatch=mismatch)
         facts = await self.sequence_facts(campaign.id)
         ordered = sorted(campaign.steps, key=lambda s: s.position)
+        imported = is_imported(campaign)
         return EmailCampaignDetailRead(
             **base.model_dump(),
             steps=[
                 self.step_read(
-                    step, step_capabilities(step, ordered, facts, team_mismatch=mismatch)
+                    step,
+                    step_capabilities(
+                        step, ordered, facts, team_mismatch=mismatch, imported=imported
+                    ),
                 )
                 for step in ordered
             ],
-            sequence=sequence_capabilities(campaign.status, facts, team_mismatch=mismatch),
+            sequence=sequence_capabilities(
+                campaign.status, facts, team_mismatch=mismatch, imported=imported
+            ),
             members_by_step=await self.repo.members_by_step(campaign.id),
             metrics_by_step=await self.repo.message_metrics_by_step(campaign.id),
         )
@@ -1247,6 +1348,9 @@ class EmailManager:
         access = await self.access(agent, Permission.EMAIL_MANAGE)
         campaign = await self.campaign_for(access, campaign_id, lock=True)
         await self.writable(access, campaign)
+        if request.name is not None or request.settings is not None:
+            # An imported campaign's name and settings are Lemlist's.
+            self.editable(campaign)
         try:
             if request.name is not None:
                 campaign.name = request.name.strip()
@@ -1261,13 +1365,17 @@ class EmailManager:
         return await self._reloaded(access, campaign_id)
 
     async def _transition(self, access: Access, campaign: EmailCampaign, target: str) -> None:
+        imported = is_imported(campaign)
+        if imported and target not in _IMPORTED_TRANSITIONS.get(campaign.status, frozenset()):
+            # A pause, a resume or an archive: nothing else of Lemlist's campaign.
+            raise campaign_imported()
         if target not in _TRANSITIONS.get(campaign.status, frozenset()):
             raise BadRequestError(
                 f"A {campaign.status.lower()} campaign cannot become {target.lower()}.",
                 code="email.invalid_transition",
                 params={"from": campaign.status, "to": target},
             )
-        if target == "ACTIVE" and not campaign.steps:
+        if target == "ACTIVE" and not campaign.steps and not imported:
             raise BadRequestError(
                 "Add at least one step before activating the campaign.", code="email.no_steps"
             )
@@ -1282,7 +1390,11 @@ class EmailManager:
                 ref = campaign_ref(campaign)
                 assert ref is not None
                 try:
-                    if target == "ACTIVE":
+                    if target == "ACTIVE" and imported:
+                        # Started again as it stands at Lemlist: its senders
+                        # are Lemlist's, none is assigned from Nidria.
+                        await asyncio.to_thread(provider.resume_campaign, ref)
+                    elif target == "ACTIVE":
                         mailbox = chosen_mailbox(campaign)
                         await asyncio.to_thread(provider.start_campaign, ref, mailbox=mailbox)
                     elif target == "PAUSED":
@@ -1308,6 +1420,8 @@ class EmailManager:
         Nidria only."""
         access = await self.access(agent, Permission.EMAIL_MANAGE)
         campaign = await self.campaign_for(access, campaign_id, lock=True)
+        # An imported campaign is archived, never deleted.
+        self.editable(campaign)
         name = campaign.name
         paused = kept = False
         if is_real_provider_id(campaign.provider_campaign_id) and not await self.team_mismatch(
@@ -1341,6 +1455,7 @@ class EmailManager:
         copy's, written by the frontend (decision A13); else the original's."""
         access = await self.access(agent, Permission.EMAIL_MANAGE)
         source = await self.campaign_for(access, campaign_id)
+        self.editable(source)
         copy = EmailCampaign(
             agency_id=access.agency_id,
             name=(name.strip() if name and name.strip() else source.name)[:255],
@@ -1377,6 +1492,7 @@ class EmailManager:
         access = await self.access(agent, Permission.EMAIL_MANAGE)
         campaign = await self.campaign_for(access, campaign_id, lock=True)
         await self.writable(access, campaign)
+        self.editable(campaign)
         in_use = (await self.sequence_facts(campaign.id)).in_use
         ordered = sorted(campaign.steps, key=lambda s: s.position)
         position = min(request.position or len(ordered) + 1, len(ordered) + 1)
@@ -1548,6 +1664,7 @@ class EmailManager:
     ) -> EmailCampaignDetailRead:
         access = await self.access(agent, Permission.EMAIL_MANAGE)
         campaign = await self.campaign_for(access, campaign_id, lock=True)
+        self.editable(campaign)
         steps = {s.id: s for s in campaign.steps}
         if len(request.step_ids) != len(steps) or set(request.step_ids) != set(steps):
             raise BadRequestError(
@@ -1734,6 +1851,8 @@ class EmailManager:
             step = await self.repo.step(access.agency_id, request.step_id)
             if step is None:
                 raise NotFoundError("Step not found.", code="email.step_not_found")
+            # An imported campaign's emails are Lemlist's: Nidria renders none.
+            self.editable(await self.campaign_for(access, step.campaign_id))
             prompts = {v.key: f"{v.prompt_template}|{v.model or ''}" for v in request.ai_variables}
             same_content = (
                 content_hash(request.subject_template, request.body_template, prompts)
@@ -1865,6 +1984,16 @@ class EmailManager:
         member, profile, campaign = row.member, row.profile, row.campaign
         identity = client_identity(profile, row.account)
         company = people.company(profile)
+        # An imported lead's company as Lemlist gave it, when the record has
+        # no company of the agency: shown, never a company record.
+        provider_company = import_metadata(member.provider_metadata).get("company_name")
+        fallback = (
+            provider_company
+            if not people.companies_of(profile)
+            and isinstance(provider_company, str)
+            and provider_company
+            else None
+        )
         return EmailMemberRead(
             id=member.id,
             campaign_id=campaign.id,
@@ -1875,7 +2004,8 @@ class EmailManager:
             full_name=_full_name(identity.first_name, identity.last_name),
             email=identity.email,
             company_id=company.id if company is not None else None,
-            company_name=company.name if company is not None else None,
+            company_name=company.name if company is not None else fallback,
+            company_from_provider=fallback is not None,
             client_status=people.client_status(profile),
             status=member.status,
             status_reason=member.status_reason,
@@ -1973,6 +2103,7 @@ class EmailManager:
             timezone=settings.timezone,
             sending_days=settings.sending_days,
             sending_end=settings.sending_end_time,
+            imported=is_imported(campaign),
         )
         last_position = max(steps, default=0)
         timeline: list[EmailStepTimeline] = []
@@ -1987,6 +2118,15 @@ class EmailManager:
                 status = "QUEUED"
             else:
                 status = None
+            # Nidria's render is the content; an imported campaign's emails
+            # have none: Lemlist sent its own template, personalized there.
+            content_state: ContentState | None = (
+                cast(ContentState, message.content_state)
+                if message is not None and render is None
+                else "RENDERED"
+                if render is not None
+                else None
+            )
             planned = plan.steps.get(position)
             timeline.append(
                 EmailStepTimeline(
@@ -1997,6 +2137,7 @@ class EmailManager:
                     planned_on=planned.day if planned is not None and planned.estimated else None,
                     planned_overdue=bool(planned and planned.overdue),
                     status=status,
+                    content_state=content_state,
                     subject=render.subject if render else None,
                     body=render.body if render else None,
                     ai_values={
@@ -2049,7 +2190,7 @@ class EmailManager:
                 subject=item.subject,
                 body=item.body,
                 status=item.status,
-                content_state="RENDERED",
+                content_state=item.content_state or "RENDERED",
                 open_count=item.open_count,
                 click_count=item.click_count,
             )
@@ -2238,7 +2379,8 @@ class EmailManager:
                     )
                 )
                 continue
-            if member.provider_lead_id:
+            # An imported lead's content is Lemlist's: no render is asked.
+            if member.provider_lead_id and not is_imported(row.campaign):
                 missing = await self._unrendered_step(access, member, row.campaign.id, steps_of)
                 if missing is not None:
                     results.append(
@@ -2325,6 +2467,8 @@ class EmailManager:
         target = await self.campaign_for(access, target_campaign_id)
         access.require(Permission.EMAIL_ENROLL)
         await self.writable(access, target)
+        # Moving out of an imported campaign is allowed, never into one.
+        self.editable(target)
         if target.status == "ARCHIVED":
             raise BadRequestError(
                 "Recipients cannot move into an archived campaign.",
@@ -2407,6 +2551,8 @@ class EmailManager:
         renders already frozen (a member's preview) are counted, never made."""
         access = await self.access(agent)
         campaign = await self.campaign_for(access, campaign_id)
+        # Nothing to launch in an imported campaign: Lemlist launched its leads.
+        self.editable(campaign)
         steps = sorted(campaign.steps, key=lambda s: s.position)
         settings = EmailCampaignSettings.model_validate(campaign.settings or {})
         provider = await self.provider(access)
@@ -2626,6 +2772,7 @@ class EmailManager:
                 timezone=settings.timezone,
                 sending_days=settings.sending_days,
                 sending_end=settings.sending_end_time,
+                imported=is_imported(loaded),
             )
             today = today_in(settings.timezone)
             for planned in sorted(plan.steps.values(), key=lambda p: p.position):
@@ -2875,6 +3022,7 @@ class EmailManager:
         access = await self.access(agent, Permission.EMAIL_ENROLL)
         campaign = await self.campaign_for(access, campaign_id)
         await self.writable(access, campaign)
+        self.editable(campaign)
         plan, _ = await self._add_plan(access, campaign, request)
         return EmailAddPreviewResponse(
             campaign_id=campaign.id, summary=_add_summary(plan), rows=plan
@@ -2890,6 +3038,7 @@ class EmailManager:
         # Locked: two adds into one campaign never race on the same client.
         campaign = await self.campaign_for(access, campaign_id, lock=True)
         await self.writable(access, campaign)
+        self.editable(campaign)
         if campaign.status == "ARCHIVED":
             raise BadRequestError(
                 "Clients cannot be added to an archived campaign.",
@@ -3192,11 +3341,15 @@ def _copy_step(
 
 
 __all__ = [
+    "IMPORT_METADATA_KEY",
     "Access",
     "EmailManager",
     "People",
     "SequenceFacts",
+    "campaign_imported",
     "client_email_status",
+    "import_metadata",
+    "is_imported",
     "provider_error_code",
     "provider_for",
     "provider_params",

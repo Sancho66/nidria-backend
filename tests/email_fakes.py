@@ -12,6 +12,7 @@ fixture once this module is listed in a `pytest_plugins`.
 """
 
 import json
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -24,13 +25,19 @@ from src.email_campaigns.providers.base import (
     CampaignSpec,
     LeadRef,
     LeadSpec,
+    ProviderActivityRead,
     ProviderCampaign,
+    ProviderCampaignListing,
+    ProviderCampaignRow,
+    ProviderContact,
     ProviderError,
     ProviderEvent,
     ProviderLead,
+    ProviderLeadIdentity,
     ProviderLeadListing,
     ProviderMessage,
     ProviderSender,
+    ProviderSequences,
     ProviderStep,
     StepContent,
     StepSpec,
@@ -48,11 +55,19 @@ class FakeLemlist:
 
     def __init__(self) -> None:
         self.calls: list[Call] = []
+        #: The full URL of each call (base and query included), in call order.
+        self.urls: list[str] = []
         #: The Authorization header of each call, in call order.
         self.authorizations: list[str | None] = []
         #: Every wait asked of `time.sleep` (retries, Retry-After, throttle).
         self.sleeps: list[float] = []
         self.responses: dict[tuple[str, str], list[httpx.Response]] = {}
+        #: Answers given to every call of a route once its queue is empty.
+        self.standing: dict[tuple[str, str], tuple[int, Any]] = {}
+
+    def answer(self, method: str, path: str, status: int, body: Any) -> None:
+        """What `method path` answers each time nothing is queued for it."""
+        self.standing[(method, path)] = (status, body)
 
     def queue(
         self,
@@ -73,10 +88,16 @@ class FakeLemlist:
         path = request.url.path.removeprefix("/api")
         body = json.loads(request.content) if request.content else None
         self.calls.append((request.method, path, dict(request.url.params), body))
+        self.urls.append(str(request.url))
         self.authorizations.append(request.headers.get("authorization"))
         queued = self.responses.get((request.method, path))
         if queued:
             return queued.pop(0)
+        standing = self.standing.get((request.method, path))
+        if standing is not None:
+            status, body = standing
+            content = body if isinstance(body, str) else json.dumps(body)
+            return httpx.Response(status, content=content.encode())
         return httpx.Response(200, json={"ok": True})
 
     def routes(self) -> list[tuple[str, str]]:
@@ -119,7 +140,15 @@ class FakeProvider:
     address) and the campaign's pause and step parking (keyed by campaign id
     and step id), so a bulk action's failed row and a refused gesture can be
     shown. An event without a campaign id (an event about a whole contact)
-    is in every campaign's read of the activities."""
+    is in every campaign's read of the activities.
+
+    Lot C: the import's reads (`ImportReader`), scripted per campaign: the
+    team's campaigns (`campaign_rows`), a campaign's sequences
+    (`sequence_reads`), the leads Lemlist lists beyond those Nidria added
+    (`listed`), its export (`exports`), the contacts lookup (`contacts`); a
+    campaign's activities are `events`. All are reads, recorded in `ops`
+    like the rest; `resume_campaign` is the one write of an imported
+    campaign's resume."""
 
     name = "LEMLIST"
 
@@ -154,6 +183,12 @@ class FakeProvider:
         self.team: str | None = "tea_current"
         #: lead id -> Lemlist's word on its progress ("inProgress", "done").
         self.lead_status: dict[str, str] = {}
+        #: The import's reads (lot C): see the class docstring.
+        self.campaign_rows: list[ProviderCampaignRow] = []
+        self.sequence_reads: dict[str, ProviderSequences] = {}
+        self.listed: dict[str, list[ProviderLead]] = {}
+        self.exports: dict[str, list[ProviderLeadIdentity]] = {}
+        self.contacts: dict[str, ProviderContact] = {}
         self._n = 0
 
     def _fail(self, operation: str, key: str) -> None:
@@ -189,6 +224,10 @@ class FakeProvider:
     def start_campaign(self, ref: CampaignRef, *, mailbox: str | None = None) -> None:
         self._op("start_campaign", campaign=ref.campaign_id, mailbox=mailbox)
         self._fail("start_campaign", ref.campaign_id)
+
+    def resume_campaign(self, ref: CampaignRef) -> None:
+        self._op("resume_campaign", campaign=ref.campaign_id)
+        self._fail("resume_campaign", ref.campaign_id)
 
     def pause_campaign(self, ref: CampaignRef) -> None:
         self._op("pause_campaign", campaign=ref.campaign_id)
@@ -292,7 +331,57 @@ class FakeProvider:
             for lead in self.added.get(ref.campaign_id, [])
             if lead.lead_id not in self.gone
         ]
+        # The leads a campaign holds at Lemlist without Nidria adding them
+        # (an imported campaign's), as listed: a pause here shows as Lemlist
+        # shows it, in the state.
+        for lead in self.listed.get(ref.campaign_id, []):
+            if lead.lead_id in self.gone:
+                continue
+            paused = lead.lead_id in self.paused
+            leads.append(
+                ProviderLead(
+                    lead.lead_id,
+                    lead.email,
+                    paused,
+                    state="paused" if paused else lead.state,
+                    contact_id=lead.contact_id,
+                    unsubscribed=lead.unsubscribed or lead.lead_id in self.unsubscribed,
+                    raw={**lead.raw, **({"state": "paused"} if paused else {})},
+                )
+            )
         return ProviderLeadListing(leads=leads, complete=True)
+
+    # ── the import's reads (lot C) ───────────────────────────────────────
+
+    def list_campaigns(self) -> ProviderCampaignListing:
+        self._op("list_campaigns")
+        self._fail("list_campaigns", "team")
+        return ProviderCampaignListing(
+            list(self.campaign_rows), complete=True, pages=len(self.campaign_rows) // 100 + 1
+        )
+
+    def read_sequences(self, ref: CampaignRef) -> ProviderSequences:
+        self._op("read_sequences", campaign=ref.campaign_id)
+        self._fail("read_sequences", ref.campaign_id)
+        return self.sequence_reads.get(ref.campaign_id, ProviderSequences(ref.sequence_id, []))
+
+    def export_leads(self, ref: CampaignRef) -> list[ProviderLeadIdentity]:
+        self._op("export_leads", campaign=ref.campaign_id)
+        self._fail("export_leads", ref.campaign_id)
+        return list(self.exports.get(ref.campaign_id, []))
+
+    def lookup_contacts(self, contact_ids: Sequence[str]) -> list[ProviderContact]:
+        self._op("lookup_contacts", count=len(contact_ids))
+        self._fail("lookup_contacts", "team")
+        return [self.contacts[c] for c in contact_ids if c in self.contacts]
+
+    def read_activities(self, ref: CampaignRef) -> ProviderActivityRead:
+        self._op("read_activities", campaign=ref.campaign_id)
+        self._fail("read_activities", ref.campaign_id)
+        events = [e for e in self.events if e.campaign_id in (ref.campaign_id, None)]
+        return ProviderActivityRead(
+            events, rows=len(events), pages=len(events) // 100 + 1, complete=True
+        )
 
     def sync_campaign(self, ref: CampaignRef, since: datetime | None) -> list[ProviderEvent]:
         self._op("sync_campaign", campaign=ref.campaign_id)

@@ -13,6 +13,12 @@ client record's email state and the add wizard, whose lists take the
 Clients and Companies pages' own parameters (decision A15). List
 parameters are repeated (`?status=A&status=B`), never comma-joined.
 
+Lot C: the import of the Lemlist campaigns already running in the agency's
+team, `GET /email/import/lemlist` (the plan, counts only) and `POST
+/email/import/lemlist` (the application): both `email.sync`, plus
+`email.manage` and the right to create client records in the manager, both
+refused under impersonation like the Launch and the Sync.
+
 Phase 4: Lemlist's activity webhook, `POST /webhooks/lemlist`, on its own
 router (`webhook_router`, bindings `WEBHOOK_BINDINGS`): audience PUBLIC (a
 real, auditable binding line), authenticated by the body's `secret`, rate
@@ -41,6 +47,7 @@ from src.core.http import client_ip
 from src.core.i18n import Language
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
+from src.email_campaigns.email_import import EmailImportManager
 from src.email_campaigns.email_manager import EmailManager
 from src.email_campaigns.email_schema import (
     CampaignStatus,
@@ -61,6 +68,9 @@ from src.email_campaigns.email_schema import (
     EmailCandidateCompanyList,
     EmailClientProfileRead,
     EmailDuplicateRequest,
+    EmailImportPlanRead,
+    EmailImportRequest,
+    EmailImportResult,
     EmailLaunchReadiness,
     EmailLaunchRequest,
     EmailLaunchResult,
@@ -143,6 +153,9 @@ BINDINGS = [
         "POST", "/email/campaigns/{campaign_id}/members/preview-add", Audience.AGENT, _ENROLL
     ),
     RouteBinding("POST", "/email/campaigns/{campaign_id}/members/add", Audience.AGENT, _ENROLL),
+    # the import of the Lemlist campaigns already running (lot C)
+    RouteBinding("GET", "/email/import/lemlist", Audience.AGENT, _SYNC),
+    RouteBinding("POST", "/email/import/lemlist", Audience.AGENT, _SYNC),
 ]
 
 #: Lemlist's activity webhook: no token, its secret is in the body.
@@ -666,6 +679,34 @@ async def add_members(
     """Add the eligible clients as ready (nothing is sent); the others are
     left out with their reason, never moved."""
     return await EmailManager(db).add_members(agent, campaign_id, body)
+
+
+# ── the import of the Lemlist campaigns already running (lot C) ────────────
+
+
+@router.get("/import/lemlist", response_model=EmailImportPlanRead)
+async def lemlist_import_plan(agent: AgentDep, db: DbDep) -> EmailImportPlanRead:
+    """The plan of an import, read only at Lemlist and in Nidria: the team's
+    campaigns running or paused at Lemlist, each with what importing it
+    would do (steps, leads, client records found or to create, conflicts,
+    Lemlist's words met and the status each becomes, Lemlist calls), counts
+    only, never an address nor a person's name; drafts, ended, archived and
+    erroneous campaigns, and Nidria's own, listed apart. Needs the agency
+    bound to the platform key's Lemlist team with real effects on.
+    `email.sync`, `email.manage` and `case.edit`; refused under
+    impersonation."""
+    return await EmailImportManager(db).plan(agent)
+
+
+@router.post("/import/lemlist", response_model=EmailImportResult)
+async def lemlist_import(agent: AgentDep, db: DbDep, body: EmailImportRequest) -> EmailImportResult:
+    """Import the Lemlist campaigns named (ids from the plan), each in its own
+    transaction, in the plan's order: a mirror, read only at Lemlist (its
+    content stays Lemlist's), its client records created without any
+    invitation or email, its whole history kept. Running it again refreshes
+    without duplicating. A campaign not importable answers its own code in
+    its row; the others go on. Same rights as the plan."""
+    return await EmailImportManager(db).apply(agent, body)
 
 
 # ── the provider's webhook (phase 4, PUBLIC) ───────────────────────────────

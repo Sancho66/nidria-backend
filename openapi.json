@@ -7482,6 +7482,78 @@
         }
       }
     },
+    "/email/import/lemlist": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Lemlist Import Plan",
+        "description": "The plan of an import, read only at Lemlist and in Nidria: the team's\ncampaigns running or paused at Lemlist, each with what importing it\nwould do (steps, leads, client records found or to create, conflicts,\nLemlist's words met and the status each becomes, Lemlist calls), counts\nonly, never an address nor a person's name; drafts, ended, archived and\nerroneous campaigns, and Nidria's own, listed apart. Needs the agency\nbound to the platform key's Lemlist team with real effects on.\n`email.sync`, `email.manage` and `case.edit`; refused under\nimpersonation.",
+        "operationId": "lemlist_import_plan_email_import_lemlist_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailImportPlanRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Lemlist Import",
+        "description": "Import the Lemlist campaigns named (ids from the plan), each in its own\ntransaction, in the plan's order: a mirror, read only at Lemlist (its\ncontent stays Lemlist's), its client records created without any\ninvitation or email, its whole history kept. Running it again refreshes\nwithout duplicating. A campaign not importable answers its own code in\nits row; the others go on. Same rights as the plan.",
+        "operationId": "lemlist_import_email_import_lemlist_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/webhooks/lemlist": {
       "post": {
         "tags": [
@@ -31242,6 +31314,38 @@
               }
             ]
           },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "NIDRIA",
+              "LEMLIST_IMPORT"
+            ],
+            "title": "Origin",
+            "default": "NIDRIA"
+          },
+          "unknown_leads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Leads"
+          },
+          "last_imported_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Imported At"
+          },
           "created_by_agent_id": {
             "anyOf": [
               {
@@ -31484,6 +31588,38 @@
                 "type": "null"
               }
             ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "NIDRIA",
+              "LEMLIST_IMPORT"
+            ],
+            "title": "Origin",
+            "default": "NIDRIA"
+          },
+          "unknown_leads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Leads"
+          },
+          "last_imported_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Imported At"
           },
           "created_by_agent_id": {
             "anyOf": [
@@ -32020,7 +32156,8 @@
               "RENDERED",
               "PENDING",
               "AVAILABLE",
-              "UNAVAILABLE"
+              "UNAVAILABLE",
+              "PROVIDER_ONLY"
             ],
             "title": "Content State"
           },
@@ -32122,6 +32259,755 @@
           "campaign_member_id"
         ],
         "title": "EmailEventRead"
+      },
+      "EmailImportCallsRead": {
+        "properties": {
+          "reads": {
+            "type": "integer",
+            "title": "Reads"
+          },
+          "apply_min": {
+            "type": "integer",
+            "title": "Apply Min"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reads",
+          "apply_min"
+        ],
+        "title": "EmailImportCallsRead",
+        "description": "Lemlist calls, retries aside. `reads`: this campaign's in the plan:\nthe campaign (1), its sequences (1), its listing (one page per 100\nleads, plus the short or empty page that ends it), its export (1) and\nits contacts lookups (one per 100 leads the export did not identify).\n`apply_min`: its share of an application: the same reads again (an\napplication computes the whole plan again) and its activities, read\nonly then, one page per 100 activities: counted 1 here."
+      },
+      "EmailImportCampaignPlan": {
+        "properties": {
+          "provider_campaign_id": {
+            "type": "string",
+            "title": "Provider Campaign Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "already_imported": {
+            "type": "boolean",
+            "title": "Already Imported"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailImportStepsRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leads": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailImportLeadsRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/EmailImportStateRead"
+            },
+            "type": "array",
+            "title": "States"
+          },
+          "calls": {
+            "$ref": "#/components/schemas/EmailImportCallsRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_campaign_id",
+          "name",
+          "status",
+          "already_imported",
+          "calls"
+        ],
+        "title": "EmailImportCampaignPlan",
+        "description": "What importing one Lemlist campaign (running or paused there) would\ndo. Counts only: never an address nor a person's name."
+      },
+      "EmailImportCampaignRef": {
+        "properties": {
+          "provider_campaign_id": {
+            "type": "string",
+            "title": "Provider Campaign Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_campaign_id",
+          "name",
+          "status"
+        ],
+        "title": "EmailImportCampaignRef",
+        "description": "A campaign of the team listed apart, never imported: a draft, an\nended, archived or erroneous one, or one Nidria created itself."
+      },
+      "EmailImportCampaignResult": {
+        "properties": {
+          "provider_campaign_id": {
+            "type": "string",
+            "title": "Provider Campaign Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params"
+          },
+          "campaign_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaign Id"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created",
+            "default": false
+          },
+          "steps_created": {
+            "type": "integer",
+            "title": "Steps Created",
+            "default": 0
+          },
+          "steps_updated": {
+            "type": "integer",
+            "title": "Steps Updated",
+            "default": 0
+          },
+          "members_created": {
+            "type": "integer",
+            "title": "Members Created",
+            "default": 0
+          },
+          "members_updated": {
+            "type": "integer",
+            "title": "Members Updated",
+            "default": 0
+          },
+          "profiles_created": {
+            "type": "integer",
+            "title": "Profiles Created",
+            "default": 0
+          },
+          "conflicts": {
+            "type": "integer",
+            "title": "Conflicts",
+            "default": 0
+          },
+          "not_imported": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Not Imported"
+          },
+          "opposition_listed": {
+            "type": "integer",
+            "title": "Opposition Listed",
+            "default": 0
+          },
+          "events_stored": {
+            "type": "integer",
+            "title": "Events Stored",
+            "default": 0
+          },
+          "events_duplicate": {
+            "type": "integer",
+            "title": "Events Duplicate",
+            "default": 0
+          },
+          "activities_read": {
+            "type": "integer",
+            "title": "Activities Read",
+            "default": 0
+          },
+          "activity_pages": {
+            "type": "integer",
+            "title": "Activity Pages",
+            "default": 0
+          },
+          "activities_complete": {
+            "type": "boolean",
+            "title": "Activities Complete",
+            "default": true
+          },
+          "replies_pending": {
+            "type": "integer",
+            "title": "Replies Pending",
+            "default": 0
+          },
+          "unknown_leads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Leads"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_campaign_id",
+          "ok"
+        ],
+        "title": "EmailImportCampaignResult",
+        "description": "What the import did for one Lemlist campaign, in its own transaction:\n`ok` false means nothing of it was written (`code`, `params`)."
+      },
+      "EmailImportLeadsRead": {
+        "properties": {
+          "listed": {
+            "type": "integer",
+            "title": "Listed"
+          },
+          "listing_complete": {
+            "type": "boolean",
+            "title": "Listing Complete"
+          },
+          "listing_duplicates": {
+            "type": "integer",
+            "title": "Listing Duplicates"
+          },
+          "identities": {
+            "type": "integer",
+            "title": "Identities"
+          },
+          "from_export": {
+            "type": "integer",
+            "title": "From Export"
+          },
+          "from_contacts": {
+            "type": "integer",
+            "title": "From Contacts"
+          },
+          "without_email": {
+            "type": "integer",
+            "title": "Without Email"
+          },
+          "existing_profiles": {
+            "type": "integer",
+            "title": "Existing Profiles"
+          },
+          "profiles_to_create": {
+            "type": "integer",
+            "title": "Profiles To Create"
+          },
+          "profiles_planned_before": {
+            "type": "integer",
+            "title": "Profiles Planned Before"
+          },
+          "conflicts": {
+            "type": "integer",
+            "title": "Conflicts"
+          },
+          "conflicts_in_plan": {
+            "type": "integer",
+            "title": "Conflicts In Plan"
+          },
+          "duplicate_emails": {
+            "type": "integer",
+            "title": "Duplicate Emails"
+          },
+          "to_create": {
+            "type": "integer",
+            "title": "To Create"
+          },
+          "to_update": {
+            "type": "integer",
+            "title": "To Update"
+          },
+          "not_imported": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Not Imported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "listed",
+          "listing_complete",
+          "listing_duplicates",
+          "identities",
+          "from_export",
+          "from_contacts",
+          "without_email",
+          "existing_profiles",
+          "profiles_to_create",
+          "profiles_planned_before",
+          "conflicts",
+          "conflicts_in_plan",
+          "duplicate_emails",
+          "to_create",
+          "to_update",
+          "not_imported"
+        ],
+        "title": "EmailImportLeadsRead",
+        "description": "A campaign's leads, in counts only."
+      },
+      "EmailImportPlanCallsRead": {
+        "properties": {
+          "listing_pages": {
+            "type": "integer",
+            "title": "Listing Pages"
+          },
+          "reads": {
+            "type": "integer",
+            "title": "Reads"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "apply_min": {
+            "type": "integer",
+            "title": "Apply Min"
+          }
+        },
+        "type": "object",
+        "required": [
+          "listing_pages",
+          "reads",
+          "total",
+          "apply_min"
+        ],
+        "title": "EmailImportPlanCallsRead",
+        "description": "The plan's Lemlist calls (retries aside): the team's campaign list\n(one page per 100 campaigns, plus the page that ends it) and every\nimportable campaign's reads (`EmailImportCallsRead`). `apply_min`: what\none application of every importable campaign costs at least. Any\napplication reads the list and every importable campaign again (each\none's conflicts depend on those planned before it), then the\nactivities of the campaigns it imports."
+      },
+      "EmailImportPlanRead": {
+        "properties": {
+          "listing_complete": {
+            "type": "boolean",
+            "title": "Listing Complete"
+          },
+          "campaigns": {
+            "items": {
+              "$ref": "#/components/schemas/EmailImportCampaignPlan"
+            },
+            "type": "array",
+            "title": "Campaigns"
+          },
+          "not_importable": {
+            "items": {
+              "$ref": "#/components/schemas/EmailImportCampaignRef"
+            },
+            "type": "array",
+            "title": "Not Importable"
+          },
+          "created_by_nidria": {
+            "items": {
+              "$ref": "#/components/schemas/EmailImportCampaignRef"
+            },
+            "type": "array",
+            "title": "Created By Nidria"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/EmailImportRuleRead"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "calls": {
+            "$ref": "#/components/schemas/EmailImportPlanCallsRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "listing_complete",
+          "campaigns",
+          "not_importable",
+          "created_by_nidria",
+          "rules",
+          "calls"
+        ],
+        "title": "EmailImportPlanRead",
+        "description": "GET /email/import/lemlist: the plan, reads only. Counts, Lemlist\ncampaign ids and campaign names: never an address nor a person's name.\n`campaigns`: the importable ones (running or paused at Lemlist), in the\norder an import processes them (Lemlist's creation, oldest first),\nwhich decides `conflicts_in_plan`."
+      },
+      "EmailImportRequest": {
+        "properties": {
+          "campaign_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Campaign Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "campaign_ids"
+        ],
+        "title": "EmailImportRequest",
+        "description": "POST /email/import/lemlist: the Lemlist campaign ids to import, taken\nfrom the plan."
+      },
+      "EmailImportResult": {
+        "properties": {
+          "campaigns": {
+            "items": {
+              "$ref": "#/components/schemas/EmailImportCampaignResult"
+            },
+            "type": "array",
+            "title": "Campaigns"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaigns",
+          "calls"
+        ],
+        "title": "EmailImportResult",
+        "description": "POST /email/import/lemlist: one result per campaign asked for, in\nthe plan's order (unknown ids last). `calls`: Lemlist calls made, by the\nplan's definition, activities included."
+      },
+      "EmailImportRuleRead": {
+        "properties": {
+          "rule": {
+            "type": "string",
+            "enum": [
+              "unsubscribed",
+              "bounced",
+              "replied",
+              "skipped",
+              "not_launched",
+              "completed",
+              "paused",
+              "launched",
+              "in_sequence",
+              "status_unknown",
+              "uncovered"
+            ],
+            "title": "Rule"
+          },
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "States"
+          },
+          "statuses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Statuses"
+          },
+          "combine": {
+            "type": "string",
+            "enum": [
+              "either",
+              "both"
+            ],
+            "title": "Combine",
+            "default": "either"
+          },
+          "proposed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "EMAIL_READY",
+                  "EMAIL_QUEUED",
+                  "EMAIL_ACTIVE",
+                  "EMAIL_PAUSED",
+                  "EMAIL_REPLIED",
+                  "EMAIL_BOUNCED",
+                  "EMAIL_COMPLETED",
+                  "EMAIL_REMOVED",
+                  "EMAIL_UNSUBSCRIBED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed"
+          },
+          "opposition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "UNSUBSCRIBED",
+                  "BOUNCED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opposition"
+          },
+          "not_imported": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_email",
+                  "duplicate_email",
+                  "already_in_campaign",
+                  "conflict",
+                  "conflict_in_plan",
+                  "skipped_at_provider",
+                  "not_launched",
+                  "status_unknown",
+                  "status_uncovered"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Imported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "title": "EmailImportRuleRead",
+        "description": "One line of the mapping from Lemlist's words on a lead to its Nidria\nstatus. A lead matches when its `state` (Lemlist's listing) is one of\n`states` or its `status` (the export) one of `statuses` (`combine`\neither), or both (`combine` both); the first rule matching decides.\n`proposed`: the status the membership gets, null when the lead is not\nimported (`not_imported` says why)."
+      },
+      "EmailImportStateRead": {
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "rule": {
+            "type": "string",
+            "enum": [
+              "unsubscribed",
+              "bounced",
+              "replied",
+              "skipped",
+              "not_launched",
+              "completed",
+              "paused",
+              "launched",
+              "in_sequence",
+              "status_unknown",
+              "uncovered"
+            ],
+            "title": "Rule"
+          },
+          "proposed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "EMAIL_READY",
+                  "EMAIL_QUEUED",
+                  "EMAIL_ACTIVE",
+                  "EMAIL_PAUSED",
+                  "EMAIL_REPLIED",
+                  "EMAIL_BOUNCED",
+                  "EMAIL_COMPLETED",
+                  "EMAIL_REMOVED",
+                  "EMAIL_UNSUBSCRIBED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed"
+          },
+          "opposition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "UNSUBSCRIBED",
+                  "BOUNCED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opposition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "status",
+          "count",
+          "rule"
+        ],
+        "title": "EmailImportStateRead",
+        "description": "One combination of Lemlist's words met in a campaign, how many leads\ncarry it, and what the import does with them."
+      },
+      "EmailImportStepsRead": {
+        "properties": {
+          "by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Type"
+          },
+          "imported": {
+            "type": "integer",
+            "title": "Imported"
+          },
+          "branches": {
+            "type": "integer",
+            "title": "Branches"
+          },
+          "branch_steps": {
+            "type": "integer",
+            "title": "Branch Steps"
+          },
+          "ab_tests": {
+            "type": "integer",
+            "title": "Ab Tests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "by_type",
+          "imported",
+          "branches",
+          "branch_steps",
+          "ab_tests"
+        ],
+        "title": "EmailImportStepsRead",
+        "description": "A campaign's steps at Lemlist: its main sequence's, imported (by\nLemlist type), and what is not imported (the conditional branches and\ntheir steps). Under an A/B test, the text imported is variant A's."
       },
       "EmailIssueRead": {
         "properties": {
@@ -32464,6 +33350,17 @@
               }
             ],
             "title": "Last Synced At"
+          },
+          "unknown_leads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Leads"
           },
           "launched_ids": {
             "items": {
@@ -32913,6 +33810,11 @@
               }
             ],
             "title": "Moved To Id"
+          },
+          "company_from_provider": {
+            "type": "boolean",
+            "title": "Company From Provider",
+            "default": false
           },
           "steps": {
             "items": {
@@ -33383,6 +34285,11 @@
               }
             ],
             "title": "Moved To Id"
+          },
+          "company_from_provider": {
+            "type": "boolean",
+            "title": "Company From Provider",
+            "default": false
           }
         },
         "type": "object",
@@ -34739,7 +35646,8 @@
               "RENDERED",
               "PENDING",
               "AVAILABLE",
-              "UNAVAILABLE"
+              "UNAVAILABLE",
+              "PROVIDER_ONLY"
             ],
             "title": "Content State"
           }
@@ -34806,7 +35714,8 @@
               "not_launched",
               "dry_run",
               "member_paused",
-              "campaign_not_active"
+              "campaign_not_active",
+              "provider_schedule"
             ],
             "title": "Code"
           },
@@ -34966,7 +35875,8 @@
                 "insert_in_use",
                 "reorder_in_use",
                 "archived",
-                "team_mismatch"
+                "team_mismatch",
+                "imported"
               ]
             },
             "type": "object",
@@ -34999,7 +35909,8 @@
                   "first_step_in_use",
                   "not_last_at_provider",
                   "already_sent",
-                  "team_mismatch"
+                  "team_mismatch",
+                  "imported"
                 ]
               },
               {
@@ -35404,6 +36315,39 @@
                 "type": "null"
               }
             ]
+          },
+          "provider_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Type"
+          },
+          "raw_subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Subject"
+          },
+          "raw_body_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Body Text"
           }
         },
         "type": "object",
@@ -35520,6 +36464,24 @@
               }
             ],
             "title": "Status"
+          },
+          "content_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "RENDERED",
+                  "PENDING",
+                  "AVAILABLE",
+                  "UNAVAILABLE",
+                  "PROVIDER_ONLY"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content State"
           },
           "subject": {
             "anyOf": [
@@ -35953,6 +36915,17 @@
               }
             ],
             "title": "Last Synced At"
+          },
+          "unknown_leads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Leads"
           }
         },
         "type": "object",

@@ -4,7 +4,9 @@ Answers like the real provider with deterministic identifiers, records every
 operation it was asked for, and sends nothing anywhere. A campaign "synced" in
 dry-run is complete on the Nidria side and ready for a real sync later.
 
-Ported as is from Prism's `providers/dry_run.py` (reference commit 629a2b0).
+Ported as is from Prism's `providers/dry_run.py` (reference commit 629a2b0),
+plus `resume_campaign` (lot C), recorded like the others. It reads nothing
+for an import (`ImportReader`): an import needs the real provider.
 """
 
 import hashlib
@@ -74,6 +76,9 @@ class DryRunEmailProvider:
 
     def start_campaign(self, ref: CampaignRef, *, mailbox: str | None = None) -> None:
         self._record("start_campaign", campaign=ref.campaign_id)
+
+    def resume_campaign(self, ref: CampaignRef) -> None:
+        self._record("resume_campaign", campaign=ref.campaign_id)
 
     def pause_campaign(self, ref: CampaignRef) -> None:
         self._record("pause_campaign", campaign=ref.campaign_id)

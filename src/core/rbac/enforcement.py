@@ -101,6 +101,11 @@ IMPERSONATION_AGENT_DENIED: frozenset[tuple[str, str]] = frozenset(
         # emails in the client's name, the family of the seat purchases.
         ("POST", "/email/campaigns/{campaign_id}/launch"),
         ("POST", "/email/campaigns/{campaign_id}/sync"),
+        # The import of the Lemlist campaigns already running (lot C): it
+        # creates client records and memberships from the platform's
+        # Lemlist team; its plan reads that team. Neither under a mask.
+        ("GET", "/email/import/lemlist"),
+        ("POST", "/email/import/lemlist"),
     }
 )
 

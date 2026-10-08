@@ -28,7 +28,10 @@ sentence. The codes:
 - `member_paused`: nothing is sent until it is resumed;
 - `campaign_not_active`, params `{"status": PAUSED | DRAFT | ARCHIVED}`:
   nothing is sent while the campaign is not ACTIVE (Prism's "Campaign
-  paused: ..." named the status the same way).
+  paused: ..." named the status the same way);
+- `provider_schedule`: a lead of an imported campaign (lot C) that Lemlist
+  may still email: Lemlist sends it on its own schedule, which Nidria does
+  not hold, so no day is estimated.
 """
 
 from __future__ import annotations
@@ -43,7 +46,12 @@ from shared.models.email_campaign import EmailCampaignMember, EmailCampaignStep
 from src.email_campaigns.providers.dry_run import is_dry_run_id
 
 HoldCode = Literal[
-    "sequence_ended", "not_launched", "dry_run", "member_paused", "campaign_not_active"
+    "sequence_ended",
+    "not_launched",
+    "dry_run",
+    "member_paused",
+    "campaign_not_active",
+    "provider_schedule",
 ]
 
 #: Ended sequences: no email follows. Status -> the `reason` param.
@@ -110,8 +118,11 @@ def next_sending_day(day: date, sending_days: Sequence[int]) -> date:
     return day
 
 
-def hold_of(member: EmailCampaignMember, campaign_status: str) -> Hold | None:
-    """Why this lead has no next email to date, if it has none."""
+def hold_of(
+    member: EmailCampaignMember, campaign_status: str, *, imported: bool = False
+) -> Hold | None:
+    """Why this lead has no next email to date, if it has none. `imported`:
+    its campaign mirrors a Lemlist one, whose schedule Nidria does not hold."""
     ended = _ENDED.get(member.status)
     if ended is not None:
         return Hold("sequence_ended", {"reason": ended})
@@ -123,6 +134,8 @@ def hold_of(member: EmailCampaignMember, campaign_status: str) -> Hold | None:
         return Hold("member_paused")
     if campaign_status != "ACTIVE":
         return Hold("campaign_not_active", {"status": campaign_status})
+    if imported:
+        return Hold("provider_schedule")
     return None
 
 
@@ -136,15 +149,17 @@ def schedule(
     sending_days: Sequence[int],
     sending_end: str,
     today: date | None = None,
+    imported: bool = False,
 ) -> Schedule:
     """Each step's day for this lead: the day it was sent, or the estimated
     day it should be (none while the lead is held, see `hold_of`). A step
     estimated before today is overdue; the steps after it count from today.
-    `sent`: step position -> when that step's email was sent."""
+    `sent`: step position -> when that step's email was sent. `imported`:
+    an imported campaign's lead, never estimated (Lemlist's schedule)."""
     zone = zone_of(timezone)
     today = today or today_in(timezone)
     end = _clock(sending_end)
-    hold = hold_of(member, campaign_status)
+    hold = hold_of(member, campaign_status, imported=imported)
     planned: dict[int, PlannedStep] = {}
     base: datetime | None = member.queued_at or member.started_at
     base_day = base.astimezone(zone).date() if base else None

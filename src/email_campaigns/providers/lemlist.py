@@ -40,6 +40,23 @@ routes of spec section 10.5 need them, and only Lemlist has them):
     DELETE /hooks/{hookId}                              `delete_hook`, `recreate_hook`
                                                         (a secret's rotation)
 
+The import of the campaigns already running in the team (lot C, decision
+of 08/10/2026; `ImportReader`, GET only, each route sourced in
+notes/lemlist-import-research.txt):
+
+    GET    /campaigns?version=v2&limit=&offset=         `list_campaigns` (§6)
+    GET    /campaigns/{id}                              `read_campaign`, its
+                                                        `sequenceId` (§4)
+    GET    /campaigns/{id}/sequences                    `read_sequences` (§5)
+    GET    /campaigns/{id}/leads?limit=&offset=          `list_contacts` (§1.1)
+    GET    /v2/campaigns/{id}/export/leads?state=all&format=json
+                                                        `export_leads` (§1.2 a)
+    GET    /contacts?idsOrEmails=                       `lookup_contacts` (§1.2 d)
+    GET    /activities?version=v2&campaignId=            `read_activities` (§3)
+
+and the one write an imported campaign takes besides a pause:
+`resume_campaign`, `POST /campaigns/{id}/start` alone (§9).
+
 What Lemlist does not have, and what this adapter does instead:
 - no archive route: archiving pauses the campaign;
 - no step reorder route: before any lead entered, Nidria pushes each lead's
@@ -82,7 +99,7 @@ import logging
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -94,13 +111,20 @@ from src.email_campaigns.providers.base import (
     CampaignSpec,
     LeadRef,
     LeadSpec,
+    ProviderActivityRead,
     ProviderCampaign,
+    ProviderCampaignListing,
+    ProviderCampaignRow,
+    ProviderContact,
     ProviderError,
     ProviderEvent,
     ProviderLead,
+    ProviderLeadIdentity,
     ProviderLeadListing,
     ProviderMessage,
     ProviderSender,
+    ProviderSequences,
+    ProviderSequenceStep,
     ProviderStep,
     StepContent,
     StepSpec,
@@ -128,6 +152,13 @@ _LEAD_PAGE = 100
 _MAX_LEAD_PAGES = 200
 _INBOX_PAGE = 100
 _MAX_INBOX_PAGES = 10
+#: `GET /campaigns?version=v2`: `limit` 100 at most, paginated by `offset`.
+_CAMPAIGN_PAGE = 100
+_MAX_CAMPAIGN_PAGES = 50
+#: An import reads a campaign's whole history, beyond a sync's window.
+_MAX_IMPORT_ACTIVITY_PAGES = 500
+#: `GET /contacts?idsOrEmails=` takes 100 values at most.
+_CONTACTS_PER_CALL = 100
 #: The lead fields kept verbatim on a membership.
 _LEAD_KEYS = ("state", "isPaused", "isUnsubscribed", "contactId", "status")
 #: The campaign fields kept verbatim on a campaign.
@@ -447,6 +478,16 @@ class LemlistEmailProvider:
         if response.status_code == 400 and not _says(response, "already running"):
             raise _error(response)
 
+    def resume_campaign(self, ref: CampaignRef) -> None:
+        """Start again a campaign as it stands at Lemlist (`POST
+        /campaigns/{id}/start`): an imported one, whose senders are Lemlist's
+        own. Unlike `start_campaign`, no sender is assigned and no mailbox
+        checked: the start is the only write. One that already runs answers
+        400 "already running" (measured by Prism): nothing to do."""
+        response = self._request("POST", f"/campaigns/{ref.campaign_id}/start", ok_codes=(400,))
+        if response.status_code == 400 and not _says(response, "already running"):
+            raise _error(response)
+
     def pause_campaign(self, ref: CampaignRef) -> None:
         """Stop sending; a campaign that does not run (Lemlist: "You can't
         pause campaigns that are not running.", seen by Prism on 2026-10-05 on
@@ -591,6 +632,37 @@ class LemlistEmailProvider:
             exists=True,
             status=str(data["status"]) if data.get("status") else None,
             metadata={k: data[k] for k in _CAMPAIGN_KEYS if k in data},
+            sequence_id=_text(data.get("sequenceId")),
+        )
+
+    def list_campaigns(self) -> ProviderCampaignListing:
+        """The team's campaigns (`GET /campaigns?version=v2`, documented as an
+        array of campaigns, paginated by `offset` with a `limit` of 100 at
+        most). Its v2 shape was never observed: an object carrying them under
+        `campaigns` is read too. A campaign listed twice (a page shifting
+        while it is read) is kept once."""
+        found: dict[str, ProviderCampaignRow] = {}
+        for page in range(_MAX_CAMPAIGN_PAGES):
+            response = self._request(
+                "GET",
+                "/campaigns",
+                params={"version": "v2", "limit": _CAMPAIGN_PAGE, "offset": page * _CAMPAIGN_PAGE},
+            )
+            rows = _rows(response, "campaigns", what="campaigns listing")
+            for row in rows:
+                campaign_id = _text(row.get("_id"))
+                if campaign_id and campaign_id not in found:
+                    found[campaign_id] = ProviderCampaignRow(
+                        campaign_id=campaign_id,
+                        name=_text(row.get("name")),
+                        status=_text(row.get("status")),
+                        created_at=_text(row.get("createdAt")),
+                    )
+            if len(rows) < _CAMPAIGN_PAGE:
+                return ProviderCampaignListing(list(found.values()), complete=True, pages=page + 1)
+        logger.warning("Lemlist campaigns past the page cap: listing incomplete")
+        return ProviderCampaignListing(
+            list(found.values()), complete=False, pages=_MAX_CAMPAIGN_PAGES
         )
 
     # ── steps ────────────────────────────────────────────────────────────
@@ -649,6 +721,50 @@ class LemlistEmailProvider:
             ProviderStep(str(row["_id"]), index + 1, int(row.get("delay") or 0))
             for index, row in enumerate(steps)
         ]
+
+    def read_sequences(self, ref: CampaignRef) -> ProviderSequences:
+        """The campaign's sequences as Lemlist has them (`GET
+        /campaigns/{id}/sequences`: an object keyed by sequence id). The main
+        one is the campaign's `sequenceId`, else the one at `level` 0; its
+        steps come in their order (`sequenceStep`, then `index`), each kept as
+        Lemlist returned it. The conditional sequences (`level` 1 and more)
+        are counted, never read further. Under an A/B test (`abTest` true,
+        or "A" / "B" once a winner is chosen), `subject` and `message` are
+        always variant A's."""
+        data = _json(self._request("GET", f"/campaigns/{ref.campaign_id}/sequences"))
+        sequences = {str(key): value for key, value in data.items() if isinstance(value, dict)}
+        main_id = (
+            ref.sequence_id
+            if ref.sequence_id in sequences
+            else next((key for key, value in sequences.items() if value.get("level") == 0), None)
+        )
+        main = sequences.get(main_id) if main_id is not None else None
+        rows = [
+            row
+            for row in (main or {}).get("steps") or []
+            if isinstance(row, dict) and _text(row.get("_id"))
+        ]
+        rows.sort(key=lambda row: (_int(row.get("sequenceStep")), _int(row.get("index"))))
+        branches = [value for key, value in sequences.items() if key != main_id]
+        return ProviderSequences(
+            main_sequence_id=main_id,
+            steps=[
+                ProviderSequenceStep(
+                    step_id=str(row["_id"]),
+                    position=index + 1,
+                    type=_text(row.get("type")),
+                    delay_days=_int(row.get("delay")),
+                    ab_test=row.get("abTest") is True or row.get("abTest") in ("A", "B"),
+                    raw=dict(row),
+                )
+                for index, row in enumerate(rows)
+            ],
+            branches=len(branches),
+            branch_steps=sum(
+                sum(1 for step in branch.get("steps") or [] if isinstance(step, dict))
+                for branch in branches
+            ),
+        )
 
     def park_step(self, ref: CampaignRef, step_id: str) -> None:
         """Lemlist keeps every step once a lead entered: this one waits longer
@@ -793,11 +909,85 @@ class LemlistEmailProvider:
         logger.warning("Lemlist leads of %s past the page cap: listing incomplete", ref.campaign_id)
         return ProviderLeadListing(leads=leads, complete=False)
 
+    def export_leads(self, ref: CampaignRef) -> list[ProviderLeadIdentity]:
+        """Who the campaign's leads are: its export, `GET
+        /v2/campaigns/{id}/export/leads?state=all&format=json` under the API
+        base (https://api.lemlist.com/api/v2/...), one answer: neither
+        pagination nor a size limit is documented, so the caller checks that
+        every lead it listed came back. Per lead id: its email, names,
+        company, `status` and `lastState` (both declared, neither required).
+        An object carrying the rows under `leads` or `data` is read too (not
+        documented). A lead id given twice is kept once."""
+        response = self._request(
+            "GET",
+            f"/v2/campaigns/{ref.campaign_id}/export/leads",
+            params={"state": "all", "format": "json"},
+        )
+        found: dict[str, ProviderLeadIdentity] = {}
+        for row in _rows(response, "leads", "data", what="leads export"):
+            lead_id = _text(row.get("_id"))
+            if lead_id and lead_id not in found:
+                found[lead_id] = ProviderLeadIdentity(
+                    lead_id=lead_id,
+                    email=_text(row.get("email")),
+                    first_name=_text(row.get("firstName")),
+                    last_name=_text(row.get("lastName")),
+                    company_name=_text(row.get("companyName")),
+                    status=_text(row.get("status")),
+                    last_state=_text(row.get("lastState")),
+                )
+        return list(found.values())
+
+    def lookup_contacts(self, contact_ids: Sequence[str]) -> list[ProviderContact]:
+        """Contacts by id (`GET /contacts?idsOrEmails=`, 100 values at most
+        per call, comma separated): the address, the names
+        (`fields.firstName`, `fields.lastName`) and, per campaign and lead,
+        the lead's status there (`campaigns[].leadState`, a status value).
+        The company is not part of this answer."""
+        wanted = list(dict.fromkeys(c for c in contact_ids if c))
+        found: dict[str, ProviderContact] = {}
+        for start in range(0, len(wanted), _CONTACTS_PER_CALL):
+            response = self._request(
+                "GET",
+                "/contacts",
+                params={"idsOrEmails": ",".join(wanted[start : start + _CONTACTS_PER_CALL])},
+            )
+            for row in _rows(response, "contacts", "data", what="contacts lookup"):
+                contact_id = _text(row.get("_id"))
+                if not contact_id or contact_id in found:
+                    continue
+                found_fields = row.get("fields")
+                fields: dict[str, Any] = found_fields if isinstance(found_fields, dict) else {}
+                statuses: dict[tuple[str, str], str] = {}
+                for entry in row.get("campaigns") or []:
+                    if not isinstance(entry, dict):
+                        continue
+                    campaign_id = _text(entry.get("campaignId"))
+                    lead_id = _text(entry.get("leadId"))
+                    state = _text(entry.get("leadState"))
+                    if campaign_id and lead_id and state:
+                        statuses[(campaign_id, lead_id)] = state
+                found[contact_id] = ProviderContact(
+                    contact_id=contact_id,
+                    email=_text(row.get("email")),
+                    first_name=_text(fields.get("firstName")),
+                    last_name=_text(fields.get("lastName")),
+                    lead_statuses=statuses,
+                )
+        return list(found.values())
+
     # ── events ───────────────────────────────────────────────────────────
 
     def _activities(self, params: dict[str, Any]) -> list[ProviderEvent]:
-        events: list[ProviderEvent] = []
-        for page in range(_MAX_ACTIVITY_PAGES):
+        return self._read_activities(params, _MAX_ACTIVITY_PAGES).events
+
+    def _read_activities(self, params: dict[str, Any], max_pages: int) -> ProviderActivityRead:
+        """Activities by pages of 100 (`offset` grows by the page size) until
+        a short page, `max_pages` at most: the tracked email events, each
+        once, and what was read."""
+        events: dict[str, ProviderEvent] = {}
+        read = 0
+        for page in range(max_pages):
             batch = self._request(
                 "GET",
                 "/activities",
@@ -809,10 +999,19 @@ class LemlistEmailProvider:
                 },
             )
             rows = _json_list(batch)
-            events.extend(e for e in (normalize_activity(r) for r in rows) if e is not None)
+            read += len(rows)
+            for event in (normalize_activity(r) for r in rows):
+                if event is not None:
+                    events.setdefault(event.event_id, event)
             if len(rows) < _ACTIVITY_PAGE:
-                break
-        return events
+                return ProviderActivityRead(list(events.values()), read, page + 1, complete=True)
+        return ProviderActivityRead(list(events.values()), read, max_pages, complete=False)
+
+    def read_activities(self, ref: CampaignRef) -> ProviderActivityRead:
+        """The campaign's whole history, for an import: every activity of
+        the campaign (`GET /activities?version=v2&campaignId=`, no date), up
+        to `_MAX_IMPORT_ACTIVITY_PAGES` pages; `complete` False past it."""
+        return self._read_activities({"campaignId": ref.campaign_id}, _MAX_IMPORT_ACTIVITY_PAGES)
 
     def sync_campaign(self, ref: CampaignRef, since: datetime | None) -> list[ProviderEvent]:
         params: dict[str, Any] = {"campaignId": ref.campaign_id}
@@ -981,6 +1180,39 @@ def _json_list(response: httpx.Response) -> list[dict[str, Any]]:
     except ValueError:
         return []
     return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
+
+
+def _rows(response: httpx.Response, *keys: str, what: str) -> list[dict[str, Any]]:
+    """The rows of a listing: an array, or (never documented, read
+    defensively) an object carrying it under one of `keys`. An empty body
+    has no row; a body that is not JSON is refused."""
+    if not (response.text or "").strip():
+        return []
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise ProviderError(
+            f"Lemlist answered the {what} with no JSON.", code="BAD_RESPONSE"
+        ) from exc
+    if isinstance(data, dict):
+        data = next((data[key] for key in keys if isinstance(data.get(key), list)), [])
+    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
+
+
+def _text(value: Any) -> str | None:
+    """A provider value as text, trimmed; None when absent or blank."""
+    if value is None or isinstance(value, dict | list | bool):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _int(value: Any) -> int:
+    """A provider number as an int; 0 when absent or not a number."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _lead(row: dict[str, Any], fallback_id: str | None = None) -> ProviderLead | None:

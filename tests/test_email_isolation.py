@@ -107,11 +107,16 @@ EXPECTED_BINDINGS: dict[tuple[str, str], Permission] = {
     ("GET", "/email/candidates/companies"): VIEW,
     ("POST", "/email/campaigns/{campaign_id}/members/preview-add"): Permission.EMAIL_ENROLL,
     ("POST", "/email/campaigns/{campaign_id}/members/add"): Permission.EMAIL_ENROLL,
+    # lot C: the import of the Lemlist campaigns already running
+    ("GET", "/email/import/lemlist"): SYNC,
+    ("POST", "/email/import/lemlist"): SYNC,
 }
-#: Under impersonation, refused whatever the target may do (D6).
+#: Under impersonation, refused whatever the target may do (D6, lot C).
 IMPERSONATION_DENIED = {
     ("POST", "/email/campaigns/{campaign_id}/launch"),
     ("POST", "/email/campaigns/{campaign_id}/sync"),
+    ("GET", "/email/import/lemlist"),
+    ("POST", "/email/import/lemlist"),
 }
 
 
@@ -195,8 +200,8 @@ async def both(
 
 
 def _routes(s: Side) -> list[tuple[str, str, Any]]:
-    """Every agent route of phases 3A and 3B, with valid bodies, on `s`'s
-    objects."""
+    """Every agent route of phases 3A and 3B and lot C, with valid bodies,
+    on `s`'s objects."""
     campaign, step, variable, member = s.campaign_id, s.step_id, s.ai_variable_id, s.member_id
     return [
         ("GET", "/email/meta", None),
@@ -248,6 +253,8 @@ def _routes(s: Side) -> list[tuple[str, str, Any]]:
             {"client_profile_ids": [s.profile_id]},
         ),
         ("POST", f"/email/campaigns/{campaign}/members/add", {"client_profile_ids": []}),
+        ("GET", "/email/import/lemlist", None),
+        ("POST", "/email/import/lemlist", {"campaign_ids": ["cam_x"]}),
     ]
 
 
