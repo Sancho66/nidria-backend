@@ -7,8 +7,9 @@
   test does not lean on the constant it guards.
 - A copy-on-write clone of the admin frozen before the release receives them
   at the next boot; a clone of case_manager never does.
-- The platform routes are bound `agency.create` (superadmin only), the boot
-  check passes with them, and fails when one loses its binding.
+- The platform routes are bound `agency.create` (activation) and
+  `platform.task_manage` (the Lemlist account, phase 4), superadmin only;
+  the boot check passes with them, and fails when one loses its binding.
 """
 
 import uuid
@@ -25,6 +26,7 @@ from shared.models.rbac import ProtectedResource, Role, RolePermission
 from src.core.enums import Audience
 from src.core.rbac.baseline import (
     EXTERNAL_ROLE_NAMES,
+    PLATFORM_PERMISSIONS,
     collect_bindings,
     seed_rbac_baseline,
 )
@@ -44,12 +46,17 @@ EMAIL_KEYS = {
     "email.remove",
     "email.sync",
 }
-PLATFORM_ROUTES = {
+ACTIVATION_ROUTES = {
     ("GET", "/agencies/{agency_id}/email-module"),
     ("PATCH", "/agencies/{agency_id}/email-module"),
     ("PUT", "/agencies/{agency_id}/email-module/team"),
     ("DELETE", "/agencies/{agency_id}/email-module/team"),
 }
+ACCOUNT_ROUTES = {
+    ("GET", "/admin/email/provider"),
+    ("POST", "/admin/email/provider/webhook"),
+}
+PLATFORM_ROUTES = ACTIVATION_ROUTES | ACCOUNT_ROUTES
 _FROZEN_PAST = datetime(2020, 1, 1, tzinfo=UTC)
 
 
@@ -158,7 +165,14 @@ def test_the_platform_routes_are_superadmin_only() -> None:
     assert {(b.method, b.path) for b in EMAIL_ADMIN_BINDINGS} == PLATFORM_ROUTES
     for binding in EMAIL_ADMIN_BINDINGS:
         assert binding.audience == Audience.AGENT
-        assert binding.permission == Permission.AGENCY_CREATE
+        expected = (
+            Permission.AGENCY_CREATE
+            if (binding.method, binding.path) in ACTIVATION_ROUTES
+            else Permission.PLATFORM_TASK_MANAGE
+        )
+        assert binding.permission == expected
+    # Both are platform permissions: no agency role holds them.
+    assert {Permission.AGENCY_CREATE, Permission.PLATFORM_TASK_MANAGE} <= set(PLATFORM_PERMISSIONS)
     collected = {(b.method, b.path) for b in collect_bindings()}
     assert collected >= PLATFORM_ROUTES
 
@@ -187,5 +201,5 @@ async def test_the_boot_check_fails_when_an_email_route_loses_its_binding(
         )
     )
     await db_session.commit()
-    with pytest.raises(StartupError, match="email-module"):
+    with pytest.raises(StartupError, match="email"):
         await assert_all_routes_bound(app, db_session)

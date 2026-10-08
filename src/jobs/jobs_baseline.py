@@ -2,12 +2,14 @@
 and scripts/seed.py (step 14). Create-if-absent, NEVER overwrite a
 runtime edit (same rule as the system roles)."""
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.job import JobConfig
 
-DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
+DEFAULT_JOB_CONFIGS: list[dict[str, Any]] = [
     {
         "job_id": "dispatch_reminders",
         "name": "Dispatch approved reminders",
@@ -64,6 +66,16 @@ DEFAULT_JOB_CONFIGS: list[dict[str, str]] = [
         # a dead invitation's seat comes back (at most ~1 h, well within
         # the next-cycle décrue it feeds).
         "cron_expression": "30 * * * *",
+    },
+    {
+        "job_id": "email_sync",
+        "name": "Email Sync (Lemlist)",
+        # Every 10 minutes, Prism's cadence; the webhook brings events in
+        # between. Seeded DISABLED (JobConfig.is_enabled defaults to True):
+        # it is switched on at go-live (PATCH /jobs/email_sync), never by a
+        # deploy. Without real effects a run is skipped and calls nothing.
+        "cron_expression": "*/10 * * * *",
+        "is_enabled": False,
     },
 ]
 

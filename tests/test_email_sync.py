@@ -375,11 +375,13 @@ async def test_a_campaign_not_active_is_created_paused_and_synced_in_batches(
     await set_status(client, email_world.headers, cid, "PAUSED")
     synced = await _synced(client, email_world, cid)
     # However Lemlist creates it, it mirrors Nidria from the start: paused.
+    # Then its events are read, as on every sync (none yet).
     assert fake_email_provider.names() == [
         "create_campaign",
         "pause_campaign",
         "create_step",
         "create_step",
+        "sync_campaign",
     ]
     assert synced["campaign_created"] is True
     await set_status(client, email_world.headers, cid, "ACTIVE")

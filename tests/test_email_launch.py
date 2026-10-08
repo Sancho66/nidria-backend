@@ -152,6 +152,8 @@ def ai_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         return {key: "Une phrase." for key, _, _ in variables}, {}
 
     monkeypatch.setattr(EmailManager, "generate_ai_values", generated)
+    # AI generation configured: an AI passage is written at launch (a warning).
+    monkeypatch.setattr(EmailManager, "ai_configured", lambda self: True)
     return calls
 
 
@@ -316,6 +318,60 @@ async def test_readiness_reads_the_templates_and_the_campaign_gates(
     }
     assert (closed["launched_today"], closed["remaining_today"], closed["launched"]) == (1, 0, 1)
     assert members
+
+
+async def test_an_ai_passage_blocks_the_launch_page_and_the_launch_alike_without_ai(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    fake_email_provider: FakeProvider,
+    make_client_profile: MakeClientProfile,
+) -> None:
+    """Adjustment b (decision A14): AI generation is not configured, and the
+    first email uses `{{ai.hook}}`. The Launch page shows the lead BLOCKED
+    by AI_AT_LAUNCH (`reason: ai_not_configured`), and the Launch refuses it
+    with that very code, before any call to Lemlist."""
+    cid, _, members = await ready_campaign(
+        client, db_session, email_world, make_client_profile, ("Ana Lopez",)
+    )
+    steps = (await client.get(f"/email/campaigns/{cid}/steps", headers=email_world.headers)).json()
+    first = steps[0]["id"]
+    created = await client.post(
+        f"/email/steps/{first}/ai-variables",
+        json={"key": "hook", "prompt_template": "Une phrase sur {{client.first_name}}."},
+        headers=email_world.headers,
+    )
+    assert created.status_code == 201, created.text
+    await client.patch(
+        f"/email/steps/{first}",
+        json={"body_template": "Bonjour {{client.first_name}},\n\n{{ai.hook}}"},
+        headers=email_world.headers,
+    )
+    readiness = await readiness_of(client, email_world.headers, cid)
+    ana = by_name(readiness)["Ana Lopez"]
+    assert ana["ready"] is False
+    [issue] = [i for i in ana["issues"] if i["code"] == "AI_AT_LAUNCH"]
+    assert issue == {
+        "code": "AI_AT_LAUNCH",
+        "params": {"reason": "ai_not_configured", "position": 1},
+        "blocking": True,
+    }
+    assert (readiness["ready"], readiness["blocked"]) == (0, 1)
+
+    fake_email_provider.ops.clear()
+    launched = (await launch_via_api(client, email_world.headers, cid)).json()
+    assert (launched["members_pushed"], launched["members_failed"]) == (0, 1)
+    [failure] = launched["failures"]
+    assert (failure["code"], failure["params"]) == (
+        "AI_AT_LAUNCH",
+        {"reason": "ai_not_configured", "position": 1},
+    )
+    assert {"add_contact", "set_step_content", "launch_contact"}.isdisjoint(
+        fake_email_provider.names()
+    )
+    rows = {m["id"]: m for m in await members_of(db_session, cid)}
+    assert rows[members["Ana Lopez"]]["status"] == "EMAIL_READY"
+    assert rows[members["Ana Lopez"]]["status_reason"] == "AI_AT_LAUNCH"
 
 
 # ── launching: selected, all eligible, idempotent, partial ───────────────────
@@ -630,6 +686,7 @@ async def test_a_plan_refusal_stops_the_batch_and_the_next_launch_takes_the_lead
         "update_campaign",
         "update_step",
         "update_step",
+        "sync_campaign",
         "launch_contact",
         "start_campaign",
     ]

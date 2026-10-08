@@ -6,7 +6,10 @@ a recipient's own row (`readiness.load_client_facts`). Phase 3: the agent
 routes' queries, ported from Prism's `email_repository.py` (reference commit
 629a2b0), then (3B) the launch queue, the add wizard's lists, the
 performance and outreach figures (all computed in SQL) and the deletion
-hooks' reads.
+hooks' reads. Phase 4: the provider's events (stored once,
+`uq_email_provider_event`), the memberships and messages they reach, and
+the Email Sync job's reads. The webhook and the job have no agent: they find
+a campaign by its provider id, and the agency is the campaign's (rule N1).
 
 The wizard reuses the Clients and Companies pages' own predicates
 (`ClientProfilesRepository.filter_predicates`,
@@ -40,6 +43,7 @@ from sqlalchemy import (
     not_,
     or_,
     select,
+    text,
     union,
     update,
 )
@@ -1585,5 +1589,217 @@ class EmailRepository:
                 EmailCampaignMember.removed_at.is_(None),
             )
             .order_by(EmailCampaignMember.id)
+        )
+        return list(rows.scalars().all())
+
+    # --- the provider's events (phase 4: one ingestion) ----------------------------
+
+    async def store_event(self, values: dict[str, Any]) -> bool:
+        """Insert a provider event once: a second delivery of the same event
+        (webhook, job or Sync) is a no-op (`uq_email_provider_event`). True
+        when this call stored it."""
+        result = await self.db.execute(
+            insert(EmailProviderEvent)
+            .values(**values)
+            .on_conflict_do_nothing(constraint="uq_email_provider_event")
+            .returning(EmailProviderEvent.id)
+        )
+        return result.scalar() is not None
+
+    async def campaign_by_provider_id(
+        self, provider: str, provider_campaign_id: str
+    ) -> EmailCampaign | None:
+        """The campaign Lemlist knows by this id, whatever its agency (the
+        webhook and the job have no agent: the agency is the campaign's,
+        rule N1), steps loaded. A dry-run id never matches: such a campaign
+        does not exist at the provider."""
+        stmt = (
+            self._with_steps()
+            .where(
+                EmailCampaign.provider == provider,
+                EmailCampaign.provider_campaign_id == provider_campaign_id,
+                real_provider_campaign(),
+            )
+            .order_by(EmailCampaign.created_at, EmailCampaign.id)
+            .execution_options(populate_existing=True)
+        )
+        return (await self.db.execute(stmt)).scalars().first()
+
+    async def member_for_event(
+        self, campaign_id: uuid.UUID, lead_id: str | None, email: str | None
+    ) -> EmailCampaignMember | None:
+        """The membership an event is about, locked (the webhook and the job
+        may apply events to the same one at once): by its lead id, else by
+        the client's EFFECTIVE address (rule N2), an open membership first."""
+        if lead_id:
+            found = (
+                (
+                    await self.db.execute(
+                        select(EmailCampaignMember)
+                        .where(
+                            EmailCampaignMember.campaign_id == campaign_id,
+                            EmailCampaignMember.provider_lead_id == lead_id,
+                        )
+                        .order_by(EmailCampaignMember.added_at.desc(), EmailCampaignMember.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if found is not None:
+                return found
+        address = (email or "").strip().lower()
+        if not address:
+            return None
+        return (
+            (
+                await self.db.execute(
+                    select(EmailCampaignMember)
+                    .join(ClientProfile, ClientProfile.id == EmailCampaignMember.client_profile_id)
+                    .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+                    .where(
+                        EmailCampaignMember.campaign_id == campaign_id,
+                        func.lower(effective_email_sql()) == address,
+                    )
+                    .order_by(
+                        EmailCampaignMember.removed_at.is_(None).desc(),
+                        EmailCampaignMember.added_at.desc(),
+                        EmailCampaignMember.id,
+                    )
+                    .with_for_update(of=EmailCampaignMember)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    async def member_locked(self, member_id: uuid.UUID) -> EmailCampaignMember | None:
+        """One membership, locked and fresh (a pause state re-read)."""
+        return (
+            await self.db.execute(
+                select(EmailCampaignMember)
+                .where(EmailCampaignMember.id == member_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
+    # --- the Email Sync job's reconciliation (phase 4) ------------------------------
+
+    async def enabled_modules(self) -> list[AgencyEmailModule]:
+        """Every agency whose own switch is on (the job then keeps those
+        bound to the team the platform key opens)."""
+        rows = await self.db.execute(
+            select(AgencyEmailModule)
+            .where(AgencyEmailModule.enabled.is_(True))
+            .order_by(AgencyEmailModule.agency_id)
+        )
+        return list(rows.scalars().all())
+
+    async def reconcilable_campaigns(self, agency_id: uuid.UUID) -> list[EmailCampaign]:
+        """The agency's campaigns the job reads: at Lemlist for real, and
+        still sending or able to receive replies (ACTIVE or PAUSED). An
+        archived campaign is left to the webhook."""
+        rows = await self.db.execute(
+            select(EmailCampaign)
+            .where(
+                EmailCampaign.agency_id == agency_id,
+                EmailCampaign.status.in_(("ACTIVE", "PAUSED")),
+                real_provider_campaign(),
+            )
+            .order_by(EmailCampaign.created_at, EmailCampaign.id)
+        )
+        return list(rows.scalars().all())
+
+    async def dry_run_campaign_count(self, agency_id: uuid.UUID) -> int:
+        """ACTIVE or PAUSED campaigns of the agency that only a dry run made."""
+        value = await self.db.scalar(
+            select(func.count())
+            .select_from(EmailCampaign)
+            .where(
+                EmailCampaign.agency_id == agency_id,
+                EmailCampaign.status.in_(("ACTIVE", "PAUSED")),
+                _dry_run_id(EmailCampaign.provider_campaign_id),
+            )
+        )
+        return int(value or 0)
+
+    async def at_provider(self, campaign_id: uuid.UUID) -> list[EmailCampaignMember]:
+        """The memberships whose lead Lemlist holds (dry-run leads and
+        removed memberships excluded), locked."""
+        rows = await self.db.execute(
+            select(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.provider_lead_id.is_not(None),
+                EmailCampaignMember.provider_lead_id != "",
+                not_(_dry_run_id(EmailCampaignMember.provider_lead_id)),
+                EmailCampaignMember.removed_at.is_(None),
+            )
+            .order_by(EmailCampaignMember.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return list(rows.scalars().all())
+
+    # --- messages (phase 4) ------------------------------------------------------------
+
+    async def outbound_message(self, values: dict[str, Any]) -> EmailMessage:
+        """The membership's email at one step, created the first time an
+        event mentions it, then locked: counts are added to, never
+        overwritten (`uq_email_message_outbound_step`)."""
+        await self.db.execute(
+            insert(EmailMessage)
+            .values(**values)
+            .on_conflict_do_nothing(
+                index_elements=["campaign_member_id", "step_position"],
+                # Literal: PostgreSQL infers a partial index from its very
+                # predicate, never from bound parameters.
+                index_where=text("direction = 'OUTBOUND' AND step_position IS NOT NULL"),
+            )
+        )
+        return (
+            await self.db.execute(
+                select(EmailMessage)
+                .where(
+                    EmailMessage.campaign_member_id == values["campaign_member_id"],
+                    EmailMessage.direction == "OUTBOUND",
+                    EmailMessage.step_position == values["step_position"],
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+
+    async def insert_message(self, values: dict[str, Any]) -> bool:
+        """Insert a message once per provider message id
+        (`uq_email_message_provider_id`); False when it exists."""
+        result = await self.db.execute(
+            insert(EmailMessage)
+            .values(**values)
+            .on_conflict_do_nothing(
+                index_elements=["provider", "provider_message_id"],
+                index_where=text("provider_message_id IS NOT NULL"),
+            )
+            .returning(EmailMessage.id)
+        )
+        return result.scalar() is not None
+
+    async def pending_replies(self, campaign_id: uuid.UUID, limit: int) -> list[EmailMessage]:
+        """Replies of the campaign whose content was not read from the
+        provider yet, newest first, locked."""
+        rows = await self.db.execute(
+            select(EmailMessage)
+            .where(
+                EmailMessage.campaign_id == campaign_id,
+                EmailMessage.content_state == "PENDING",
+            )
+            .order_by(EmailMessage.received_at.desc().nulls_last(), EmailMessage.id)
+            .limit(limit)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return list(rows.scalars().all())

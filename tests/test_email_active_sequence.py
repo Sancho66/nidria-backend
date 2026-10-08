@@ -981,11 +981,13 @@ async def test_an_unfinished_step_waits_and_a_resync_changes_nothing(
     assert {"create_step", "set_step_content", "pause_contact", "pause_campaign"}.isdisjoint(
         fake_email_provider.names()
     )
+    # The events are read (phase 4's ingestion), nothing else changes.
     assert fake_email_provider.names() == [
         "update_campaign",
         "update_step",
         "update_step",
         "update_step",
+        "sync_campaign",
         "start_campaign",
     ]
 

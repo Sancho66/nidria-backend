@@ -1,10 +1,7 @@
-"""Nidria and Lemlist: the manual Sync and the Launch (phase 3B).
+"""Nidria and Lemlist: the manual Sync and the Launch (phase 3B), the
+provider's events, the reconciliation and the webhook (phase 4).
 
-Ported from Prism's `email_sync.py` (reference commit 629a2b0), its Sync and
-Launch part. The ingestion of the provider's events, the webhook and the
-platform job (Prism's `reconcile_campaign`, `ingest`, `webhook`) are phase
-4; this module keeps their entry point (`pull_events`, called where Prism's
-sync reads them) and reads nothing from them yet.
+Ported from Prism's `email_sync.py` (reference commit 629a2b0).
 
 `sync_campaign`, the manual Sync, in this order, each part idempotent:
 1. the campaign at the provider: created once (the Lemlist team the key
@@ -13,7 +10,9 @@ sync reads them) and reads nothing from them yet.
    sender chosen in Nidria, stop on reply; and one positional step per
    Nidria step (a step the provider holds beyond the last one Nidria knows,
    parked or left by a lost answer, is reused rather than added);
-2. the provider's events (phase 4's entry point, `pull_events`);
+2. the provider's events since the campaign's checkpoint (`pull_events`,
+   the same ingestion as the webhook and the job), so what was already sent
+   is known before anything is pushed again;
 3. for a sequence in use (spec 8.2, Prism's exact order): the campaign is
    paused at Lemlist, a step added in Nidria takes a spare step at the end
    or a new one, each running lead's OWN email for it is pushed before
@@ -41,6 +40,41 @@ taken up again by the next Launch.
 Turning real effects on drops what the dry run simulated (its `dry_` ids),
 and the leads it "launched" are READY again: nothing was sent to them.
 
+`reconcile_campaign`, the Email Sync job's (`sync_job.py`), per campaign of
+an agency bound to the team the platform key opens: READ ONLY toward the
+provider. The campaign's state there (`provider_status`, its metadata
+merged: Nidria's own keys such as `team_id` are kept), its leads (a pause
+or resume done in Lemlist's app mirrored, an unsubscribe applied, a lead
+absent from a complete listing flagged `missing`, never ended), the
+activities since the checkpoint (overlapping it by an hour, by a day on the
+first read of each UTC day), and the content of new replies from the
+contact's inbox. It pushes nothing, launches nobody, pauses nothing at the
+provider and generates no AI value; name, status, settings, steps and
+contents stay Nidria's.
+
+`ingest`, the ONE ingestion of the webhook, the job and the Sync: the same
+normalized events, each stored once (`uq_email_provider_event`), its agency
+the campaign's (rule N1), the webhook's `secret` never kept; then applied
+- to the membership: SENT starts it and freezes that step's render, and
+  the last step sent completes it; REPLIED, BOUNCED and UNSUBSCRIBED end
+  the sequence; the last time of each kind. BOUNCED and UNSUBSCRIBED reach
+  a removed membership too, its `removed_at` kept (decision A1, rule N6),
+  and nothing ever lifts them;
+- to the email messages: one OUTBOUND message per step (opens and clicks
+  counted on it, the first fixing `first_*`), one INBOUND message per
+  reply, whose text comes ONLY from the provider's inbox (`GET
+  /inbox/{contactId}`), read afterwards by the job, or marked UNAVAILABLE
+  after three reads without it.
+A reply Lemlist attributes to a third party (`isThirdPartyReply`) matches
+nothing and is ignored. No business status is written (no
+`status_override`, nothing the derived prospect / client status reads), and
+nothing in `activity_log` (rule N7).
+
+`webhook`: Lemlist's activity webhook (`POST /webhooks/lemlist`, PUBLIC):
+the body's `secret` against EMAIL_WEBHOOK_SECRET (`hmac.compare_digest`),
+then the same ingestion. It depends on the env only, never on an agency's
+switch: what left converges.
+
 Every reason, note and failure is a code with named params (decision A12):
 see `email_manager`'s docstring for the `status_reason` codes, and
 `email_schema.SyncNoteCode` / `SyncErrorCode` / `EmailLaunchFailure`.
@@ -49,23 +83,37 @@ see `email_manager`'s docstring for the `status_reason` codes, and
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+import hmac
+import logging
+import uuid
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.email_campaign import (
+    BLOCKING_MEMBER_STATUSES,
+    TERMINAL_MEMBER_STATUSES,
     EmailCampaign,
     EmailCampaignMember,
     EmailCampaignStep,
     EmailMemberRender,
+    EmailMessage,
 )
-from src.core.exceptions import BadRequestError, ConflictError, NidriaError
+from src.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NidriaError,
+    NotFoundError,
+)
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import (
+    STATUS_REASON_PARAMS_KEY,
     Access,
     EmailManager,
     People,
@@ -88,7 +136,10 @@ from src.email_campaigns.email_schema import (
     EmailSyncNote,
     EmailSyncRequest,
     EmailSyncResult,
+    EmailWebhookAck,
 )
+from src.email_campaigns.flags import is_real_provider_id
+from src.email_campaigns.html_text import html_to_text
 from src.email_campaigns.lemlist_team import CAMPAIGN_TEAM_KEY
 from src.email_campaigns.providers.base import (
     CampaignRef,
@@ -96,11 +147,15 @@ from src.email_campaigns.providers.base import (
     EmailProvider,
     LeadSpec,
     ProviderError,
+    ProviderEvent,
+    ProviderLeadListing,
+    ProviderMessage,
     ScheduleSpec,
     StepContent,
     StepSpec,
 )
 from src.email_campaigns.providers.dry_run import is_dry_run_id
+from src.email_campaigns.providers.lemlist import normalize_activity
 from src.email_campaigns.readiness import (
     ARCHIVED,
     EXTERNAL_EFFECTS_OFF,
@@ -116,6 +171,7 @@ from src.email_campaigns.readiness import (
     render_errors,
     template_issues,
 )
+from src.email_campaigns.readiness import team_mismatch as on_other_team
 from src.email_campaigns.renderer import EmailTemplateRenderer, body_to_html, tokens_in
 from src.email_campaigns.schedule import delay_days
 from src.email_campaigns.variables import client_identity
@@ -132,10 +188,60 @@ SKIP_ALREADY_LAUNCHED = "already_launched"
 SKIP_NOT_READY = "not_ready"
 #: The `email.*` code of a launch Lemlist's plan refuses: the batch stops.
 PLAN_REFUSED_CODE = "email.provider_plan_required"
+#: `status_reason` codes the provider's events and the reconciliation write
+#: (see `email_manager`'s docstring).
+REASON_PAUSED_AT_PROVIDER = "paused_at_provider"
+REASON_MISSING_AT_PROVIDER = "missing_at_provider"
+REASON_UNSUBSCRIBED_AT_PROVIDER = "unsubscribed_at_provider"
+REASON_BOUNCED = "bounced"
+REASON_SEND_FAILED = "send_failed"
+#: A lead absent from the provider's complete listing, and a campaign the
+#: provider no longer has: their `provider_status`.
+MISSING = "missing"
+#: A reconciliation that failed on something other than the provider.
+UNEXPECTED_CODE = "internal_error"
 
 _RUNNING = ("EMAIL_QUEUED", "EMAIL_ACTIVE")
+_TERMINAL = frozenset(TERMINAL_MEMBER_STATUSES)
+_BLOCKING = frozenset(BLOCKING_MEMBER_STATUSES)
+_UNSUBSCRIBED = "EMAIL_UNSUBSCRIBED"
+#: Activities are read again over this window behind the checkpoint, and
+#: over a day on the first read of each UTC day: late-indexed activities are
+#: not missed, and storing is idempotent (Prism's values).
+ACTIVITY_OVERLAP = timedelta(hours=1)
+DAILY_OVERLAP = timedelta(days=1)
+#: Events about one step's email, aggregated on its OUTBOUND message.
+_OUTBOUND_EVENTS = frozenset({"SENT", "OPENED", "CLICKED", "BOUNCED", "REPLIED"})
+#: An outbound message keeps its furthest state (QUEUED is never stored).
+_MESSAGE_RANK = {
+    "QUEUED": 0,
+    "SENT": 1,
+    "DELIVERED": 2,
+    "BOUNCED": 3,
+    "OPENED": 4,
+    "CLICKED": 5,
+    "REPLIED": 6,
+}
+#: Replies whose content is read per campaign and per run, and how many
+#: reads of an inbox that does not have it before it is UNAVAILABLE.
+REPLIES_PER_RUN = 50
+CONTENT_ATTEMPTS = 3
+#: A reply found in the inbox under another id still matches its event when
+#: they are this close in time.
+REPLY_MATCH_WINDOW = timedelta(minutes=10)
+#: A reply's HTML kept, at most (its text is capped by `html_text`: 50,000).
+MAX_REPLY_HTML = 500_000
+#: The provider's words kept in a `status_reason` param, at most.
+_MAX_REASON = 500
+#: The keys Nidria itself keeps in a provider metadata, never overwritten by
+#: what the provider says (a membership's reason params, a campaign's team).
+_MEMBER_OWN_KEYS = (STATUS_REASON_PARAMS_KEY,)
+_CAMPAIGN_OWN_KEYS = (CAMPAIGN_TEAM_KEY,)
+
+logger = logging.getLogger(__name__)
 
 Params = dict[str, str | int]
+LogFn = Callable[[str], None]
 
 
 def _scalars(params: Mapping[str, Any]) -> Params:
@@ -205,6 +311,161 @@ class PushFailure:
     params: Params = field(default_factory=dict)
     #: Stop handing leads over in this launch (the plan refuses launches).
     stop: bool = False
+
+
+@dataclass
+class IngestStats:
+    """What one ingestion did with the events it was given."""
+
+    stored: int = 0
+    duplicates: int = 0
+    #: Not Nidria's: no campaign id, a third party's reply, a campaign Nidria
+    #: does not run, or another campaign than the one being read.
+    ignored: int = 0
+    #: Stored for a known campaign whose lead matches no membership.
+    unmatched: int = 0
+    #: New events applied, per type.
+    by_type: Counter[str] = field(default_factory=Counter)
+    #: Memberships whose pause state the provider changed: re-read from it.
+    pause_changes: set[uuid.UUID] = field(default_factory=set)
+
+
+@dataclass
+class CampaignReconcile:
+    """What the Email Sync job did for one campaign. `errors` are codes."""
+
+    campaign_id: uuid.UUID
+    contacts: int = 0
+    events_new: int = 0
+    events_duplicate: int = 0
+    by_type: Counter[str] = field(default_factory=Counter)
+    reply_contents: int = 0
+    leads_missing: int = 0
+    unsubscribed: int = 0
+    pause_changes: int = 0
+    #: Nothing of this run was kept for the campaign (its checkpoint stays).
+    failed: bool = False
+    #: Not read at all: a campaign of another Lemlist team (read only, N4).
+    skipped: bool = False
+    errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AgencyReconcile:
+    """What the Email Sync job did for one agency."""
+
+    agency_id: uuid.UUID
+    campaigns: list[CampaignReconcile] = field(default_factory=list)
+    dry_run_campaigns: int = 0
+    #: Why nothing of the agency was read (a code), if so.
+    error: str | None = None
+
+
+def activity_since(checkpoint: datetime | None, now: datetime) -> datetime | None:
+    """Where to read a campaign's activities from: everything the first
+    time, then the checkpoint minus the overlap: a day's on the first read
+    of a UTC day, an hour's otherwise."""
+    if checkpoint is None:
+        return None
+    first_today = checkpoint.astimezone(UTC).date() < now.astimezone(UTC).date()
+    return checkpoint - (DAILY_OVERLAP if first_today else ACTIVITY_OVERLAP)
+
+
+def _earlier(current: datetime | None, candidate: datetime) -> datetime:
+    return candidate if current is None or candidate < current else current
+
+
+def _later(current: datetime | None, candidate: datetime) -> datetime:
+    return candidate if current is None or candidate > current else current
+
+
+def _third_party(payload: Mapping[str, Any]) -> bool:
+    """A reply Lemlist attributes to someone else than the lead: it belongs
+    to no lead of Nidria's (spec 8.9)."""
+    return payload.get("isThirdPartyReply") is True
+
+
+def _reason_params(reason: str | None) -> Params:
+    return {"reason": reason[:_MAX_REASON]} if reason else {}
+
+
+def merged_metadata(
+    current: Mapping[str, Any] | None, said: Mapping[str, Any], own: Sequence[str]
+) -> dict[str, Any]:
+    """The provider's word on an object, with Nidria's own keys (`own`)
+    kept as they are: what the provider says replaces what it said before,
+    never what Nidria noted."""
+    kept = {key: value for key, value in (current or {}).items() if key in own}
+    return {**{k: v for k, v in said.items() if k not in own}, **kept}
+
+
+def set_paused(member: EmailCampaignMember, paused: bool) -> bool:
+    """Mirror the provider's pause state onto a membership still running;
+    True when it changed. Nidria's own pause goes through the provider
+    first, so the two only differ when someone paused or resumed in
+    Lemlist's app. A pause seen there is no agent's."""
+    if paused and member.status in ("EMAIL_READY", "EMAIL_QUEUED", "EMAIL_ACTIVE"):
+        member.status = "EMAIL_PAUSED"
+        member.paused_at = datetime.now(UTC)
+        member.paused_by_agent_id = None
+        set_status_reason(member, REASON_PAUSED_AT_PROVIDER)
+        return True
+    if not paused and member.status == "EMAIL_PAUSED":
+        member.status = "EMAIL_ACTIVE" if member.started_at else "EMAIL_QUEUED"
+        member.paused_at = None
+        member.paused_by_agent_id = None
+        set_status_reason(member, None)
+        return True
+    return False
+
+
+def _content_missed(message: EmailMessage) -> None:
+    message.content_attempts = (message.content_attempts or 0) + 1
+    if message.content_attempts >= CONTENT_ATTEMPTS:
+        message.content_state = "UNAVAILABLE"
+
+
+def _matching_reply(
+    message: EmailMessage, replies: Sequence[ProviderMessage], campaign_id: str | None
+) -> ProviderMessage | None:
+    """The inbox reply a REPLIED event announced: the same id (Lemlist gives
+    the inbox message its activity's id), else the closest reply of the
+    campaign received within minutes of it. A third party's reply never
+    matches."""
+    own = [r for r in replies if not _third_party(r.payload)]
+    for reply in own:
+        if reply.message_id == message.provider_message_id:
+            return reply
+    received = message.received_at
+    if received is None:
+        return None
+    candidates = [
+        r
+        for r in own
+        if r.campaign_id in (None, campaign_id)
+        and abs(r.occurred_at - received) <= REPLY_MATCH_WINDOW
+    ]
+    return min(candidates, key=lambda r: abs(r.occurred_at - received), default=None)
+
+
+def describe(report: CampaignReconcile) -> str:
+    """One log line of the job for a campaign: ids, counts and codes only
+    (no em dash, no sentence a translation would need)."""
+    if report.skipped:
+        return f"campaign {report.campaign_id}: skipped (another Lemlist team)"
+    if report.failed:
+        return f"campaign {report.campaign_id}: failed ({', '.join(report.errors) or 'error'})"
+    counts = ", ".join(f"{k.lower()}={v}" for k, v in sorted(report.by_type.items())) or "none"
+    line = (
+        f"campaign {report.campaign_id}: {report.contacts} leads, {report.events_new} new "
+        f"events ({counts}), {report.events_duplicate} already stored, "
+        f"{report.reply_contents} reply contents"
+    )
+    if report.leads_missing:
+        line += f", {report.leads_missing} missing at the provider"
+    if report.errors:
+        line += f", errors: {', '.join(report.errors)}"
+    return line
 
 
 def campaign_spec(campaign: EmailCampaign) -> CampaignSpec:
@@ -315,12 +576,503 @@ class EmailSyncManager:
         assert isinstance(result, EmailLaunchResult)
         return result
 
-    async def pull_events(self, campaign: EmailCampaign, ref: CampaignRef) -> int:
-        """Read and store the provider's events of the campaign since its
-        checkpoint, then apply them: phase 4's entry point (the same
-        ingestion as the webhook and the job). Until then, nothing is read
-        and nothing is asked of the provider."""
-        return 0
+    async def pull_events(
+        self, provider: EmailProvider, campaign: EmailCampaign, ref: CampaignRef
+    ) -> IngestStats:
+        """The campaign's events since its checkpoint (with the overlap),
+        through the one ingestion; its own events only. The checkpoint moves
+        only when the provider is real (a dry run reads nothing). Not
+        committed: the caller's transaction holds it."""
+        started = datetime.now(UTC)
+        since = activity_since(campaign.last_activity_sync_at, started)
+        events = await asyncio.to_thread(provider.sync_campaign, ref, since)
+        stats = await self.ingest(
+            provider.name, events, commit=False, campaign=campaign, provider=provider
+        )
+        if provider.external:
+            campaign.last_activity_sync_at = started
+        return stats
+
+    # ── the provider's events: one ingestion (spec 8.9) ──────────────────
+
+    async def ingest(
+        self,
+        provider_name: str,
+        events: Sequence[ProviderEvent],
+        *,
+        commit: bool = True,
+        campaign: EmailCampaign | None = None,
+        provider: EmailProvider | None = None,
+    ) -> IngestStats:
+        """Store and apply provider events, in time order, each once. An
+        event of a campaign Nidria does not run is neither stored nor
+        applied; with `campaign` (a campaign's own read), an event of any
+        other campaign (another agency's included) is ignored as well.
+        `provider`: the one that read them, to re-read a pause state; the
+        webhook has none and asks the campaign's agency's own."""
+        stats = IngestStats()
+        found: dict[str, EmailCampaign | None] = {}
+        for event in sorted(events, key=lambda e: e.occurred_at):
+            if not event.campaign_id or _third_party(event.payload):
+                stats.ignored += 1
+                continue
+            target: EmailCampaign | None
+            if campaign is not None:
+                target = campaign if event.campaign_id == campaign.provider_campaign_id else None
+            else:
+                if event.campaign_id not in found:
+                    found[event.campaign_id] = await self.repo.campaign_by_provider_id(
+                        provider_name, event.campaign_id
+                    )
+                target = found[event.campaign_id]
+            if target is None:
+                stats.ignored += 1
+                continue
+            member = await self.repo.member_for_event(target.id, event.lead_id, event.email)
+            stored = await self.repo.store_event(
+                {
+                    "provider": provider_name,
+                    "provider_event_id": event.event_id,
+                    "agency_id": target.agency_id,
+                    "campaign_id": target.id,
+                    "campaign_member_id": member.id if member is not None else None,
+                    "type": event.type,
+                    "provider_type": event.provider_type,
+                    "step_position": event.step_position,
+                    # The webhook's secret is never kept, whoever passes it.
+                    "payload": {k: v for k, v in event.payload.items() if k != "secret"},
+                    "occurred_at": event.occurred_at,
+                }
+            )
+            if not stored:
+                stats.duplicates += 1
+                continue
+            stats.stored += 1
+            if member is None:
+                stats.unmatched += 1
+                continue
+            stats.by_type[event.type] += 1
+            await self._apply(target, member, event, stats)
+        await self._reconcile_pauses(stats, provider)
+        if commit:
+            await self.db.commit()
+        return stats
+
+    async def _apply(
+        self,
+        campaign: EmailCampaign,
+        member: EmailCampaignMember,
+        event: ProviderEvent,
+        stats: IngestStats,
+    ) -> None:
+        """One new event on its membership and messages. Never a business
+        status, never `activity_log` (rules N7, spec 8.9)."""
+        at = event.occurred_at
+        if member.last_event_at is None or at >= member.last_event_at:
+            member.last_event_at = at
+            member.last_event_type = event.type
+        contact = event.payload.get("contactId")
+        if not member.provider_contact_id and isinstance(contact, str) and contact:
+            # The inbox, where reply contents are, is keyed by it.
+            member.provider_contact_id = contact
+        if event.type == "SENT":
+            member.last_sent_at = _later(member.last_sent_at, at)
+        elif event.type == "OPENED":
+            member.last_opened_at = _later(member.last_opened_at, at)
+        elif event.type == "CLICKED":
+            member.last_clicked_at = _later(member.last_clicked_at, at)
+        elif event.type == "REPLIED":
+            member.last_replied_at = _later(member.last_replied_at, at)
+        render: EmailMemberRender | None = None
+        if event.step_position is not None:
+            render = (await self.repo.renders(member.id)).get(event.step_position)
+        removed = member.removed_at is not None
+        ended = removed or member.status in _TERMINAL
+
+        if event.type == "SENT":
+            if render is not None and render.sent_at is None:
+                render.sent_at = at
+            if not ended:
+                member.started_at = member.started_at or at
+                if member.status in ("EMAIL_READY", "EMAIL_QUEUED"):
+                    member.status = "EMAIL_ACTIVE"
+                if event.step_position is not None:
+                    member.current_step = max(member.current_step or 0, event.step_position)
+                    # The last step went out: the sequence is over (a reply
+                    # would still count).
+                    if (
+                        event.step_position >= len(campaign.steps)
+                        and member.status == "EMAIL_ACTIVE"
+                    ):
+                        member.status = "EMAIL_COMPLETED"
+        elif event.type == "REPLIED":
+            # The provider stops the sequence on a reply (stopOnEmailReplied).
+            # A removed membership stays removed, and a block is never lifted.
+            if not removed and member.status not in _BLOCKING:
+                member.status = "EMAIL_REPLIED"
+                set_status_reason(member, None)
+        elif event.type == "BOUNCED":
+            # Decision A1: a removed membership takes it too, `removed_at`
+            # kept. An unsubscribe outranks a bounce.
+            if member.status != _UNSUBSCRIBED:
+                member.status = "EMAIL_BOUNCED"
+            if not removed:
+                set_status_reason(member, REASON_BOUNCED, _reason_params(event.reason))
+        elif event.type == "UNSUBSCRIBED":
+            member.status = _UNSUBSCRIBED
+            if not removed:
+                set_status_reason(member, None)
+        elif event.type == "FAILED" and not ended:
+            set_status_reason(member, REASON_SEND_FAILED, _reason_params(event.reason))
+        elif event.type in ("PAUSED", "RESUMED") and not ended:
+            # Arrival order says little about the current state: it is re-read.
+            stats.pause_changes.add(member.id)
+
+        await self._record_message(campaign, member, event, render)
+
+    async def _record_message(
+        self,
+        campaign: EmailCampaign,
+        member: EmailCampaignMember,
+        event: ProviderEvent,
+        render: EmailMemberRender | None,
+    ) -> None:
+        """The event on the email messages: its step's OUTBOUND message
+        (created at its first event, its counts and times kept), and for a
+        reply an INBOUND message whose content the job reads next."""
+        at = event.occurred_at
+        thread = member.provider_contact_id
+        common: dict[str, Any] = {
+            "agency_id": member.agency_id,
+            "campaign_id": campaign.id,
+            "campaign_member_id": member.id,
+            "provider": campaign.provider,
+            "provider_thread_id": thread,
+            "type": "EMAIL",
+            "open_count": 0,
+            "click_count": 0,
+            "content_attempts": 0,
+        }
+        if event.type in _OUTBOUND_EVENTS and event.step_position is not None:
+            message = await self.repo.outbound_message(
+                {
+                    **common,
+                    "step_position": event.step_position,
+                    "campaign_step_id": render.campaign_step_id if render else None,
+                    "render_id": render.id if render else None,
+                    "direction": "OUTBOUND",
+                    "status": "SENT",
+                    "content_state": "RENDERED",
+                    "payload": {},
+                }
+            )
+            if message.render_id is None and render is not None:
+                message.render_id = render.id
+                message.campaign_step_id = render.campaign_step_id
+            if message.provider_thread_id is None and thread:
+                message.provider_thread_id = thread
+            if event.type == "SENT":
+                message.sent_at = _earlier(message.sent_at, at)
+                if message.provider_message_id is None:
+                    message.provider_message_id = event.event_id
+                if not message.payload:
+                    message.payload = {k: v for k, v in event.payload.items() if k != "secret"}
+            elif event.type == "OPENED":
+                message.open_count += 1
+                message.first_opened_at = _earlier(message.first_opened_at, at)
+                message.last_opened_at = _later(message.last_opened_at, at)
+            elif event.type == "CLICKED":
+                message.click_count += 1
+                message.last_clicked_at = _later(message.last_clicked_at, at)
+            elif event.type == "BOUNCED":
+                message.bounced_at = _earlier(message.bounced_at, at)
+            elif event.type == "REPLIED":
+                message.replied_at = _earlier(message.replied_at, at)
+            if _MESSAGE_RANK[event.type] > _MESSAGE_RANK.get(message.status, 0):
+                message.status = event.type
+        if event.type == "REPLIED":
+            subject = event.payload.get("subject")
+            await self.repo.insert_message(
+                {
+                    **common,
+                    "step_position": event.step_position,
+                    "campaign_step_id": render.campaign_step_id if render else None,
+                    "provider_message_id": event.event_id,
+                    "direction": "INBOUND",
+                    "status": "REPLIED",
+                    "subject": subject if isinstance(subject, str) else None,
+                    "content_state": "PENDING",
+                    "received_at": at,
+                    "payload": {k: v for k, v in event.payload.items() if k != "secret"},
+                }
+            )
+
+    async def _reconcile_pauses(self, stats: IngestStats, provider: EmailProvider | None) -> None:
+        """Re-read from the provider the pause state of the memberships a
+        PAUSED / RESUMED event touched. Only a real provider is asked: in a
+        dry run, or when the agency's provider cannot be chosen, the state
+        is left as it is (the job's listing or the next Sync mirrors it)."""
+        chosen: dict[uuid.UUID, EmailProvider | None] = {}
+        for member_id in sorted(stats.pause_changes):
+            member = await self.repo.member_locked(member_id)
+            if (
+                member is None
+                or not is_real_provider_id(member.provider_lead_id)
+                or member.removed_at is not None
+                or member.status in _TERMINAL
+            ):
+                continue
+            reader = provider
+            if reader is None:
+                if member.agency_id not in chosen:
+                    chosen[member.agency_id] = await self._agency_provider(member.agency_id)
+                reader = chosen[member.agency_id]
+            if reader is None or not reader.external:
+                continue
+            try:
+                lead = await asyncio.to_thread(reader.get_contact, lead_ref(member))
+            except ProviderError as exc:
+                logger.warning("pause state of membership %s not re-read: %s", member_id, exc.code)
+                continue
+            if lead is not None:
+                set_paused(member, lead.is_paused)
+
+    async def _agency_provider(self, agency_id: uuid.UUID) -> EmailProvider | None:
+        """The agency's provider for a read the webhook needs, or None when
+        it cannot be chosen (Lemlist does not say which team the key opens)."""
+        try:
+            return await self.manager.provider_of(await self.repo.get_module(agency_id))
+        except ConflictError:
+            return None
+
+    # ── the webhook (spec 7.2, 10.4) ─────────────────────────────────────
+
+    async def webhook(self, provider_name: str, payload: Any) -> EmailWebhookAck:
+        """Lemlist's activity webhook: refused (403 `email.webhook_forbidden`)
+        unless EMAIL_WEBHOOK_SECRET is set and the body's `secret` matches
+        it; then the one ingestion. Depends on the env only, never on an
+        agency's switch: the campaign, and its agency, are found by the
+        provider's campaign id, archived ones included."""
+        expected = self.manager.settings.email_webhook_secret
+        received = payload.get("secret") if isinstance(payload, dict) else None
+        if (
+            not expected
+            or not isinstance(received, str)
+            or not hmac.compare_digest(received.encode(), expected.encode())
+        ):
+            raise ForbiddenError("Webhook refused.", code="email.webhook_forbidden")
+        assert isinstance(payload, dict)
+        event = normalize_activity(payload)
+        if event is None:
+            return EmailWebhookAck(stored=False, duplicate=False, matched=False)
+        stats = await self.ingest(provider_name, [event])
+        return EmailWebhookAck(
+            stored=stats.stored == 1,
+            duplicate=stats.duplicates == 1,
+            matched=stats.stored == 1 and stats.unmatched == 0,
+        )
+
+    # ── the Email Sync job's reconciliation (spec 10.3) ──────────────────
+
+    async def reconcile_agency(
+        self, agency_id: uuid.UUID, log: LogFn | None = None
+    ) -> AgencyReconcile:
+        """Every reconcilable campaign of the agency (ACTIVE or PAUSED, at
+        Lemlist for real), one at a time, each in its own transaction: a
+        failing campaign is reported and the next one goes on."""
+        report = AgencyReconcile(agency_id)
+        try:
+            provider = await self.manager.provider_of(await self.repo.get_module(agency_id))
+        except ConflictError as exc:
+            await self.db.rollback()
+            report.error = exc.code
+            return report
+        if not provider.external:
+            # Unbound, switched off or another team since the job chose it.
+            await self.db.rollback()
+            report.error = "email.provider_unavailable"
+            return report
+        try:
+            key_team = await asyncio.to_thread(provider.team_id)
+        except ProviderError as exc:
+            await self.db.rollback()
+            report.error = provider_error_code(exc)
+            return report
+        report.dry_run_campaigns = await self.repo.dry_run_campaign_count(agency_id)
+        campaign_ids = [c.id for c in await self.repo.reconcilable_campaigns(agency_id)]
+        await self.db.rollback()
+        for campaign_id in campaign_ids:
+            try:
+                done = await self.reconcile_campaign(
+                    campaign_id, agency_id, provider=provider, key_team=key_team
+                )
+            except Exception:  # noqa: BLE001 (one campaign never stops the others)
+                logger.exception("email sync of campaign %s failed", campaign_id)
+                await self.db.rollback()
+                done = CampaignReconcile(campaign_id, failed=True, errors=[UNEXPECTED_CODE])
+                await self._record_failure(campaign_id, agency_id, UNEXPECTED_CODE)
+            report.campaigns.append(done)
+            if log is not None:
+                log(describe(done))
+        return report
+
+    async def reconcile_campaign(
+        self,
+        campaign_id: uuid.UUID,
+        agency_id: uuid.UUID,
+        *,
+        provider: EmailProvider,
+        key_team: str | None,
+    ) -> CampaignReconcile:
+        """Bring one campaign of the agency in line with the provider, in
+        one transaction: if any read fails, nothing of this run is kept for
+        it, its checkpoint stays, and the next run reads the same window
+        again. Another agency's campaign is not found (rule N1). Read only
+        toward the provider: nothing is pushed, launched or paused there."""
+        started = datetime.now(UTC)
+        campaign = await self.repo.campaign(agency_id, campaign_id, lock=True)
+        if campaign is None:
+            raise NotFoundError("Campaign not found.", code="email.campaign_not_found")
+        report = CampaignReconcile(campaign.id)
+        ref = campaign_ref(campaign)
+        if ref is None or is_dry_run_id(ref.campaign_id) or not provider.external:
+            await self.db.rollback()
+            return report
+        if on_other_team(campaign, key_team):
+            # Another team's campaign is history: its ids do not exist in the
+            # key's team, and their absence there is no deletion.
+            await self.db.rollback()
+            report.skipped = True
+            return report
+        try:
+            remote = await asyncio.to_thread(provider.read_campaign, ref)
+            if not remote.exists:
+                raise ProviderError("Lemlist no longer has this campaign.", code="CAMPAIGN_MISSING")
+            if campaign.provider_status != remote.status:
+                campaign.provider_status = remote.status
+            merged = merged_metadata(
+                campaign.provider_metadata, remote.metadata, _CAMPAIGN_OWN_KEYS
+            )
+            if campaign.provider_metadata != merged:
+                campaign.provider_metadata = merged
+            listing = await asyncio.to_thread(provider.list_contacts, ref)
+            await self._reconcile_leads(campaign, listing, report)
+            since = activity_since(campaign.last_activity_sync_at, started)
+            events = await asyncio.to_thread(provider.sync_campaign, ref, since)
+            stats = await self.ingest(
+                provider.name, events, commit=False, campaign=campaign, provider=provider
+            )
+        except ProviderError as exc:
+            await self.db.rollback()
+            # CAMPAIGN_MISSING: `email.provider_campaign_missing`.
+            code = provider_error_code(exc)
+            report.failed = True
+            report.errors.append(code)
+            fresh = await self.repo.campaign(agency_id, campaign_id, lock=True)
+            if fresh is not None:
+                fresh.last_provider_error = code
+                if exc.code == "CAMPAIGN_MISSING":
+                    fresh.provider_status = MISSING
+            await self.db.commit()
+            return report
+        report.events_new = stats.stored
+        report.events_duplicate = stats.duplicates
+        report.by_type = stats.by_type
+        campaign.last_activity_sync_at = started
+        await self._read_replies(provider, campaign, report)
+        campaign.last_provider_sync_at = datetime.now(UTC)
+        campaign.last_provider_error = report.errors[0] if report.errors else None
+        await self.db.commit()
+        return report
+
+    async def _reconcile_leads(
+        self, campaign: EmailCampaign, listing: ProviderLeadListing, report: CampaignReconcile
+    ) -> None:
+        """The provider's word on each lead it holds: its raw state kept
+        (Nidria's own keys untouched), a pause or resume done in Lemlist's
+        app mirrored, an unsubscribe applied. A lead it no longer lists is
+        flagged, never ended: absence is not a removal, and it counts only
+        from a complete listing that is not empty while leads are held."""
+        members = await self.repo.at_provider(campaign.id)
+        report.contacts = len(members)
+        remote = {lead.lead_id: lead for lead in listing.leads}
+        absence_counts = listing.complete and (bool(remote) or not members)
+        for member in members:
+            lead = remote.get(member.provider_lead_id or "")
+            if lead is None:
+                if (
+                    absence_counts
+                    and member.status not in _TERMINAL
+                    and member.provider_status != MISSING
+                ):
+                    member.provider_status = MISSING
+                    set_status_reason(member, REASON_MISSING_AT_PROVIDER)
+                    report.leads_missing += 1
+                continue
+            if member.provider_status != lead.state:
+                member.provider_status = lead.state
+            merged = merged_metadata(member.provider_metadata, lead.raw, _MEMBER_OWN_KEYS)
+            if member.provider_metadata != merged:
+                member.provider_metadata = merged
+            if member.status_reason == REASON_MISSING_AT_PROVIDER:
+                set_status_reason(member, None)
+            if not member.provider_contact_id and lead.contact_id:
+                member.provider_contact_id = lead.contact_id
+            if member.status in _TERMINAL:
+                continue
+            if lead.unsubscribed:
+                member.status = _UNSUBSCRIBED
+                set_status_reason(member, REASON_UNSUBSCRIBED_AT_PROVIDER)
+                report.unsubscribed += 1
+            elif set_paused(member, lead.is_paused):
+                report.pause_changes += 1
+
+    async def _read_replies(
+        self, provider: EmailProvider, campaign: EmailCampaign, report: CampaignReconcile
+    ) -> None:
+        """The text of new replies, from each contact's inbox thread ONLY
+        (`GET /inbox/{contactId}`), at most `REPLIES_PER_RUN` per run. A
+        failing read is retried next run; a reply the inbox does not have
+        after `CONTENT_ATTEMPTS` reads is UNAVAILABLE: its REPLIED stands."""
+        pending = await self.repo.pending_replies(campaign.id, REPLIES_PER_RUN)
+        by_member: dict[uuid.UUID, list[EmailMessage]] = {}
+        for message in pending:
+            by_member.setdefault(message.campaign_member_id, []).append(message)
+        for member_id, messages in by_member.items():
+            member = await self.db.get(EmailCampaignMember, member_id)
+            if member is None or not member.provider_contact_id:
+                for message in messages:
+                    _content_missed(message)
+                continue
+            try:
+                thread = await asyncio.to_thread(provider.get_messages, lead_ref(member))
+            except ProviderError as exc:
+                report.errors.append(provider_error_code(exc))
+                continue
+            replies = [m for m in thread if m.direction == "INBOUND"]
+            for message in messages:
+                found = _matching_reply(message, replies, campaign.provider_campaign_id)
+                if found is None or not found.body_html:
+                    _content_missed(message)
+                    continue
+                message.body_html = found.body_html[:MAX_REPLY_HTML]
+                message.body_text = html_to_text(found.body_html)
+                message.subject = message.subject or found.subject
+                message.content_state = "AVAILABLE"
+                message.payload = {**(message.payload or {}), "inbox": found.payload}
+                report.reply_contents += 1
+
+    async def _record_failure(
+        self, campaign_id: uuid.UUID, agency_id: uuid.UUID, code: str
+    ) -> None:
+        try:
+            campaign = await self.repo.campaign(agency_id, campaign_id)
+            if campaign is not None:
+                campaign.last_provider_error = code
+            await self.db.commit()
+        except Exception:  # noqa: BLE001 (the report already carries the error)
+            logger.exception("could not record the sync error of campaign %s", campaign_id)
+            await self.db.rollback()
 
     # ── the run ─────────────────────────────────────────────────────────
 
@@ -376,7 +1128,13 @@ class EmailSyncManager:
             await self.db.commit()
             raise provider_refusal(exc) from exc
 
-        result.events_ingested = await self.pull_events(campaign, ref)
+        try:
+            result.events_ingested = (await self.pull_events(provider, campaign, ref)).stored
+        except ProviderError as exc:
+            # The next sync (or the job, or the webhook) reads them again.
+            result.errors.append(
+                EmailSyncError(code="events_not_read", params={"code": provider_error_code(exc)})
+            )
 
         if in_use:
             await self._append_steps(access, provider, campaign, steps, ref, limit, result)
@@ -1081,11 +1839,17 @@ class EmailSyncManager:
                 steps,
                 renders.get(member.id, {}),
                 people.context_for(row.profile, row.account),
+                ai_configured=self.manager.ai_configured(),
             )
+            template_block = [i for i in check.issues if i.blocking and i.code != TEMPLATE]
             if blocking:
                 failure = PushFailure(blocking[0].code, dict(blocking[0].params))
             elif check.errors:
                 failure = PushFailure(TEMPLATE, dict(check.errors[0].params))
+            elif template_block:
+                # An AI passage to write while AI is not configured: refused
+                # with the code the Launch page shows, before any model call.
+                failure = PushFailure(template_block[0].code, dict(template_block[0].params))
             else:
                 pushable.append(row)
                 continue
@@ -1199,10 +1963,21 @@ class EmailSyncManager:
 
 
 __all__ = [
+    "REASON_BOUNCED",
     "REASON_KEPT_OUT",
+    "REASON_MISSING_AT_PROVIDER",
     "REASON_NEEDS_RENDER",
+    "REASON_PAUSED_AT_PROVIDER",
+    "REASON_SEND_FAILED",
+    "REASON_UNSUBSCRIBED_AT_PROVIDER",
+    "AgencyReconcile",
+    "CampaignReconcile",
     "EmailSyncManager",
+    "IngestStats",
+    "activity_since",
     "campaign_spec",
+    "describe",
     "gate_error",
     "is_outdated",
+    "set_paused",
 ]

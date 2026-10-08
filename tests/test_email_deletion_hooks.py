@@ -5,13 +5,17 @@ one fails the deletion (409 `email.provider_cleanup_failed`) and NOTHING is
 deleted, in bulk too. Lemlist's deduplication sees ended leads as well: a
 lead left behind would refuse that address in every later campaign.
 
-Nothing to do, and no call at all, in a dry run, with the module off for
-the agency, or without a real lead; another Lemlist team's lead is left
-alone (the key cannot reach it), and so is a lead a removal already took
-out there.
+Adjustment a (phase 4): with a REAL lead, the cleanup is mandatory whatever
+the module's state. When Lemlist cannot be reached for real (module off for
+the agency or on the platform, effects off, agency unbound, another team,
+team unknown) or the lead lives in another Lemlist team, the deletion is
+refused (409, params `reason`) rather than leaving the lead at Lemlist.
+Without a real lead (a dry run's, or one a removal already took out there)
+there is no call at all and nothing blocks.
 """
 
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,13 +30,21 @@ from shared.models.bulk_deletion import BulkDeletionLog
 from shared.models.client_profile import ClientProfile
 from shared.models.email_campaign import EmailCampaign
 from shared.models.rbac import Role
+from src.core.exceptions import ConflictError
 from src.email_campaigns import email_manager
-from src.email_campaigns.providers.base import ProviderError
+from src.email_campaigns.providers.base import EmailProvider, ProviderError
 from tests.email_fakes import FakeProvider
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase
 from tests.plugins.client_profile_plugin import MakeClientProfile
-from tests.plugins.email_plugin import EmailWorld, MakeEmailCampaign, MakeEmailMember
+from tests.plugins.email_plugin import (
+    FAKE_LEMLIST_KEY,
+    TEAM_A,
+    EmailWorld,
+    MakeEmailCampaign,
+    MakeEmailMember,
+    email_env,
+)
 from tests.plugins.expat_plugin import MakeExpatUser
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
@@ -101,18 +113,12 @@ async def test_deleting_a_client_record_removes_its_real_leads_at_lemlist_first(
     live = await _campaign(make_email_campaign, email_world, "cam_live")
     ended = await _campaign(make_email_campaign, email_world, "cam_ended", name="Ended")
     dry = await _campaign(make_email_campaign, email_world, "dry_cam", name="Dry")
-    old_team = await _campaign(
-        make_email_campaign, email_world, "cam_old", team="tea_old", name="Old team"
-    )
     removed = await _campaign(make_email_campaign, email_world, "cam_removed", name="Removed")
-    # Live, ended (Lemlist still holds an ended lead), a dry run's, another
-    # team's, and one a removal already took out of Lemlist.
+    # Live, ended (Lemlist still holds an ended lead), a dry run's, and one a
+    # removal already took out of Lemlist.
     await _lead(make_email_member, email_world, live, ana.id, "lea_live", status="EMAIL_PAUSED")
     await _lead(make_email_member, email_world, ended, ana.id, "lea_ended", status="EMAIL_REPLIED")
     await _lead(make_email_member, email_world, dry, ana.id, "dry_lea", status="EMAIL_COMPLETED")
-    await _lead(
-        make_email_member, email_world, old_team, ana.id, "lea_old", status="EMAIL_COMPLETED"
-    )
     await _lead(
         make_email_member,
         email_world,
@@ -150,6 +156,7 @@ async def test_a_refused_removal_deletes_nothing(
     assert response.json()["code"] == "email.provider_cleanup_failed"
     assert response.json()["params"] == {
         "client_profile_id": str(ana.id),
+        "reason": "provider_refused",
         "code": "email.provider_unreachable",
     }
     assert await _exists(db_session, ana.id)
@@ -161,8 +168,64 @@ async def test_a_refused_removal_deletes_nothing(
     assert not await _exists(db_session, ana.id)
 
 
-@pytest.mark.parametrize("why", ["dry_run", "module_off", "no_real_lead"])
-async def test_nothing_to_do_means_no_call_at_all(
+async def test_without_a_real_lead_there_is_no_call_and_nothing_blocks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    fake_email_provider: FakeProvider,
+    make_client_profile: MakeClientProfile,
+    make_email_campaign: MakeEmailCampaign,
+    make_email_member: MakeEmailMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[str] = []
+
+    def counted(_settings: Any, _row: Any) -> FakeProvider:
+        asked.append("provider_for")
+        return fake_email_provider
+
+    monkeypatch.setattr(email_manager, "provider_for", counted)
+    ana = await make_client_profile(agency_id=email_world.agency_id, email="ana@x.io")
+    dry = await _campaign(make_email_campaign, email_world, "dry_cam")
+    await _lead(make_email_member, email_world, dry, ana.id, "dry_lea")
+    gone = await _campaign(make_email_campaign, email_world, "cam_gone", name="Gone")
+    await _lead(
+        make_email_member,
+        email_world,
+        gone,
+        ana.id,
+        "lea_gone",
+        status="EMAIL_REMOVED",
+        removed_at=datetime.now(UTC),
+    )
+    # The module off, too: without a real lead, nothing is asked of anyone.
+    await db_session.execute(
+        update(AgencyEmailModule)
+        .where(AgencyEmailModule.agency_id == email_world.agency_id)
+        .values(enabled=False)
+    )
+    await db_session.commit()
+    response = await client.delete(f"/client-profiles/{ana.id}", headers=email_world.headers)
+    assert response.status_code == 204, response.text
+    assert fake_email_provider.ops == []
+    # The provider is not even chosen when there is nothing real to remove.
+    assert asked == []
+    assert not await _exists(db_session, ana.id)
+
+
+@pytest.mark.parametrize(
+    "why",
+    [
+        "module_off",
+        "master_off",
+        "effects_off",
+        "agency_unbound",
+        "team_mismatch",
+        "team_unknown",
+        "lead_of_another_team",
+    ],
+)
+async def test_a_real_lead_lemlist_cannot_reach_refuses_the_deletion(
     client: AsyncClient,
     db_session: AsyncSession,
     email_world: EmailWorld,
@@ -173,35 +236,70 @@ async def test_nothing_to_do_means_no_call_at_all(
     monkeypatch: pytest.MonkeyPatch,
     why: str,
 ) -> None:
-    asked: list[str] = []
-
-    def counted(_settings: Any, _row: Any) -> FakeProvider:
-        asked.append("provider_for")
-        return fake_email_provider
-
-    monkeypatch.setattr(email_manager, "provider_for", counted)
+    """Adjustment a: a lead that exists at Lemlist is cleaned or the record
+    stays. Whatever keeps the real provider out of reach, 409 with its
+    reason, no call, nothing deleted; the agent retries once it is back."""
     ana = await make_client_profile(agency_id=email_world.agency_id, email="ana@x.io")
-    if why == "no_real_lead":
-        dry = await _campaign(make_email_campaign, email_world, "dry_cam")
-        await _lead(make_email_member, email_world, dry, ana.id, "dry_lea")
-    else:
-        live = await _campaign(make_email_campaign, email_world, "cam_live")
-        await _lead(make_email_member, email_world, live, ana.id, "lea_ana")
-    if why == "dry_run":
-        fake_email_provider.external = False
-    elif why == "module_off":
+    team = "tea_old" if why == "lead_of_another_team" else "tea_current"
+    live = await _campaign(make_email_campaign, email_world, "cam_live", team=team)
+    await _lead(make_email_member, email_world, live, ana.id, "lea_ana")
+    env: dict[str, str] = {}
+    if why == "module_off":
         await db_session.execute(
             update(AgencyEmailModule)
             .where(AgencyEmailModule.agency_id == email_world.agency_id)
             .values(enabled=False)
         )
         await db_session.commit()
-    response = await client.delete(f"/client-profiles/{ana.id}", headers=email_world.headers)
-    assert response.status_code == 204, response.text
+    elif why == "master_off":
+        env = {"EMAIL_MODULE_ENABLED": "false"}
+    elif why == "effects_off":
+        fake_email_provider.external = False  # what the registry gives then
+    elif why in ("agency_unbound", "team_mismatch"):
+        # Real effects possible, yet the agency's provider is the dry run:
+        # unbound, or bound to another team than the key's.
+        env = {
+            "EMAIL_PROVIDER_EXTERNAL_EFFECTS": "true",
+            "MOCK_LEMLIST": "false",
+            "LEMLIST_API_KEY": FAKE_LEMLIST_KEY,
+        }
+        fake_email_provider.external = False
+        if why == "team_mismatch":
+            await db_session.execute(
+                update(AgencyEmailModule)
+                .where(AgencyEmailModule.agency_id == email_world.agency_id)
+                .values(provider_team_id=TEAM_A)
+            )
+            await db_session.commit()
+    elif why == "team_unknown":
+
+        def unknown(_settings: Any, _row: Any) -> EmailProvider:
+            raise ConflictError(
+                "Lemlist did not say.",
+                code="email.provider_unavailable",
+                params={"reason": "team_unknown"},
+            )
+
+        monkeypatch.setattr(email_manager, "provider_for", unknown)
+    expected = {
+        "module_off": "module_disabled",
+        "master_off": "module_disabled",
+        "lead_of_another_team": "team_mismatch",
+    }.get(why, why.replace("effects_off", "external_effects_off"))
+    with email_env(**env) if env else nullcontext():
+        response = await client.delete(f"/client-profiles/{ana.id}", headers=email_world.headers)
+        bulk = await client.post(
+            "/client-profiles/bulk-delete",
+            json={"ids": [str(ana.id)]},
+            headers=email_world.headers,
+        )
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "email.provider_cleanup_failed"
+    assert response.json()["params"] == {"client_profile_id": str(ana.id), "reason": expected}
+    assert bulk.status_code == 409, bulk.text
+    assert bulk.json()["params"]["reason"] == expected
     assert fake_email_provider.ops == []
-    # The provider is not even chosen when there is nothing real to remove.
-    assert asked == (["provider_for"] if why == "dry_run" else [])
-    assert not await _exists(db_session, ana.id)
+    assert await _exists(db_session, ana.id)
 
 
 # ── in bulk ──────────────────────────────────────────────────────────────────
@@ -360,6 +458,7 @@ async def test_deleting_an_agency_pauses_its_campaigns_and_removes_their_leads_f
     assert refused.json()["code"] == "email.provider_cleanup_failed"
     assert refused.json()["params"] == {
         "campaign_id": str(archived),
+        "reason": "provider_refused",
         "code": "email.provider_error",
     }
     db_session.expunge_all()
@@ -380,3 +479,48 @@ async def test_deleting_an_agency_pauses_its_campaigns_and_removes_their_leads_f
     db_session.expunge_all()
     assert await db_session.get(Agency, email_world.agency_id) is None
     assert await db_session.get(EmailCampaign, other.id) is not None
+
+
+async def test_an_agency_whose_real_campaigns_lemlist_cannot_reach_is_not_deleted(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    fake_email_provider: FakeProvider,
+    make_email_campaign: MakeEmailCampaign,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Role],
+) -> None:
+    """Adjustment a, for an agency: its module switched off by the platform,
+    a campaign at Lemlist for real: the deletion is refused (409, reason
+    `module_disabled`), nothing is asked of Lemlist, nothing is deleted. An
+    agency with dry-run campaigns only is deleted without a call."""
+    superadmin = await make_agent(role=system_roles["superadmin"], email="root@platform.io")
+    root = agent_headers(superadmin)
+    live = await _campaign(make_email_campaign, email_world, "cam_live")
+    await db_session.execute(
+        update(AgencyEmailModule)
+        .where(AgencyEmailModule.agency_id == email_world.agency_id)
+        .values(enabled=False)
+    )
+    await db_session.commit()
+    body = {"confirm_name": "Relocation Lisboa"}
+    refused = await client.request(
+        "DELETE", f"/agencies/{email_world.agency_id}", json=body, headers=root
+    )
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["params"] == {"campaign_id": str(live), "reason": "module_disabled"}
+    assert fake_email_provider.ops == []
+    db_session.expunge_all()
+    assert await db_session.get(Agency, email_world.agency_id) is not None
+
+    # Its only campaign a dry run's: nothing at Lemlist, the deletion goes on.
+    await db_session.execute(
+        update(EmailCampaign).where(EmailCampaign.id == live).values(provider_campaign_id="dry_x")
+    )
+    await db_session.commit()
+    deleted = await client.request(
+        "DELETE", f"/agencies/{email_world.agency_id}", json=body, headers=root
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert fake_email_provider.ops == []

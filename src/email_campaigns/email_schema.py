@@ -1,8 +1,10 @@
 """Pydantic contracts of the Email module.
 
-Two surfaces:
+Three surfaces:
 - the platform's (superadmin): activation and Lemlist team binding,
-  `/agencies/{agency_id}/email-module` (phase 1);
+  `/agencies/{agency_id}/email-module` (phase 1), and the platform's Lemlist
+  account, `/admin/email/provider` (phase 4);
+- Lemlist's webhook, `/webhooks/lemlist` (phase 4, its acknowledgement);
 - the agents' (`/email/*`, phase 3): the module's meta, campaigns, steps, AI
   variables, previews and recipients (memberships), then the add wizard, a
   client record's email state, the Sync, the Launch, the performance and the
@@ -122,6 +124,86 @@ class AgencyEmailModuleUpdateRequest(BaseModel):
     """PATCH /agencies/{agency_id}/email-module: the agency's switch."""
 
     enabled: bool
+
+
+# ── Platform: the Lemlist account (phase 4, spec 10.5) ──────────────────────
+
+
+class EmailProviderSenderRead(BaseModel):
+    """A mailbox of the team a campaign can be sent from."""
+
+    user_id: str
+    email: str | None = None
+    #: How many of the team's campaigns this sender already sends.
+    campaigns: int = 0
+
+
+class EmailProviderWebhookRead(BaseModel):
+    """The team's webhook for EMAIL_WEBHOOK_URL, as Lemlist lists it. Its
+    secret is never returned by Lemlist, and never by Nidria."""
+
+    #: EMAIL_WEBHOOK_URL (null when the env does not set it).
+    configured_url: str | None = None
+    #: A webhook of the team targets exactly that URL.
+    exists: bool = False
+    hook_id: str | None = None
+    #: The webhook is limited to one event type (Nidria wants none: every event).
+    has_type: bool = False
+
+
+class EmailBoundAgencyRead(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class EmailProviderAccountRead(BaseModel):
+    """GET /admin/email/provider: the platform's Lemlist account, read only.
+
+    `dry_run` true: real effects are off (or Lemlist is mocked, or there is
+    no key) and Lemlist was NOT asked: only the local facts are filled.
+    The key is designated by `key_fingerprint` (sha256[:12]), never itself."""
+
+    dry_run: bool
+    external_effects: bool
+    mocked: bool
+    key_configured: bool
+    key_fingerprint: str | None = None
+    team: EmailTeamInfo | None = None
+    #: The plan as Lemlist names it (`GET /user/channels`), when it says.
+    plan: str | None = None
+    senders: list[EmailProviderSenderRead] = Field(default_factory=list)
+    webhook: EmailProviderWebhookRead | None = None
+    #: The agency bound to the team the key opens (rule N4), if any.
+    bound_agency: EmailBoundAgencyRead | None = None
+
+
+class EmailProviderHookRead(BaseModel):
+    hook_id: str
+    target_url: str | None = None
+    has_type: bool = False
+
+
+class EmailProviderWebhookResult(BaseModel):
+    """POST /admin/email/provider/webhook: the team's webhook for
+    EMAIL_WEBHOOK_URL, created by this call or found already (idempotent).
+    Never its secret."""
+
+    created: bool
+    webhook: EmailProviderHookRead
+
+
+# ── The provider's webhook (phase 4, spec 7.2) ──────────────────────────────
+
+
+class EmailWebhookAck(BaseModel):
+    """What the webhook did with one event (Prism's answer): stored now,
+    already stored (a redelivery, or the job / a Sync read it first), and
+    matched to a membership. An event of a type Nidria does not track, or
+    of no campaign Nidria runs, is acknowledged and not stored."""
+
+    stored: bool
+    duplicate: bool
+    matched: bool
 
 
 # ── Meta ────────────────────────────────────────────────────────────────────
@@ -925,12 +1007,14 @@ SyncNoteCode = Literal[
 #: token, error for an email that cannot be rendered, or code for a provider
 #: refusal}; campaign_kept_paused {exposed}: running leads could reach a step
 #: without their own email, or {reason: lead_not_paused, code}: one could
-#: not be paused; campaign_not_started {code}.
+#: not be paused; campaign_not_started {code}; events_not_read {code}: the
+#: provider's events could not be read (the next sync reads them again).
 SyncErrorCode = Literal[
     "follow_up_not_added",
     "member_not_updated",
     "campaign_kept_paused",
     "campaign_not_started",
+    "events_not_read",
 ]
 
 
@@ -956,7 +1040,7 @@ class EmailSyncResult(BaseModel):
     campaign_created: bool = False
     steps_created: int = 0
     steps_updated: int = 0
-    #: Provider events read and stored (the ingestion is phase 4's: 0 until then).
+    #: Provider events read and stored now (each one once, whoever reads it).
     events_ingested: int = 0
     #: Running leads whose next emails were refreshed at the provider.
     members_updated: int = 0

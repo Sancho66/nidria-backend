@@ -30,9 +30,12 @@ Codes, by level, with their params:
   warning;
 - template: TEMPLATE (`position`, `kind`: a renderer error kind,
   `first_subject_required` or `empty_body`, and `token` when there is one);
-  AI_AT_LAUNCH, a warning.
+  AI_AT_LAUNCH: a warning while AI values can be generated, BLOCKING
+  (`reason: ai_not_configured`, `position`) while they cannot (decision
+  A14): the Launch would refuse that client, so the Launch page says so.
 
-Every code is blocking but LAST_ATTEMPT, NO_SENDER and AI_AT_LAUNCH. As in
+Every code is blocking but LAST_ATTEMPT, NO_SENDER and AI_AT_LAUNCH (when AI
+generation is configured). As in
 Prism, NO_SENDER only warns at the Launch page: Lemlist's only sender of the
 team sends; with several, the sync stops and asks for a choice (the adapter's
 `SENDER_REQUIRED`). TEMPLATE and AI_AT_LAUNCH are kept from Prism: TEMPLATE
@@ -86,7 +89,7 @@ from src.core.email import is_demo_recipient, normalize_email
 from src.email_campaigns.email_repository import EmailRepository
 from src.email_campaigns.flags import is_real_provider_id
 from src.email_campaigns.lemlist_team import CAMPAIGN_TEAM_KEY
-from src.email_campaigns.renderer import EmailTemplateRenderer, RenderResult
+from src.email_campaigns.renderer import EmailTemplateRenderer, RenderResult, tokens_in
 from src.email_campaigns.schedule import zone_of
 from src.email_campaigns.variables import RenderContext
 
@@ -475,23 +478,41 @@ class TemplateCheck:
     total: int
 
 
+def used_ai_keys(step: EmailCampaignStep) -> list[str]:
+    """The step's AI variables its subject or body uses: the only ones the
+    hand-over generates (one it does not use writes nothing of the email)."""
+    used = {
+        token.removeprefix("ai.")
+        for token in tokens_in(step.subject_template, step.body_template)
+        if token.startswith("ai.")
+    }
+    return [v.key for v in step.ai_variables if v.key in used]
+
+
 def template_issues(
     steps: Sequence[EmailCampaignStep],
     stored: Mapping[int, EmailMemberRender],
     context_for: Callable[[list[str]], RenderContext],
+    *,
+    ai_configured: bool,
 ) -> TemplateCheck:
     """What the client's own emails lack, read without calling a model: each
     unsent step rendered with its client, company and agency values only (AI
     passages are written at launch, then frozen). A missing value without a
     fallback, an unknown variable, an empty first subject or body: blocking.
-    `context_for(keys)`: the client's render context for a step whose AI
-    variables are `keys`. Each step's `ai_variables` must be loaded."""
+    An AI passage the subject or body uses and no frozen render holds yet
+    is AI_AT_LAUNCH: a warning when AI generation is configured, BLOCKING
+    when it is not (`ai_configured` False, decision A14), since the Launch
+    would then refuse the client. `context_for(keys)`: the client's render
+    context for a step whose AI variables are `keys`. Each step's
+    `ai_variables` must be loaded."""
     issues: list[Issue] = []
     errors: list[TemplateError] = []
     rendered = 0
-    ai_pending = False
+    ai_pending: int | None = None
     for step in unsent_steps(steps, stored):
         keys = [v.key for v in step.ai_variables]
+        used = used_ai_keys(step)
         result = EmailTemplateRenderer(require_ai=False).render(
             step.subject_template, step.body_template, context_for(keys)
         )
@@ -499,6 +520,7 @@ def template_issues(
             errors.append(error)
             issues.append(Issue(TEMPLATE, error.params))
         render = stored.get(step.position)
+        pending = bool(used)
         if fresh_render(render, step):
             rendered += 1
             values = (
@@ -506,10 +528,16 @@ def template_issues(
                 if render is not None and isinstance(render.ai_values, dict)
                 else {}
             )
-            if any(not (isinstance(values.get(k), dict) and values[k].get("value")) for k in keys):
-                ai_pending = True
-        elif keys:
-            ai_pending = True
-    if ai_pending:
-        issues.append(Issue(AI_AT_LAUNCH, level="warning"))
+            pending = any(
+                not (isinstance(values.get(k), dict) and values[k].get("value")) for k in used
+            )
+        if pending and ai_pending is None:
+            ai_pending = step.position
+    if ai_pending is not None:
+        if ai_configured:
+            issues.append(Issue(AI_AT_LAUNCH, level="warning"))
+        else:
+            issues.append(
+                Issue(AI_AT_LAUNCH, {"reason": "ai_not_configured", "position": ai_pending})
+            )
     return TemplateCheck(issues, errors, rendered, len(steps))

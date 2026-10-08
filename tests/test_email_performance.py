@@ -6,9 +6,10 @@ timezone. Lemlist reports no delivery: there is no "delivered".
 
 Ported from Prism's `tests/test_email_performance.py` (reference 629a2b0).
 The leads are launched through the API (`FakeProvider`); what Lemlist then
-reports goes through phase 4's ingestion, stood in for by `ingest`: one
-provider event per activity, its step's OUTBOUND message (sent, opens,
-clicks, bounce), an INBOUND message per reply, and the membership's state.
+reports goes through the real ingestion (`EmailSyncManager.ingest`, phase
+4), as in Prism: one provider event per activity, its step's OUTBOUND
+message (sent, opens, clicks, bounce), an INBOUND message per reply, and
+the membership's state.
 """
 
 import uuid
@@ -18,10 +19,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.email_campaign import EmailCampaignMember, EmailMessage, EmailProviderEvent
+from shared.models.email_campaign import (
+    EmailCampaign,
+    EmailCampaignMember,
+)
+from src.email_campaigns.email_sync import EmailSyncManager
+from src.email_campaigns.providers.base import ProviderEvent
 from tests.email_fakes import FakeProvider
 from tests.plugins.client_profile_plugin import MakeClientProfile
 from tests.plugins.email_plugin import EmailWorld
@@ -35,84 +40,30 @@ Activity = tuple[str, str, int | None, datetime]
 
 
 async def ingest(db: AsyncSession, member_id: uuid.UUID, activities: list[Activity]) -> None:
-    """What phase 4's ingestion writes for these activities of one lead,
-    each stored once (`uq_email_provider_event`)."""
-    member = await db.get(EmailCampaignMember, member_id)
-    assert member is not None
-    for event_id, kind, position, at in activities:
-        db.add(
-            EmailProviderEvent(
-                provider="LEMLIST",
-                provider_event_id=event_id,
-                agency_id=member.agency_id,
-                campaign_id=member.campaign_id,
-                campaign_member_id=member.id,
-                type=kind,
-                provider_type=kind.lower(),
-                step_position=position,
-                payload={},
-                occurred_at=at,
-            )
+    """What Lemlist reports for these activities of one lead, through the
+    real ingestion (phase 4, as Prism's test did): each event stored once
+    (`uq_email_provider_event`), its step's OUTBOUND message, an INBOUND
+    message per reply, the membership's state."""
+    member = await db.get(EmailCampaignMember, member_id, populate_existing=True)
+    assert member is not None and member.provider_lead_id
+    campaign = await db.get(EmailCampaign, member.campaign_id)
+    assert campaign is not None and campaign.provider_campaign_id
+    events = [
+        ProviderEvent(
+            event_id=event_id,
+            type=kind,
+            provider_type=kind.lower(),
+            occurred_at=at,
+            campaign_id=campaign.provider_campaign_id,
+            lead_id=member.provider_lead_id,
+            email=None,
+            step_position=position,
+            reason=None,
+            payload={"_id": event_id},
         )
-        if kind == "REPLIED":
-            db.add(
-                EmailMessage(
-                    agency_id=member.agency_id,
-                    campaign_id=member.campaign_id,
-                    campaign_member_id=member.id,
-                    step_position=position,
-                    provider="LEMLIST",
-                    provider_message_id=event_id,
-                    direction="INBOUND",
-                    status="REPLIED",
-                    content_state="PENDING",
-                    received_at=at,
-                    payload={},
-                )
-            )
-            member.status = "EMAIL_REPLIED"
-        elif kind == "UNSUBSCRIBED":
-            member.status = "EMAIL_UNSUBSCRIBED"
-        if kind in ("SENT", "OPENED", "CLICKED", "BOUNCED", "REPLIED") and position is not None:
-            message = await db.scalar(
-                select(EmailMessage).where(
-                    EmailMessage.campaign_member_id == member.id,
-                    EmailMessage.direction == "OUTBOUND",
-                    EmailMessage.step_position == position,
-                )
-            )
-            if message is None:
-                message = EmailMessage(
-                    agency_id=member.agency_id,
-                    campaign_id=member.campaign_id,
-                    campaign_member_id=member.id,
-                    step_position=position,
-                    provider="LEMLIST",
-                    direction="OUTBOUND",
-                    status="SENT",
-                    content_state="RENDERED",
-                    open_count=0,
-                    click_count=0,
-                    payload={},
-                )
-                db.add(message)
-            if kind == "SENT":
-                message.sent_at = at
-                member.started_at = member.started_at or at
-                member.current_step = max(member.current_step or 0, position)
-                if member.status in ("EMAIL_READY", "EMAIL_QUEUED"):
-                    member.status = "EMAIL_ACTIVE"
-            elif kind == "OPENED":
-                message.open_count += 1
-            elif kind == "CLICKED":
-                message.click_count += 1
-            elif kind == "BOUNCED":
-                message.bounced_at = at
-                member.status = "EMAIL_BOUNCED"
-            elif kind == "REPLIED":
-                message.replied_at = at
-        await db.flush()
-    await db.commit()
+        for event_id, kind, position, at in activities
+    ]
+    await EmailSyncManager(db).ingest("LEMLIST", events)
 
 
 async def launched_campaign(

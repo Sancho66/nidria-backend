@@ -67,8 +67,18 @@ translated by the frontend for another surface:
   `reason: next_sync`); the sync resumes it once the email is pushed;
 - `kept_out`: completed before a follow-up was added, paused at Lemlist so
   it never gets it.
-Phase 4 adds the reconciliation's own (`paused_at_provider`,
-`missing_at_provider`, ...).
+Codes the provider's events and the reconciliation write (phase 4,
+`email_sync.py`):
+- `paused_at_provider`: someone paused the lead in Lemlist's app (a pause
+  or resume done there is mirrored);
+- `missing_at_provider`: Lemlist's complete listing of the campaign no
+  longer has the lead (removed in its app?): flagged, never ended; cleared
+  when the lead is listed again;
+- `unsubscribed_at_provider`: Lemlist's listing says the lead unsubscribed;
+- `bounced` (params `reason`: the provider's own words, when it gave some):
+  the email bounced;
+- `send_failed` (params `reason`, when given): Lemlist failed to send a
+  step, the lead stays as it is.
 """
 
 from __future__ import annotations
@@ -187,6 +197,7 @@ from src.email_campaigns.email_schema import (
 )
 from src.email_campaigns.flags import (
     email_module_effectively_enabled,
+    external_effects_on,
     is_real_provider_id,
     provider_state_for,
     require_email_module,
@@ -276,6 +287,9 @@ _PROVIDER_CODES: dict[str, str] = {
     # have yet, and one it already reached for this lead.
     "STEP_MISSING": "email.provider_step_missing",
     "STEP_REACHED": "email.provider_step_reached",
+    # Raised by the reconciliation (email_sync): Lemlist no longer has the
+    # campaign (deleted in its app); Nidria changes nothing of it.
+    "CAMPAIGN_MISSING": "email.provider_campaign_missing",
 }
 #: Any other provider failure.
 PROVIDER_ERROR = "email.provider_error"
@@ -830,6 +844,14 @@ class EmailManager:
         if self._provider is None:
             self._provider = await asyncio.to_thread(provider_for, self.settings, access.module)
         return self._provider
+
+    async def provider_of(self, module: AgencyEmailModule | None) -> EmailProvider:
+        """The provider of the agency whose switch row is `module`, without an
+        agent (the job, the webhook, the deletion hooks): the same choice as
+        `provider` (rules N4, N5), never cached. Raises 409
+        `email.provider_unavailable` when Lemlist does not say which team
+        the key opens (decision A4)."""
+        return await asyncio.to_thread(provider_for, self.settings, module)
 
     def through_provider(self, provider: EmailProvider, provider_id: str | None) -> bool:
         """Whether changing this provider object must go through the provider.
@@ -1643,6 +1665,13 @@ class EmailManager:
 
     # ── previews and AI ────────────────────────────────────────────────────
 
+    def ai_configured(self) -> bool:
+        """Whether AI values can be generated now (phase 5's seam, decision
+        A14, D3 open): not yet. While they cannot, an AI passage still to
+        write blocks its client at the Launch page (readiness AI_AT_LAUNCH)
+        exactly as the Launch refuses it."""
+        return False
+
     async def generate_ai_values(
         self,
         access: Access,
@@ -2049,7 +2078,10 @@ class EmailManager:
             ordered = sorted(campaign.steps, key=lambda s: s.position)
             issues = membership_issues(member, email, facts)
             issues += template_issues(
-                ordered, renders, people.context_for(profile, row.account)
+                ordered,
+                renders,
+                people.context_for(profile, row.account),
+                ai_configured=self.ai_configured(),
             ).issues
         base = self.member_read(row, people, {campaign.id: len(campaign.steps)}, issues)
         return EmailMemberDetail(
@@ -2401,6 +2433,7 @@ class EmailManager:
                 steps,
                 renders.get(row.member.id, {}),
                 people.context_for(row.profile, row.account),
+                ai_configured=self.ai_configured(),
             )
             issues = membership_issues(row.member, email, facts) + check.issues
             checked.append((row, issues, check))
@@ -2953,57 +2986,83 @@ class EmailManager:
     # ── the deletion hooks (spec 8.11, decision A2) ─────────────────────────
 
     async def _cleanup_provider(
-        self, module: AgencyEmailModule
-    ) -> tuple[EmailProvider, str | None] | None:
-        """The agency's provider and the key's team when it talks to Lemlist
-        for real; None in a dry run (nothing there to remove). Lemlist not
-        saying which team the key opens is a failure to clean (A4)."""
+        self, module: AgencyEmailModule | None, who: Mapping[str, Any]
+    ) -> tuple[EmailProvider, str | None]:
+        """The agency's REAL provider and the key's team, for leads that
+        exist at Lemlist: removing them is mandatory, whatever the module's
+        state (adjustment a). When Lemlist cannot be reached for real, 409
+        `email.provider_cleanup_failed` with `who` and a `reason`:
+        `module_disabled` (the module is off for the agency),
+        `external_effects_off` (real effects off, Lemlist mocked or no key),
+        `agency_unbound` (no Lemlist team bound), `team_mismatch` (the key
+        opens another team than the bound one), `team_unknown` (Lemlist does
+        not say which team the key opens, decision A4). Nothing is deleted
+        then: the leads would stay at Lemlist for good."""
+
+        def unavailable(reason: str) -> ConflictError:
+            return _cleanup_failed({**who, "reason": reason})
+
+        if not email_module_effectively_enabled(module, self.settings):
+            raise unavailable("module_disabled")
         try:
-            provider = await asyncio.to_thread(provider_for, self.settings, module)
-            if not provider.external:
-                return None
-            return provider, await asyncio.to_thread(provider.team_id)
+            provider = await self.provider_of(module)
         except ConflictError as exc:
-            raise _cleanup_failed({"code": exc.code, **exc.params}) from exc
+            raise unavailable(str(exc.params.get("reason") or "team_unknown")) from exc
+        if not provider.external:
+            if not external_effects_on(self.settings):
+                raise unavailable("external_effects_off")
+            if module is None or module.provider_team_id is None:
+                raise unavailable("agency_unbound")
+            raise unavailable("team_mismatch")
+        try:
+            team = await asyncio.to_thread(provider.team_id)
         except ProviderError as exc:
-            raise _cleanup_failed(
-                {"code": provider_error_code(exc), **provider_params(exc)}
-            ) from exc
+            raise unavailable("team_unknown") from exc
+        return provider, team
 
     async def cleanup_client_profiles(
         self, agency_id: uuid.UUID, profile_ids: Sequence[uuid.UUID]
     ) -> int:
         """Before client records are deleted (one, in bulk, or merged away):
         remove at Lemlist every lead of theirs that carries a real provider
-        id, ended ones included (Lemlist's deduplication sees them). At the
-        first failure, 409 `email.provider_cleanup_failed` (params
-        `client_profile_id`, `code`): the caller deletes nothing and the
-        agent tries again. Nothing to do, and no call, while the module is
-        off for the agency, in a dry run, or without a real lead; another
-        Lemlist team's lead is left alone (the key cannot reach it).
-        Returns how many leads were removed. Writes nothing."""
-        module = await self.repo.get_module(agency_id)
-        if not email_module_effectively_enabled(module, self.settings) or not profile_ids:
+        id, ended ones included (Lemlist's deduplication sees them).
+
+        Mandatory whenever such a lead exists, whatever the module's state
+        (adjustment a): when Lemlist cannot be reached for real (module off
+        for the agency, effects off, agency unbound, another team, team
+        unknown), or a lead lives in another Lemlist team than the key's,
+        or Lemlist refuses a removal, 409 `email.provider_cleanup_failed`
+        (params `client_profile_id`, `reason`, and `code` for a refusal):
+        the caller deletes nothing and the agent tries again once Lemlist is
+        reachable. The teams are checked before any call. No call at all,
+        and nothing blocks, without a real lead (a dry run's, or one a
+        removal already took out). Returns how many leads were removed.
+        Writes nothing."""
+        if not profile_ids:
             return 0
-        assert module is not None
         leads = await self.repo.real_leads_of_profiles(agency_id, profile_ids)
         if not leads:
             return 0
-        found = await self._cleanup_provider(module)
-        if found is None:
-            return 0
-        provider, key_team = found
+        first = {"client_profile_id": str(leads[0][0].client_profile_id)}
+        provider, key_team = await self._cleanup_provider(
+            await self.repo.get_module(agency_id), first
+        )
+        for member, campaign in leads:
+            if on_other_team(campaign, key_team):
+                raise _cleanup_failed(
+                    {"client_profile_id": str(member.client_profile_id), "reason": "team_mismatch"}
+                )
         removed = 0
         for member, campaign in leads:
             ref = campaign_ref(campaign)
-            if ref is None or on_other_team(campaign, key_team):
-                continue
+            assert ref is not None  # a real provider campaign
             try:
                 await asyncio.to_thread(provider.remove_contact, ref, lead_ref(member))
             except ProviderError as exc:
                 raise _cleanup_failed(
                     {
                         "client_profile_id": str(member.client_profile_id),
+                        "reason": "provider_refused",
                         "code": provider_error_code(exc),
                     }
                 ) from exc
@@ -3014,27 +3073,28 @@ class EmailManager:
         """Before an agency is deleted: pause at Lemlist each of its
         campaigns that carries a real provider id and remove their leads, so
         the team can serve another agency without exposing anything (spec
-        8.11; Lemlist's own unsubscribe list stays, spec 18). 409
-        `email.provider_cleanup_failed` (params `campaign_id`, `code`) at
-        the first failure, before any write. Nothing to do, and no call,
-        while the module is off, in a dry run, or without a real campaign.
-        Returns how many leads were removed."""
-        module = await self.repo.get_module(agency_id)
-        if not email_module_effectively_enabled(module, self.settings):
-            return 0
-        assert module is not None
+        8.11; Lemlist's own unsubscribe list stays, spec 18).
+
+        Mandatory whenever such a campaign exists, whatever the module's
+        state (adjustment a): Lemlist out of reach for real, a campaign of
+        another team, or a refusal is a 409 `email.provider_cleanup_failed`
+        (params `campaign_id`, `reason`, and `code` for a refusal) before
+        any write. No call at all without a real campaign. Returns how many
+        leads were removed."""
         campaigns = await self.repo.real_provider_campaigns(agency_id)
         if not campaigns:
             return 0
-        found = await self._cleanup_provider(module)
-        if found is None:
-            return 0
-        provider, key_team = found
+        first = {"campaign_id": str(campaigns[0].id)}
+        provider, key_team = await self._cleanup_provider(
+            await self.repo.get_module(agency_id), first
+        )
+        for campaign in campaigns:
+            if on_other_team(campaign, key_team):
+                raise _cleanup_failed({"campaign_id": str(campaign.id), "reason": "team_mismatch"})
         removed = 0
         for campaign in campaigns:
             ref = campaign_ref(campaign)
-            if ref is None or on_other_team(campaign, key_team):
-                continue
+            assert ref is not None  # a real provider campaign
             try:
                 await asyncio.to_thread(provider.pause_campaign, ref)
                 for member in await self.repo.real_leads_of_campaign(campaign.id):
@@ -3042,7 +3102,11 @@ class EmailManager:
                     removed += 1
             except ProviderError as exc:
                 raise _cleanup_failed(
-                    {"campaign_id": str(campaign.id), "code": provider_error_code(exc)}
+                    {
+                        "campaign_id": str(campaign.id),
+                        "reason": "provider_refused",
+                        "code": provider_error_code(exc),
+                    }
                 ) from exc
         return removed
 
@@ -3061,7 +3125,8 @@ def _sender_email(campaign: EmailCampaign) -> str | None:
 
 def _cleanup_failed(params: Mapping[str, Any]) -> ConflictError:
     return ConflictError(
-        "Lemlist could not remove this client's leads: nothing was deleted, try again.",
+        "The leads at Lemlist could not be removed: nothing was deleted, try again "
+        "once Lemlist is reachable.",
         code="email.provider_cleanup_failed",
         params=dict(params),
     )

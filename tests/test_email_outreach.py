@@ -8,7 +8,7 @@ Ported from Prism's `tests/test_email_outreach.py` (reference 629a2b0); its
 pure estimate tests live in `test_email_schedule.py`. Every query starts
 from YESTERDAY: half an hour ago may already be yesterday in Paris (a run
 just after midnight), Prism's lesson (c58bfc3). What Lemlist reports goes
-through phase 4's ingestion, stood in for by `ingest`.
+through the real ingestion (phase 4), by the performance tests' `ingest`.
 """
 
 import uuid
@@ -202,7 +202,13 @@ async def test_the_queue_stays_in_its_agency(
     await launch_via_api(client, email_world.headers, ours)
     await ingest(db_session, lead["Ana Here"], [("h1", "SENT", 1, datetime.now(UTC))])
     # The other agency's campaign, launched and sent too.
-    theirs = EmailCampaign(agency_id=email_world.other_agency_id, name="Theirs", status="ACTIVE")
+    theirs = EmailCampaign(
+        agency_id=email_world.other_agency_id,
+        name="Theirs",
+        status="ACTIVE",
+        provider_campaign_id="cam_theirs",
+        provider_metadata={"team_id": "tea_current"},
+    )
     db_session.add(theirs)
     await db_session.commit()
     stranger = await make_client_profile(

@@ -4640,6 +4640,60 @@
         }
       }
     },
+    "/admin/email/provider": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Get Email Provider Account",
+        "description": "The platform's Lemlist account, read only: real effects, mocked, the\nkey's fingerprint (never the key), the team it opens, the plan, the\nmailboxes, the webhook for EMAIL_WEBHOOK_URL and the agency bound to the\nteam. Without real effects, `dry_run` and no Lemlist call. Cached 60 s.",
+        "operationId": "get_email_provider_account_admin_email_provider_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailProviderAccountRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/email/provider/webhook": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Ensure Email Provider Webhook",
+        "description": "Create the team's webhook (every event, no type) at EMAIL_WEBHOOK_URL\nwith EMAIL_WEBHOOK_SECRET; idempotent: an existing one is returned, not\ncreated again. 409 `email.webhook_not_configured` when the URL or the\nsecret is missing, 409 `email.provider_unavailable` without real\neffects. The secret is never returned.",
+        "operationId": "ensure_email_provider_webhook_admin_email_provider_webhook_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailProviderWebhookResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/email/meta": {
       "get": {
         "tags": [
@@ -7318,6 +7372,39 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/lemlist": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Lemlist Webhook",
+        "description": "Lemlist's activity webhook. 429 past 600 calls a minute; 403\n`email.webhook_forbidden` unless EMAIL_WEBHOOK_SECRET is set and the\nbody's `secret` matches it. Each event is stored once (whoever reads it\nfirst: this webhook, the job or a Sync); an event of a type Nidria does\nnot track, or of no campaign Nidria runs, is acknowledged and not\nstored. Depends on the env only, never on an agency's switch.",
+        "operationId": "lemlist_webhook_webhooks_lemlist_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailWebhookAck"
                 }
               }
             }
@@ -30802,6 +30889,25 @@
         "type": "object",
         "title": "EmailAiVariableUpdate"
       },
+      "EmailBoundAgencyRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "EmailBoundAgencyRead"
+      },
       "EmailCampaignCounts": {
         "properties": {
           "draft": {
@@ -34088,6 +34194,210 @@
         ],
         "title": "EmailPreviewResponse"
       },
+      "EmailProviderAccountRead": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "external_effects": {
+            "type": "boolean",
+            "title": "External Effects"
+          },
+          "mocked": {
+            "type": "boolean",
+            "title": "Mocked"
+          },
+          "key_configured": {
+            "type": "boolean",
+            "title": "Key Configured"
+          },
+          "key_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Fingerprint"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailTeamInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "senders": {
+            "items": {
+              "$ref": "#/components/schemas/EmailProviderSenderRead"
+            },
+            "type": "array",
+            "title": "Senders"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailProviderWebhookRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bound_agency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailBoundAgencyRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "dry_run",
+          "external_effects",
+          "mocked",
+          "key_configured"
+        ],
+        "title": "EmailProviderAccountRead",
+        "description": "GET /admin/email/provider: the platform's Lemlist account, read only.\n\n`dry_run` true: real effects are off (or Lemlist is mocked, or there is\nno key) and Lemlist was NOT asked: only the local facts are filled.\nThe key is designated by `key_fingerprint` (sha256[:12]), never itself."
+      },
+      "EmailProviderHookRead": {
+        "properties": {
+          "hook_id": {
+            "type": "string",
+            "title": "Hook Id"
+          },
+          "target_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Url"
+          },
+          "has_type": {
+            "type": "boolean",
+            "title": "Has Type",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "hook_id"
+        ],
+        "title": "EmailProviderHookRead"
+      },
+      "EmailProviderSenderRead": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "campaigns": {
+            "type": "integer",
+            "title": "Campaigns",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "EmailProviderSenderRead",
+        "description": "A mailbox of the team a campaign can be sent from."
+      },
+      "EmailProviderWebhookRead": {
+        "properties": {
+          "configured_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured Url"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists",
+            "default": false
+          },
+          "hook_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hook Id"
+          },
+          "has_type": {
+            "type": "boolean",
+            "title": "Has Type",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "EmailProviderWebhookRead",
+        "description": "The team's webhook for EMAIL_WEBHOOK_URL, as Lemlist lists it. Its\nsecret is never returned by Lemlist, and never by Nidria."
+      },
+      "EmailProviderWebhookResult": {
+        "properties": {
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "webhook": {
+            "$ref": "#/components/schemas/EmailProviderHookRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created",
+          "webhook"
+        ],
+        "title": "EmailProviderWebhookResult",
+        "description": "POST /admin/email/provider/webhook: the team's webhook for\nEMAIL_WEBHOOK_URL, created by this call or found already (idempotent).\nNever its secret."
+      },
       "EmailQuotaResponse": {
         "properties": {
           "used": {
@@ -35301,7 +35611,8 @@
               "follow_up_not_added",
               "member_not_updated",
               "campaign_kept_paused",
-              "campaign_not_started"
+              "campaign_not_started",
+              "events_not_read"
             ],
             "title": "Code"
           },
@@ -35649,6 +35960,30 @@
         ],
         "title": "EmailVariableRead",
         "description": "One variable a template may use. No label (decision A12): the frontend\nnames each token in the interface's language."
+      },
+      "EmailWebhookAck": {
+        "properties": {
+          "stored": {
+            "type": "boolean",
+            "title": "Stored"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate"
+          },
+          "matched": {
+            "type": "boolean",
+            "title": "Matched"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stored",
+          "duplicate",
+          "matched"
+        ],
+        "title": "EmailWebhookAck",
+        "description": "What the webhook did with one event (Prism's answer): stored now,\nalready stored (a redelivery, or the job / a Sync read it first), and\nmatched to a membership. An event of a type Nidria does not track, or\nof no campaign Nidria runs, is acknowledged and not stored."
       },
       "ExpatAgencyPendingResponse": {
         "properties": {

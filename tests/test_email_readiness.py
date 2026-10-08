@@ -417,7 +417,7 @@ def test_template_problems_are_structured_by_step_and_code() -> None:
         _step(2, "", "  "),
         _step(3, "", "{{ai.hook}} {{client.nickname}}", "hook"),
     ]
-    check = template_issues(steps, {}, _context_for)
+    check = template_issues(steps, {}, _context_for, ai_configured=True)
     assert check.errors == [
         TemplateError(1, "no_company"),
         TemplateError(1, "missing_variable", "company.industry"),
@@ -453,15 +453,54 @@ def test_sent_steps_are_skipped_and_a_frozen_render_counts() -> None:
             ai_values={"hook": {"value": "Quick question", "prompt_hash": "p"}},
         ),
     }
-    check = template_issues(steps, stored, _context_for)
+    check = template_issues(steps, stored, _context_for, ai_configured=True)
     # Step 1 is sent: its template is not judged again. Step 2 is frozen
     # with its AI value: counted as rendered, and nothing is pending.
     assert check.errors == [] and check.issues == []
     assert (check.rendered, check.total) == (1, 2)
     # Changed since it was frozen: no longer counted, and its AI is pending.
     steps[1].content_hash = "hash-2-edited"
-    stale = template_issues(steps, stored, _context_for)
+    stale = template_issues(steps, stored, _context_for, ai_configured=True)
     assert stale.rendered == 0 and stale.issues == [Issue(AI_AT_LAUNCH, level="warning")]
+
+
+def test_an_ai_passage_blocks_while_ai_is_not_configured() -> None:
+    """Adjustment b (decision A14): while AI values cannot be generated, an
+    unsent step whose subject or body uses `{{ai.*}}` blocks the client at
+    the Launch page, as the Launch itself refuses it. A frozen value, a sent
+    step, or an AI variable the templates do not use blocks nothing."""
+    steps = [
+        _step(1, "Hello", "Sent already, {{ai.opener}}", "opener"),
+        _step(2, "", "Defined but unused here.", "unused"),
+        _step(3, "{{ai.hook}}", "Next.", "hook"),
+    ]
+    sent = {
+        1: EmailMemberRender(
+            step_position=1, campaign_step_id=steps[0].id, template_hash="old", sent_at=NOW
+        )
+    }
+    check = template_issues(steps, sent, _context_for, ai_configured=False)
+    assert check.errors == []
+    [issue] = check.issues
+    assert issue == Issue(AI_AT_LAUNCH, {"reason": "ai_not_configured", "position": 3})
+    assert issue.blocking
+    # The same templates once AI is configured: a warning, never a block.
+    configured = template_issues(steps, sent, _context_for, ai_configured=True)
+    assert [(i.code, i.blocking) for i in configured.issues] == [(AI_AT_LAUNCH, False)]
+    # Its value frozen (a preview): nothing to write, nothing blocks.
+    frozen = {
+        **sent,
+        3: EmailMemberRender(
+            step_position=3,
+            campaign_step_id=steps[2].id,
+            template_hash=steps[2].content_hash,
+            ai_values={"hook": {"value": "Quick question", "prompt_hash": "p"}},
+        ),
+    }
+    assert template_issues(steps, frozen, _context_for, ai_configured=False).issues == []
+    # A variable defined on a step whose templates do not use it: nothing.
+    unused_only = [steps[0], steps[1]]
+    assert template_issues(unused_only, sent, _context_for, ai_configured=False).issues == []
 
 
 def test_the_codes_are_the_specs_and_none_of_prisms_legacy() -> None:

@@ -10,23 +10,32 @@ Phase 3A: meta, campaigns, steps, AI variables, previews and recipients.
 Phase 3B: the Sync and the Launch (both `email.sync`, both refused under
 impersonation, D6), the Launch page, the performance, the outreach page, a
 client record's email state and the add wizard, whose lists take the
-Clients and Companies pages' own parameters (decision A15). The webhook is
-phase 4. List parameters are repeated (`?status=A&status=B`), never
-comma-joined.
+Clients and Companies pages' own parameters (decision A15). List
+parameters are repeated (`?status=A&status=B`), never comma-joined.
+
+Phase 4: Lemlist's activity webhook, `POST /webhooks/lemlist`, on its own
+router (`webhook_router`, bindings `WEBHOOK_BINDINGS`): audience PUBLIC (a
+real, auditable binding line), authenticated by the body's `secret`, rate
+limited like `/webhooks/docuseal` (`src/core/ratelimit.py`, per client IP:
+behind Fly's proxy the IP is likely the proxy's, so the limit is in effect
+global, risk R6), 600 calls a minute since Lemlist retries in bursts.
 """
 
+import json
 import uuid
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from src.client_profiles.client_profiles_schema import ProfileListFilter
 from src.company_profiles.company_profiles_schema import CompanyListFilter
+from src.core import ratelimit
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
+from src.core.exceptions import TooManyRequestsError
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import EmailManager
@@ -70,6 +79,7 @@ from src.email_campaigns.email_schema import (
     EmailSyncRequest,
     EmailSyncResult,
     EmailVariableFillRead,
+    EmailWebhookAck,
     LaunchReadinessFilter,
     MemberStatus,
     OutreachKind,
@@ -131,6 +141,13 @@ BINDINGS = [
     ),
     RouteBinding("POST", "/email/campaigns/{campaign_id}/members/add", Audience.AGENT, _ENROLL),
 ]
+
+#: Lemlist's activity webhook: no token, its secret is in the body.
+webhook_router = APIRouter(tags=["email"])
+WEBHOOK_BINDINGS = [RouteBinding("POST", "/webhooks/lemlist", Audience.PUBLIC)]
+#: Calls a minute per client IP (Lemlist retries a failed delivery in bursts).
+WEBHOOK_RATE_LIMIT = 600
+WEBHOOK_RATE_WINDOW_SECONDS = 60
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 AgentDep = Annotated[Agent, Depends(get_current_agent)]
@@ -634,3 +651,41 @@ async def add_members(
     """Add the eligible clients as ready (nothing is sent); the others are
     left out with their reason, never moved."""
     return await EmailManager(db).add_members(agent, campaign_id, body)
+
+
+# ── the provider's webhook (phase 4, PUBLIC) ───────────────────────────────
+
+
+@webhook_router.post(
+    "/webhooks/lemlist",
+    response_model=EmailWebhookAck,
+    # The body is read raw (rate limit first, then the secret): declared for
+    # the contract, one Lemlist activity as a JSON object.
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": {"type": "object", "additionalProperties": True}}
+            },
+        }
+    },
+)
+async def lemlist_webhook(request: Request, db: DbDep) -> EmailWebhookAck:
+    """Lemlist's activity webhook. 429 past 600 calls a minute; 403
+    `email.webhook_forbidden` unless EMAIL_WEBHOOK_SECRET is set and the
+    body's `secret` matches it. Each event is stored once (whoever reads it
+    first: this webhook, the job or a Sync); an event of a type Nidria does
+    not track, or of no campaign Nidria runs, is acknowledged and not
+    stored. Depends on the env only, never on an agency's switch."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not ratelimit.allow(
+        f"lemlist-webhook:{client_ip}",
+        limit=WEBHOOK_RATE_LIMIT,
+        window_seconds=WEBHOOK_RATE_WINDOW_SECONDS,
+    ):
+        raise TooManyRequestsError("Too many webhook calls; retry later.")
+    try:
+        payload: Any = json.loads(await request.body())
+    except ValueError:
+        payload = None
+    return await EmailSyncManager(db).webhook("LEMLIST", payload)
