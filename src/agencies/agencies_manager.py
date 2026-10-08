@@ -80,8 +80,12 @@ from src.core.notification_prefs import (
     ACTIVATION_REMINDERS_ENABLED_KEY,
     AUTO_REMINDERS_REQUIRE_APPROVAL_KEY,
 )
-from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
 from src.core.rbac.consent_gate import active_documents_by_type
+from src.core.rbac.delegation import (
+    assert_within_ceiling,
+    is_platform_role,
+    is_reachable_role,
+)
 from src.core.security import hash_password
 from src.usage.usage_manager import UsageManager
 
@@ -1611,18 +1615,13 @@ class AgenciesManager:
         seat_type: str = SeatType.MANAGER.value,
     ) -> AgentInvitation:
         # Role validated AT CREATION (not only at accept): system role
-        # OR a role of THIS agency — never another agency's role.
-        role = await self.repo.get_role(role_id)
-        if role is None or (not role.is_system and role.agency_id != agent.agency_id):
-            raise ValidationError(
-                "Role does not exist or does not belong to this agency.",
-                code="invitation.role_invalid",
-            )
-        # Platform-reserved (superadmin): granted ONLY via the seed, never
-        # invitable. Closes the escalation path — this flow has no permission
-        # ceiling (unlike member-role assignment), so without this an agency
-        # admin could invite a superadmin. Opaque message: don't reveal it.
-        if role.name in PLATFORM_ROLE_NAMES:
+        # OR a role of THIS agency, never another agency's role, and never
+        # the platform role (superadmin), granted ONLY via the seed. The
+        # platform role is recognised by identity (a renamed clone or an
+        # agency role borrowing the name changes nothing) and answers like
+        # an unknown role. Opaque message: don't reveal it.
+        role = await self.repo.get_role_with_permissions(role_id)
+        if role is None or not is_reachable_role(role, agent.agency_id):
             raise ValidationError(
                 "Role does not exist or does not belong to this agency.",
                 code="invitation.role_invalid",
@@ -1641,6 +1640,14 @@ class AgenciesManager:
                 "External roles are invited via the external-invitation flow.",
                 code="invitation.role_invalid",
             )
+        if not external:
+            # The member-role door's delegation ceiling holds here too: nobody
+            # invites with a role carrying a permission they do not hold, and
+            # no invitation hands out a platform permission (the escalation of
+            # 08/10/2026 invited with a clone of superadmin). External roles
+            # carry only external.* permissions, which no internal actor ever
+            # holds: their flow is gated by the role kind above instead.
+            assert_within_ceiling(agent, (p.key for p in role.permissions))
         # SEAT GATE (décision 05/08, base unifiée 08/08): an ACTIVE
         # subscription is never capped — usage.max is None, the gate
         # skips, and the seat is PAID AT THIS GESTURE (règle 08/08:
@@ -1906,6 +1913,12 @@ class AgenciesManager:
             raise BadRequestError("Invalid or expired invitation token.", code="invitation.expired")
 
         role = await self.repo.get_role(invitation.role_id)
+        if role is not None and is_platform_role(role):
+            # Belt for a legacy row: no door creates such an invitation (the
+            # platform role is out of reach at creation), and one found in
+            # the table never makes its holder a platform operator. Same
+            # answer as an unknown token.
+            raise BadRequestError("Invalid or expired invitation token.", code="invitation.invalid")
         # The Agent PRE-CREATED at invite (new external flow): the invitation's
         # contact already designates it. Its email is taken by ITSELF, so we
         # ACTIVATE (real password + names) — never create nor 409.

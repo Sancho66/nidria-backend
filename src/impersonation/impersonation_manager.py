@@ -7,6 +7,7 @@ from shared.models.agent import Agent
 from src.core.config import get_settings
 from src.core.enums import ActorType, Audience
 from src.core.exceptions import NotFoundError, ValidationError
+from src.core.rbac.delegation import is_platform_role
 from src.core.security import create_access_token
 from src.impersonation.impersonation_repository import ImpersonationRepository
 from src.impersonation.impersonation_schema import ImpersonationTokenResponse
@@ -31,7 +32,11 @@ class ImpersonationManager:
         if target_agent_id == actor.id:
             raise ValidationError("You cannot impersonate yourself.", code="impersonation.self")
         target = await self.repo.get_agent_in_agency(actor.agency_id, target_agent_id)
-        if target is None:
+        # A platform operator is never a target: the token would carry the
+        # platform permissions into an agency flow (an admin of the
+        # operators' home agency acting on /jobs, /agencies, /admin). It
+        # answers like an unknown member.
+        if target is None or is_platform_role(target.role):
             raise NotFoundError("Agent not found.", code="member.not_found")
         return await self._issue(actor, Audience.AGENT, ActorType.AGENT, target.id)
 

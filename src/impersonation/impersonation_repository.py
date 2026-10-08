@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
@@ -40,12 +41,17 @@ class ImpersonationRepository:
 
     async def get_agent_in_agency(self, agency_id: uuid.UUID, agent_id: uuid.UUID) -> Agent | None:
         # INTERNAL only: an external provider is never an impersonation
-        # target (impersonation operates on internal team members).
-        stmt = select(Agent).where(
-            Agent.id == agent_id,
-            Agent.agency_id == agency_id,
-            Agent.is_external.is_(False),
-            Agent.deactivated_at.is_(None),  # an offboarded agent has no seat to sit in
+        # target (impersonation operates on internal team members). The role
+        # is loaded for the manager's platform-operator check.
+        stmt = (
+            select(Agent)
+            .where(
+                Agent.id == agent_id,
+                Agent.agency_id == agency_id,
+                Agent.is_external.is_(False),
+                Agent.deactivated_at.is_(None),  # an offboarded agent has no seat to sit in
+            )
+            .options(selectinload(Agent.role))
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

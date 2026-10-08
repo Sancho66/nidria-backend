@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,12 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from src.core.rbac.baseline import PLATFORM_ROLE_NAMES
+from src.core.rbac.baseline import PLATFORM_PERMISSION_KEYS
+from src.core.rbac.delegation import (
+    assert_within_ceiling,
+    is_platform_role,
+    is_reachable_role,
+)
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
 from src.core.seats import assert_reader_role_locked
@@ -32,19 +37,8 @@ class RolesManager:
         self.repo = RolesRepository(db)
 
     # --- guards ----------------------------------------------------------------------
-
-    def _assert_within_ceiling(self, actor: Agent, requested_keys: Iterable[str]) -> None:
-        """Delegation ceiling: nobody hands out a permission they do not
-        hold — neither directly in a matrix (create/edit/duplicate) nor
-        indirectly through role assignment."""
-        missing = sorted(set(requested_keys) - effective_permissions(actor))
-        if missing:
-            # The permission KEYS stay in the English detail (logs, tests):
-            # they are internal identifiers, never interpolated on screen.
-            raise ForbiddenError(
-                f"Beyond your permission ceiling: {', '.join(missing)}.",
-                code="role.beyond_ceiling",
-            )
+    # The delegation ceiling and the platform barrier live in
+    # src/core/rbac/delegation.py, shared with the invitation door.
 
     async def _resolve_permissions(
         self, permission_ids: Sequence[uuid.UUID]
@@ -125,7 +119,13 @@ class RolesManager:
             actor.agency_id, system_role.name, cloned_from_role_id=system_role.id
         )
         await self.db.flush()
-        await self.repo.replace_role_permissions(clone.id, [p.id for p in system_role.permissions])
+        # A clone is an agency row: it never copies a platform permission,
+        # whatever its origin holds (defense in depth: the platform role
+        # itself never gets here, _editable_role answers it a 404).
+        await self.repo.replace_role_permissions(
+            clone.id,
+            [p.id for p in system_role.permissions if p.key not in PLATFORM_PERMISSION_KEYS],
+        )
         await self.repo.rebind_agents(actor.agency_id, system_role.id, clone.id)
         await self.db.flush()
         await self.db.refresh(clone, ["permissions"])
@@ -133,15 +133,14 @@ class RolesManager:
 
     async def _editable_role(self, actor: Agent, role_id: uuid.UUID) -> Role:
         """Resolve a role for mutation: a system role yields its
-        copy-on-write clone; a foreign custom role is a 404 (no
-        cross-agency existence leak)."""
+        copy-on-write clone; a foreign custom role or the platform role is
+        a 404 (no existence leak). Cloning the platform role was the first
+        step of the escalation closed on 08/10/2026."""
         role = await self.repo.get_role_with_permissions(role_id)
-        if role is None:
+        if role is None or not is_reachable_role(role, actor.agency_id):
             raise NotFoundError("Role not found.", code="role.not_found")
         if role.is_system:
             return await self._clone_for_edit(actor, role)
-        if role.agency_id != actor.agency_id:
-            raise NotFoundError("Role not found.", code="role.not_found")
         return role
 
     # --- catalogue ---------------------------------------------------------------------
@@ -153,9 +152,10 @@ class RolesManager:
 
     async def get_role(self, actor: Agent, role_id: uuid.UUID) -> Role:
         """Read mirror of the mutations: system role OR own custom;
-        a foreign custom role is a 404, same rule everywhere."""
+        a foreign custom role or the platform role is a 404, same rule
+        everywhere."""
         role = await self.repo.get_role_with_permissions(role_id)
-        if role is None or (not role.is_system and role.agency_id != actor.agency_id):
+        if role is None or not is_reachable_role(role, actor.agency_id):
             raise NotFoundError("Role not found.", code="role.not_found")
         return role
 
@@ -163,7 +163,7 @@ class RolesManager:
         self, actor: Agent, name: str, permission_ids: Sequence[uuid.UUID]
     ) -> Role:
         permissions = await self._resolve_permissions(permission_ids)
-        self._assert_within_ceiling(actor, (p.key for p in permissions))
+        assert_within_ceiling(actor, (p.key for p in permissions))
         await self._assert_name_free(actor.agency_id, name)
         role = self.repo.add_role(actor.agency_id, name)
         await self.db.flush()
@@ -186,7 +186,7 @@ class RolesManager:
     ) -> Role:
         role = await self._editable_role(actor, role_id)
         permissions = await self._resolve_permissions(permission_ids)
-        self._assert_within_ceiling(actor, (p.key for p in permissions))
+        assert_within_ceiling(actor, (p.key for p in permissions))
         new_keys = {p.key for p in permissions}
         await self._assert_agency_keeps_manager(actor.agency_id, edited_role=(role.id, new_keys))
         await self.repo.replace_role_permissions(role.id, [p.id for p in permissions])
@@ -203,12 +203,10 @@ class RolesManager:
 
     async def delete_role(self, actor: Agent, role_id: uuid.UUID) -> None:
         role = await self.repo.get_role_with_permissions(role_id)
-        if role is None:
+        if role is None or not is_reachable_role(role, actor.agency_id):
             raise NotFoundError("Role not found.", code="role.not_found")
         if role.is_system:
             raise ForbiddenError(_SYSTEM_ROLE_LOCKED, code="role.system_locked")
-        if role.agency_id != actor.agency_id:
-            raise NotFoundError("Role not found.", code="role.not_found")
 
         if role.cloned_from_role_id is not None:
             # Deleting a clone = un-masking: wearers fall back to the
@@ -218,14 +216,18 @@ class RolesManager:
                 # Category code on purpose: system roles are never deleted
                 # (and the FK is SET NULL) — an integrity net, not a screen.
                 raise ConflictError("Origin system role of this clone no longer exists.")
-            origin_keys = {p.key for p in origin.permissions}
-            await self._assert_agency_keeps_manager(
-                actor.agency_id, edited_role=(role.id, origin_keys)
-            )
-            await self.repo.rebind_agents(actor.agency_id, role.id, origin.id)
-            await self.repo.delete_role(role)
-            await self.db.commit()
-            return
+            # Except a clone of the platform role (the escalation closed on
+            # 08/10/2026 minted some): un-masking it would put its wearers ON
+            # the platform role. It is deleted like a plain custom role below.
+            if not is_platform_role(origin):
+                origin_keys = {p.key for p in origin.permissions}
+                await self._assert_agency_keeps_manager(
+                    actor.agency_id, edited_role=(role.id, origin_keys)
+                )
+                await self.repo.rebind_agents(actor.agency_id, role.id, origin.id)
+                await self.repo.delete_role(role)
+                await self.db.commit()
+                return
 
         assigned = await self.repo.count_role_assignments(role.id)
         if assigned:
@@ -243,9 +245,9 @@ class RolesManager:
         (a duplicate never masks its source). Subject to the ceiling —
         otherwise duplicating an oversized role is the copy bypass."""
         source = await self.repo.get_role_with_permissions(role_id)
-        if source is None or (not source.is_system and source.agency_id != actor.agency_id):
+        if source is None or not is_reachable_role(source, actor.agency_id):
             raise NotFoundError("Role not found.", code="role.not_found")
-        self._assert_within_ceiling(actor, (p.key for p in source.permissions))
+        assert_within_ceiling(actor, (p.key for p in source.permissions))
         await self._assert_name_free(actor.agency_id, name)
         duplicate = self.repo.add_role(actor.agency_id, name)
         await self.db.flush()
@@ -266,13 +268,11 @@ class RolesManager:
             raise NotFoundError("Agent not found.", code="member.not_found")
 
         role = await self.repo.get_role_with_permissions(role_id)
-        if role is None or (not role.is_system and role.agency_id != actor.agency_id):
-            raise ValidationError(
-                "Role does not exist or does not belong to this agency.", code="role.not_found"
-            )
-        if role.name in PLATFORM_ROLE_NAMES:
-            # Platform-reserved (superadmin): granted only via the seed —
-            # never assignable through the UI, not even by a superadmin.
+        if role is None or not is_reachable_role(role, actor.agency_id):
+            # One answer for every role out of reach: unknown, another
+            # agency's custom role, or the platform role (superadmin), which
+            # only the seed grants: never assignable through the UI, not even
+            # by a superadmin, and recognised by identity, never by name.
             raise ValidationError(
                 "Role does not exist or does not belong to this agency.", code="role.not_found"
             )
@@ -296,7 +296,7 @@ class RolesManager:
                 )
 
         new_keys = {p.key for p in role.permissions}
-        self._assert_within_ceiling(actor, new_keys)
+        assert_within_ceiling(actor, new_keys)
         await self._assert_agency_keeps_manager(
             actor.agency_id, reassigned_agent=(target.id, new_keys)
         )

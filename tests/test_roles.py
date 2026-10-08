@@ -738,8 +738,9 @@ async def test_an_agency_admin_cannot_grant_job_manage(
 ) -> None:
     """No door hands job.manage to an agency role: not a new matrix, not an
     edit, not the assignment of a role carrying it (as agency roles did
-    before the migration), not a duplicate of superadmin. The delegation
-    ceiling refuses each, since the admin no longer holds it."""
+    before the migration): the delegation ceiling refuses each, since the
+    admin no longer holds it. Nor a duplicate of superadmin: the platform
+    role is out of reach of the agency doors (404, like an unknown role)."""
     headers = agent_headers(admin)
     own = await make_role(permissions=[Permission.CASE_VIEW], agency_id=admin.agency_id)
     carrier = await make_role(
@@ -771,57 +772,44 @@ async def test_an_agency_admin_cannot_grant_job_manage(
         headers=headers,
         json={"name": "copie"},
     )
-    assert duplicate.status_code == 403, duplicate.text
-    assert "job.manage" in duplicate.json()["detail"]
+    assert duplicate.status_code == 404, duplicate.text
+    assert duplicate.json()["code"] == "role.not_found"
 
 
 async def test_the_boot_never_gives_job_manage_back_to_an_agency_role(
     roles_client: AsyncClient,
     db_session: AsyncSession,
     admin: Agent,
-    make_agent: MakeAgent,
+    make_role: MakeRole,
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
     """seed_system_roles is additive and no longer lists job.manage for
-    admin; propagate_new_permissions_to_clones only fills a permission born
-    AFTER a clone's last matrix decision. job.manage predates every clone,
-    so the migration's removal is a decision the boot keeps — even on a
-    clone of superadmin, whose origin still holds it."""
+    admin; propagate_new_permissions_to_clones never hands a platform
+    permission to a clone. So the migrations' removal holds at every boot,
+    even on a clone of superadmin, whose origin still holds it. Such a clone
+    can no longer be made through the API (08/10/2026): it is planted here
+    as the cleanup migration leaves it."""
     # Ids read up front: expire_all() below would lazy-load them otherwise.
     admin_role_id = system_roles["admin"].id
     superadmin_role_id = system_roles["superadmin"].id
-    superadmin = await make_agent(role=system_roles["superadmin"])
     admin_clone = await roles_client.patch(
         f"/agencies/me/roles/{admin_role_id}",
         headers=agent_headers(admin),
         json={"name": "Direction"},
     )
-    # A superadmin renaming its own role in its home agency: copy-on-write.
-    operator_clone = await roles_client.patch(
-        f"/agencies/me/roles/{superadmin_role_id}",
-        headers=agent_headers(superadmin),
-        json={"name": "Opérateurs"},
-    )
     assert admin_clone.status_code == 200, admin_clone.text
-    assert operator_clone.status_code == 200, operator_clone.text
     admin_clone_id = uuid.UUID(admin_clone.json()["id"])
-    operator_clone_id = uuid.UUID(operator_clone.json()["id"])
     assert "job.manage" not in await _keys_of(db_session, admin_clone_id)
-    assert "job.manage" in await _keys_of(db_session, operator_clone_id)  # copied from origin
-    job_manage_id = (
-        await db_session.execute(
-            select(PermissionRow.id).where(PermissionRow.key == Permission.JOB_MANAGE.value)
-        )
-    ).scalar_one()
-    # What the migration leaves: job.manage on no role but the system superadmin.
-    await db_session.execute(
-        delete(RolePermission).where(
-            RolePermission.role_id == operator_clone_id,
-            RolePermission.permission_id == job_manage_id,
-        )
+    # A clone of superadmin after the cleanup: its origin's matrix minus the
+    # platform permissions.
+    operator_clone = await make_role(
+        permissions=[p for p in SYSTEM_ROLE_MATRIX["superadmin"] if p not in PLATFORM_PERMISSIONS],
+        agency_id=admin.agency_id,
+        name="Opérateurs",
+        cloned_from_role_id=superadmin_role_id,
     )
-    await db_session.commit()
+    operator_clone_id = operator_clone.id
 
     await seed_rbac_baseline(db_session, bindings=collect_bindings())  # the next boot
     db_session.expire_all()
@@ -830,8 +818,20 @@ async def test_the_boot_never_gives_job_manage_back_to_an_agency_role(
     assert "job.manage" not in await _keys_of(db_session, operator_clone_id)
     assert "job.manage" in await _keys_of(db_session, superadmin_role_id)
 
-    # Counter-proof: the birth-date rule keeps it out, not a silent seed. A
-    # clone whose last decision PREDATES job.manage's birth would receive it.
+    # Counter-proof: the birth-date rule still runs (a clone whose last
+    # decision PREDATES a permission's birth receives it: case.view here),
+    # yet it never hands out a platform permission, job.manage included.
+    case_view_id = (
+        await db_session.execute(
+            select(PermissionRow.id).where(PermissionRow.key == Permission.CASE_VIEW.value)
+        )
+    ).scalar_one()
+    await db_session.execute(
+        delete(RolePermission).where(
+            RolePermission.role_id == operator_clone_id,
+            RolePermission.permission_id == case_view_id,
+        )
+    )
     await db_session.execute(
         update(Role)
         .where(Role.id == operator_clone_id)
@@ -840,7 +840,9 @@ async def test_the_boot_never_gives_job_manage_back_to_an_agency_role(
     await db_session.commit()
     await seed_rbac_baseline(db_session, bindings=collect_bindings())
     db_session.expire_all()
-    assert "job.manage" in await _keys_of(db_session, operator_clone_id)
+    keys = await _keys_of(db_session, operator_clone_id)
+    assert "case.view" in keys
+    assert "job.manage" not in keys
 
 
 # --- migration backfill semantics ---------------------------------------------------

@@ -161,6 +161,11 @@ class AgenciesRepository:
     async def get_role(self, role_id: uuid.UUID) -> Role | None:
         return await self.db.get(Role, role_id)
 
+    async def get_role_with_permissions(self, role_id: uuid.UUID) -> Role | None:
+        """The role and its matrix, for the invitation's delegation ceiling."""
+        stmt = select(Role).where(Role.id == role_id).options(selectinload(Role.permissions))
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def get_system_role(self, name: str) -> Role | None:
         """A shared platform role by name (agency_id NULL, is_system) — e.g.
         'admin' for a new agency's first admin. Never an agency clone."""

@@ -67,6 +67,9 @@ PLATFORM_PERMISSIONS: tuple[Permission, ...] = (
     Permission.JOB_MANAGE,
 )
 _PLATFORM_SET = set(PLATFORM_PERMISSIONS)
+# The same permissions as KEYS, for the guards that compare keys: the agency
+# delegation ceiling (src/core/rbac/delegation.py) and the clone catch-up below.
+PLATFORM_PERMISSION_KEYS: frozenset[str] = frozenset(p.value for p in PLATFORM_PERMISSIONS)
 
 # The Email module's permissions (the "right to activate", N3): admin and
 # superadmin receive them by construction; case_manager EXCLUDES them below
@@ -143,6 +146,9 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
 # through the agency role flows (GET /roles, member-role PUT, invitations) —
 # the structural barrier that stops an agency from escalating into a role
 # that carries agency.create + every internal permission.
+# A name is not an identity: the platform role is the SYSTEM row (no agency)
+# carrying one of these names. src/core/rbac/delegation.py holds the single
+# predicate every agency door reads.
 PLATFORM_ROLE_NAMES: tuple[str, ...] = ("superadmin",)
 
 # The 6 fixed EXTERNAL system roles (providers). Wave B: they hold the
@@ -337,9 +343,13 @@ async def propagate_new_permissions_to_clones(db: AsyncSession) -> None:
     )
     if not clones:
         return
-    born_at = {
-        row.id: row.created_at for row in (await db.execute(select(PermissionRow))).scalars()
-    }
+    permissions = (await db.execute(select(PermissionRow))).scalars().all()
+    born_at = {row.id: row.created_at for row in permissions}
+    # A clone is an agency row: it never receives a platform permission,
+    # whatever its origin holds and whenever the permission was born. A clone
+    # of superadmin (the escalation closed on 08/10/2026 minted some) would
+    # otherwise get them back at every boot, undoing the cleanup migration.
+    platform_ids = {row.id for row in permissions if row.key in PLATFORM_PERMISSION_KEYS}
     # The WHERE guarantees cloned_from is set; the map keeps the typer honest.
     origin_of: dict[uuid.UUID, uuid.UUID] = {
         c.id: c.cloned_from_role_id for c in clones if c.cloned_from_role_id is not None
@@ -355,7 +365,7 @@ async def propagate_new_permissions_to_clones(db: AsyncSession) -> None:
         matrix[rp.role_id].add(rp.permission_id)
     for clone in clones:
         decided_at = clone.permissions_reviewed_at
-        for pid in matrix[origin_of[clone.id]] - matrix[clone.id]:
+        for pid in matrix[origin_of[clone.id]] - matrix[clone.id] - platform_ids:
             if born_at[pid] > decided_at:
                 db.add(RolePermission(role_id=clone.id, permission_id=pid))
     await db.commit()
