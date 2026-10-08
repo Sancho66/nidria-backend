@@ -1,17 +1,21 @@
-"""Email module harness: row factories, the module's env switches, and a
-`GET /team` double for the Lemlist team lookup.
+"""Email module harness: row factories, the module's env switches, a
+`GET /team` double for the Lemlist team lookup, the provider double of the
+manager (`fake_email_provider`) and a two-agency world for the agent routes.
 
 Factories write rows straight to the database (`make_*(**overrides)`), so a
-test can stand a campaign, a membership, a render or a message up without the
-agent routes. The conftest forces Lemlist mocked and real effects off; the
-`lemlist_live` fixture is the ONLY way a test turns them on, and it installs
-the `GET /team` double in the same gesture: no test can reach the network.
+test can stand a campaign, a membership, a render, a message or an event up
+without the agent routes (the launch and the sync come in phase 3B). The
+conftest forces Lemlist mocked and real effects off; the `lemlist_live`
+fixture is the ONLY way a test turns them on, and it installs the `GET /team`
+double in the same gesture; `fake_email_provider` replaces the manager's provider
+by an in-process double. No test can reach the network.
 """
 
 import os
 import uuid
 from collections.abc import Awaitable, Callable, Generator, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,7 +24,10 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from shared.models.agency_email_module import AgencyEmailModule
+from shared.models.agent import Agent
+from shared.models.company_profile import CompanyProfile, CompanyProfileRole
 from shared.models.email_campaign import (
     EmailCampaign,
     EmailCampaignAiVariable,
@@ -28,10 +35,15 @@ from shared.models.email_campaign import (
     EmailCampaignStep,
     EmailMemberRender,
     EmailMessage,
+    EmailProviderEvent,
 )
+from shared.models.rbac import Role
 from src.core.config import get_settings
-from src.email_campaigns import lemlist_team
+from src.email_campaigns import email_manager, lemlist_team
+from src.email_campaigns.providers.base import EmailProvider
+from tests.email_fakes import FakeProvider
 from tests.plugins.agency_plugin import MakeAgency
+from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.client_profile_plugin import MakeClientProfile
 
 #: A fake key: never a real one, it only has to be non-empty.
@@ -46,6 +58,8 @@ MakeEmailAiVariable = Callable[..., Awaitable[EmailCampaignAiVariable]]
 MakeEmailMember = Callable[..., Awaitable[EmailCampaignMember]]
 MakeEmailRender = Callable[..., Awaitable[EmailMemberRender]]
 MakeEmailMessage = Callable[..., Awaitable[EmailMessage]]
+MakeEmailEvent = Callable[..., Awaitable[EmailProviderEvent]]
+MakeCompanyLink = Callable[..., Awaitable[CompanyProfile]]
 
 
 # --- env switches -----------------------------------------------------------------
@@ -291,3 +305,126 @@ async def make_email_message(
         return message
 
     return _make
+
+
+@pytest_asyncio.fixture
+async def make_email_event(
+    db_session: AsyncSession, make_email_member: MakeEmailMember
+) -> MakeEmailEvent:
+    """A provider event of a membership (its campaign and agency by default)."""
+
+    async def _make(**overrides: Any) -> EmailProviderEvent:
+        data: dict[str, Any] = {
+            "provider": "LEMLIST",
+            "provider_event_id": f"act_{uuid.uuid4().hex[:12]}",
+            "type": "SENT",
+            "provider_type": "emailsSent",
+            "step_position": 1,
+            "payload": {},
+            "occurred_at": datetime.now(UTC),
+            **overrides,
+        }
+        if "campaign_member_id" not in data:
+            member = await make_email_member()
+            data["campaign_member_id"] = member.id
+            data.setdefault("campaign_id", member.campaign_id)
+            data.setdefault("agency_id", member.agency_id)
+        if "agency_id" not in data or "campaign_id" not in data:
+            member_row = await db_session.get(EmailCampaignMember, data["campaign_member_id"])
+            assert member_row is not None
+            data.setdefault("campaign_id", member_row.campaign_id)
+            data.setdefault("agency_id", member_row.agency_id)
+        event = EmailProviderEvent(**data)
+        db_session.add(event)
+        await db_session.commit()
+        await db_session.refresh(event)
+        return event
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def make_company_link(db_session: AsyncSession) -> MakeCompanyLink:
+    """A company of the client's agency, linked to the client by
+    `company_profile_role` (what `company.*` variables read)."""
+
+    async def _make(
+        *, client_profile_id: uuid.UUID, agency_id: uuid.UUID, role: str = "manager", **values: Any
+    ) -> CompanyProfile:
+        data: dict[str, Any] = {"name": "Acme Relocation", "custom_fields": {}, **values}
+        company = CompanyProfile(agency_id=agency_id, **data)
+        db_session.add(company)
+        await db_session.flush()
+        db_session.add(
+            CompanyProfileRole(
+                company_profile_id=company.id, client_profile_id=client_profile_id, role=role
+            )
+        )
+        await db_session.commit()
+        await db_session.refresh(company)
+        return company
+
+    return _make
+
+
+# --- the manager's provider -----------------------------------------------------------
+
+
+@pytest.fixture
+def fake_email_provider(monkeypatch: pytest.MonkeyPatch) -> Generator[FakeProvider, None, None]:
+    """The agency's provider replaced by `FakeProvider` (external, team
+    `tea_current`), whatever the settings: `email_manager.provider_for` is
+    monkeypatched with the registry's signature `(settings, row)`. The
+    manager's caches are cleared on both sides."""
+    fake = FakeProvider()
+
+    def _provider_for(_settings: Any, _row: AgencyEmailModule | None) -> EmailProvider:
+        return fake
+
+    monkeypatch.setattr(email_manager, "provider_for", _provider_for)
+    email_manager.clear_caches()
+    try:
+        yield fake
+    finally:
+        email_manager.clear_caches()
+
+
+# --- two agencies with the module on --------------------------------------------------
+
+
+@dataclass
+class EmailWorld:
+    """Two agencies with the Email module on, an admin in each. Ids and
+    headers are plain values: a test's request that rolls the shared session
+    back never expires them."""
+
+    agency_id: uuid.UUID
+    other_agency_id: uuid.UUID
+    admin_id: uuid.UUID
+    headers: dict[str, str]
+    other_headers: dict[str, str]
+
+
+@pytest_asyncio.fixture
+async def email_world(
+    email_module_on: None,
+    system_roles: dict[str, Role],
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    make_agency_email_module: MakeAgencyEmailModule,
+) -> EmailWorld:
+    email_manager.clear_caches()
+    agency: Agency = await make_agency(name="Relocation Lisboa")
+    other: Agency = await make_agency(name="Expat Porto")
+    admin: Agent = await make_agent(agency_id=agency.id, role=system_roles["admin"])
+    other_admin: Agent = await make_agent(agency_id=other.id, role=system_roles["admin"])
+    await make_agency_email_module(agency_id=agency.id)
+    await make_agency_email_module(agency_id=other.id)
+    return EmailWorld(
+        agency_id=agency.id,
+        other_agency_id=other.id,
+        admin_id=admin.id,
+        headers=agent_headers(admin),
+        other_headers=agent_headers(other_admin),
+    )

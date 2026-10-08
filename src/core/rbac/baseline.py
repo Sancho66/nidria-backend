@@ -184,6 +184,7 @@ def collect_bindings() -> list[RouteBinding]:
     )
     from src.documents.documents_router import BINDINGS as documents_bindings
     from src.email_campaigns.email_admin_router import BINDINGS as email_admin_bindings
+    from src.email_campaigns.email_router import BINDINGS as email_bindings
     from src.expat.expat_router import BINDINGS as expat_bindings
     from src.export.export_router import BINDINGS as export_bindings
     from src.external.external_router import BINDINGS as external_bindings
@@ -233,6 +234,7 @@ def collect_bindings() -> list[RouteBinding]:
         *signatures_bindings,
         *document_templates_bindings,
         *email_admin_bindings,
+        *email_bindings,
     ]
 
 
