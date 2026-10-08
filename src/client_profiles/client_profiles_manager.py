@@ -657,6 +657,13 @@ class ClientProfilesManager:
                 code="profile.has_cases",
                 params={"cases_count": protecting},
             )
+        # Email module (spec 8.11): the record's real leads leave Lemlist
+        # BEFORE the record; a refused removal is a 409
+        # email.provider_cleanup_failed and nothing is deleted. Imported
+        # here: the Email module already reads this manager (derived status).
+        from src.email_campaigns.email_manager import EmailManager
+
+        await EmailManager(self.db).cleanup_client_profiles(agent.agency_id, [profile.id])
         await self.db.delete(profile)
         await self.db.commit()
 
@@ -736,6 +743,15 @@ class ClientProfilesManager:
             selector = {"mode": "ids", "count": len(asked)}
 
         protected = await self.repo.protected_profile_ids(agent.agency_id, candidate_ids)
+        if not payload.dry_run:
+            # Email module (spec 8.11, decision A2): the Lemlist leads of
+            # EVERY deletable record leave before the first batch. A failure
+            # is a 409 before any deletion: never a partial deletion (the
+            # engine commits batch by batch). The dry run calls nothing.
+            from src.email_campaigns.email_manager import EmailManager
+
+            deletable = [pid for pid in candidate_ids if pid not in protected]
+            await EmailManager(self.db).cleanup_client_profiles(agent.agency_id, deletable)
         return await run_bulk_delete(
             self.db,
             agent=agent,
@@ -856,6 +872,12 @@ class ClientProfilesManager:
             raise ValidationError("A profile cannot merge into itself.", code="profile.merge_self")
         target = await self._get(agent, target_id)
         source = await self._get(agent, source_id)
+        # Email module (spec 8.11, decision A2): the source goes, and so do
+        # its Lemlist leads, BEFORE any write of the merge; a refused removal
+        # is a 409 email.provider_cleanup_failed and nothing changes.
+        from src.email_campaigns.email_manager import EmailManager
+
+        await EmailManager(self.db).cleanup_client_profiles(agent.agency_id, [source.id])
         for reference in COLLECTABLE_BASE_FIELDS:
             if _is_empty(getattr(target, reference, None)):
                 value = getattr(source, reference, None)

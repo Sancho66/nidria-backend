@@ -1,12 +1,12 @@
 """The Email module's business rules for the agent routes (`/email/*`): access,
-meta, campaigns, steps, AI variables, previews and recipients.
+meta, campaigns, steps, AI variables, previews, recipients (phase 3A); the
+Launch page, the performance, the outreach page, a client record's email
+state, the add wizard and the deletion hooks (phase 3B).
 
-Ported from Prism's `email_manager.py` (reference commit 629a2b0). The
-launch, the sync, the performance, the outreach page, the client record's
-section, the add wizard and the deletion hooks come in phase 3B, on top of
-the shared helpers here (`access`, `provider`, `through_provider`,
-`key_team_id`, `campaign_for`, `people`, `client_facts`, `member_read`,
-`provider_refusal`).
+Ported from Prism's `email_manager.py` (reference commit 629a2b0). The Sync
+and the Launch themselves live in `email_sync.py`, on top of the shared
+helpers here (`access`, `provider`, `key_team_id`, `campaign_for`, `people`,
+`client_facts`, `member_read`, `provider_refusal`).
 
 Rules that matter, in one place:
 - Access (rule N3, spec 4.2). Every call needs the module ON for the agent's
@@ -54,8 +54,21 @@ Write both through `set_status_reason`. Codes written here:
 - `removed`: taken out of the campaign by an agent (no params);
 - `moved`: ended by a move, params `{"campaign_id": <target id>,
   "campaign_name": <target name at the time>}`.
-Phase 3B adds its own the same way (Prism's `needs_render`,
-`paused_at_provider`, `kept_out`, `missing_at_provider`, `plan_refused`, ...).
+Codes the Launch and the Sync write (`email_sync.py`), each one already
+translated by the frontend for another surface:
+- a readiness issue code (`INVALID_EMAIL`, `DEMO_RECIPIENT`, `TEMPLATE`,
+  ...) with the issue's params: the hand-over refused the lead, it stays
+  READY and is tried last next time (the Launch page shows the same code);
+- an `email.provider_*` error code with its params: Lemlist refused the
+  lead (`email.provider_plan_required` stops the batch);
+- `needs_render`: paused by the sync, its email for a step Lemlist holds is
+  not there yet (params `position`, then `kind`, `token`, `error` for an
+  email that cannot be rendered, `code` for a provider refusal, or
+  `reason: next_sync`); the sync resumes it once the email is pushed;
+- `kept_out`: completed before a follow-up was added, paused at Lemlist so
+  it never gets it.
+Phase 4 adds the reconciliation's own (`paused_at_provider`,
+`missing_at_provider`, ...).
 """
 
 from __future__ import annotations
@@ -63,10 +76,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, get_args
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any, Literal, cast, get_args
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,7 +103,10 @@ from shared.models.email_campaign import (
 from shared.models.expat_user import ExpatUser
 from src.agencies.agencies_repository import AgenciesRepository
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
+from src.client_profiles.client_profiles_schema import ProfileListFilter
+from src.company_profiles.company_profiles_schema import CompanyListFilter
 from src.core.config import Settings, get_settings
+from src.core.email import normalize_email
 from src.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
@@ -98,9 +114,16 @@ from src.email_campaigns.email_repository import EmailRepository, MemberRow
 from src.email_campaigns.email_schema import (
     CampaignProviderMode,
     CampaignStatus,
+    ClientEmailStatus,
     ClientStatus,
+    Eligibility,
     EmailActionResult,
     EmailActionResultRow,
+    EmailAddMembersRequest,
+    EmailAddMembersResponse,
+    EmailAddPreviewResponse,
+    EmailAddPreviewRow,
+    EmailAddPreviewSummary,
     EmailAiTestRequest,
     EmailAiTestResponse,
     EmailAiVariableCreate,
@@ -113,13 +136,28 @@ from src.email_campaigns.email_schema import (
     EmailCampaignRead,
     EmailCampaignSettings,
     EmailCampaignUpdate,
+    EmailCandidateClient,
+    EmailCandidateClientList,
+    EmailCandidateCompany,
+    EmailCandidateCompanyList,
+    EmailClientProfileRead,
     EmailConversationItem,
     EmailEventRead,
     EmailIssueRead,
+    EmailLaunchReadiness,
+    EmailLaunchReadinessRow,
+    EmailLeadFunnelRead,
     EmailMemberDetail,
     EmailMemberListResponse,
     EmailMemberRead,
+    EmailMessageTotalsRead,
     EmailMetaRead,
+    EmailOutreachCampaign,
+    EmailOutreachItem,
+    EmailOutreachRead,
+    EmailPerformanceDay,
+    EmailPerformanceRates,
+    EmailPerformanceRead,
     EmailPreviewClient,
     EmailPreviewRequest,
     EmailPreviewResponse,
@@ -133,6 +171,7 @@ from src.email_campaigns.email_schema import (
     EmailStepCapabilities,
     EmailStepCreate,
     EmailStepImpactRead,
+    EmailStepPerformanceRead,
     EmailStepRead,
     EmailStepReorder,
     EmailStepTimeline,
@@ -140,11 +179,14 @@ from src.email_campaigns.email_schema import (
     EmailTeamInfo,
     EmailVariableFillRead,
     EmailVariableRead,
+    LaunchReadinessFilter,
     MemberStatus,
+    OutreachKind,
     SequenceReason,
     StepDeleteReason,
 )
 from src.email_campaigns.flags import (
+    email_module_effectively_enabled,
     is_real_provider_id,
     provider_state_for,
     require_email_module,
@@ -164,9 +206,15 @@ from src.email_campaigns.providers.registry import provider_for
 from src.email_campaigns.readiness import (
     ClientFacts,
     Issue,
+    TemplateCheck,
+    campaign_gates,
+    client_issues,
+    daily_limit_gate,
+    day_start,
     load_client_facts,
     membership_issues,
     not_launched,
+    sender_gate,
     template_issues,
 )
 from src.email_campaigns.readiness import team_mismatch as on_other_team
@@ -177,7 +225,7 @@ from src.email_campaigns.renderer import (
     is_valid_ai_key,
     tokens_in,
 )
-from src.email_campaigns.schedule import delay_days, schedule
+from src.email_campaigns.schedule import delay_days, schedule, today_in, zone_of
 from src.email_campaigns.variables import (
     RenderContext,
     catalog_for,
@@ -224,6 +272,10 @@ _PROVIDER_CODES: dict[str, str] = {
     "TEAM_UNKNOWN": "email.provider_unavailable",
     "TIMEOUT": "email.provider_unreachable",
     "UNREACHABLE": "email.provider_unreachable",
+    # Raised by the hand-over itself (email_sync): a step Lemlist does not
+    # have yet, and one it already reached for this lead.
+    "STEP_MISSING": "email.provider_step_missing",
+    "STEP_REACHED": "email.provider_step_reached",
 }
 #: Any other provider failure.
 PROVIDER_ERROR = "email.provider_error"
@@ -271,7 +323,7 @@ def provider_error_code(exc: ProviderError) -> str:
     return _PROVIDER_CODES.get(exc.code, PROVIDER_ERROR)
 
 
-def _provider_params(exc: ProviderError) -> dict[str, Any]:
+def provider_params(exc: ProviderError) -> dict[str, Any]:
     if exc.code == "TEAM_UNKNOWN":
         # The same params as every other "Lemlist does not say" (decision A4).
         return {"reason": "team_unknown"}
@@ -284,7 +336,7 @@ def provider_refusal(exc: ProviderError) -> ConflictError:
     return ConflictError(
         f"Lemlist refused ({exc.code}): {exc}",
         code=provider_error_code(exc),
-        params=_provider_params(exc),
+        params=provider_params(exc),
     )
 
 
@@ -606,6 +658,47 @@ def _summary(ids: Sequence[uuid.UUID], rows: list[EmailActionResultRow]) -> Emai
     return EmailActionResult(
         done=sum(r.ok for r in rows), failed=sum(not r.ok for r in rows), rows=rows
     )
+
+
+#: A client's email state, highest precedence first (spec 8.4).
+_EMAIL_PRECEDENCE: tuple[tuple[ClientEmailStatus, frozenset[str]], ...] = (
+    ("EMAIL_REPLIED", frozenset({"EMAIL_REPLIED"})),
+    ("EMAIL_IN_PROGRESS", frozenset({"EMAIL_QUEUED", "EMAIL_ACTIVE"})),
+    ("EMAIL_PAUSED", frozenset({"EMAIL_PAUSED"})),
+    ("EMAIL_READY", frozenset({"EMAIL_READY"})),
+    ("EMAIL_COMPLETED", frozenset({"EMAIL_COMPLETED"})),
+    ("EMAIL_BOUNCED", frozenset({"EMAIL_BOUNCED"})),
+    ("EMAIL_UNSUBSCRIBED", frozenset({"EMAIL_UNSUBSCRIBED"})),
+)
+#: The outreach page covers at most this many days (spec 8.8).
+OUTREACH_MAX_DAYS = 62
+#: Items one outreach answer carries at most (Prism's cap): narrow the filters.
+OUTREACH_LIMIT = 2000
+#: Ready leads the Launch page lists by id at most (Prism's cap).
+READY_IDS_CAP = 2000
+
+
+def client_email_status(statuses: Iterable[str]) -> ClientEmailStatus | None:
+    """A client's (or a company's clients') email state, derived from the
+    memberships' statuses when read, never stored: a reply anywhere wins,
+    then anything still sending, a pause, a lead waiting to start, then how
+    finished sequences ended. A removed membership does not count; an
+    unsubscribed or bounced one keeps its status when removed (decision A1),
+    so the block still shows."""
+    present = {s for s in statuses if s != "EMAIL_REMOVED"}
+    for status, members in _EMAIL_PRECEDENCE:
+        if present & members:
+            return status
+    return None
+
+
+def _ratio(part: int, whole: int) -> float | None:
+    """part / whole, or None when the whole is zero (no rate, never 0%)."""
+    return round(part / whole, 4) if whole else None
+
+
+def _invalid_period() -> BadRequestError:
+    return BadRequestError("The period ends before it starts.", code="email.invalid_period")
 
 
 # ── who asks, and what a template reads ─────────────────────────────────────
@@ -2019,7 +2112,7 @@ class EmailManager:
             if self.through_provider(provider, row.member.provider_lead_id):
                 await asyncio.to_thread(call, provider, ref, lead_ref(row.member))
         except ProviderError as exc:
-            return provider_error_code(exc), _provider_params(exc)
+            return provider_error_code(exc), provider_params(exc)
         except ConflictError as exc:
             return exc.code, dict(exc.params)
         return None
@@ -2260,9 +2353,738 @@ class EmailManager:
         member.moved_to_id = new.id
         return _row_result(member, ok=True, new_id=new.id)
 
+    # ── the Launch page (route 13) ─────────────────────────────────────────
+
+    async def launch_readiness(
+        self,
+        agent: Agent,
+        campaign_id: uuid.UUID,
+        *,
+        search: str | None,
+        readiness: LaunchReadinessFilter,
+        page: int,
+        page_size: int,
+    ) -> EmailLaunchReadiness:
+        """The Launch page: the campaign's gates, today's room under its
+        daily limit, and every lead still to launch, READY or BLOCKED by the
+        shared rules (readiness), the very ones the hand-over applies. A
+        read: no lead is asked of the provider, no AI value is generated;
+        renders already frozen (a member's preview) are counted, never made."""
+        access = await self.access(agent)
+        campaign = await self.campaign_for(access, campaign_id)
+        steps = sorted(campaign.steps, key=lambda s: s.position)
+        settings = EmailCampaignSettings.model_validate(campaign.settings or {})
+        provider = await self.provider(access)
+        gates = campaign_gates(
+            campaign,
+            steps,
+            external=provider.external,
+            key_team_id=await self.key_team_id(access),
+            launching=True,
+        )
+        launched_today = await self.repo.queued_since(campaign.id, day_start(settings.timezone))
+        remaining_today = max(settings.daily_limit - launched_today, 0)
+        for extra in (
+            daily_limit_gate(launched_today, settings.daily_limit),
+            sender_gate(settings.sender),
+        ):
+            if extra is not None:
+                gates.append(extra)
+        rows = await self.repo.to_launch(access.agency_id, campaign.id, search)
+        facts = await self.client_facts(access, rows)
+        renders = await self.repo.renders_for([r.member.id for r in rows])
+        people = await self.people(access, [r.profile for r in rows])
+        checked: list[tuple[MemberRow, list[Issue], TemplateCheck]] = []
+        for row in rows:
+            email = client_identity(row.profile, row.account).email
+            check = template_issues(
+                steps,
+                renders.get(row.member.id, {}),
+                people.context_for(row.profile, row.account),
+            )
+            issues = membership_issues(row.member, email, facts) + check.issues
+            checked.append((row, issues, check))
+        ready_rows = [entry for entry in checked if not any(i.blocking for i in entry[1])]
+        shown = (
+            checked
+            if readiness == "all"
+            else ready_rows
+            if readiness == "ready"
+            else [entry for entry in checked if any(i.blocking for i in entry[1])]
+        )
+        steps_count = {campaign.id: len(steps)}
+        items = [
+            EmailLaunchReadinessRow(
+                lead=self.member_read(row, people, steps_count, issues),
+                ready=not any(i.blocking for i in issues),
+                issues=[_issue_read(i) for i in issues],
+                steps_rendered=check.rendered,
+                steps_total=check.total,
+            )
+            for row, issues, check in shown[(page - 1) * page_size : page * page_size]
+        ]
+        return EmailLaunchReadiness(
+            campaign_id=campaign.id,
+            gates=[_issue_read(g) for g in gates],
+            can_launch=not any(g.blocking for g in gates),
+            daily_limit=settings.daily_limit,
+            launched_today=launched_today,
+            remaining_today=remaining_today,
+            to_launch=len(checked),
+            ready=len(ready_rows),
+            blocked=len(checked) - len(ready_rows),
+            launched=await self.repo.launched_count(campaign.id),
+            ready_ids=[
+                row.member.id for row, _, _ in ready_rows if row.member.status == "EMAIL_READY"
+            ][:READY_IDS_CAP],
+            items=items,
+            total=len(shown),
+            page=page,
+            page_size=page_size,
+        )
+
+    # ── performance (route 12) ─────────────────────────────────────────────
+
+    async def performance(
+        self,
+        agent: Agent,
+        campaign_id: uuid.UUID,
+        launched_from: date | None = None,
+        launched_to: date | None = None,
+    ) -> EmailPerformanceRead:
+        """The campaign's performance, computed in SQL from Nidria's records:
+        leads (memberships) and messages never mixed; rates over the leads
+        reached, None without any; with a period, the cohort of leads
+        launched in it (days in the campaign's timezone). Nothing is read
+        from the provider."""
+        access = await self.access(agent)
+        campaign = await self.campaign_for(access, campaign_id)
+        settings = EmailCampaignSettings.model_validate(campaign.settings or {})
+        zone = zone_of(settings.timezone)
+        since = (
+            datetime.combine(launched_from, time.min, tzinfo=zone).astimezone(UTC)
+            if launched_from
+            else None
+        )
+        until = (
+            datetime.combine(launched_to + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+            if launched_to
+            else None
+        )
+        if since is not None and until is not None and since >= until:
+            raise _invalid_period()
+        funnel = (await self.repo.lead_funnel([campaign.id], since=since, until=until))[campaign.id]
+        counts = (await self.repo.status_counts([campaign.id])).get(campaign.id, {})
+        messages = await self.repo.message_totals(campaign.id, since=since, until=until)
+        raw_steps = await self.repo.step_funnel(campaign.id, since=since, until=until)
+        names = {s.position: s.name for s in campaign.steps}
+        positions: list[int | None] = list(sorted(names))
+        positions += sorted(p for p in raw_steps if p is not None and p not in names)
+        if None in raw_steps:
+            positions.append(None)
+        steps: list[EmailStepPerformanceRead] = []
+        for position in positions:
+            row = raw_steps.get(position) or dict.fromkeys(
+                ("entered", "sent", "opened", "clicked", "replied", "bounced", "unsubscribed"), 0
+            )
+            entered = row["entered"]
+            steps.append(
+                EmailStepPerformanceRead(
+                    position=position,
+                    name=names.get(position) if position is not None else None,
+                    **row,
+                    open_rate=_ratio(row["opened"], entered),
+                    click_rate=_ratio(row["clicked"], entered),
+                    reply_rate=_ratio(row["replied"], entered),
+                    bounce_rate=_ratio(row["bounced"], entered),
+                    unsubscribe_rate=_ratio(row["unsubscribed"], entered),
+                )
+            )
+        reached = funnel["reached"]
+        timeline = await self.repo.performance_timeline(
+            campaign.id, timezone=zone.key, since=since, until=until
+        )
+        return EmailPerformanceRead(
+            campaign_id=campaign.id,
+            timezone=zone.key,
+            launched_from=launched_from,
+            launched_to=launched_to,
+            leads_in_campaign=sum(n for s, n in counts.items() if s != "EMAIL_REMOVED"),
+            leads_to_launch=await self.repo.to_launch_count(campaign.id),
+            funnel=EmailLeadFunnelRead(**funnel),
+            rates=EmailPerformanceRates(
+                open_rate=_ratio(funnel["opened"], reached),
+                click_rate=_ratio(funnel["clicked"], reached),
+                reply_rate=_ratio(funnel["replied"], reached),
+                bounce_rate=_ratio(funnel["bounced"], reached),
+                unsubscribe_rate=_ratio(funnel["unsubscribed"], reached),
+            ),
+            messages=EmailMessageTotalsRead(**messages),
+            states=await self.repo.cohort_states(campaign.id, since=since, until=until),
+            steps=steps,
+            timeline=[EmailPerformanceDay(day=day, **row) for day, row in timeline.items()],
+        )
+
+    # ── outreach (route 11) ────────────────────────────────────────────────
+
+    async def outreach(
+        self,
+        agent: Agent,
+        start: date,
+        end: date,
+        timezone: str,
+        filters: dict[str, Any],
+    ) -> EmailOutreachRead:
+        """The agency's outreach across its campaigns, day by day, from
+        Nidria's records: what was sent, replied, bounced or unsubscribed (at
+        its time, in the viewer's timezone), and each launched lead's next
+        emails, an estimated day in its campaign's timezone, never an hour:
+        `schedule`, the one estimate the member drawer shows too. Leads
+        without a date (not launched, paused, campaign not active) are
+        counted, never placed. At most 62 days."""
+        access = await self.access(agent)
+        if end < start:
+            raise _invalid_period()
+        if (end - start).days > OUTREACH_MAX_DAYS:
+            raise BadRequestError(
+                f"Show at most {OUTREACH_MAX_DAYS} days at a time.",
+                code="email.period_too_long",
+                params={"max_days": OUTREACH_MAX_DAYS},
+            )
+        viewer = zone_of(timezone)
+        since = datetime.combine(start, time.min, tzinfo=viewer).astimezone(UTC)
+        until = datetime.combine(end + timedelta(days=1), time.min, tzinfo=viewer).astimezone(UTC)
+        past = await self.repo.outreach_past(
+            access.agency_id, since, until, filters, OUTREACH_LIMIT
+        )
+        in_flight = await self.repo.outreach_in_flight(access.agency_id, filters)
+        sent = await self.repo.sent_days([row.member.id for row in in_flight])
+        # Read last, steps loaded: a membership query refreshes the campaign
+        # rows it joins (`populate_existing`) and would unload their steps.
+        campaigns = {c.id: c for c in await self.repo.campaigns(access.agency_id)}
+        found: list[tuple[MemberRow, dict[str, Any]]] = []
+        for kind, at, position, row in past:
+            found.append(
+                (
+                    row,
+                    {
+                        "kind": kind,
+                        "day": at.astimezone(viewer).date(),
+                        "at": at,
+                        "step_position": position,
+                    },
+                )
+            )
+        overdue = 0
+        for row in in_flight:
+            loaded = campaigns.get(row.campaign.id)
+            if loaded is None:
+                continue
+            settings = EmailCampaignSettings.model_validate(loaded.settings or {})
+            plan = schedule(
+                row.member,
+                loaded.steps,
+                sent.get(row.member.id, {}),
+                campaign_status=loaded.status,
+                timezone=settings.timezone,
+                sending_days=settings.sending_days,
+                sending_end=settings.sending_end_time,
+            )
+            today = today_in(settings.timezone)
+            for planned in sorted(plan.steps.values(), key=lambda p: p.position):
+                if not planned.estimated or planned.day is None:
+                    continue
+                if planned.overdue:
+                    overdue += 1
+                    if start <= today <= end:
+                        found.append(
+                            (
+                                row,
+                                {
+                                    "kind": "OVERDUE",
+                                    "day": today,
+                                    "estimated": True,
+                                    "estimated_day": planned.day,
+                                    "step_position": planned.position,
+                                },
+                            )
+                        )
+                elif start <= planned.day <= end:
+                    found.append(
+                        (
+                            row,
+                            {
+                                "kind": "SCHEDULED",
+                                "day": planned.day,
+                                "estimated": True,
+                                "step_position": planned.position,
+                            },
+                        )
+                    )
+        kinds = set(filters.get("kinds") or ())
+        if kinds:
+            found = [entry for entry in found if entry[1]["kind"] in kinds]
+        people = await self.people(access, [row.profile for row, _ in found])
+        items = [self._outreach_item(row, values, people, campaigns) for row, values in found]
+        rank: dict[OutreachKind, int] = {
+            "OVERDUE": 0,
+            "SENT": 1,
+            "REPLIED": 1,
+            "BOUNCED": 1,
+            "UNSUBSCRIBED": 1,
+            "SCHEDULED": 2,
+        }
+        items.sort(
+            key=lambda i: (
+                i.day,
+                rank[i.kind],
+                i.at or datetime.min.replace(tzinfo=UTC),
+                i.campaign_name,
+                i.full_name,
+            )
+        )
+        waiting, held = await self.repo.outreach_held(access.agency_id, filters)
+        return EmailOutreachRead(
+            start=start,
+            end=end,
+            timezone=viewer.key,
+            items=items[:OUTREACH_LIMIT],
+            truncated=len(items) > OUTREACH_LIMIT,
+            waiting_launch=waiting,
+            on_hold=held,
+            overdue=overdue,
+            campaigns=[
+                EmailOutreachCampaign(
+                    id=c.id, name=c.name, status=c.status, sender=_sender_email(c)
+                )
+                for c in campaigns.values()
+            ],
+        )
+
+    @staticmethod
+    def _outreach_item(
+        row: MemberRow,
+        values: dict[str, Any],
+        people: People,
+        campaigns: Mapping[uuid.UUID, EmailCampaign],
+    ) -> EmailOutreachItem:
+        member, profile, campaign = row.member, row.profile, row.campaign
+        identity = client_identity(profile, row.account)
+        company = people.company(profile)
+        loaded = campaigns.get(campaign.id)
+        step_names = {s.position: s.name for s in loaded.steps} if loaded is not None else {}
+        position = values.get("step_position")
+        return EmailOutreachItem(
+            member_id=member.id,
+            client_profile_id=profile.id,
+            full_name=_full_name(identity.first_name, identity.last_name),
+            email=identity.email,
+            company_id=company.id if company is not None else None,
+            company_name=company.name if company is not None else None,
+            campaign_id=campaign.id,
+            campaign_name=campaign.name,
+            status=member.status,
+            sender=_sender_email(campaign),
+            step_name=step_names.get(position) if position is not None else None,
+            **values,
+        )
+
+    # ── a client record's email state (route 33) ───────────────────────────
+
+    async def client_profile_email(
+        self, agent: Agent, client_profile_id: uuid.UUID
+    ) -> EmailClientProfileRead:
+        """A client record's email state (derived, never stored) and its
+        memberships in the agency's campaigns, with what holds back the one
+        still to launch. A record of another agency is not found."""
+        access = await self.access(agent)
+        profile = await self.client_profile(access, client_profile_id)
+        rows = await self.repo.member_rows_of_profile(access.agency_id, profile.id)
+        people = await self.people(access, [profile])
+        steps_count = await self.repo.step_counts(sorted({r.campaign.id for r in rows}))
+        waiting = [r for r in rows if not_launched(r.member)]
+        issues: dict[uuid.UUID, list[Issue]] = {}
+        if waiting:
+            facts = await self.client_facts(access, waiting)
+            for r in waiting:
+                email = client_identity(r.profile, r.account).email
+                issues[r.member.id] = membership_issues(r.member, email, facts)
+        return EmailClientProfileRead(
+            client_profile_id=profile.id,
+            email_status=client_email_status(r.member.status for r in rows),
+            client_status=people.client_status(profile),
+            memberships=[
+                self.member_read(r, people, steps_count, issues.get(r.member.id, ())) for r in rows
+            ],
+        )
+
+    # ── the add wizard (routes 34 to 37) ───────────────────────────────────
+
+    async def candidate_clients(
+        self,
+        agent: Agent,
+        criteria: ProfileListFilter,
+        *,
+        client_statuses: Sequence[str],
+        has_email: bool | None,
+        campaign_id: uuid.UUID | str | None,
+        sort_by: str,
+        sort_order: str,
+        page: int,
+        page_size: int,
+    ) -> EmailCandidateClientList:
+        """The Clients page's list (its criteria, sort and paging, decision
+        A15), with where each client stands in the agency's campaigns."""
+        access = await self.access(agent)
+        rows, total = await self.repo.candidate_clients(
+            access.agency_id,
+            criteria,
+            client_statuses=client_statuses,
+            has_email=has_email,
+            campaign_id=campaign_id,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            page=page,
+            page_size=page_size,
+        )
+        profiles = [profile for profile, _ in rows]
+        live = {
+            m.client_profile_id: m
+            for m in await self.repo.live_members(access.agency_id, [p.id for p in profiles])
+        }
+        names = await self.repo.campaign_names(
+            access.agency_id, (m.campaign_id for m in live.values())
+        )
+        people = await self.people(access, profiles)
+        items: list[EmailCandidateClient] = []
+        for profile, account in rows:
+            identity = client_identity(profile, account)
+            company = people.company(profile)
+            membership = live.get(profile.id)
+            items.append(
+                EmailCandidateClient(
+                    id=profile.id,
+                    first_name=identity.first_name,
+                    last_name=identity.last_name,
+                    full_name=_full_name(identity.first_name, identity.last_name),
+                    email=identity.email,
+                    has_email=bool(identity.email),
+                    company_id=company.id if company is not None else None,
+                    company_name=company.name if company is not None else None,
+                    client_status=people.client_status(profile),
+                    email_status=cast(MemberStatus, membership.status) if membership else None,
+                    current_campaign_id=membership.campaign_id if membership else None,
+                    current_campaign_name=names.get(membership.campaign_id) if membership else None,
+                )
+            )
+        return EmailCandidateClientList(items=items, total=total, page=page, page_size=page_size)
+
+    async def candidate_companies(
+        self,
+        agent: Agent,
+        criteria: CompanyListFilter,
+        *,
+        only_with_ready: bool,
+        with_email: bool,
+        sort_by: str,
+        sort_order: str,
+        page: int,
+        page_size: int,
+    ) -> EmailCandidateCompanyList:
+        """The Companies page's list (its criteria, sort and paging), each
+        company with how many of its clients the wizard would add."""
+        access = await self.access(agent)
+        rows, total = await self.repo.candidate_companies(
+            access.agency_id,
+            criteria,
+            only_with_ready=only_with_ready,
+            with_email=with_email,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            page=page,
+            page_size=page_size,
+        )
+        statuses = await self.repo.company_statuses(
+            access.agency_id, [company.id for company, *_ in rows]
+        )
+        return EmailCandidateCompanyList(
+            items=[
+                EmailCandidateCompany(
+                    id=company.id,
+                    name=company.name,
+                    email_status=client_email_status(statuses.get(company.id, [])),
+                    clients_count=clients,
+                    eligible_clients_count=eligible,
+                    ready_clients_count=ready,
+                )
+                for company, clients, eligible, ready in rows
+            ],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def preview_add(
+        self, agent: Agent, campaign_id: uuid.UUID, request: EmailAddMembersRequest
+    ) -> EmailAddPreviewResponse:
+        """What adding this selection would do, row by row. Writes nothing."""
+        access = await self.access(agent, Permission.EMAIL_ENROLL)
+        campaign = await self.campaign_for(access, campaign_id)
+        await self.writable(access, campaign)
+        plan, _ = await self._add_plan(access, campaign, request)
+        return EmailAddPreviewResponse(
+            campaign_id=campaign.id, summary=_add_summary(plan), rows=plan
+        )
+
+    async def add_members(
+        self, agent: Agent, campaign_id: uuid.UUID, request: EmailAddMembersRequest
+    ) -> EmailAddMembersResponse:
+        """Add the eligible clients as EMAIL_READY: adding sends nothing
+        (spec 8.4), only a Launch hands a lead over. The others are left out
+        with their reason, never moved (decision A10)."""
+        access = await self.access(agent, Permission.EMAIL_ENROLL)
+        # Locked: two adds into one campaign never race on the same client.
+        campaign = await self.campaign_for(access, campaign_id, lock=True)
+        await self.writable(access, campaign)
+        if campaign.status == "ARCHIVED":
+            raise BadRequestError(
+                "Clients cannot be added to an archived campaign.",
+                code="email.campaign_archived",
+            )
+        plan, _ = await self._add_plan(access, campaign, request)
+        added = 0
+        for row in plan:
+            if row.action != "ADD":
+                continue
+            self.db.add(
+                EmailCampaignMember(
+                    campaign_id=campaign.id,
+                    client_profile_id=row.client_profile_id,
+                    agency_id=access.agency_id,
+                    status="EMAIL_READY",
+                    added_by_agent_id=access.agent_id,
+                )
+            )
+            added += 1
+        await self.db.commit()
+        return EmailAddMembersResponse(added=added, skipped=len(plan) - added, rows=plan)
+
+    async def _add_plan(
+        self, access: Access, campaign: EmailCampaign, request: EmailAddMembersRequest
+    ) -> tuple[list[EmailAddPreviewRow], list[tuple[ClientProfile, ExpatUser | None]]]:
+        """The verdict on every client of the selection: the chosen records,
+        then each chosen company's clients with an address. Another agency's
+        record or company is refused outright (404), never skipped."""
+        agency_id = access.agency_id
+        company_ids = list(dict.fromkeys(request.company_ids))
+        known = await self.repo.company_ids_in_agency(agency_id, company_ids)
+        if len(known) != len(company_ids):
+            raise NotFoundError("Company profile not found.", code="company_profile.not_found")
+        excluded = set(request.exclude_client_profile_ids)
+        picked = [i for i in dict.fromkeys(request.client_profile_ids) if i not in excluded]
+        rows = await self.repo.profiles_with_accounts(agency_id, picked)
+        if len(rows) != len(picked):
+            raise NotFoundError("Client profile not found.", code="profile.not_found")
+        chosen = set(picked)
+        brought = [
+            i
+            for i in await self.repo.profiles_of_companies(agency_id, company_ids)
+            if i not in excluded and i not in chosen
+        ]
+        rows += await self.repo.profiles_with_accounts(agency_id, brought)
+        ids = [profile.id for profile, _ in rows]
+        open_here = await self.repo.open_in_campaign(campaign.id, ids)
+        identities = {profile.id: client_identity(profile, account) for profile, account in rows}
+        facts = await load_client_facts(
+            self.repo, agency_id, [(i, identities[i].email) for i in ids]
+        )
+        live_campaigns = {m.campaign_id for m in facts.live.values()}
+        live_campaigns |= {m.campaign_id for ms in facts.live_addresses.values() for m in ms}
+        names = await self.repo.campaign_names(agency_id, live_campaigns)
+        people = await self.people(access, [profile for profile, _ in rows])
+        # An address a READY row already carries: Lemlist holds one lead per
+        # address in a team, so a second record with it is left out.
+        addresses: dict[str, uuid.UUID] = {}
+        plan: list[EmailAddPreviewRow] = []
+        for profile, _account in rows:
+            identity = identities[profile.id]
+            own = facts.live.get(profile.id)
+            current: uuid.UUID | None = own.campaign_id if own is not None else None
+            via: uuid.UUID | None = None
+            eligibility: Eligibility
+            if profile.id in open_here:
+                eligibility = "ALREADY_IN_CAMPAIGN"
+            else:
+                issues = client_issues(profile.id, identity.email, facts)
+                blocking = [i for i in issues if i.blocking]
+                if blocking:
+                    issue = blocking[0]
+                    eligibility = cast(Eligibility, issue.code)
+                    if "via_client_profile_id" in issue.params:
+                        via = uuid.UUID(str(issue.params["via_client_profile_id"]))
+                    if "campaign_id" in issue.params:
+                        current = uuid.UUID(str(issue.params["campaign_id"]))
+                else:
+                    address = normalize_email(identity.email or "")
+                    if address in addresses:
+                        eligibility, via = "DUPLICATE_EMAIL", addresses[address]
+                    else:
+                        eligibility = "READY"
+                        addresses[address] = profile.id
+            company = people.company(profile)
+            plan.append(
+                EmailAddPreviewRow(
+                    client_profile_id=profile.id,
+                    first_name=identity.first_name,
+                    last_name=identity.last_name,
+                    full_name=_full_name(identity.first_name, identity.last_name),
+                    email=identity.email,
+                    company_id=company.id if company is not None else None,
+                    company_name=company.name if company is not None else None,
+                    current_campaign_id=current,
+                    current_campaign_name=names.get(current) if current is not None else None,
+                    via_client_profile_id=via,
+                    eligibility=eligibility,
+                    action="ADD" if eligibility == "READY" else "SKIP",
+                )
+            )
+        return plan, rows
+
+    # ── the deletion hooks (spec 8.11, decision A2) ─────────────────────────
+
+    async def _cleanup_provider(
+        self, module: AgencyEmailModule
+    ) -> tuple[EmailProvider, str | None] | None:
+        """The agency's provider and the key's team when it talks to Lemlist
+        for real; None in a dry run (nothing there to remove). Lemlist not
+        saying which team the key opens is a failure to clean (A4)."""
+        try:
+            provider = await asyncio.to_thread(provider_for, self.settings, module)
+            if not provider.external:
+                return None
+            return provider, await asyncio.to_thread(provider.team_id)
+        except ConflictError as exc:
+            raise _cleanup_failed({"code": exc.code, **exc.params}) from exc
+        except ProviderError as exc:
+            raise _cleanup_failed(
+                {"code": provider_error_code(exc), **provider_params(exc)}
+            ) from exc
+
+    async def cleanup_client_profiles(
+        self, agency_id: uuid.UUID, profile_ids: Sequence[uuid.UUID]
+    ) -> int:
+        """Before client records are deleted (one, in bulk, or merged away):
+        remove at Lemlist every lead of theirs that carries a real provider
+        id, ended ones included (Lemlist's deduplication sees them). At the
+        first failure, 409 `email.provider_cleanup_failed` (params
+        `client_profile_id`, `code`): the caller deletes nothing and the
+        agent tries again. Nothing to do, and no call, while the module is
+        off for the agency, in a dry run, or without a real lead; another
+        Lemlist team's lead is left alone (the key cannot reach it).
+        Returns how many leads were removed. Writes nothing."""
+        module = await self.repo.get_module(agency_id)
+        if not email_module_effectively_enabled(module, self.settings) or not profile_ids:
+            return 0
+        assert module is not None
+        leads = await self.repo.real_leads_of_profiles(agency_id, profile_ids)
+        if not leads:
+            return 0
+        found = await self._cleanup_provider(module)
+        if found is None:
+            return 0
+        provider, key_team = found
+        removed = 0
+        for member, campaign in leads:
+            ref = campaign_ref(campaign)
+            if ref is None or on_other_team(campaign, key_team):
+                continue
+            try:
+                await asyncio.to_thread(provider.remove_contact, ref, lead_ref(member))
+            except ProviderError as exc:
+                raise _cleanup_failed(
+                    {
+                        "client_profile_id": str(member.client_profile_id),
+                        "code": provider_error_code(exc),
+                    }
+                ) from exc
+            removed += 1
+        return removed
+
+    async def cleanup_agency(self, agency_id: uuid.UUID) -> int:
+        """Before an agency is deleted: pause at Lemlist each of its
+        campaigns that carries a real provider id and remove their leads, so
+        the team can serve another agency without exposing anything (spec
+        8.11; Lemlist's own unsubscribe list stays, spec 18). 409
+        `email.provider_cleanup_failed` (params `campaign_id`, `code`) at
+        the first failure, before any write. Nothing to do, and no call,
+        while the module is off, in a dry run, or without a real campaign.
+        Returns how many leads were removed."""
+        module = await self.repo.get_module(agency_id)
+        if not email_module_effectively_enabled(module, self.settings):
+            return 0
+        assert module is not None
+        campaigns = await self.repo.real_provider_campaigns(agency_id)
+        if not campaigns:
+            return 0
+        found = await self._cleanup_provider(module)
+        if found is None:
+            return 0
+        provider, key_team = found
+        removed = 0
+        for campaign in campaigns:
+            ref = campaign_ref(campaign)
+            if ref is None or on_other_team(campaign, key_team):
+                continue
+            try:
+                await asyncio.to_thread(provider.pause_campaign, ref)
+                for member in await self.repo.real_leads_of_campaign(campaign.id):
+                    await asyncio.to_thread(provider.remove_contact, ref, lead_ref(member))
+                    removed += 1
+            except ProviderError as exc:
+                raise _cleanup_failed(
+                    {"campaign_id": str(campaign.id), "code": provider_error_code(exc)}
+                ) from exc
+        return removed
+
 
 def _sender_option(sender: ProviderSender) -> EmailSenderOption:
     return EmailSenderOption(user_id=sender.user_id, email=sender.email, campaigns=sender.campaigns)
+
+
+def _sender_email(campaign: EmailCampaign) -> str | None:
+    """The mailbox a campaign is sent from, as chosen in Nidria."""
+    sender = (campaign.settings or {}).get("sender")
+    if isinstance(sender, dict) and isinstance(sender.get("email"), str):
+        return str(sender["email"])
+    return None
+
+
+def _cleanup_failed(params: Mapping[str, Any]) -> ConflictError:
+    return ConflictError(
+        "Lemlist could not remove this client's leads: nothing was deleted, try again.",
+        code="email.provider_cleanup_failed",
+        params=dict(params),
+    )
+
+
+def _add_summary(plan: Sequence[EmailAddPreviewRow]) -> EmailAddPreviewSummary:
+    def count(kind: str) -> int:
+        return sum(1 for r in plan if r.eligibility == kind)
+
+    return EmailAddPreviewSummary(
+        selected=len(plan),
+        ready=count("READY"),
+        no_email=count("NO_EMAIL"),
+        invalid_email=count("INVALID_EMAIL"),
+        demo_recipient=count("DEMO_RECIPIENT"),
+        unsubscribed=count("UNSUBSCRIBED"),
+        bounced=count("BOUNCED"),
+        in_other_campaign=count("IN_OTHER_CAMPAIGN"),
+        already_in_campaign=count("ALREADY_IN_CAMPAIGN"),
+        duplicate_email=count("DUPLICATE_EMAIL"),
+        will_add=sum(1 for r in plan if r.action == "ADD"),
+        will_skip=sum(1 for r in plan if r.action == "SKIP"),
+    )
 
 
 def _copy_step(
@@ -2298,8 +3120,10 @@ __all__ = [
     "EmailManager",
     "People",
     "SequenceFacts",
+    "client_email_status",
     "provider_error_code",
     "provider_for",
+    "provider_params",
     "provider_refusal",
     "set_status_reason",
 ]

@@ -3,11 +3,15 @@ end (Lemlist refuses inserts and removals then, measured by Prism on
 2026-10-05), and a recipient never reaches a step without its own email.
 
 Ported from Prism's `tests/test_email_active_sequence.py` (reference
-629a2b0), the part phase 3A serves: what the sequence allows, the impact of
-a new step, parking the last step nobody got, the frozen renders and the
-resume rule. The Sync that pushes a new step's emails and puts a parked step
-back to work is phase 3B; here the campaign is stood up as a launch and a
-sync left it (the email plugin's factories).
+629a2b0): what the sequence allows, the impact of a new step, parking the
+last step nobody got, the frozen renders and the resume rule (phase 3A);
+then the Sync of a sequence in use (phase 3B, spec 8.2): the campaign
+paused at Lemlist, a parked or lost step reused before any is added, each
+running recipient's own email pushed first, a recipient whose email cannot
+be rendered paused, a completed one kept out, the campaign started again
+only when it is safe. The campaign is stood up as a launch and a sync left
+it (the email plugin's factories); the provider events a real sync would
+read are phase 4's.
 
 Four recipients in a live campaign of two steps:
 - Ana got step 1 and waits for step 2;
@@ -27,9 +31,15 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.email_campaign import EmailCampaignMember, EmailCampaignStep, EmailMemberRender
+from shared.models.email_campaign import (
+    EmailCampaign,
+    EmailCampaignMember,
+    EmailCampaignStep,
+    EmailMemberRender,
+)
 from src.core.rbac.permissions import Permission
-from src.email_campaigns.providers.base import CampaignRef, ProviderError
+from src.email_campaigns.email_manager import EmailManager, prompt_hash
+from src.email_campaigns.providers.base import CampaignRef, LeadRef, ProviderError
 from src.email_campaigns.renderer import content_hash
 from tests.email_fakes import FakeProvider
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -50,6 +60,7 @@ from tests.test_email_campaigns import (
     role_headers,
     set_status,
 )
+from tests.test_email_launch import sync_via_api
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
 
@@ -105,6 +116,9 @@ async def _live(
     }
     await make_live(db, cid, status="ACTIVE")
     provider.sequences["cam_live"] = ["stp_1", "stp_2"]
+    # The ids the double hands out next (a Sync's new step, `stp_N`) never
+    # collide with the ones this campaign was stood up with.
+    provider._n = 100
     progress = {
         "ana": ("EMAIL_ACTIVE", 1, (1,), (2,)),
         "ben": ("EMAIL_REPLIED", 1, (1,), ()),
@@ -569,3 +583,451 @@ async def test_who_a_new_step_reaches_counts_each_recipient_once(
         "removed": 1,
         "ended": 2,
     }
+
+
+# ── the Sync of a sequence in use (phase 3B, spec 8.2) ───────────────────────
+
+
+async def _sync(client: AsyncClient, world: EmailWorld, live: Live) -> dict[str, Any]:
+    response = await sync_via_api(client, world.headers, live.campaign_id)
+    assert response.status_code == 200, response.text
+    return dict(response.json())
+
+
+def _pushed(provider: FakeProvider, step_id: str | None) -> set[str]:
+    """The leads whose own email for this provider step was pushed."""
+    return {
+        kw["lead"]
+        for name, kw in provider.ops
+        if name == "set_step_content" and kw["step"] == step_id
+    }
+
+
+async def _third(db: AsyncSession, live: Live) -> EmailCampaignStep:
+    step = await db.scalar(
+        select(EmailCampaignStep)
+        .where(
+            EmailCampaignStep.campaign_id == uuid.UUID(live.campaign_id),
+            EmailCampaignStep.position == 3,
+        )
+        .execution_options(populate_existing=True)
+    )
+    assert step is not None
+    return step
+
+
+async def _render_of(db: AsyncSession, member_id: uuid.UUID, position: int) -> EmailMemberRender:
+    render = await db.scalar(
+        select(EmailMemberRender)
+        .where(
+            EmailMemberRender.campaign_member_id == member_id,
+            EmailMemberRender.step_position == position,
+        )
+        .execution_options(populate_existing=True)
+    )
+    assert render is not None
+    return render
+
+
+async def test_a_follow_up_reaches_lemlist_with_each_running_recipients_own_email_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    await _follow_up(client, email_world, live)
+    result = await _sync(client, email_world, live)
+    assert result["errors"] == [], result
+    assert result["notes"] == [{"code": "follow_up_added", "params": {}}]
+    names = fake_email_provider.names()
+    # Paused while the step is added; started again once everyone has theirs.
+    assert names.index("pause_campaign") < names.index("create_step")
+    assert names[-1] == "start_campaign"
+    step = await _third(db_session, live)
+    assert step.provider_step_id
+    # Each recipient who can still reach it got its own email, before the start.
+    assert _pushed(fake_email_provider, step.provider_step_id) == {"lea_ana", "lea_dan"}
+    for index, (_, kw) in enumerate(fake_email_provider.ops):
+        if kw.get("step") == step.provider_step_id:
+            assert index < names.index("start_campaign")
+    for who in ("ana", "dan"):
+        render = await _render_of(db_session, live.members[who], 3)
+        assert render.campaign_step_id == step.id and render.body == "Step three."
+        assert render.provider_synced_at is not None and render.sent_at is None
+    # Replied and completed recipients get nothing; a completed one Lemlist
+    # still has in progress is paused there, kept out of the new step.
+    rows = {m["id"]: m for m in await members_of(db_session, live.campaign_id)}
+    for who in ("ben", "cleo"):
+        assert (
+            await db_session.scalar(
+                select(EmailMemberRender.id).where(
+                    EmailMemberRender.campaign_member_id == live.members[who],
+                    EmailMemberRender.step_position == 3,
+                )
+            )
+            is None
+        )
+    assert {kw["lead"] for name, kw in fake_email_provider.ops if name == "pause_contact"} == {
+        "lea_cleo"
+    }
+    assert rows[live.members["cleo"]]["status"] == "EMAIL_COMPLETED"
+    assert rows[live.members["cleo"]]["status_reason"] == "kept_out"
+    assert result["members_held"] == 1 and result["members_updated"] == 2
+    # No new lead was handed over: the Sync never launches anyone.
+    assert {"add_contact", "launch_contact"}.isdisjoint(names)
+    detail = await _detail(client, email_world, live)
+    assert detail["steps"][2]["capabilities"]["pending"] is False
+    assert detail["unsynced_changes"] is False
+
+
+async def test_a_completed_lead_lemlist_marked_done_is_left_alone(
+    client: AsyncClient,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    # Lemlist's own word on the leads it holds: Cleo's sequence is done there.
+    fake_email_provider.added["cam_live"] = [LeadRef("lea_cleo", "ctc_cleo")]
+    fake_email_provider.lead_status["lea_cleo"] = "done"
+    await _follow_up(client, email_world, live)
+    await _sync(client, email_world, live)
+    assert "list_contacts" in fake_email_provider.names()
+    assert "pause_contact" not in fake_email_provider.names()
+
+
+async def test_the_parked_step_is_put_back_to_work_by_the_next_follow_up(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    await _follow_up(client, email_world, live)
+    await _sync(client, email_world, live)
+    detail = await _detail(client, email_world, live)
+    third = detail["steps"][2]
+    slot = third["provider_step_id"]
+    assert slot and third["capabilities"]["can_delete"] is True
+    # Step 2 is no longer the last one at the provider.
+    assert detail["steps"][1]["capabilities"]["can_delete"] is False
+
+    removed = await client.delete(f"/email/steps/{third['id']}", headers=email_world.headers)
+    assert removed.status_code == 200, removed.text
+    assert ("park_step", {"step": slot}) in fake_email_provider.ops
+    assert "delete_step" not in fake_email_provider.names()
+
+    fake_email_provider.ops.clear()
+    await _follow_up(client, email_world, live, name="Follow-up again", body_template="Again.")
+    result = await _sync(client, email_world, live)
+    assert result["errors"] == [], result
+    # The parked step is reused: nothing is added behind it.
+    assert "create_step" not in fake_email_provider.names()
+    detail = await _detail(client, email_world, live)
+    assert detail["steps"][2]["provider_step_id"] == slot
+    assert slot not in fake_email_provider.parked
+    assert _pushed(fake_email_provider, slot) == {"lea_ana", "lea_dan"}
+    render = await _render_of(db_session, live.members["ana"], 3)
+    assert render.body == "Again." and str(render.campaign_step_id) == detail["steps"][2]["id"]
+
+
+async def test_a_sent_email_never_changes_and_unsent_ones_get_the_new_version(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    sent = await _render_of(db_session, live.members["ana"], 1)
+    version, body = sent.template_version, sent.body
+    edited = await client.patch(
+        f"/email/steps/{live.steps[1]}",
+        json={"body_template": "Step one, rewritten."},
+        headers=email_world.headers,
+    )
+    assert edited.json()["version"] == version + 1
+
+    result = await _sync(client, email_world, live)
+    assert result["members_updated"] == 1 and result["updates_remaining"] == 0
+    kept = await _render_of(db_session, live.members["ana"], 1)
+    assert (kept.template_version, kept.body) == (version, body)
+    fresh = await _render_of(db_session, live.members["dan"], 1)
+    assert fresh.body == "Step one, rewritten." and fresh.template_version == version + 1
+    # Ana's step 1 went out: never pushed again. Dan's new version is.
+    assert _pushed(fake_email_provider, "stp_1") == {"lea_dan"}
+    assert "lea_ana" not in _pushed(fake_email_provider, "stp_2")
+    detail = await _detail(client, email_world, live)
+    assert detail["steps"][0]["unsynced"] is False
+
+
+async def test_a_new_steps_ai_values_are_generated_for_each_recipient(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detail = await _follow_up(client, email_world, live, body_template="{{ai.hook}}")
+    prompt = "Une phrase sur {{client.first_name}}."
+    created = await client.post(
+        f"/email/steps/{detail['steps'][2]['id']}/ai-variables",
+        json={"key": "hook", "prompt_template": prompt},
+        headers=email_world.headers,
+    )
+    assert created.status_code == 201, created.text
+    asked: list[tuple[str | None, str]] = []
+
+    async def generated(
+        self: EmailManager, access: Any, profile: Any, people: Any, variables: Any
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        asked.extend((profile.first_name, key) for key, _, _ in variables)
+        return {key: f"Pour {profile.first_name}" for key, _, _ in variables}, {}
+
+    monkeypatch.setattr(EmailManager, "generate_ai_values", generated)
+    result = await _sync(client, email_world, live)
+    assert result["errors"] == [], result
+    assert sorted(asked) == [("Ana", "hook"), ("Dan", "hook")]
+    for who, name in (("ana", "Ana"), ("dan", "Dan")):
+        render = await _render_of(db_session, live.members[who], 3)
+        # Frozen in the render, with the prompt it came from.
+        assert render.ai_values == {
+            "hook": {"value": f"Pour {name}", "prompt_hash": prompt_hash(prompt, None)}
+        }
+        assert render.body == f"Pour {name}"
+
+
+async def test_an_email_that_cannot_be_rendered_holds_its_recipient_instead(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An AI failure for one recipient: Lemlist would send it the step's
+    placeholder, so it is paused (`needs_render`), never sent it; the
+    others go on. Nobody resumes it before its email exists; the next Sync
+    renders it, pushes it and resumes it."""
+    detail = await _follow_up(client, email_world, live, body_template="{{ai.hook}}")
+    await client.post(
+        f"/email/steps/{detail['steps'][2]['id']}/ai-variables",
+        json={"key": "hook", "prompt_template": "Une phrase sur {{client.first_name}}."},
+        headers=email_world.headers,
+    )
+
+    async def flaky(
+        self: EmailManager, access: Any, profile: Any, people: Any, variables: Any
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        if profile.first_name == "Dan":
+            return {}, {key: "email.ai_generation_failed" for key, _, _ in variables}
+        return {key: "Une accroche." for key, _, _ in variables}, {}
+
+    monkeypatch.setattr(EmailManager, "generate_ai_values", flaky)
+    result = await _sync(client, email_world, live)
+    step = await _third(db_session, live)
+    assert _pushed(fake_email_provider, step.provider_step_id) == {"lea_ana"}
+    assert ("pause_contact", {"lead": "lea_dan"}) in fake_email_provider.ops
+    rows = {m["id"]: m for m in await members_of(db_session, live.campaign_id)}
+    dan = rows[live.members["dan"]]
+    assert (dan["status"], dan["status_reason"], dan["paused_by_agent_id"]) == (
+        "EMAIL_PAUSED",
+        "needs_render",
+        None,
+    )
+    assert dan["provider_metadata"]["status_reason_params"] == {
+        "position": 3,
+        "kind": "ai_not_generated",
+        "token": "ai.hook",
+        "error": "email.ai_generation_failed",
+    }
+    # Dan held for his email, Cleo kept out as completed.
+    assert result["members_held"] == 2
+    # The others go on: the campaign runs again.
+    assert fake_email_provider.names()[-1] == "start_campaign"
+    shown = (
+        await client.get(f"/email/members/{live.members['dan']}", headers=email_world.headers)
+    ).json()
+    assert shown["status_reason"] == "needs_render"
+    assert shown["status_reason_params"]["token"] == "ai.hook"
+
+    # A person cannot resume him before his email exists...
+    refused = await act(client, email_world.headers, "resume", [live.members["dan"]])
+    assert refused["rows"][0]["ok"] is False
+    assert refused["rows"][0]["code"] == "email.member_needs_render"
+
+    # ...the next Sync renders it, pushes it and resumes him.
+    async def fixed(
+        self: EmailManager, access: Any, profile: Any, people: Any, variables: Any
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        return {key: "Enfin." for key, _, _ in variables}, {}
+
+    monkeypatch.setattr(EmailManager, "generate_ai_values", fixed)
+    fake_email_provider.ops.clear()
+    await _sync(client, email_world, live)
+    assert _pushed(fake_email_provider, step.provider_step_id) == {"lea_dan"}
+    assert ("resume_contact", {"lead": "lea_dan"}) in fake_email_provider.ops
+    rows = {m["id"]: m for m in await members_of(db_session, live.campaign_id)}
+    assert rows[live.members["dan"]]["status"] == "EMAIL_QUEUED"
+    assert rows[live.members["dan"]]["status_reason"] is None
+
+
+async def test_without_ai_generation_the_recipient_is_held_never_sent_a_fallback(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    """Phase 5 not configured (decision A14): an AI value is never invented,
+    the recipients who would reach the step are held instead."""
+    detail = await _follow_up(client, email_world, live, body_template="{{ai.hook}}")
+    await client.post(
+        f"/email/steps/{detail['steps'][2]['id']}/ai-variables",
+        json={"key": "hook", "prompt_template": "Une phrase."},
+        headers=email_world.headers,
+    )
+    result = await _sync(client, email_world, live)
+    step = await _third(db_session, live)
+    assert _pushed(fake_email_provider, step.provider_step_id) == set()
+    rows = {m["id"]: m for m in await members_of(db_session, live.campaign_id)}
+    for who in ("ana", "dan"):
+        assert rows[live.members[who]]["status"] == "EMAIL_PAUSED", who
+        params = rows[live.members[who]]["provider_metadata"]["status_reason_params"]
+        assert params["error"] == "email.ai_not_configured", who
+    assert result["members_held"] == 3
+
+
+async def test_a_recipient_an_agent_paused_stays_paused(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    await act(client, email_world.headers, "pause", [live.members["ana"]])
+    await _follow_up(client, email_world, live)
+    fake_email_provider.ops.clear()
+    await _sync(client, email_world, live)
+    step = await _third(db_session, live)
+    # Paused Ana gets her email for it too, for when she is resumed...
+    assert "lea_ana" in _pushed(fake_email_provider, step.provider_step_id)
+    # ...and is never resumed by the sync.
+    assert "resume_contact" not in fake_email_provider.names()
+    rows = {m["id"]: m for m in await members_of(db_session, live.campaign_id)}
+    assert rows[live.members["ana"]]["status"] == "EMAIL_PAUSED"
+    assert rows[live.members["ana"]]["paused_by_agent_id"] == email_world.admin_id
+
+
+async def test_a_failed_step_creation_is_reconciled_without_a_duplicate(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    await _follow_up(client, email_world, live)
+    fake_email_provider.failures[("create_step", "cam_live")] = ProviderError(
+        "Lemlist did not answer in time.", code="TIMEOUT"
+    )
+    result = await _sync(client, email_world, live)
+    assert result["errors"] == [
+        {"code": "follow_up_not_added", "params": {"code": "email.provider_unreachable"}}
+    ]
+    detail = await _detail(client, email_world, live)
+    assert detail["steps"][2]["provider_step_id"] is None
+    campaign = await db_session.get(EmailCampaign, uuid.UUID(live.campaign_id))
+    assert campaign is not None
+    await db_session.refresh(campaign)
+    assert campaign.sync_error == "follow_up_not_added"
+    # Nothing reached the half-made step: the campaign runs again for the others.
+    assert "set_step_content" not in fake_email_provider.names()
+    assert fake_email_provider.names()[-1] == "start_campaign"
+
+    # The answer was lost but Lemlist had created it: the next sync reuses it.
+    fake_email_provider.failures.clear()
+    fake_email_provider.sequences["cam_live"].append("stp_lost")
+    fake_email_provider.ops.clear()
+    result = await _sync(client, email_world, live)
+    assert result["errors"] == [], result
+    assert "create_step" not in fake_email_provider.names()
+    detail = await _detail(client, email_world, live)
+    assert detail["steps"][2]["provider_step_id"] == "stp_lost"
+    assert _pushed(fake_email_provider, "stp_lost") == {"lea_ana", "lea_dan"}
+
+
+async def test_an_unfinished_step_waits_and_a_resync_changes_nothing(
+    client: AsyncClient,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+) -> None:
+    detail = await _follow_up(client, email_world, live, body_template="")
+    result = await _sync(client, email_world, live)
+    assert result["notes"] == [{"code": "step_not_written", "params": {"position": 3}}]
+    assert {"pause_campaign", "create_step"}.isdisjoint(fake_email_provider.names())
+
+    await client.patch(
+        f"/email/steps/{detail['steps'][2]['id']}",
+        json={"body_template": "Step three."},
+        headers=email_world.headers,
+    )
+    await _sync(client, email_world, live)
+    assert "create_step" in fake_email_provider.names()
+
+    fake_email_provider.ops.clear()
+    again = await _sync(client, email_world, live)
+    assert again["errors"] == [] and again["members_held"] == 0
+    assert {"create_step", "set_step_content", "pause_contact", "pause_campaign"}.isdisjoint(
+        fake_email_provider.names()
+    )
+    assert fake_email_provider.names() == [
+        "update_campaign",
+        "update_step",
+        "update_step",
+        "update_step",
+        "start_campaign",
+    ]
+
+
+async def test_a_recipient_lemlist_cannot_pause_keeps_the_campaign_paused(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    live: Live,
+    fake_email_provider: FakeProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A recipient who could reach the new step without its email and whom
+    Lemlist refuses to pause: the campaign is not started again, and the
+    Sync says why."""
+    detail = await _follow_up(client, email_world, live, body_template="{{ai.hook}}")
+    await client.post(
+        f"/email/steps/{detail['steps'][2]['id']}/ai-variables",
+        json={"key": "hook", "prompt_template": "Une phrase."},
+        headers=email_world.headers,
+    )
+    fake_email_provider.failures[("pause_contact", "lea_dan")] = ProviderError(
+        "Lemlist did not answer in time.", code="TIMEOUT"
+    )
+
+    async def only_ana(
+        self: EmailManager, access: Any, profile: Any, people: Any, variables: Any
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        if profile.first_name == "Dan":
+            return {}, {key: "email.ai_generation_failed" for key, _, _ in variables}
+        return {key: "Une accroche." for key, _, _ in variables}, {}
+
+    monkeypatch.setattr(EmailManager, "generate_ai_values", only_ana)
+    result = await _sync(client, email_world, live)
+    # Dan could not be updated, nor paused: he could reach step 3 without
+    # his own email, so the campaign stays paused.
+    assert [(e["code"], e["params"].get("member_id")) for e in result["errors"]] == [
+        ("member_not_updated", str(live.members["dan"])),
+        ("campaign_kept_paused", None),
+    ]
+    assert result["errors"][1]["params"] == {"exposed": 1}
+    names = fake_email_provider.names()
+    assert "start_campaign" not in names and names[-1] == "pause_campaign"
+    rows = {m["id"]: m for m in await members_of(db_session, live.campaign_id)}
+    assert rows[live.members["dan"]]["status"] == "EMAIL_QUEUED"

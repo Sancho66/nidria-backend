@@ -7,19 +7,24 @@ manager checks again, plus `case.view` (the module lists clients) and the
 module's switch for the agency (409 `email.module_disabled`).
 
 Phase 3A: meta, campaigns, steps, AI variables, previews and recipients.
-The launch, the sync, the performance, the outreach page, the client
-record's section and the add wizard come in phase 3B, the webhook in phase 4.
-List parameters are repeated (`?status=A&status=B`), never comma-joined.
+Phase 3B: the Sync and the Launch (both `email.sync`, both refused under
+impersonation, D6), the Launch page, the performance, the outreach page, a
+client record's email state and the add wizard, whose lists take the
+Clients and Companies pages' own parameters (decision A15). The webhook is
+phase 4. List parameters are repeated (`?status=A&status=B`), never
+comma-joined.
 """
 
 import uuid
-from datetime import datetime
-from typing import Annotated, Literal
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
+from src.client_profiles.client_profiles_schema import ProfileListFilter
+from src.company_profiles.company_profiles_schema import CompanyListFilter
 from src.core.dependencies import get_current_agent, get_db
 from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
@@ -28,6 +33,9 @@ from src.email_campaigns.email_manager import EmailManager
 from src.email_campaigns.email_schema import (
     CampaignStatus,
     EmailActionResult,
+    EmailAddMembersRequest,
+    EmailAddMembersResponse,
+    EmailAddPreviewResponse,
     EmailAiTestRequest,
     EmailAiTestResponse,
     EmailAiVariableCreate,
@@ -37,12 +45,20 @@ from src.email_campaigns.email_schema import (
     EmailCampaignDetailRead,
     EmailCampaignRead,
     EmailCampaignUpdate,
+    EmailCandidateClientList,
+    EmailCandidateCompanyList,
+    EmailClientProfileRead,
     EmailDuplicateRequest,
+    EmailLaunchReadiness,
+    EmailLaunchRequest,
+    EmailLaunchResult,
     EmailMemberAction,
     EmailMemberDetail,
     EmailMemberListResponse,
     EmailMemberMove,
     EmailMetaRead,
+    EmailOutreachRead,
+    EmailPerformanceRead,
     EmailPreviewRequest,
     EmailPreviewResponse,
     EmailSendersRead,
@@ -51,14 +67,21 @@ from src.email_campaigns.email_schema import (
     EmailStepRead,
     EmailStepReorder,
     EmailStepUpdate,
+    EmailSyncRequest,
+    EmailSyncResult,
     EmailVariableFillRead,
+    LaunchReadinessFilter,
     MemberStatus,
+    OutreachKind,
 )
+from src.email_campaigns.email_sync import EmailSyncManager
 
 router = APIRouter(prefix="/email", tags=["email"])
 
 _VIEW = Permission.EMAIL_VIEW
 _MANAGE = Permission.EMAIL_MANAGE
+_ENROLL = Permission.EMAIL_ENROLL
+_SYNC = Permission.EMAIL_SYNC
 
 BINDINGS = [
     # meta
@@ -72,6 +95,12 @@ BINDINGS = [
     RouteBinding("PATCH", "/email/campaigns/{campaign_id}", Audience.AGENT, _MANAGE),
     RouteBinding("POST", "/email/campaigns/{campaign_id}/duplicate", Audience.AGENT, _MANAGE),
     RouteBinding("DELETE", "/email/campaigns/{campaign_id}", Audience.AGENT, _MANAGE),
+    # sync, launch, performance, outreach
+    RouteBinding("POST", "/email/campaigns/{campaign_id}/sync", Audience.AGENT, _SYNC),
+    RouteBinding("GET", "/email/outreach", Audience.AGENT, _VIEW),
+    RouteBinding("GET", "/email/campaigns/{campaign_id}/performance", Audience.AGENT, _VIEW),
+    RouteBinding("GET", "/email/campaigns/{campaign_id}/launch", Audience.AGENT, _VIEW),
+    RouteBinding("POST", "/email/campaigns/{campaign_id}/launch", Audience.AGENT, _SYNC),
     # steps
     RouteBinding("GET", "/email/campaigns/{campaign_id}/steps", Audience.AGENT, _VIEW),
     RouteBinding("GET", "/email/campaigns/{campaign_id}/steps/impact", Audience.AGENT, _VIEW),
@@ -93,6 +122,14 @@ BINDINGS = [
     RouteBinding("POST", "/email/members/resume", Audience.AGENT, Permission.EMAIL_PAUSE),
     RouteBinding("POST", "/email/members/remove", Audience.AGENT, Permission.EMAIL_REMOVE),
     RouteBinding("POST", "/email/members/move", Audience.AGENT, Permission.EMAIL_ENROLL),
+    # a client record's email state, the add wizard
+    RouteBinding("GET", "/email/client-profiles/{client_profile_id}", Audience.AGENT, _VIEW),
+    RouteBinding("GET", "/email/candidates/client-profiles", Audience.AGENT, _VIEW),
+    RouteBinding("GET", "/email/candidates/companies", Audience.AGENT, _VIEW),
+    RouteBinding(
+        "POST", "/email/campaigns/{campaign_id}/members/preview-add", Audience.AGENT, _ENROLL
+    ),
+    RouteBinding("POST", "/email/campaigns/{campaign_id}/members/add", Audience.AGENT, _ENROLL),
 ]
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -380,3 +417,220 @@ async def move_members(agent: AgentDep, db: DbDep, body: EmailMemberMove) -> Ema
     """End each membership and open a new, ready one in the target campaign.
     Progress is not carried over."""
     return await EmailManager(db).move(agent, body.ids, body.target_campaign_id)
+
+
+# ── sync, launch, performance, outreach ────────────────────────────────────
+
+
+@router.post("/campaigns/{campaign_id}/sync", response_model=EmailSyncResult)
+async def sync_campaign(
+    campaign_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    body: Annotated[EmailSyncRequest | None, Body()] = None,
+) -> EmailSyncResult:
+    """Sync: push the campaign and its steps to Lemlist and keep the leads it
+    already holds current (their next emails, new steps). Never hands a new
+    lead over: that is the Launch. A dry run while the agency does not talk
+    to Lemlist. Call again while `updates_remaining` is above zero.
+    Refused under impersonation."""
+    return await EmailSyncManager(db).sync_campaign(agent, campaign_id, body or EmailSyncRequest())
+
+
+@router.get("/outreach", response_model=EmailOutreachRead)
+async def outreach(
+    agent: AgentDep,
+    db: DbDep,
+    start: Annotated[date, Query(description="First day shown (the viewer's timezone).")],
+    end: Annotated[date, Query(description="Last day shown, included (62 days at most).")],
+    tz: Annotated[str, Query(max_length=64, description="The viewer's IANA timezone.")] = "UTC",
+    campaign_id: Annotated[uuid.UUID | None, Query()] = None,
+    member_status: Annotated[list[MemberStatus] | None, Query(alias="status")] = None,
+    kinds: Annotated[list[OutreachKind] | None, Query()] = None,
+    sender: Annotated[str | None, Query(max_length=255)] = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+) -> EmailOutreachRead:
+    """The agency's outreach across its campaigns, day by day: what went out
+    and came back (at its time), and each launched lead's next emails as an
+    estimated day (no hour). Read from Nidria only, never from Lemlist.
+    `status` and `kinds` are repeated to keep several."""
+    filters: dict[str, Any] = {
+        "campaign_id": campaign_id,
+        "status": member_status,
+        "kinds": kinds,
+        "sender": sender,
+        "search": search,
+    }
+    return await EmailManager(db).outreach(agent, start, end, tz, filters)
+
+
+@router.get("/campaigns/{campaign_id}/performance", response_model=EmailPerformanceRead)
+async def campaign_performance(
+    campaign_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    launched_from: Annotated[
+        date | None, Query(description="First launch day (campaign timezone).")
+    ] = None,
+    launched_to: Annotated[date | None, Query(description="Last launch day, included.")] = None,
+) -> EmailPerformanceRead:
+    """The campaign's performance from Nidria's records: unique leads (the
+    funnel Launched, Reached, Opened, Replied; clicks, bounces and
+    unsubscribes apart; rates over the leads reached), messages counted
+    apart, each step's leads, the daily timeline. With a period: the cohort
+    of leads launched in it."""
+    return await EmailManager(db).performance(agent, campaign_id, launched_from, launched_to)
+
+
+@router.get("/campaigns/{campaign_id}/launch", response_model=EmailLaunchReadiness)
+async def launch_readiness(
+    campaign_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    readiness: Annotated[LaunchReadinessFilter, Query()] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> EmailLaunchReadiness:
+    """The Launch page: the campaign's gates, today's room under its daily
+    limit, and each lead still to launch, READY or BLOCKED with its reasons,
+    by the rules the hand-over applies. A read: no lead is asked of Lemlist,
+    no AI value is generated."""
+    return await EmailManager(db).launch_readiness(
+        agent, campaign_id, search=search, readiness=readiness, page=page, page_size=page_size
+    )
+
+
+@router.post("/campaigns/{campaign_id}/launch", response_model=EmailLaunchResult)
+async def launch_campaign(
+    campaign_id: uuid.UUID,
+    agent: AgentDep,
+    db: DbDep,
+    body: Annotated[EmailLaunchRequest | None, Body()] = None,
+) -> EmailLaunchResult:
+    """Launch: the sync, then READY leads handed over (`member_ids`, or the
+    next eligible ones) within `limit` and the daily limit, each checked
+    again first. The only way a new lead reaches Lemlist. A dry run while
+    the agency does not talk to Lemlist. Call again while `remaining` is
+    above zero and leads were launched. Refused under impersonation."""
+    return await EmailSyncManager(db).launch(agent, campaign_id, body or EmailLaunchRequest())
+
+
+# ── a client record's email state, the add wizard ──────────────────────────
+
+
+@router.get("/client-profiles/{client_profile_id}", response_model=EmailClientProfileRead)
+async def client_profile_email(
+    client_profile_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> EmailClientProfileRead:
+    """A client record's email status (derived from its memberships, never
+    stored) next to its client status, and its memberships, history
+    included."""
+    return await EmailManager(db).client_profile_email(agent, client_profile_id)
+
+
+@router.get("/candidates/client-profiles", response_model=EmailCandidateClientList)
+async def candidate_client_profiles(
+    agent: AgentDep,
+    db: DbDep,
+    # The Clients page's own parameters (GET /client-profiles), applied by
+    # its own predicates.
+    search: str | None = None,
+    status: Annotated[
+        Literal["prospect", "client"] | None,
+        Query(description="The client status (override first, else derived)."),
+    ] = None,
+    tags: Annotated[list[str] | None, Query(description="ANY-of tag filter.")] = None,
+    client_space_activated: bool | None = None,
+    has_active_case: bool | None = None,
+    sort_by: Annotated[Literal["name", "last_activity", "created_at"], Query()] = "name",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "asc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    # The wizard's own.
+    has_email: Annotated[
+        Literal["any"] | bool,
+        Query(description="true (default): an effective email; false: none; any: both."),
+    ] = True,
+    campaign_id: Annotated[
+        uuid.UUID | Literal["none"] | None,
+        Query(description="Live in this campaign, or `none` for no live membership."),
+    ] = None,
+    client_status: Annotated[
+        list[Literal["prospect", "client"]] | None,
+        Query(description="Repeated; the derived client status, as on the Leads list."),
+    ] = None,
+) -> EmailCandidateClientList:
+    """Clients to add, with the Clients page's filters, sort and paging, and
+    the wizard's own; by default only clients with an email."""
+    criteria = ProfileListFilter(
+        search=search,
+        status=status,
+        tags=tags,
+        client_space_activated=client_space_activated,
+        has_active_case=has_active_case,
+    )
+    return await EmailManager(db).candidate_clients(
+        agent,
+        criteria,
+        client_statuses=client_status or [],
+        has_email=None if has_email == "any" else has_email,
+        campaign_id=campaign_id,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/candidates/companies", response_model=EmailCandidateCompanyList)
+async def candidate_companies(
+    agent: AgentDep,
+    db: DbDep,
+    # The Companies page's own parameters (GET /company-profiles).
+    search: str | None = None,
+    tags: Annotated[list[str] | None, Query(description="ANY-of tag filter.")] = None,
+    has_active_case: bool | None = None,
+    has_people: bool | None = None,
+    sort_by: Annotated[Literal["name", "last_activity", "created_at"], Query()] = "name",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "asc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    # The wizard's own.
+    only_with_ready: Annotated[bool, Query()] = False,
+    with_email: Annotated[
+        bool, Query(description="true (default): a linked client with an email at least.")
+    ] = True,
+) -> EmailCandidateCompanyList:
+    """Companies to add, with the Companies page's filters, sort and paging;
+    each with how many of its clients the wizard would add."""
+    criteria = CompanyListFilter(
+        search=search, tags=tags, has_active_case=has_active_case, has_people=has_people
+    )
+    return await EmailManager(db).candidate_companies(
+        agent,
+        criteria,
+        only_with_ready=only_with_ready,
+        with_email=with_email,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.post("/campaigns/{campaign_id}/members/preview-add", response_model=EmailAddPreviewResponse)
+async def preview_add_members(
+    campaign_id: uuid.UUID, agent: AgentDep, db: DbDep, body: EmailAddMembersRequest
+) -> EmailAddPreviewResponse:
+    """What adding this selection would do, row by row. Writes nothing."""
+    return await EmailManager(db).preview_add(agent, campaign_id, body)
+
+
+@router.post("/campaigns/{campaign_id}/members/add", response_model=EmailAddMembersResponse)
+async def add_members(
+    campaign_id: uuid.UUID, agent: AgentDep, db: DbDep, body: EmailAddMembersRequest
+) -> EmailAddMembersResponse:
+    """Add the eligible clients as ready (nothing is sent); the others are
+    left out with their reason, never moved."""
+    return await EmailManager(db).add_members(agent, campaign_id, body)

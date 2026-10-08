@@ -6221,6 +6221,1110 @@
         ]
       }
     },
+    "/email/campaigns/{campaign_id}/sync": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Sync Campaign",
+        "description": "Sync: push the campaign and its steps to Lemlist and keep the leads it\nalready holds current (their next emails, new steps). Never hands a new\nlead over: that is the Launch. A dry run while the agency does not talk\nto Lemlist. Call again while `updates_remaining` is above zero.\nRefused under impersonation.",
+        "operationId": "sync_campaign_email_campaigns__campaign_id__sync_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/EmailSyncRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/outreach": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Outreach",
+        "description": "The agency's outreach across its campaigns, day by day: what went out\nand came back (at its time), and each launched lead's next emails as an\nestimated day (no hour). Read from Nidria only, never from Lemlist.\n`status` and `kinds` are repeated to keep several.",
+        "operationId": "outreach_email_outreach_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "First day shown (the viewer's timezone).",
+              "title": "Start"
+            },
+            "description": "First day shown (the viewer's timezone)."
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Last day shown, included (62 days at most).",
+              "title": "End"
+            },
+            "description": "Last day shown, included (62 days at most)."
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "The viewer's IANA timezone.",
+              "default": "UTC",
+              "title": "Tz"
+            },
+            "description": "The viewer's IANA timezone."
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Campaign Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "EMAIL_READY",
+                      "EMAIL_QUEUED",
+                      "EMAIL_ACTIVE",
+                      "EMAIL_PAUSED",
+                      "EMAIL_REPLIED",
+                      "EMAIL_BOUNCED",
+                      "EMAIL_COMPLETED",
+                      "EMAIL_REMOVED",
+                      "EMAIL_UNSUBSCRIBED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "SENT",
+                      "REPLIED",
+                      "BOUNCED",
+                      "UNSUBSCRIBED",
+                      "SCHEDULED",
+                      "OVERDUE"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kinds"
+            }
+          },
+          {
+            "name": "sender",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sender"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailOutreachRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/campaigns/{campaign_id}/performance": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Campaign Performance",
+        "description": "The campaign's performance from Nidria's records: unique leads (the\nfunnel Launched, Reached, Opened, Replied; clicks, bounces and\nunsubscribes apart; rates over the leads reached), messages counted\napart, each step's leads, the daily timeline. With a period: the cohort\nof leads launched in it.",
+        "operationId": "campaign_performance_email_campaigns__campaign_id__performance_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Campaign Id"
+            }
+          },
+          {
+            "name": "launched_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First launch day (campaign timezone).",
+              "title": "Launched From"
+            },
+            "description": "First launch day (campaign timezone)."
+          },
+          {
+            "name": "launched_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Last launch day, included.",
+              "title": "Launched To"
+            },
+            "description": "Last launch day, included."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPerformanceRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/campaigns/{campaign_id}/launch": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Launch Readiness",
+        "description": "The Launch page: the campaign's gates, today's room under its daily\nlimit, and each lead still to launch, READY or BLOCKED with its reasons,\nby the rules the hand-over applies. A read: no lead is asked of Lemlist,\nno AI value is generated.",
+        "operationId": "launch_readiness_email_campaigns__campaign_id__launch_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Campaign Id"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "readiness",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "ready",
+                "blocked"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Readiness"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailLaunchReadiness"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Launch Campaign",
+        "description": "Launch: the sync, then READY leads handed over (`member_ids`, or the\nnext eligible ones) within `limit` and the daily limit, each checked\nagain first. The only way a new lead reaches Lemlist. A dry run while\nthe agency does not talk to Lemlist. Call again while `remaining` is\nabove zero and leads were launched. Refused under impersonation.",
+        "operationId": "launch_campaign_email_campaigns__campaign_id__launch_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/EmailLaunchRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailLaunchResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/client-profiles/{client_profile_id}": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Client Profile Email",
+        "description": "A client record's email status (derived from its memberships, never\nstored) next to its client status, and its memberships, history\nincluded.",
+        "operationId": "client_profile_email_email_client_profiles__client_profile_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "client_profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Client Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailClientProfileRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/candidates/client-profiles": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Candidate Client Profiles",
+        "description": "Clients to add, with the Clients page's filters, sort and paging, and\nthe wizard's own; by default only clients with an email.",
+        "operationId": "candidate_client_profiles_email_candidates_client_profiles_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "prospect",
+                    "client"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The client status (override first, else derived).",
+              "title": "Status"
+            },
+            "description": "The client status (override first, else derived)."
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ANY-of tag filter.",
+              "title": "Tags"
+            },
+            "description": "ANY-of tag filter."
+          },
+          {
+            "name": "client_space_activated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Space Activated"
+            }
+          },
+          {
+            "name": "has_active_case",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Active Case"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "last_activity",
+                "created_at"
+              ],
+              "type": "string",
+              "default": "name",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Order"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "has_email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "any",
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ],
+              "description": "true (default): an effective email; false: none; any: both.",
+              "default": true,
+              "title": "Has Email"
+            },
+            "description": "true (default): an effective email; false: none; any: both."
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "const": "none",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Live in this campaign, or `none` for no live membership.",
+              "title": "Campaign Id"
+            },
+            "description": "Live in this campaign, or `none` for no live membership."
+          },
+          {
+            "name": "client_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "prospect",
+                      "client"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeated; the derived client status, as on the Leads list.",
+              "title": "Client Status"
+            },
+            "description": "Repeated; the derived client status, as on the Leads list."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCandidateClientList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/candidates/companies": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Candidate Companies",
+        "description": "Companies to add, with the Companies page's filters, sort and paging;\neach with how many of its clients the wizard would add.",
+        "operationId": "candidate_companies_email_candidates_companies_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ANY-of tag filter.",
+              "title": "Tags"
+            },
+            "description": "ANY-of tag filter."
+          },
+          {
+            "name": "has_active_case",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Active Case"
+            }
+          },
+          {
+            "name": "has_people",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has People"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "last_activity",
+                "created_at"
+              ],
+              "type": "string",
+              "default": "name",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Order"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "only_with_ready",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Only With Ready"
+            }
+          },
+          {
+            "name": "with_email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "true (default): a linked client with an email at least.",
+              "default": true,
+              "title": "With Email"
+            },
+            "description": "true (default): a linked client with an email at least."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCandidateCompanyList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/campaigns/{campaign_id}/members/preview-add": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Preview Add Members",
+        "description": "What adding this selection would do, row by row. Writes nothing.",
+        "operationId": "preview_add_members_email_campaigns__campaign_id__members_preview_add_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAddMembersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailAddPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/campaigns/{campaign_id}/members/add": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Add Members",
+        "description": "Add the eligible clients as ready (nothing is sent); the others are\nleft out with their reason, never moved.",
+        "operationId": "add_members_email_campaigns__campaign_id__members_add_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAddMembersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailAddMembersResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/me/profile-sections": {
       "get": {
         "tags": [
@@ -29189,6 +30293,303 @@
         "title": "EmailActionResultRow",
         "description": "One membership of a bulk action. A failed row carries a CODE\n(`email.not_found`, `permission.denied`, `email.provider_*`, ...) and its\nparams, never a sentence."
       },
+      "EmailAddMembersRequest": {
+        "properties": {
+          "client_profile_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Client Profile Ids"
+          },
+          "company_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "title": "Company Ids"
+          },
+          "exclude_client_profile_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Exclude Client Profile Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EmailAddMembersRequest",
+        "description": "Who to add: client records, and companies whose linked clients with\nan email come along. Nothing is ever moved from the wizard (decision\nA10) nor added despite an unsubscribe (rule N6): Prism's\n`move_existing` and `include_unsubscribed` are refused (422)."
+      },
+      "EmailAddMembersResponse": {
+        "properties": {
+          "added": {
+            "type": "integer",
+            "title": "Added"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/EmailAddPreviewRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "added",
+          "skipped",
+          "rows"
+        ],
+        "title": "EmailAddMembersResponse"
+      },
+      "EmailAddPreviewResponse": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/EmailAddPreviewSummary"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/EmailAddPreviewRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "summary",
+          "rows"
+        ],
+        "title": "EmailAddPreviewResponse"
+      },
+      "EmailAddPreviewRow": {
+        "properties": {
+          "client_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Profile Id"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "current_campaign_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Campaign Id"
+          },
+          "current_campaign_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Campaign Name"
+          },
+          "via_client_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Client Profile Id"
+          },
+          "eligibility": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "NO_EMAIL",
+              "INVALID_EMAIL",
+              "DEMO_RECIPIENT",
+              "UNSUBSCRIBED",
+              "BOUNCED",
+              "IN_OTHER_CAMPAIGN",
+              "ALREADY_IN_CAMPAIGN",
+              "DUPLICATE_EMAIL"
+            ],
+            "title": "Eligibility"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "ADD",
+              "SKIP"
+            ],
+            "title": "Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_profile_id",
+          "first_name",
+          "last_name",
+          "full_name",
+          "email",
+          "company_id",
+          "company_name",
+          "current_campaign_id",
+          "current_campaign_name",
+          "eligibility",
+          "action"
+        ],
+        "title": "EmailAddPreviewRow"
+      },
+      "EmailAddPreviewSummary": {
+        "properties": {
+          "selected": {
+            "type": "integer",
+            "title": "Selected"
+          },
+          "ready": {
+            "type": "integer",
+            "title": "Ready"
+          },
+          "no_email": {
+            "type": "integer",
+            "title": "No Email"
+          },
+          "invalid_email": {
+            "type": "integer",
+            "title": "Invalid Email"
+          },
+          "demo_recipient": {
+            "type": "integer",
+            "title": "Demo Recipient"
+          },
+          "unsubscribed": {
+            "type": "integer",
+            "title": "Unsubscribed"
+          },
+          "bounced": {
+            "type": "integer",
+            "title": "Bounced"
+          },
+          "in_other_campaign": {
+            "type": "integer",
+            "title": "In Other Campaign"
+          },
+          "already_in_campaign": {
+            "type": "integer",
+            "title": "Already In Campaign"
+          },
+          "duplicate_email": {
+            "type": "integer",
+            "title": "Duplicate Email"
+          },
+          "will_add": {
+            "type": "integer",
+            "title": "Will Add"
+          },
+          "will_skip": {
+            "type": "integer",
+            "title": "Will Skip"
+          }
+        },
+        "type": "object",
+        "required": [
+          "selected",
+          "ready",
+          "no_email",
+          "invalid_email",
+          "demo_recipient",
+          "unsubscribed",
+          "bounced",
+          "in_other_campaign",
+          "already_in_campaign",
+          "duplicate_email",
+          "will_add",
+          "will_skip"
+        ],
+        "title": "EmailAddPreviewSummary"
+      },
       "EmailAiTestRequest": {
         "properties": {
           "client_profile_id": {
@@ -30017,6 +31418,320 @@
         "type": "object",
         "title": "EmailCampaignUpdate"
       },
+      "EmailCandidateClient": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "has_email": {
+            "type": "boolean",
+            "title": "Has Email"
+          },
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "client_status": {
+            "type": "string",
+            "enum": [
+              "prospect",
+              "client"
+            ],
+            "title": "Client Status"
+          },
+          "email_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "EMAIL_READY",
+                  "EMAIL_QUEUED",
+                  "EMAIL_ACTIVE",
+                  "EMAIL_PAUSED",
+                  "EMAIL_REPLIED",
+                  "EMAIL_BOUNCED",
+                  "EMAIL_COMPLETED",
+                  "EMAIL_REMOVED",
+                  "EMAIL_UNSUBSCRIBED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Status"
+          },
+          "current_campaign_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Campaign Id"
+          },
+          "current_campaign_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Campaign Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "full_name",
+          "email",
+          "has_email",
+          "company_id",
+          "company_name",
+          "client_status",
+          "email_status",
+          "current_campaign_id",
+          "current_campaign_name"
+        ],
+        "title": "EmailCandidateClient",
+        "description": "A client record the wizard may add: its effective identity (rule N2),\nits client status and where it stands in the agency's campaigns."
+      },
+      "EmailCandidateClientList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EmailCandidateClient"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "EmailCandidateClientList"
+      },
+      "EmailCandidateCompany": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "EMAIL_REPLIED",
+                  "EMAIL_IN_PROGRESS",
+                  "EMAIL_PAUSED",
+                  "EMAIL_READY",
+                  "EMAIL_COMPLETED",
+                  "EMAIL_BOUNCED",
+                  "EMAIL_UNSUBSCRIBED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Status"
+          },
+          "clients_count": {
+            "type": "integer",
+            "title": "Clients Count"
+          },
+          "eligible_clients_count": {
+            "type": "integer",
+            "title": "Eligible Clients Count"
+          },
+          "ready_clients_count": {
+            "type": "integer",
+            "title": "Ready Clients Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email_status",
+          "clients_count",
+          "eligible_clients_count",
+          "ready_clients_count"
+        ],
+        "title": "EmailCandidateCompany",
+        "description": "A company the wizard may add: the clients linked to it by a role,\nthose with an email and no block on record (eligible), and those also in\nno live campaign (ready). Each client counts once, whatever its roles."
+      },
+      "EmailCandidateCompanyList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EmailCandidateCompany"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "EmailCandidateCompanyList"
+      },
+      "EmailClientProfileRead": {
+        "properties": {
+          "client_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Profile Id"
+          },
+          "email_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "EMAIL_REPLIED",
+                  "EMAIL_IN_PROGRESS",
+                  "EMAIL_PAUSED",
+                  "EMAIL_READY",
+                  "EMAIL_COMPLETED",
+                  "EMAIL_BOUNCED",
+                  "EMAIL_UNSUBSCRIBED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Status"
+          },
+          "client_status": {
+            "type": "string",
+            "enum": [
+              "prospect",
+              "client"
+            ],
+            "title": "Client Status"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/EmailMemberRead"
+            },
+            "type": "array",
+            "title": "Memberships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_profile_id",
+          "email_status",
+          "client_status",
+          "memberships"
+        ],
+        "title": "EmailClientProfileRead",
+        "description": "One client record's email state next to its client status: two\nindependent things, the first derived from its memberships."
+      },
       "EmailConversationItem": {
         "properties": {
           "direction": {
@@ -30226,6 +31941,399 @@
         ],
         "title": "EmailIssueRead",
         "description": "One thing between a lead and its emails (`readiness.Issue`): a code\nand its named params, translated by the frontend. A blocking one keeps\nit from being added or launched; a warning decides nothing."
+      },
+      "EmailLaunchFailure": {
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Member Id"
+          },
+          "client_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name",
+            "default": ""
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "member_id",
+          "code"
+        ],
+        "title": "EmailLaunchFailure",
+        "description": "A lead this launch did not hand over, and why: a code with its params\n(decision A12). A failure: `not_handed_over` {issue and the issue's\nparams}, `not_sendable` {position, kind, token, error}, the provider's\n`unsubscribed_at_provider`, `in_other_lemlist_campaign`, `plan_refused`\nor `provider_error` {code}; the lead stays READY with that code as its\n`status_reason` (an unsubscribe ends it). A selected lead skipped:\n`not_in_campaign`, `already_launched` or `not_ready` {status}."
+      },
+      "EmailLaunchReadiness": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/EmailIssueRead"
+            },
+            "type": "array",
+            "title": "Gates"
+          },
+          "can_launch": {
+            "type": "boolean",
+            "title": "Can Launch"
+          },
+          "daily_limit": {
+            "type": "integer",
+            "title": "Daily Limit"
+          },
+          "launched_today": {
+            "type": "integer",
+            "title": "Launched Today"
+          },
+          "remaining_today": {
+            "type": "integer",
+            "title": "Remaining Today"
+          },
+          "to_launch": {
+            "type": "integer",
+            "title": "To Launch"
+          },
+          "ready": {
+            "type": "integer",
+            "title": "Ready"
+          },
+          "blocked": {
+            "type": "integer",
+            "title": "Blocked"
+          },
+          "launched": {
+            "type": "integer",
+            "title": "Launched"
+          },
+          "ready_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Ready Ids"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EmailLaunchReadinessRow"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "gates",
+          "can_launch",
+          "daily_limit",
+          "launched_today",
+          "remaining_today",
+          "to_launch",
+          "ready",
+          "blocked",
+          "launched",
+          "ready_ids",
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "EmailLaunchReadiness",
+        "description": "What a launch would do now, read without the provider's leads and\nwithout a model: the campaign's gates, today's room, and each lead still\nto launch with what stands in its way (the rules the hand-over applies)."
+      },
+      "EmailLaunchReadinessRow": {
+        "properties": {
+          "lead": {
+            "$ref": "#/components/schemas/EmailMemberRead"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/EmailIssueRead"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "steps_rendered": {
+            "type": "integer",
+            "title": "Steps Rendered"
+          },
+          "steps_total": {
+            "type": "integer",
+            "title": "Steps Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lead",
+          "ready",
+          "issues",
+          "steps_rendered",
+          "steps_total"
+        ],
+        "title": "EmailLaunchReadinessRow"
+      },
+      "EmailLaunchRequest": {
+        "properties": {
+          "member_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 100,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Ids"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "EmailLaunchRequest",
+        "description": "Launch: hand READY leads over to the provider, the selected ones or\nthe next eligible ones in order. The only way a new lead reaches it;\neach is checked again by the shared rules first (spec 8.5)."
+      },
+      "EmailLaunchResult": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "external": {
+            "type": "boolean",
+            "title": "External"
+          },
+          "campaign_created": {
+            "type": "boolean",
+            "title": "Campaign Created",
+            "default": false
+          },
+          "steps_created": {
+            "type": "integer",
+            "title": "Steps Created",
+            "default": 0
+          },
+          "steps_updated": {
+            "type": "integer",
+            "title": "Steps Updated",
+            "default": 0
+          },
+          "events_ingested": {
+            "type": "integer",
+            "title": "Events Ingested",
+            "default": 0
+          },
+          "members_updated": {
+            "type": "integer",
+            "title": "Members Updated",
+            "default": 0
+          },
+          "updates_remaining": {
+            "type": "integer",
+            "title": "Updates Remaining",
+            "default": 0
+          },
+          "members_pushed": {
+            "type": "integer",
+            "title": "Members Pushed",
+            "default": 0
+          },
+          "members_failed": {
+            "type": "integer",
+            "title": "Members Failed",
+            "default": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "title": "Remaining",
+            "default": 0
+          },
+          "members_held": {
+            "type": "integer",
+            "title": "Members Held",
+            "default": 0
+          },
+          "daily_limit": {
+            "type": "integer",
+            "title": "Daily Limit",
+            "default": 0
+          },
+          "pushed_today": {
+            "type": "integer",
+            "title": "Pushed Today",
+            "default": 0
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/EmailSyncError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/EmailSyncNote"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "launched_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Launched Ids"
+          },
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/EmailLaunchFailure"
+            },
+            "type": "array",
+            "title": "Failures"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/EmailLaunchFailure"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "stopped": {
+            "type": "boolean",
+            "title": "Stopped",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "external"
+        ],
+        "title": "EmailLaunchResult"
+      },
+      "EmailLeadFunnelRead": {
+        "properties": {
+          "launched": {
+            "type": "integer",
+            "title": "Launched"
+          },
+          "launched_dry_run": {
+            "type": "integer",
+            "title": "Launched Dry Run"
+          },
+          "reached": {
+            "type": "integer",
+            "title": "Reached"
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened"
+          },
+          "clicked": {
+            "type": "integer",
+            "title": "Clicked"
+          },
+          "replied": {
+            "type": "integer",
+            "title": "Replied"
+          },
+          "bounced": {
+            "type": "integer",
+            "title": "Bounced"
+          },
+          "unsubscribed": {
+            "type": "integer",
+            "title": "Unsubscribed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "launched",
+          "launched_dry_run",
+          "reached",
+          "opened",
+          "clicked",
+          "replied",
+          "bounced",
+          "unsubscribed"
+        ],
+        "title": "EmailLeadFunnelRead",
+        "description": "Leads (one client in this campaign, a membership), never messages."
       },
       "EmailMemberAction": {
         "properties": {
@@ -31089,6 +33197,50 @@
         "title": "EmailMemberRead",
         "description": "One client's membership of one campaign."
       },
+      "EmailMessageTotalsRead": {
+        "properties": {
+          "sent": {
+            "type": "integer",
+            "title": "Sent"
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened"
+          },
+          "opens": {
+            "type": "integer",
+            "title": "Opens"
+          },
+          "clicked": {
+            "type": "integer",
+            "title": "Clicked"
+          },
+          "clicks": {
+            "type": "integer",
+            "title": "Clicks"
+          },
+          "replies": {
+            "type": "integer",
+            "title": "Replies"
+          },
+          "bounced": {
+            "type": "integer",
+            "title": "Bounced"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sent",
+          "opened",
+          "opens",
+          "clicked",
+          "clicks",
+          "replies",
+          "bounced"
+        ],
+        "title": "EmailMessageTotalsRead",
+        "description": "Messages, never leads: emails sent, opened / clicked at least once,\nevery open and click (repeats included), replies, bounced emails."
+      },
       "EmailMetaRead": {
         "properties": {
           "enabled": {
@@ -31211,6 +33363,487 @@
         ],
         "title": "EmailMetaRead",
         "description": "What the agency's Email pages need before anything else."
+      },
+      "EmailOutreachCampaign": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "PAUSED",
+              "ARCHIVED"
+            ],
+            "title": "Status"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "title": "EmailOutreachCampaign"
+      },
+      "EmailOutreachItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SENT",
+              "REPLIED",
+              "BOUNCED",
+              "UNSUBSCRIBED",
+              "SCHEDULED",
+              "OVERDUE"
+            ],
+            "title": "Kind"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "estimated": {
+            "type": "boolean",
+            "title": "Estimated",
+            "default": false
+          },
+          "estimated_day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Day"
+          },
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Member Id"
+          },
+          "client_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "campaign_name": {
+            "type": "string",
+            "title": "Campaign Name"
+          },
+          "step_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Position"
+          },
+          "step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "EMAIL_READY",
+              "EMAIL_QUEUED",
+              "EMAIL_ACTIVE",
+              "EMAIL_PAUSED",
+              "EMAIL_REPLIED",
+              "EMAIL_BOUNCED",
+              "EMAIL_COMPLETED",
+              "EMAIL_REMOVED",
+              "EMAIL_UNSUBSCRIBED"
+            ],
+            "title": "Status"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "day",
+          "member_id",
+          "client_profile_id",
+          "full_name",
+          "campaign_id",
+          "campaign_name",
+          "status"
+        ],
+        "title": "EmailOutreachItem",
+        "description": "One activity of the queue. Past ones (SENT, REPLIED, BOUNCED,\nUNSUBSCRIBED) are what the provider reported, at their time; SCHEDULED\nis an estimated DAY (no hour: Lemlist chooses it within the window);\nOVERDUE was estimated for a day already past and is not reported sent."
+      },
+      "EmailOutreachRead": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EmailOutreachItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "waiting_launch": {
+            "type": "integer",
+            "title": "Waiting Launch"
+          },
+          "on_hold": {
+            "type": "integer",
+            "title": "On Hold"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue"
+          },
+          "campaigns": {
+            "items": {
+              "$ref": "#/components/schemas/EmailOutreachCampaign"
+            },
+            "type": "array",
+            "title": "Campaigns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "timezone",
+          "items",
+          "waiting_launch",
+          "on_hold",
+          "overdue",
+          "campaigns"
+        ],
+        "title": "EmailOutreachRead",
+        "description": "The agency's outreach across its campaigns, day by day, read from\nNidria's records only, never the provider."
+      },
+      "EmailPerformanceDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "launched": {
+            "type": "integer",
+            "title": "Launched"
+          },
+          "sent": {
+            "type": "integer",
+            "title": "Sent"
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened"
+          },
+          "clicked": {
+            "type": "integer",
+            "title": "Clicked"
+          },
+          "replied": {
+            "type": "integer",
+            "title": "Replied"
+          },
+          "bounced": {
+            "type": "integer",
+            "title": "Bounced"
+          },
+          "unsubscribed": {
+            "type": "integer",
+            "title": "Unsubscribed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "launched",
+          "sent",
+          "opened",
+          "clicked",
+          "replied",
+          "bounced",
+          "unsubscribed"
+        ],
+        "title": "EmailPerformanceDay",
+        "description": "One day of a campaign's cohort, in its timezone: leads launched that\nday, and leads emailed / opening / clicking / replying / bouncing /\nunsubscribing that day (each lead once a day, never messages)."
+      },
+      "EmailPerformanceRates": {
+        "properties": {
+          "open_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Rate"
+          },
+          "click_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Click Rate"
+          },
+          "reply_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Rate"
+          },
+          "bounce_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounce Rate"
+          },
+          "unsubscribe_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsubscribe Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "open_rate",
+          "click_rate",
+          "reply_rate",
+          "bounce_rate",
+          "unsubscribe_rate"
+        ],
+        "title": "EmailPerformanceRates",
+        "description": "Each rate over the leads reached; None when no lead was reached (no\nrate is shown rather than 0)."
+      },
+      "EmailPerformanceRead": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "launched_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launched From"
+          },
+          "launched_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launched To"
+          },
+          "leads_in_campaign": {
+            "type": "integer",
+            "title": "Leads In Campaign"
+          },
+          "leads_to_launch": {
+            "type": "integer",
+            "title": "Leads To Launch"
+          },
+          "funnel": {
+            "$ref": "#/components/schemas/EmailLeadFunnelRead"
+          },
+          "rates": {
+            "$ref": "#/components/schemas/EmailPerformanceRates"
+          },
+          "messages": {
+            "$ref": "#/components/schemas/EmailMessageTotalsRead"
+          },
+          "states": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "States"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/EmailStepPerformanceRead"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/EmailPerformanceDay"
+            },
+            "type": "array",
+            "title": "Timeline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "timezone",
+          "launched_from",
+          "launched_to",
+          "leads_in_campaign",
+          "leads_to_launch",
+          "funnel",
+          "rates",
+          "messages",
+          "states",
+          "steps"
+        ],
+        "title": "EmailPerformanceRead",
+        "description": "A campaign's performance from Nidria's own records (events ingested\nonce, messages, memberships), never Lemlist's figures. With a period,\nthe cohort is the leads launched in it (in the campaign's timezone),\nfollowed whenever their emails went out; `leads_in_campaign` and\n`leads_to_launch` are always now. Lemlist reports no delivery: there is\nno \"delivered\"."
       },
       "EmailPreviewAiVariable": {
         "properties": {
@@ -32073,6 +34706,134 @@
         "title": "EmailStepImpactRead",
         "description": "Who a step added at `position` reaches. Never retroactive: a recipient\npast that position, done or stopped, does not get it."
       },
+      "EmailStepPerformanceRead": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "entered": {
+            "type": "integer",
+            "title": "Entered"
+          },
+          "sent": {
+            "type": "integer",
+            "title": "Sent"
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened"
+          },
+          "clicked": {
+            "type": "integer",
+            "title": "Clicked"
+          },
+          "replied": {
+            "type": "integer",
+            "title": "Replied"
+          },
+          "bounced": {
+            "type": "integer",
+            "title": "Bounced"
+          },
+          "unsubscribed": {
+            "type": "integer",
+            "title": "Unsubscribed"
+          },
+          "open_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Rate"
+          },
+          "click_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Click Rate"
+          },
+          "reply_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Rate"
+          },
+          "bounce_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounce Rate"
+          },
+          "unsubscribe_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsubscribe Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "name",
+          "entered",
+          "sent",
+          "opened",
+          "clicked",
+          "replied",
+          "bounced",
+          "unsubscribed",
+          "open_rate",
+          "click_rate",
+          "reply_rate",
+          "bounce_rate",
+          "unsubscribe_rate"
+        ],
+        "title": "EmailStepPerformanceRead",
+        "description": "One step's leads: entered (its email sent to them), and of those, who\nopened, clicked, replied to it (a reply counts for the step it answers),\nbounced on it, unsubscribed from it; rates over entered. `position`\nNone: replies and unsubscribes the provider tied to no step."
+      },
       "EmailStepRead": {
         "properties": {
           "id": {
@@ -32531,6 +35292,191 @@
         },
         "type": "object",
         "title": "EmailStepUpdate"
+      },
+      "EmailSyncError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "follow_up_not_added",
+              "member_not_updated",
+              "campaign_kept_paused",
+              "campaign_not_started"
+            ],
+            "title": "Code"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "EmailSyncError"
+      },
+      "EmailSyncNote": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "ready_to_launch",
+              "daily_limit_reached",
+              "step_not_written",
+              "follow_up_added",
+              "plan_refused"
+            ],
+            "title": "Code"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "EmailSyncNote"
+      },
+      "EmailSyncRequest": {
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "EmailSyncRequest"
+      },
+      "EmailSyncResult": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "external": {
+            "type": "boolean",
+            "title": "External"
+          },
+          "campaign_created": {
+            "type": "boolean",
+            "title": "Campaign Created",
+            "default": false
+          },
+          "steps_created": {
+            "type": "integer",
+            "title": "Steps Created",
+            "default": 0
+          },
+          "steps_updated": {
+            "type": "integer",
+            "title": "Steps Updated",
+            "default": 0
+          },
+          "events_ingested": {
+            "type": "integer",
+            "title": "Events Ingested",
+            "default": 0
+          },
+          "members_updated": {
+            "type": "integer",
+            "title": "Members Updated",
+            "default": 0
+          },
+          "updates_remaining": {
+            "type": "integer",
+            "title": "Updates Remaining",
+            "default": 0
+          },
+          "members_pushed": {
+            "type": "integer",
+            "title": "Members Pushed",
+            "default": 0
+          },
+          "members_failed": {
+            "type": "integer",
+            "title": "Members Failed",
+            "default": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "title": "Remaining",
+            "default": 0
+          },
+          "members_held": {
+            "type": "integer",
+            "title": "Members Held",
+            "default": 0
+          },
+          "daily_limit": {
+            "type": "integer",
+            "title": "Daily Limit",
+            "default": 0
+          },
+          "pushed_today": {
+            "type": "integer",
+            "title": "Pushed Today",
+            "default": 0
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/EmailSyncError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/EmailSyncNote"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "external"
+        ],
+        "title": "EmailSyncResult"
       },
       "EmailTeamInfo": {
         "properties": {

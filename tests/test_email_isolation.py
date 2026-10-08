@@ -2,12 +2,13 @@
 actions, on the backend.
 
 Ported from Prism's `tests/test_email_isolation.py` (reference 629a2b0),
-where two projects stood for two agencies: the routes of phase 3A only (the
-add wizard, the sync, the launch and the job come in phases 3B and 4).
-Nidria's own (spec 4.2, 4.3, 8.10): every route is bound, the boot check
-fails without one, `case.view` is required next to `email.*`, a module
-switched off answers 409 everywhere, an expat token is refused, and a bulk
-action checks every row even when a route's binding is loosened in data.
+where two projects stood for two agencies: the routes of phases 3A and 3B
+(the job and the webhook come in phase 4). Nidria's own (spec 4.2, 4.3,
+8.10): every route is bound, the boot check fails without one, `case.view`
+is required next to `email.*`, a module switched off answers 409
+everywhere, an expat token is refused, a bulk action checks every row even
+when a route's binding is loosened in data, and the Launch and the Sync are
+refused under impersonation (D6).
 
 Two agencies, each with a campaign, a step, an AI variable, a client and a
 membership. Every cross-agency id is tried on the other agency's token;
@@ -23,7 +24,11 @@ from httpx import AsyncClient
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.email_campaign import EmailCampaignAiVariable, EmailCampaignMember
+from shared.models.email_campaign import (
+    EmailCampaign,
+    EmailCampaignAiVariable,
+    EmailCampaignMember,
+)
 from shared.models.rbac import Permission as PermissionRow
 from shared.models.rbac import ProtectedResource
 from src.core.enums import Audience
@@ -31,6 +36,7 @@ from src.core.rbac.baseline import collect_bindings
 from src.core.rbac.integrity import StartupError, assert_all_routes_bound
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_router import BINDINGS
+from tests.email_fakes import FakeProvider
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.client_profile_plugin import MakeClientProfile
 from tests.plugins.email_plugin import (
@@ -40,12 +46,19 @@ from tests.plugins.email_plugin import (
 )
 from tests.plugins.expat_plugin import MakeExpatUser
 from tests.plugins.rbac_plugin import MakeRole
-from tests.test_email_campaigns import READ, campaign_via_api, role_headers, step_via_api
+from tests.test_email_campaigns import (
+    READ,
+    campaign_via_api,
+    role_headers,
+    set_status,
+    step_via_api,
+)
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
 
 VIEW = Permission.EMAIL_VIEW
 MANAGE = Permission.EMAIL_MANAGE
+SYNC = Permission.EMAIL_SYNC
 ALL_EMAIL = (
     Permission.EMAIL_VIEW,
     Permission.EMAIL_MANAGE,
@@ -83,6 +96,22 @@ EXPECTED_BINDINGS: dict[tuple[str, str], Permission] = {
     ("POST", "/email/members/resume"): Permission.EMAIL_PAUSE,
     ("POST", "/email/members/remove"): Permission.EMAIL_REMOVE,
     ("POST", "/email/members/move"): Permission.EMAIL_ENROLL,
+    # phase 3B
+    ("POST", "/email/campaigns/{campaign_id}/sync"): SYNC,
+    ("GET", "/email/outreach"): VIEW,
+    ("GET", "/email/campaigns/{campaign_id}/performance"): VIEW,
+    ("GET", "/email/campaigns/{campaign_id}/launch"): VIEW,
+    ("POST", "/email/campaigns/{campaign_id}/launch"): SYNC,
+    ("GET", "/email/client-profiles/{client_profile_id}"): VIEW,
+    ("GET", "/email/candidates/client-profiles"): VIEW,
+    ("GET", "/email/candidates/companies"): VIEW,
+    ("POST", "/email/campaigns/{campaign_id}/members/preview-add"): Permission.EMAIL_ENROLL,
+    ("POST", "/email/campaigns/{campaign_id}/members/add"): Permission.EMAIL_ENROLL,
+}
+#: Under impersonation, refused whatever the target may do (D6).
+IMPERSONATION_DENIED = {
+    ("POST", "/email/campaigns/{campaign_id}/launch"),
+    ("POST", "/email/campaigns/{campaign_id}/sync"),
 }
 
 
@@ -166,7 +195,8 @@ async def both(
 
 
 def _routes(s: Side) -> list[tuple[str, str, Any]]:
-    """Every agent route of phase 3A, with valid bodies, on `s`'s objects."""
+    """Every agent route of phases 3A and 3B, with valid bodies, on `s`'s
+    objects."""
     campaign, step, variable, member = s.campaign_id, s.step_id, s.ai_variable_id, s.member_id
     return [
         ("GET", "/email/meta", None),
@@ -204,16 +234,32 @@ def _routes(s: Side) -> list[tuple[str, str, Any]]:
         ("POST", "/email/members/resume", {"ids": [member]}),
         ("POST", "/email/members/remove", {"ids": [member]}),
         ("POST", "/email/members/move", {"ids": [member], "target_campaign_id": campaign}),
+        ("POST", f"/email/campaigns/{campaign}/sync", {}),
+        ("GET", "/email/outreach?start=2026-10-01&end=2026-10-05", None),
+        ("GET", f"/email/campaigns/{campaign}/performance", None),
+        ("GET", f"/email/campaigns/{campaign}/launch", None),
+        ("POST", f"/email/campaigns/{campaign}/launch", {}),
+        ("GET", f"/email/client-profiles/{s.profile_id}", None),
+        ("GET", "/email/candidates/client-profiles", None),
+        ("GET", "/email/candidates/companies", None),
+        (
+            "POST",
+            f"/email/campaigns/{campaign}/members/preview-add",
+            {"client_profile_ids": [s.profile_id]},
+        ),
+        ("POST", f"/email/campaigns/{campaign}/members/add", {"client_profile_ids": []}),
     ]
 
 
 def _template(path: str, s: Side) -> str:
     """A concrete path back to its route template."""
     return (
-        path.replace(s.campaign_id, "{campaign_id}")
+        path.split("?")[0]
+        .replace(s.campaign_id, "{campaign_id}")
         .replace(s.step_id, "{step_id}")
         .replace(s.ai_variable_id, "{variable_id}")
         .replace(s.member_id, "{member_id}")
+        .replace(s.profile_id, "{client_profile_id}")
     )
 
 
@@ -357,6 +403,36 @@ async def test_the_other_agencys_ids_are_not_found(
             None,
             "email.campaign_not_found",
         ),
+        # phase 3B
+        ("POST", f"/email/campaigns/{campaign}/sync", {}, "email.campaign_not_found"),
+        ("POST", f"/email/campaigns/{campaign}/launch", {}, "email.campaign_not_found"),
+        ("GET", f"/email/campaigns/{campaign}/launch", None, "email.campaign_not_found"),
+        ("GET", f"/email/campaigns/{campaign}/performance", None, "email.campaign_not_found"),
+        (
+            "POST",
+            f"/email/campaigns/{campaign}/members/preview-add",
+            {"client_profile_ids": [here.profile_id]},
+            "email.campaign_not_found",
+        ),
+        (
+            "POST",
+            f"/email/campaigns/{campaign}/members/add",
+            {"client_profile_ids": [here.profile_id]},
+            "email.campaign_not_found",
+        ),
+        ("GET", f"/email/client-profiles/{there.profile_id}", None, "profile.not_found"),
+        (
+            "POST",
+            f"/email/campaigns/{here.campaign_id}/members/preview-add",
+            {"client_profile_ids": [there.profile_id]},
+            "profile.not_found",
+        ),
+        (
+            "POST",
+            f"/email/campaigns/{here.campaign_id}/members/add",
+            {"client_profile_ids": [there.profile_id]},
+            "profile.not_found",
+        ),
     ]
     for method, path, body, code in calls:
         response = await client.request(method, path, json=body, headers=here.headers)
@@ -397,6 +473,44 @@ async def test_the_other_agencys_ids_are_not_found(
         .execution_options(populate_existing=True)
     )
     assert status == "EMAIL_READY"
+    # Nobody of the other agency was added here, nor there.
+    for side in (here, there):
+        members = await db_session.scalars(
+            select(EmailCampaignMember.client_profile_id)
+            .where(EmailCampaignMember.campaign_id == uuid.UUID(side.campaign_id))
+            .execution_options(populate_existing=True)
+        )
+        assert [str(m) for m in members.all()] == [side.profile_id]
+
+
+async def test_a_sync_or_a_launch_of_another_agencys_campaign_reaches_nothing(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    both: Both,
+    fake_email_provider: FakeProvider,
+) -> None:
+    """A Sync (the reconciliation an agent asks for) or a Launch of the other
+    agency's campaign is refused before anything reaches Lemlist."""
+    here, there = both.here, both.there
+    await set_status(client, there.headers, there.campaign_id, "ACTIVE")
+    for action in ("sync", "launch"):
+        refused = await client.post(
+            f"/email/campaigns/{there.campaign_id}/{action}", json={}, headers=here.headers
+        )
+        assert refused.status_code == 404 and refused.json()["code"] == "email.campaign_not_found"
+    assert fake_email_provider.ops == []
+    campaign = await db_session.scalar(
+        select(EmailCampaign)
+        .where(EmailCampaign.id == uuid.UUID(there.campaign_id))
+        .execution_options(populate_existing=True)
+    )
+    assert campaign is not None and campaign.provider_campaign_id is None
+    # Its own agency launches it: the lead reaches Lemlist, once.
+    launched = await client.post(
+        f"/email/campaigns/{there.campaign_id}/launch", json={}, headers=there.headers
+    )
+    assert launched.status_code == 200 and launched.json()["members_pushed"] == 1
+    assert fake_email_provider.names().count("add_contact") == 1
 
 
 async def test_previews_and_ai_tests_stay_in_their_agency(client: AsyncClient, both: Both) -> None:
@@ -540,6 +654,25 @@ async def test_each_email_permission_gates_its_own_action(
     # Removed just above: a removed membership moves into a new, ready one.
     assert moved.json()["rows"][0]["ok"] is True, moved.json()
 
+    # Adding is enrolling: email.enroll, and that alone.
+    add = f"/email/campaigns/{target['id']}/members/add"
+    body = {"client_profile_ids": []}
+    for headers, expected in ((editor, 403), (syncer, 403), (pauser, 403), (enroller, 200)):
+        assert (await client.post(add, json=body, headers=headers)).status_code == expected
+    # Syncing and launching reach Lemlist: email.sync, and that alone.
+    await step_via_api(client, editor, target["id"])
+    await set_status(client, editor, target["id"], "ACTIVE")
+    for action in ("sync", "launch"):
+        url = f"/email/campaigns/{target['id']}/{action}"
+        for headers in (editor, enroller, pauser, remover):
+            refused = await client.post(url, json={}, headers=headers)
+            assert refused.status_code == 403, (action, refused.text)
+            assert refused.json()["params"] == {"permission": "email.sync"}
+        allowed = await client.post(url, json={}, headers=syncer)
+        assert allowed.status_code == 200, (action, allowed.text)
+        # A sync never hands a lead over; only the launch does.
+        assert allowed.json()["members_pushed"] == (1 if action == "launch" else 0)
+
 
 async def test_every_row_is_checked_even_when_a_binding_is_loosened(
     client: AsyncClient,
@@ -661,3 +794,61 @@ async def test_an_expat_token_or_none_is_refused_on_every_route(
             response = await client.request(method, path, json=body, headers=headers)
             assert response.status_code == 401, (method, path, response.status_code)
             assert response.json()["code"] == "auth.session_expired"
+
+
+# ── impersonation (D6) ───────────────────────────────────────────────────────
+
+
+async def test_the_launch_and_the_sync_are_refused_under_impersonation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    both: Both,
+    fake_email_provider: FakeProvider,
+    make_agent: MakeAgent,
+    agent_headers: AuthHeaders,
+    system_roles: dict[str, Any],
+) -> None:
+    """Under a mask, the Launch and the Sync would send real emails in the
+    client's name: refused whatever the target may do (an admin here), and
+    nothing reaches Lemlist. Reading stays open, the other gestures too."""
+    side = both.here
+    await set_status(client, side.headers, side.campaign_id, "ACTIVE")
+    target = await make_agent(agency_id=side.agency_id, role=system_roles["admin"])
+    issued = await client.post(
+        f"/agencies/me/members/{target.id}/impersonate", headers=email_world.headers
+    )
+    assert issued.status_code == 200, issued.text
+    mask = {"Authorization": f"Bearer {issued.json()['access_token']}"}
+    for action in ("launch", "sync"):
+        refused = await client.post(
+            f"/email/campaigns/{side.campaign_id}/{action}", json={}, headers=mask
+        )
+        assert refused.status_code == 403, (action, refused.text)
+        assert refused.json()["code"] == "impersonation.denied"
+    assert fake_email_provider.ops == []
+    for path in (
+        f"/email/campaigns/{side.campaign_id}/launch",
+        f"/email/campaigns/{side.campaign_id}/performance",
+        f"/email/client-profiles/{side.profile_id}",
+    ):
+        assert (await client.get(path, headers=mask)).status_code == 200, path
+    preview = await client.post(
+        f"/email/campaigns/{side.campaign_id}/members/preview-add",
+        json={"client_profile_ids": [side.profile_id]},
+        headers=mask,
+    )
+    assert preview.status_code == 200
+    # The same agent, unmasked, launches.
+    real = await client.post(
+        f"/email/campaigns/{side.campaign_id}/launch", json={}, headers=agent_headers(target)
+    )
+    assert real.status_code == 200 and real.json()["members_pushed"] == 1
+
+
+def test_the_denylist_names_the_launch_and_the_sync() -> None:
+    from src.core.rbac.enforcement import IMPERSONATION_AGENT_DENIED
+
+    email_denied = {entry for entry in IMPERSONATION_AGENT_DENIED if entry[1].startswith("/email")}
+    assert email_denied == IMPERSONATION_DENIED
+    assert set(EXPECTED_BINDINGS) >= IMPERSONATION_DENIED

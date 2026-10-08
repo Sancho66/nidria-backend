@@ -497,6 +497,16 @@ class AgenciesManager:
         paths = await self.repo.storage_paths(agency_id)
         agent_ids = await self.repo.agent_ids(agency_id)
 
+        # Email module (spec 8.11): each of the agency's campaigns at Lemlist
+        # is paused and its leads removed there BEFORE any write, so the team
+        # can serve another agency; a refusal is a 409
+        # email.provider_cleanup_failed and nothing is deleted. The agency
+        # is the path's, never the superadmin's own. Imported here: the Email
+        # module reads the agencies repository.
+        from src.email_campaigns.email_manager import EmailManager
+
+        await EmailManager(self.db).cleanup_agency(agency_id)
+
         await self.repo.purge_agency_rows(agency_id, agent_ids)
         self.db.add(
             AgencyDeletionLog(

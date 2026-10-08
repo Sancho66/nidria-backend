@@ -4,7 +4,14 @@ Phase 1: the per-agency switch (`agency_email_module`) and the campaign facts
 the platform routes decide on. Phase 2: what the readiness rules read beyond
 a recipient's own row (`readiness.load_client_facts`). Phase 3: the agent
 routes' queries, ported from Prism's `email_repository.py` (reference commit
-629a2b0).
+629a2b0), then (3B) the launch queue, the add wizard's lists, the
+performance and outreach figures (all computed in SQL) and the deletion
+hooks' reads.
+
+The wizard reuses the Clients and Companies pages' own predicates
+(`ClientProfilesRepository.filter_predicates`,
+`CompanyProfilesRepository.filter_predicates`, decision A15), never a copy;
+only their sort order is restated here (`list_page` keeps it inline).
 
 Every read of the agent routes is bounded by the agency the manager already
 resolved from the token: a campaign, a step, an AI variable or a membership
@@ -17,13 +24,15 @@ query that reads or searches them OUTER JOINs `ExpatUser` and coalesces
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    Date,
     Select,
     and_,
     case,
+    cast,
     delete,
     distinct,
     exists,
@@ -56,7 +65,10 @@ from shared.models.email_campaign import (
 )
 from shared.models.expat_user import ExpatUser
 from src.client_profiles.client_profiles_repository import ClientProfilesRepository
+from src.client_profiles.client_profiles_schema import ProfileListFilter
 from src.client_profiles.identity import effective_email_sql
+from src.company_profiles.company_profiles_repository import CompanyProfilesRepository
+from src.company_profiles.company_profiles_schema import CompanyListFilter
 from src.email_campaigns.providers.dry_run import DRY_RUN_PREFIX
 
 _FUNNEL_KEYS = (
@@ -70,6 +82,20 @@ _FUNNEL_KEYS = (
     "unsubscribed",
 )
 _METRIC_KEYS = ("sent", "opened", "clicked", "replied", "bounced")
+_STEP_KEYS = ("entered", "sent", "opened", "clicked", "replied", "bounced", "unsubscribed")
+_DAY_KEYS = ("launched", "sent", "opened", "clicked", "replied", "bounced", "unsubscribed")
+#: The provider events a day of the timeline counts, by its key.
+_DAY_EVENTS = {
+    "SENT": "sent",
+    "OPENED": "opened",
+    "CLICKED": "clicked",
+    "REPLIED": "replied",
+    "BOUNCED": "bounced",
+    "UNSUBSCRIBED": "unsubscribed",
+}
+#: Ids per `IN (...)` of the deletion hooks: a bulk deletion by filter can
+#: name more client records than one statement may carry parameters.
+_IDS_PER_QUERY = 5000
 
 
 def _metric_columns() -> list[ColumnElement[int]]:
@@ -809,3 +835,755 @@ class EmailRepository:
         for profile_id, company in rows.all():
             found.setdefault(profile_id, []).append(company)
         return found
+
+    # --- the launch queue and the sync (phase 3B) ----------------------------------
+
+    async def campaign_names(
+        self, agency_id: uuid.UUID, campaign_ids: Iterable[uuid.UUID]
+    ) -> dict[uuid.UUID, str]:
+        """Campaign id -> name, the agency's campaigns only."""
+        ids = sorted(set(campaign_ids))
+        if not ids:
+            return {}
+        rows = await self.db.execute(
+            select(EmailCampaign.id, EmailCampaign.name).where(
+                EmailCampaign.id.in_(ids), EmailCampaign.agency_id == agency_id
+            )
+        )
+        return {campaign_id: name for campaign_id, name in rows.all()}
+
+    @staticmethod
+    def _launch_order() -> tuple[Any, ...]:
+        """The order a launch takes leads in: those refused last time come
+        last, so they never hold back the others; then the oldest first."""
+        return (
+            EmailCampaignMember.status_reason.is_not(None),
+            EmailCampaignMember.added_at,
+            EmailCampaignMember.id,
+        )
+
+    async def ready_to_push(
+        self,
+        agency_id: uuid.UUID,
+        campaign_id: uuid.UUID,
+        limit: int,
+        *,
+        only: Sequence[uuid.UUID] | None = None,
+    ) -> tuple[list[MemberRow], int]:
+        """READY leads never handed over, in launch order, and how many wait
+        in all; among `only` when a launch names them."""
+        base: list[ColumnElement[bool]] = [
+            EmailCampaignMember.campaign_id == campaign_id,
+            EmailCampaignMember.status == "EMAIL_READY",
+            EmailCampaignMember.queued_at.is_(None),
+        ]
+        if only is not None:
+            base.append(EmailCampaignMember.id.in_(list(only)))
+        total = await self.db.scalar(
+            select(func.count())
+            .select_from(EmailCampaignMember)
+            .where(EmailCampaignMember.agency_id == agency_id, *base)
+        )
+        if limit <= 0:
+            return [], int(total or 0)
+        result = await self.db.execute(
+            self._member_rows(agency_id).where(*base).order_by(*self._launch_order()).limit(limit)
+        )
+        return self._rows(result), int(total or 0)
+
+    async def to_launch(
+        self, agency_id: uuid.UUID, campaign_id: uuid.UUID, search: str | None
+    ) -> list[MemberRow]:
+        """Leads never handed over and still live (ready or paused), in the
+        order a launch takes them."""
+        conditions: list[ColumnElement[bool]] = [
+            EmailCampaignMember.campaign_id == campaign_id,
+            EmailCampaignMember.queued_at.is_(None),
+            EmailCampaignMember.status.in_(("EMAIL_READY", "EMAIL_PAUSED")),
+        ]
+        if search and search.strip():
+            conditions.append(self._member_search(agency_id, search.strip()))
+        result = await self.db.execute(
+            self._member_rows(agency_id).where(*conditions).order_by(*self._launch_order())
+        )
+        return self._rows(result)
+
+    async def to_launch_count(self, campaign_id: uuid.UUID) -> int:
+        """Leads never handed over and still live (ready or paused)."""
+        value = await self.db.scalar(
+            select(func.count())
+            .select_from(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.queued_at.is_(None),
+                EmailCampaignMember.status.in_(("EMAIL_READY", "EMAIL_PAUSED")),
+            )
+        )
+        return int(value or 0)
+
+    async def launched_count(self, campaign_id: uuid.UUID) -> int:
+        """Leads ever handed to the provider (a dry run's hand-over included)."""
+        value = await self.db.scalar(
+            select(func.count())
+            .select_from(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.queued_at.is_not(None),
+            )
+        )
+        return int(value or 0)
+
+    async def queued_since(self, campaign_id: uuid.UUID, since: datetime) -> int:
+        """Leads handed to the provider since `since` (the daily limit)."""
+        value = await self.db.scalar(
+            select(func.count())
+            .select_from(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.queued_at >= since,
+            )
+        )
+        return int(value or 0)
+
+    async def in_flight(self, agency_id: uuid.UUID, campaign_id: uuid.UUID) -> list[MemberRow]:
+        """Leads the provider holds and may still email (queued, active,
+        paused), with their client record and account."""
+        result = await self.db.execute(
+            self._member_rows(agency_id)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.status.in_(("EMAIL_QUEUED", "EMAIL_ACTIVE", "EMAIL_PAUSED")),
+                EmailCampaignMember.provider_lead_id.is_not(None),
+            )
+            .order_by(EmailCampaignMember.id)
+        )
+        return self._rows(result)
+
+    async def completed_with_leads(self, campaign_id: uuid.UUID) -> list[EmailCampaignMember]:
+        """Leads that completed the sequence and whose lead the provider has."""
+        rows = await self.db.execute(
+            select(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.status == "EMAIL_COMPLETED",
+                EmailCampaignMember.provider_lead_id.is_not(None),
+            )
+            .order_by(EmailCampaignMember.id)
+        )
+        return list(rows.scalars().all())
+
+    async def with_provider_ids(self, campaign_id: uuid.UUID) -> list[EmailCampaignMember]:
+        rows = await self.db.execute(
+            select(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.provider_lead_id.is_not(None),
+            )
+            .order_by(EmailCampaignMember.id)
+        )
+        return list(rows.scalars().all())
+
+    # --- a client record's memberships (route 33) ----------------------------------
+
+    async def member_rows_of_profile(
+        self, agency_id: uuid.UUID, profile_id: uuid.UUID
+    ) -> list[MemberRow]:
+        """Every membership of the client record in the agency's campaigns,
+        ended and removed ones included, newest first."""
+        result = await self.db.execute(
+            self._member_rows(agency_id)
+            .where(EmailCampaignMember.client_profile_id == profile_id)
+            .order_by(EmailCampaignMember.added_at.desc(), EmailCampaignMember.id.desc())
+        )
+        return self._rows(result)
+
+    # --- the add wizard (routes 34 to 37) ------------------------------------------
+
+    @staticmethod
+    def _live_profiles(agency_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
+        """Client records with a live membership in the agency."""
+        return select(EmailCampaignMember.client_profile_id).where(
+            EmailCampaignMember.agency_id == agency_id,
+            EmailCampaignMember.status.in_(LIVE_MEMBER_STATUSES),
+        )
+
+    async def candidate_clients(
+        self,
+        agency_id: uuid.UUID,
+        criteria: ProfileListFilter,
+        *,
+        client_statuses: Sequence[str],
+        has_email: bool | None,
+        campaign_id: uuid.UUID | str | None,
+        sort_by: str,
+        sort_order: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[tuple[ClientProfile, ExpatUser | None]], int]:
+        """The Clients page's list for the wizard: its criteria applied by
+        its own predicates (`ClientProfilesRepository.filter_predicates`,
+        not copied), its sort and paging, then the module's own criteria.
+
+        `client_statuses`: the derived status, through the same projection
+        (one value filters, both or none do not); `has_email`: an effective
+        address (rule N2) or none; `campaign_id`: live in that campaign, or
+        `"none"` for no live membership at all."""
+        profiles = ClientProfilesRepository(self.db)
+        predicates: list[Any] = profiles.filter_predicates(
+            agency_id, **criteria.model_dump(exclude_none=True)
+        )
+        if len(set(client_statuses)) == 1:
+            [status] = set(client_statuses)
+            predicates.extend(profiles.filter_predicates(agency_id, status=status))
+        address = func.coalesce(func.trim(effective_email_sql()), "")
+        if has_email is True:
+            predicates.append(address != "")
+        elif has_email is False:
+            predicates.append(address == "")
+        live = self._live_profiles(agency_id)
+        if campaign_id == "none":
+            predicates.append(ClientProfile.id.not_in(live))
+        elif campaign_id is not None:
+            predicates.append(
+                ClientProfile.id.in_(live.where(EmailCampaignMember.campaign_id == campaign_id))
+            )
+        # The OUTER join `filter_predicates` asks for (search,
+        # client_space_activated), also where the identity and the
+        # effective address are read.
+        base = (
+            select(ClientProfile, ExpatUser)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(*predicates)
+        )
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
+        # The Clients page's order (`ClientProfilesRepository.list_page`).
+        name_order = (
+            func.coalesce(ExpatUser.last_name, ClientProfile.last_name),
+            func.coalesce(ExpatUser.first_name, ClientProfile.first_name),
+        )
+        sort_exprs: dict[str, tuple[Any, ...]] = {
+            "name": name_order,
+            "created_at": (ClientProfile.created_at,),
+            "last_activity": (ClientProfilesRepository._last_activity_expr(),),
+        }
+        exprs = sort_exprs.get(sort_by, name_order)
+        ordered = [e.desc() if sort_order == "desc" else e.asc() for e in exprs]
+        rows = await self.db.execute(
+            base.order_by(*ordered, ClientProfile.created_at)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .execution_options(populate_existing=True)
+        )
+        return [(profile, account) for profile, account in rows.all()], int(total or 0)
+
+    async def candidate_companies(
+        self,
+        agency_id: uuid.UUID,
+        criteria: CompanyListFilter,
+        *,
+        only_with_ready: bool,
+        with_email: bool,
+        sort_by: str,
+        sort_order: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[tuple[CompanyProfile, int, int, int]], int]:
+        """The Companies page's list for the wizard (its predicates, sort and
+        paging), each company with its linked clients, those with an
+        effective address and no block on record (eligible), and those also
+        in no live campaign (ready). A client counts once per company,
+        whatever its roles there. `only_with_ready`: a ready client at
+        least; `with_email`: a client with an address at least."""
+        has_email = func.coalesce(func.trim(effective_email_sql()), "") != ""
+        blocked = select(EmailCampaignMember.client_profile_id).where(
+            EmailCampaignMember.agency_id == agency_id,
+            EmailCampaignMember.status.in_(BLOCKING_MEMBER_STATUSES),
+        )
+        eligible = and_(has_email, ClientProfile.id.not_in(blocked))
+        ready = and_(eligible, ClientProfile.id.not_in(self._live_profiles(agency_id)))
+        person = ClientProfile.id
+        counts = (
+            select(
+                CompanyProfileRole.company_profile_id.label("company_id"),
+                func.count(distinct(person)).label("clients"),
+                func.count(distinct(case((has_email, person)))).label("with_email"),
+                func.count(distinct(case((eligible, person)))).label("eligible"),
+                func.count(distinct(case((ready, person)))).label("ready"),
+            )
+            .select_from(CompanyProfileRole)
+            .join(ClientProfile, ClientProfile.id == CompanyProfileRole.client_profile_id)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(ClientProfile.agency_id == agency_id)
+            .group_by(CompanyProfileRole.company_profile_id)
+            .subquery()
+        )
+        clients = func.coalesce(counts.c.clients, 0)
+        eligible_count = func.coalesce(counts.c.eligible, 0)
+        ready_count = func.coalesce(counts.c.ready, 0)
+        predicates = CompanyProfilesRepository(self.db).filter_predicates(
+            agency_id, **criteria.model_dump(exclude_none=True)
+        )
+        base = (
+            select(CompanyProfile, clients, eligible_count, ready_count)
+            .outerjoin(counts, counts.c.company_id == CompanyProfile.id)
+            .where(*predicates)
+        )
+        if only_with_ready:
+            base = base.where(ready_count > 0)
+        if with_email:
+            base = base.where(func.coalesce(counts.c.with_email, 0) > 0)
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
+        # The Companies page's order (`CompanyProfilesRepository.list_page`).
+        sort_exprs: dict[str, tuple[Any, ...]] = {
+            "name": (CompanyProfile.name,),
+            "created_at": (CompanyProfile.created_at,),
+            "last_activity": (CompanyProfilesRepository._last_activity_expr(),),
+        }
+        exprs = sort_exprs.get(sort_by, (CompanyProfile.name,))
+        ordered = [e.desc() if sort_order == "desc" else e.asc() for e in exprs]
+        rows = await self.db.execute(
+            base.order_by(*ordered, CompanyProfile.created_at)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return (
+            [(company, int(n), int(e), int(r)) for company, n, e, r in rows.all()],
+            int(total or 0),
+        )
+
+    async def company_statuses(
+        self, agency_id: uuid.UUID, company_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, list[str]]:
+        """Company -> the statuses of its linked clients' memberships."""
+        if not company_ids:
+            return {}
+        rows = await self.db.execute(
+            select(CompanyProfileRole.company_profile_id, EmailCampaignMember.status)
+            .join(
+                EmailCampaignMember,
+                EmailCampaignMember.client_profile_id == CompanyProfileRole.client_profile_id,
+            )
+            .where(
+                CompanyProfileRole.company_profile_id.in_(list(company_ids)),
+                EmailCampaignMember.agency_id == agency_id,
+            )
+        )
+        found: dict[uuid.UUID, list[str]] = {}
+        for company_id, status in rows.all():
+            found.setdefault(company_id, []).append(status)
+        return found
+
+    async def company_ids_in_agency(
+        self, agency_id: uuid.UUID, company_ids: Sequence[uuid.UUID]
+    ) -> set[uuid.UUID]:
+        if not company_ids:
+            return set()
+        rows = await self.db.execute(
+            select(CompanyProfile.id).where(
+                CompanyProfile.id.in_(list(company_ids)), CompanyProfile.agency_id == agency_id
+            )
+        )
+        return set(rows.scalars().all())
+
+    async def profiles_with_accounts(
+        self, agency_id: uuid.UUID, profile_ids: Sequence[uuid.UUID]
+    ) -> list[tuple[ClientProfile, ExpatUser | None]]:
+        """These client records of the agency with their account, in the
+        order given; another agency's are simply absent."""
+        if not profile_ids:
+            return []
+        rows = await self.db.execute(
+            select(ClientProfile, ExpatUser)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(ClientProfile.id.in_(list(profile_ids)), ClientProfile.agency_id == agency_id)
+            .execution_options(populate_existing=True)
+        )
+        by_id = {profile.id: (profile, account) for profile, account in rows.all()}
+        return [by_id[i] for i in profile_ids if i in by_id]
+
+    async def profiles_of_companies(
+        self, agency_id: uuid.UUID, company_ids: Sequence[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """A company brings every client linked to it by a role that has an
+        effective address: once each, company by company, by name."""
+        if not company_ids:
+            return []
+        rows = await self.db.execute(
+            select(ClientProfile.id)
+            .select_from(CompanyProfileRole)
+            .join(ClientProfile, ClientProfile.id == CompanyProfileRole.client_profile_id)
+            .join(CompanyProfile, CompanyProfile.id == CompanyProfileRole.company_profile_id)
+            .outerjoin(ExpatUser, ExpatUser.id == ClientProfile.expat_user_id)
+            .where(
+                CompanyProfileRole.company_profile_id.in_(list(company_ids)),
+                CompanyProfile.agency_id == agency_id,
+                ClientProfile.agency_id == agency_id,
+                func.coalesce(func.trim(effective_email_sql()), "") != "",
+            )
+            .order_by(
+                CompanyProfile.name,
+                CompanyProfile.id,
+                func.coalesce(ExpatUser.last_name, ClientProfile.last_name),
+                func.coalesce(ExpatUser.first_name, ClientProfile.first_name),
+                ClientProfile.id,
+            )
+        )
+        return list(dict.fromkeys(rows.scalars().all()))
+
+    # --- performance (route 12): leads, never messages, unless said ---------------
+    #
+    # A lead is one client in one campaign (a membership). With a period, the
+    # cohort is the leads launched in it (handed over at `queued_at`) and
+    # every count follows them, whenever their emails went out; without one,
+    # every lead of the campaign.
+
+    async def message_totals(
+        self, campaign_id: uuid.UUID, *, since: datetime | None, until: datetime | None
+    ) -> dict[str, int]:
+        """The cohort's emails (messages, not leads): sent, opened and clicked
+        once at least, every open and click, replies received, bounced."""
+        lead = EmailCampaignMember
+        message = EmailMessage
+        outbound = message.direction == "OUTBOUND"
+        row = (
+            await self.db.execute(
+                select(
+                    func.count(case((and_(outbound, message.sent_at.is_not(None)), 1))),
+                    func.count(case((and_(outbound, message.open_count > 0), 1))),
+                    func.coalesce(func.sum(case((outbound, message.open_count), else_=0)), 0),
+                    func.count(case((and_(outbound, message.click_count > 0), 1))),
+                    func.coalesce(func.sum(case((outbound, message.click_count), else_=0)), 0),
+                    func.count(case((message.direction == "INBOUND", 1))),
+                    func.count(case((and_(outbound, message.bounced_at.is_not(None)), 1))),
+                )
+                .select_from(lead)
+                .join(message, message.campaign_member_id == lead.id)
+                .where(*self._cohort([campaign_id], since, until))
+            )
+        ).one()
+        keys = ("sent", "opened", "opens", "clicked", "clicks", "replies", "bounced")
+        return {key: int(value or 0) for key, value in zip(keys, row, strict=True)}
+
+    async def step_funnel(
+        self, campaign_id: uuid.UUID, *, since: datetime | None, until: datetime | None
+    ) -> dict[int | None, dict[str, int]]:
+        """Per step position, the cohort's leads: entered (its email sent to
+        them), opened / clicked / bounced that email, replied to it (a reply
+        counts for the step it answers), unsubscribed from it; and the emails
+        sent. `None`: replies and unsubscribes tied to no step."""
+        lead = EmailCampaignMember
+        message = EmailMessage
+        cohort = self._cohort([campaign_id], since, until)
+        steps: dict[int | None, dict[str, int]] = {}
+
+        def bucket(position: int | None) -> dict[str, int]:
+            return steps.setdefault(position, dict.fromkeys(_STEP_KEYS, 0))
+
+        outbound = await self.db.execute(
+            select(
+                message.step_position,
+                func.count(distinct(case((message.sent_at.is_not(None), lead.id)))),
+                func.count(case((message.sent_at.is_not(None), 1))),
+                func.count(distinct(case((message.open_count > 0, lead.id)))),
+                func.count(distinct(case((message.click_count > 0, lead.id)))),
+                func.count(distinct(case((message.bounced_at.is_not(None), lead.id)))),
+            )
+            .select_from(lead)
+            .join(message, message.campaign_member_id == lead.id)
+            .where(*cohort, message.direction == "OUTBOUND")
+            .group_by(message.step_position)
+        )
+        for position, entered, sent, opened, clicked, bounced in outbound.all():
+            bucket(position).update(
+                entered=int(entered),
+                sent=int(sent),
+                opened=int(opened),
+                clicked=int(clicked),
+                bounced=int(bounced),
+            )
+        replies = await self.db.execute(
+            select(message.step_position, func.count(distinct(lead.id)))
+            .select_from(lead)
+            .join(message, message.campaign_member_id == lead.id)
+            .where(*cohort, message.direction == "INBOUND")
+            .group_by(message.step_position)
+        )
+        for position, count in replies.all():
+            bucket(position)["replied"] = int(count)
+        event = EmailProviderEvent
+        unsubscribes = await self.db.execute(
+            select(event.step_position, func.count(distinct(lead.id)))
+            .select_from(lead)
+            .join(event, event.campaign_member_id == lead.id)
+            .where(*cohort, event.type == "UNSUBSCRIBED")
+            .group_by(event.step_position)
+        )
+        for position, count in unsubscribes.all():
+            bucket(position)["unsubscribed"] = int(count)
+        return steps
+
+    async def performance_timeline(
+        self,
+        campaign_id: uuid.UUID,
+        *,
+        timezone: str,
+        since: datetime | None,
+        until: datetime | None,
+    ) -> dict[date, dict[str, int]]:
+        """Day by day, in the campaign's timezone, the cohort's leads:
+        launched that day, and emailed / opening / clicking / replying /
+        bouncing / unsubscribing that day (distinct leads, never messages,
+        from the events stored once). Only days with activity, oldest first."""
+        lead = EmailCampaignMember
+        event = EmailProviderEvent
+        cohort = self._cohort([campaign_id], since, until)
+        days: dict[date, dict[str, int]] = {}
+
+        def bucket(day: date) -> dict[str, int]:
+            return days.setdefault(day, dict.fromkeys(_DAY_KEYS, 0))
+
+        launched_day = cast(func.timezone(timezone, lead.queued_at), Date)
+        launched = await self.db.execute(
+            select(launched_day, func.count(distinct(lead.id)))
+            .where(*cohort, lead.queued_at.is_not(None))
+            .group_by(launched_day)
+        )
+        for day, count in launched.all():
+            bucket(day)["launched"] = int(count)
+        event_day = cast(func.timezone(timezone, event.occurred_at), Date)
+        activity = await self.db.execute(
+            select(event_day, event.type, func.count(distinct(lead.id)))
+            .select_from(lead)
+            .join(event, event.campaign_member_id == lead.id)
+            .where(*cohort, event.type.in_(list(_DAY_EVENTS)))
+            .group_by(event_day, event.type)
+        )
+        for day, kind, count in activity.all():
+            bucket(day)[_DAY_EVENTS[kind]] = int(count)
+        return dict(sorted(days.items()))
+
+    async def cohort_states(
+        self, campaign_id: uuid.UUID, *, since: datetime | None, until: datetime | None
+    ) -> dict[str, int]:
+        """The cohort's leads by their state now."""
+        rows = await self.db.execute(
+            select(EmailCampaignMember.status, func.count())
+            .where(*self._cohort([campaign_id], since, until))
+            .group_by(EmailCampaignMember.status)
+        )
+        return {status: int(count) for status, count in rows.all()}
+
+    # --- outreach (route 11): the agency's activity, day by day -------------------
+
+    def _outreach_scope(
+        self, agency_id: uuid.UUID, filters: dict[str, Any]
+    ) -> list[ColumnElement[bool]]:
+        """The queue's filters, on top of the agency scope of `_in_agency`."""
+        conditions: list[ColumnElement[bool]] = []
+        if filters.get("campaign_id"):
+            conditions.append(EmailCampaignMember.campaign_id == filters["campaign_id"])
+        if filters.get("status"):
+            conditions.append(EmailCampaignMember.status.in_(list(filters["status"])))
+        if filters.get("sender"):
+            conditions.append(
+                EmailCampaign.settings["sender"]["email"].astext == str(filters["sender"])
+            )
+        search = (filters.get("search") or "").strip()
+        if search:
+            conditions.append(self._member_search(agency_id, search))
+        return conditions
+
+    async def outreach_past(
+        self,
+        agency_id: uuid.UUID,
+        since: datetime,
+        until: datetime,
+        filters: dict[str, Any],
+        limit: int,
+    ) -> list[tuple[str, datetime, int | None, MemberRow]]:
+        """What the provider reported in [since, until): emails sent,
+        replies, bounces, unsubscribes; (kind, at, step, membership row)."""
+        scope = self._outreach_scope(agency_id, filters)
+        out: list[tuple[str, datetime, int | None, MemberRow]] = []
+        message = EmailMessage
+        outbound = message.direction == "OUTBOUND"
+        for kind, at, extra in (
+            ("SENT", message.sent_at, outbound),
+            ("REPLIED", message.received_at, message.direction == "INBOUND"),
+            ("BOUNCED", message.bounced_at, outbound),
+        ):
+            rows = await self.db.execute(
+                self._in_agency(
+                    select(
+                        EmailCampaignMember,
+                        ClientProfile,
+                        ExpatUser,
+                        EmailCampaign,
+                        at,
+                        message.step_position,
+                    ),
+                    agency_id,
+                )
+                .join(message, message.campaign_member_id == EmailCampaignMember.id)
+                .where(*scope, extra, at >= since, at < until)
+                .order_by(at.desc())
+                .limit(limit)
+            )
+            for member, profile, account, campaign, when, step in rows.all():
+                out.append((kind, when, step, MemberRow(member, profile, account, campaign)))
+        event = EmailProviderEvent
+        rows = await self.db.execute(
+            self._in_agency(
+                select(
+                    EmailCampaignMember,
+                    ClientProfile,
+                    ExpatUser,
+                    EmailCampaign,
+                    event.occurred_at,
+                    event.step_position,
+                ),
+                agency_id,
+            )
+            .join(event, event.campaign_member_id == EmailCampaignMember.id)
+            .where(
+                *scope,
+                event.type == "UNSUBSCRIBED",
+                event.occurred_at >= since,
+                event.occurred_at < until,
+            )
+            .order_by(event.occurred_at.desc())
+            .limit(limit)
+        )
+        for member, profile, account, campaign, when, step in rows.all():
+            out.append(("UNSUBSCRIBED", when, step, MemberRow(member, profile, account, campaign)))
+        return out
+
+    async def outreach_in_flight(
+        self, agency_id: uuid.UUID, filters: dict[str, Any]
+    ) -> list[MemberRow]:
+        """Launched leads that may still be sent something (queued or in
+        sequence): the ones a date can be estimated for."""
+        result = await self.db.execute(
+            self._member_rows(agency_id)
+            .where(
+                *self._outreach_scope(agency_id, filters),
+                EmailCampaignMember.status.in_(("EMAIL_QUEUED", "EMAIL_ACTIVE")),
+                EmailCampaignMember.queued_at.is_not(None),
+            )
+            .order_by(EmailCampaignMember.id)
+        )
+        return self._rows(result)
+
+    async def sent_days(
+        self, member_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, dict[int, datetime]]:
+        """Membership -> step position -> when its email was sent (the
+        message, else the frozen render)."""
+        sent: dict[uuid.UUID, dict[int, datetime]] = {}
+        if not member_ids:
+            return sent
+        ids = list(member_ids)
+        rows = await self.db.execute(
+            select(
+                EmailMessage.campaign_member_id, EmailMessage.step_position, EmailMessage.sent_at
+            ).where(
+                EmailMessage.campaign_member_id.in_(ids),
+                EmailMessage.direction == "OUTBOUND",
+                EmailMessage.sent_at.is_not(None),
+                EmailMessage.step_position.is_not(None),
+            )
+        )
+        for member_id, position, at in rows.all():
+            sent.setdefault(member_id, {})[position] = at
+        renders = await self.db.execute(
+            select(
+                EmailMemberRender.campaign_member_id,
+                EmailMemberRender.step_position,
+                EmailMemberRender.sent_at,
+            ).where(
+                EmailMemberRender.campaign_member_id.in_(ids),
+                EmailMemberRender.sent_at.is_not(None),
+            )
+        )
+        for member_id, position, at in renders.all():
+            sent.setdefault(member_id, {}).setdefault(position, at)
+        return sent
+
+    async def outreach_held(self, agency_id: uuid.UUID, filters: dict[str, Any]) -> tuple[int, int]:
+        """(waiting launch, on hold): leads never launched yet; launched
+        leads paused, or whose campaign is not active."""
+        base = self._in_agency(select(func.count(EmailCampaignMember.id)), agency_id).where(
+            *self._outreach_scope(agency_id, filters)
+        )
+        waiting = await self.db.scalar(
+            base.where(
+                EmailCampaignMember.status == "EMAIL_READY",
+                EmailCampaignMember.queued_at.is_(None),
+            )
+        )
+        held = await self.db.scalar(
+            base.where(
+                EmailCampaignMember.queued_at.is_not(None),
+                or_(
+                    EmailCampaignMember.status == "EMAIL_PAUSED",
+                    and_(
+                        EmailCampaignMember.status.in_(("EMAIL_QUEUED", "EMAIL_ACTIVE")),
+                        EmailCampaign.status != "ACTIVE",
+                    ),
+                ),
+            )
+        )
+        return int(waiting or 0), int(held or 0)
+
+    # --- the deletion hooks (spec 8.11) --------------------------------------------
+
+    async def real_leads_of_profiles(
+        self, agency_id: uuid.UUID, profile_ids: Sequence[uuid.UUID]
+    ) -> list[tuple[EmailCampaignMember, EmailCampaign]]:
+        """The memberships of these client records whose lead is (still) at
+        Lemlist: a real lead id (not a dry-run one) in a real campaign, and
+        not taken out already (a removal or a move removed it there)."""
+        found: list[tuple[EmailCampaignMember, EmailCampaign]] = []
+        ids = list(dict.fromkeys(profile_ids))
+        for start in range(0, len(ids), _IDS_PER_QUERY):
+            rows = await self.db.execute(
+                select(EmailCampaignMember, EmailCampaign)
+                .join(EmailCampaign, EmailCampaign.id == EmailCampaignMember.campaign_id)
+                .where(
+                    EmailCampaignMember.agency_id == agency_id,
+                    EmailCampaign.agency_id == agency_id,
+                    EmailCampaignMember.client_profile_id.in_(ids[start : start + _IDS_PER_QUERY]),
+                    EmailCampaignMember.provider_lead_id.is_not(None),
+                    EmailCampaignMember.provider_lead_id != "",
+                    not_(_dry_run_id(EmailCampaignMember.provider_lead_id)),
+                    EmailCampaignMember.removed_at.is_(None),
+                    real_provider_campaign(),
+                )
+                .order_by(EmailCampaignMember.client_profile_id, EmailCampaignMember.id)
+            )
+            found.extend((member, campaign) for member, campaign in rows.all())
+        return found
+
+    async def real_provider_campaigns(self, agency_id: uuid.UUID) -> list[EmailCampaign]:
+        """The agency's campaigns that exist at Lemlist, any status."""
+        rows = await self.db.execute(
+            select(EmailCampaign)
+            .where(EmailCampaign.agency_id == agency_id, real_provider_campaign())
+            .order_by(EmailCampaign.created_at, EmailCampaign.id)
+        )
+        return list(rows.scalars().all())
+
+    async def real_leads_of_campaign(self, campaign_id: uuid.UUID) -> list[EmailCampaignMember]:
+        """A campaign's memberships whose lead is (still) at Lemlist."""
+        rows = await self.db.execute(
+            select(EmailCampaignMember)
+            .where(
+                EmailCampaignMember.campaign_id == campaign_id,
+                EmailCampaignMember.provider_lead_id.is_not(None),
+                EmailCampaignMember.provider_lead_id != "",
+                not_(_dry_run_id(EmailCampaignMember.provider_lead_id)),
+                EmailCampaignMember.removed_at.is_(None),
+            )
+            .order_by(EmailCampaignMember.id)
+        )
+        return list(rows.scalars().all())

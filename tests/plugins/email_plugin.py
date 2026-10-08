@@ -4,7 +4,7 @@ manager (`fake_email_provider`) and a two-agency world for the agent routes.
 
 Factories write rows straight to the database (`make_*(**overrides)`), so a
 test can stand a campaign, a membership, a render, a message or an event up
-without the agent routes (the launch and the sync come in phase 3B). The
+without the agent routes (the provider's events are phase 4's ingestion). The
 conftest forces Lemlist mocked and real effects off; the `lemlist_live`
 fixture is the ONLY way a test turns them on, and it installs the `GET /team`
 double in the same gesture; `fake_email_provider` replaces the manager's provider

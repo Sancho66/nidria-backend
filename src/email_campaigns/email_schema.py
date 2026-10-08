@@ -4,8 +4,10 @@ Two surfaces:
 - the platform's (superadmin): activation and Lemlist team binding,
   `/agencies/{agency_id}/email-module` (phase 1);
 - the agents' (`/email/*`, phase 3): the module's meta, campaigns, steps, AI
-  variables, previews and recipients (memberships), ported from Prism's
-  `email_schema.py` (reference commit 629a2b0).
+  variables, previews and recipients (memberships), then the add wizard, a
+  client record's email state, the Sync, the Launch, the performance and the
+  outreach page, ported from Prism's `email_schema.py` (reference commit
+  629a2b0).
 
 Adaptations to Nidria: UUID identifiers; no project, scope, legacy workflow
 or address verification; a recipient is a client record (`client_profile`),
@@ -740,3 +742,476 @@ class EmailActionResult(BaseModel):
     done: int
     failed: int
     rows: list[EmailActionResultRow]
+
+
+# ── A client record's email state (route 33) ────────────────────────────────
+
+#: A client's email state, derived from its memberships when read, never
+#: stored (spec 8.4): a reply anywhere wins, then anything still sending
+#: (queued or active), a pause, a lead waiting to start, then how finished
+#: sequences ended. A removed membership does not count.
+ClientEmailStatus = Literal[
+    "EMAIL_REPLIED",
+    "EMAIL_IN_PROGRESS",
+    "EMAIL_PAUSED",
+    "EMAIL_READY",
+    "EMAIL_COMPLETED",
+    "EMAIL_BOUNCED",
+    "EMAIL_UNSUBSCRIBED",
+]
+
+
+class EmailClientProfileRead(BaseModel):
+    """One client record's email state next to its client status: two
+    independent things, the first derived from its memberships."""
+
+    client_profile_id: uuid.UUID
+    #: None: never in a campaign of the agency (or only removed from them).
+    email_status: ClientEmailStatus | None
+    client_status: ClientStatus
+    #: Every membership of the record in the agency's campaigns, the ended
+    #: and removed ones included (its history), newest first.
+    memberships: list[EmailMemberRead]
+
+
+# ── The add wizard (routes 34 to 37) ────────────────────────────────────────
+
+#: Why a client is added or not (spec 8.4). READY: added. The others are
+#: kept out: no address, a malformed one, a demo one (rule N11), a block on
+#: record (rule N6, never overridable), live in another campaign (never moved
+#: from the wizard, decision A10), already in this campaign, or an address a
+#: client chosen earlier in the same selection already carries.
+Eligibility = Literal[
+    "READY",
+    "NO_EMAIL",
+    "INVALID_EMAIL",
+    "DEMO_RECIPIENT",
+    "UNSUBSCRIBED",
+    "BOUNCED",
+    "IN_OTHER_CAMPAIGN",
+    "ALREADY_IN_CAMPAIGN",
+    "DUPLICATE_EMAIL",
+]
+#: What the add does with a row: add it, or leave it out.
+PlannedAction = Literal["ADD", "SKIP"]
+
+
+class EmailCandidateClient(BaseModel):
+    """A client record the wizard may add: its effective identity (rule N2),
+    its client status and where it stands in the agency's campaigns."""
+
+    id: uuid.UUID
+    first_name: str | None
+    last_name: str | None
+    full_name: str
+    email: str | None
+    has_email: bool
+    #: The client's company when exactly one is linked.
+    company_id: uuid.UUID | None
+    company_name: str | None
+    client_status: ClientStatus
+    #: Its live membership's status, if it has one.
+    email_status: MemberStatus | None
+    current_campaign_id: uuid.UUID | None
+    current_campaign_name: str | None
+
+
+class EmailCandidateClientList(BaseModel):
+    items: list[EmailCandidateClient]
+    total: int
+    page: int
+    page_size: int
+
+
+class EmailCandidateCompany(BaseModel):
+    """A company the wizard may add: the clients linked to it by a role,
+    those with an email and no block on record (eligible), and those also in
+    no live campaign (ready). Each client counts once, whatever its roles."""
+
+    id: uuid.UUID
+    name: str
+    email_status: ClientEmailStatus | None
+    clients_count: int
+    eligible_clients_count: int
+    ready_clients_count: int
+
+
+class EmailCandidateCompanyList(BaseModel):
+    items: list[EmailCandidateCompany]
+    total: int
+    page: int
+    page_size: int
+
+
+class EmailAddMembersRequest(BaseModel):
+    """Who to add: client records, and companies whose linked clients with
+    an email come along. Nothing is ever moved from the wizard (decision
+    A10) nor added despite an unsubscribe (rule N6): Prism's
+    `move_existing` and `include_unsubscribed` are refused (422)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_profile_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5000)
+    #: Each company brings every client linked to it that has an email.
+    company_ids: list[uuid.UUID] = Field(default_factory=list, max_length=2000)
+    #: Rows taken out by hand in the preview, companies' clients included.
+    exclude_client_profile_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5000)
+
+
+class EmailAddPreviewRow(BaseModel):
+    client_profile_id: uuid.UUID
+    first_name: str | None
+    last_name: str | None
+    full_name: str
+    email: str | None
+    company_id: uuid.UUID | None
+    company_name: str | None
+    #: The live membership elsewhere (IN_OTHER_CAMPAIGN), if any.
+    current_campaign_id: uuid.UUID | None
+    current_campaign_name: str | None
+    #: Another record the verdict comes from: the one with the same address
+    #: whose block or live membership applies, or the row of this selection
+    #: that already carries the address (DUPLICATE_EMAIL).
+    via_client_profile_id: uuid.UUID | None = None
+    eligibility: Eligibility
+    action: PlannedAction
+
+
+class EmailAddPreviewSummary(BaseModel):
+    selected: int
+    ready: int
+    no_email: int
+    invalid_email: int
+    demo_recipient: int
+    unsubscribed: int
+    bounced: int
+    in_other_campaign: int
+    already_in_campaign: int
+    duplicate_email: int
+    will_add: int
+    will_skip: int
+
+
+class EmailAddPreviewResponse(BaseModel):
+    campaign_id: uuid.UUID
+    summary: EmailAddPreviewSummary
+    rows: list[EmailAddPreviewRow]
+
+
+class EmailAddMembersResponse(BaseModel):
+    added: int
+    skipped: int
+    rows: list[EmailAddPreviewRow]
+
+
+# ── Sync and Launch (routes 10, 13, 14) ─────────────────────────────────────
+
+#: What a sync says beyond its counts (decision A12: codes, never sentences).
+#: ready_to_launch {count}: leads wait for a Launch (a sync never hands one
+#: over); daily_limit_reached {launched_today, daily_limit}; step_not_written
+#: {position}: a step added to a sequence in use has no email yet, it reaches
+#: Lemlist once written; follow_up_added: appended at the end of Lemlist's
+#: sequence with each running lead's own email; plan_refused: Lemlist's plan
+#: refuses launches, the batch stopped (Nidria never changes the plan).
+SyncNoteCode = Literal[
+    "ready_to_launch",
+    "daily_limit_reached",
+    "step_not_written",
+    "follow_up_added",
+    "plan_refused",
+]
+#: What went wrong in a sync without stopping it. follow_up_not_added {code};
+#: member_not_updated {member_id, client_profile_id, then position, kind,
+#: token, error for an email that cannot be rendered, or code for a provider
+#: refusal}; campaign_kept_paused {exposed}: running leads could reach a step
+#: without their own email, or {reason: lead_not_paused, code}: one could
+#: not be paused; campaign_not_started {code}.
+SyncErrorCode = Literal[
+    "follow_up_not_added",
+    "member_not_updated",
+    "campaign_kept_paused",
+    "campaign_not_started",
+]
+
+
+class EmailSyncNote(BaseModel):
+    code: SyncNoteCode
+    params: dict[str, str | int] = Field(default_factory=dict)
+
+
+class EmailSyncError(BaseModel):
+    code: SyncErrorCode
+    params: dict[str, str | int] = Field(default_factory=dict)
+
+
+class EmailSyncRequest(BaseModel):
+    #: Leads handled per call; the frontend calls again while work remains.
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class EmailSyncResult(BaseModel):
+    campaign_id: uuid.UUID
+    #: False: dry run, nothing left Nidria.
+    external: bool
+    campaign_created: bool = False
+    steps_created: int = 0
+    steps_updated: int = 0
+    #: Provider events read and stored (the ingestion is phase 4's: 0 until then).
+    events_ingested: int = 0
+    #: Running leads whose next emails were refreshed at the provider.
+    members_updated: int = 0
+    #: Running leads still to refresh: call again.
+    updates_remaining: int = 0
+    #: Leads handed over by this call (a launch only), and those that could not be.
+    members_pushed: int = 0
+    members_failed: int = 0
+    #: Ready leads still waiting (a Launch, the next call, the next day).
+    remaining: int = 0
+    #: Running leads paused at the provider by this sync: their email for a
+    #: new step is not ready yet, or they completed the sequence before it.
+    members_held: int = 0
+    daily_limit: int = 0
+    pushed_today: int = 0
+    errors: list[EmailSyncError] = Field(default_factory=list)
+    notes: list[EmailSyncNote] = Field(default_factory=list)
+    last_synced_at: datetime | None = None
+
+
+class EmailLaunchRequest(BaseModel):
+    """Launch: hand READY leads over to the provider, the selected ones or
+    the next eligible ones in order. The only way a new lead reaches it;
+    each is checked again by the shared rules first (spec 8.5)."""
+
+    member_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=100)
+    #: Leads handled per call; the frontend calls again while work remains.
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class EmailLaunchFailure(BaseModel):
+    """A lead this launch did not hand over, and why: a code with its params
+    (decision A12). A failure: `not_handed_over` {issue and the issue's
+    params}, `not_sendable` {position, kind, token, error}, the provider's
+    `unsubscribed_at_provider`, `in_other_lemlist_campaign`, `plan_refused`
+    or `provider_error` {code}; the lead stays READY with that code as its
+    `status_reason` (an unsubscribe ends it). A selected lead skipped:
+    `not_in_campaign`, `already_launched` or `not_ready` {status}."""
+
+    member_id: uuid.UUID
+    client_profile_id: uuid.UUID | None = None
+    full_name: str = ""
+    code: str
+    params: dict[str, str | int] = Field(default_factory=dict)
+
+
+class EmailLaunchResult(EmailSyncResult):
+    #: Leads (memberships) handed over by this call.
+    launched_ids: list[uuid.UUID] = Field(default_factory=list)
+    failures: list[EmailLaunchFailure] = Field(default_factory=list)
+    #: Selected leads not to launch: launched already, ended, another campaign's.
+    skipped: list[EmailLaunchFailure] = Field(default_factory=list)
+    #: The provider refuses launches (its plan): no further call helps.
+    stopped: bool = False
+
+
+LaunchReadinessFilter = Literal["all", "ready", "blocked"]
+
+
+class EmailLaunchReadinessRow(BaseModel):
+    lead: EmailMemberRead
+    #: READY TO LAUNCH, or BLOCKED by an issue below.
+    ready: bool
+    issues: list[EmailIssueRead]
+    #: Unsent steps already rendered (and still current) for this lead.
+    steps_rendered: int
+    steps_total: int
+
+
+class EmailLaunchReadiness(BaseModel):
+    """What a launch would do now, read without the provider's leads and
+    without a model: the campaign's gates, today's room, and each lead still
+    to launch with what stands in its way (the rules the hand-over applies)."""
+
+    campaign_id: uuid.UUID
+    gates: list[EmailIssueRead]
+    #: No blocking gate (the agent's right to launch aside).
+    can_launch: bool
+    daily_limit: int
+    launched_today: int
+    remaining_today: int
+    to_launch: int
+    ready: int
+    blocked: int
+    launched: int
+    #: Every lead ready to launch, in launch order (at most 2,000).
+    ready_ids: list[uuid.UUID]
+    items: list[EmailLaunchReadinessRow]
+    total: int
+    page: int
+    page_size: int
+
+
+# ── Performance (route 12) ──────────────────────────────────────────────────
+
+
+class EmailLeadFunnelRead(BaseModel):
+    """Leads (one client in this campaign, a membership), never messages."""
+
+    #: Handed to Lemlist for real (a dry run's are counted apart).
+    launched: int
+    launched_dry_run: int
+    #: At least one email sent to them.
+    reached: int
+    #: At least one email opened (pixel tracking: blocked images hide opens).
+    opened: int
+    #: At least one link clicked.
+    clicked: int
+    #: At least one reply received.
+    replied: int
+    #: An email bounced, or the lead ended as bounced.
+    bounced: int
+    #: Unsubscribed (the provider's event, or the lead ended so).
+    unsubscribed: int
+
+
+class EmailPerformanceRates(BaseModel):
+    """Each rate over the leads reached; None when no lead was reached (no
+    rate is shown rather than 0)."""
+
+    open_rate: float | None
+    click_rate: float | None
+    reply_rate: float | None
+    bounce_rate: float | None
+    unsubscribe_rate: float | None
+
+
+class EmailMessageTotalsRead(BaseModel):
+    """Messages, never leads: emails sent, opened / clicked at least once,
+    every open and click (repeats included), replies, bounced emails."""
+
+    sent: int
+    opened: int
+    opens: int
+    clicked: int
+    clicks: int
+    replies: int
+    bounced: int
+
+
+class EmailStepPerformanceRead(BaseModel):
+    """One step's leads: entered (its email sent to them), and of those, who
+    opened, clicked, replied to it (a reply counts for the step it answers),
+    bounced on it, unsubscribed from it; rates over entered. `position`
+    None: replies and unsubscribes the provider tied to no step."""
+
+    position: int | None
+    name: str | None
+    entered: int
+    sent: int
+    opened: int
+    clicked: int
+    replied: int
+    bounced: int
+    unsubscribed: int
+    open_rate: float | None
+    click_rate: float | None
+    reply_rate: float | None
+    bounce_rate: float | None
+    unsubscribe_rate: float | None
+
+
+class EmailPerformanceDay(BaseModel):
+    """One day of a campaign's cohort, in its timezone: leads launched that
+    day, and leads emailed / opening / clicking / replying / bouncing /
+    unsubscribing that day (each lead once a day, never messages)."""
+
+    day: date
+    launched: int
+    sent: int
+    opened: int
+    clicked: int
+    replied: int
+    bounced: int
+    unsubscribed: int
+
+
+class EmailPerformanceRead(BaseModel):
+    """A campaign's performance from Nidria's own records (events ingested
+    once, messages, memberships), never Lemlist's figures. With a period,
+    the cohort is the leads launched in it (in the campaign's timezone),
+    followed whenever their emails went out; `leads_in_campaign` and
+    `leads_to_launch` are always now. Lemlist reports no delivery: there is
+    no "delivered"."""
+
+    campaign_id: uuid.UUID
+    timezone: str
+    launched_from: date | None
+    launched_to: date | None
+    leads_in_campaign: int
+    leads_to_launch: int
+    funnel: EmailLeadFunnelRead
+    rates: EmailPerformanceRates
+    messages: EmailMessageTotalsRead
+    #: The cohort's leads by their state now.
+    states: dict[str, int]
+    steps: list[EmailStepPerformanceRead]
+    #: Day by day, only the days with activity, oldest first.
+    timeline: list[EmailPerformanceDay] = Field(default_factory=list)
+
+
+# ── Outreach (route 11) ─────────────────────────────────────────────────────
+
+OutreachKind = Literal["SENT", "REPLIED", "BOUNCED", "UNSUBSCRIBED", "SCHEDULED", "OVERDUE"]
+
+
+class EmailOutreachItem(BaseModel):
+    """One activity of the queue. Past ones (SENT, REPLIED, BOUNCED,
+    UNSUBSCRIBED) are what the provider reported, at their time; SCHEDULED
+    is an estimated DAY (no hour: Lemlist chooses it within the window);
+    OVERDUE was estimated for a day already past and is not reported sent."""
+
+    kind: OutreachKind
+    #: The day it belongs to: an actual activity's day in the viewer's
+    #: timezone, an estimate's in its campaign's.
+    day: date
+    at: datetime | None = None
+    estimated: bool = False
+    #: An overdue email's original estimate.
+    estimated_day: date | None = None
+    member_id: uuid.UUID
+    client_profile_id: uuid.UUID
+    full_name: str
+    email: str | None = None
+    company_id: uuid.UUID | None = None
+    company_name: str | None = None
+    campaign_id: uuid.UUID
+    campaign_name: str
+    step_position: int | None = None
+    step_name: str | None = None
+    status: MemberStatus
+    sender: str | None = None
+
+
+class EmailOutreachCampaign(BaseModel):
+    id: uuid.UUID
+    name: str
+    status: CampaignStatus
+    sender: str | None = None
+
+
+class EmailOutreachRead(BaseModel):
+    """The agency's outreach across its campaigns, day by day, read from
+    Nidria's records only, never the provider."""
+
+    start: date
+    end: date
+    #: The viewer's timezone the actual activities are dated in.
+    timezone: str
+    items: list[EmailOutreachItem]
+    #: More activities than one answer carries: narrow the filters.
+    truncated: bool = False
+    #: Leads not launched yet: no date until someone launches them.
+    waiting_launch: int
+    #: Launched leads with no next date: paused, or their campaign not active.
+    on_hold: int
+    overdue: int
+    campaigns: list[EmailOutreachCampaign]

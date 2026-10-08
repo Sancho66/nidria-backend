@@ -96,6 +96,11 @@ IMPERSONATION_AGENT_DENIED: frozenset[tuple[str, str]] = frozenset(
         # poison the clickwrap trace (the expat face needs no entry: its
         # read-only rule already blocks every write).
         ("POST", "/consents/agent/accept"),
+        # Email module (spec 4.3, D6): the Launch hands leads to Lemlist and
+        # the Sync starts a campaign there: under a mask they would send real
+        # emails in the client's name, the family of the seat purchases.
+        ("POST", "/email/campaigns/{campaign_id}/launch"),
+        ("POST", "/email/campaigns/{campaign_id}/sync"),
     }
 )
 
