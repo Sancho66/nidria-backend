@@ -71,11 +71,7 @@ _PLATFORM_SET = set(PLATFORM_PERMISSIONS)
 # delegation ceiling (src/core/rbac/delegation.py) and the clone catch-up below.
 PLATFORM_PERMISSION_KEYS: frozenset[str] = frozenset(p.value for p in PLATFORM_PERMISSIONS)
 
-# The Email module's permissions (the "right to activate", N3): admin and
-# superadmin receive them by construction; case_manager EXCLUDES them below
-# (it is built by exclusion and would silently inherit them); member and
-# viewer never list them; external roles never hold them. An agency admin
-# grants them role by role, within its own ceiling.
+# The Email module's permissions (the "right to activate", N3).
 EMAIL_PERMISSIONS: tuple[Permission, ...] = (
     Permission.EMAIL_VIEW,
     Permission.EMAIL_MANAGE,
@@ -85,11 +81,36 @@ EMAIL_PERMISSIONS: tuple[Permission, ...] = (
     Permission.EMAIL_SYNC,
 )
 
+# PLATFORM-MANAGED permissions: an agency role MAY carry them, but only the
+# platform puts them on it or takes them off. Decision of Alexandre,
+# 08/10/2026, replacing the spec's N3 ("admin and superadmin receive them,
+# the agency grants them role by role"): nobody holds the Email keys by
+# default, the agency admin included; a superadmin chooses, agency by agency,
+# which roles (admin included) receive them (PUT
+# /agencies/{agency_id}/email-module/roles/{role_id}). So no system role but
+# superadmin lists them below, no agency flow adds or removes one, and the
+# boot never propagates one (src/core/rbac/delegation.py holds the rule every
+# door reads). Unlike PLATFORM_PERMISSIONS, they do open agency work: the
+# keys stay in the agency catalogue (GET /permissions) and count in the
+# delegation ceiling of an assignment or an invitation. Removing them from
+# the matrix does not touch the rows already granted: a migration removes
+# them (l5c9e2a7d4f1).
+PLATFORM_MANAGED_PERMISSIONS: tuple[Permission, ...] = EMAIL_PERMISSIONS
+_PLATFORM_MANAGED_SET = set(PLATFORM_MANAGED_PERMISSIONS)
+PLATFORM_MANAGED_PERMISSION_KEYS: frozenset[str] = frozenset(
+    p.value for p in PLATFORM_MANAGED_PERMISSIONS
+)
+
 SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
-    # admin = everything EXCEPT the external-provider AND platform-scope
-    # permissions (the former belong only to external roles, the latter only
-    # to superadmin — both structural barriers).
-    "admin": tuple(p for p in Permission if p not in _EXTERNAL_SET and p not in _PLATFORM_SET),
+    # admin = everything EXCEPT the external-provider, platform-scope and
+    # platform-managed permissions (the first belong only to external roles,
+    # the second only to superadmin, the third to whom the platform grants
+    # them, agency by agency).
+    "admin": tuple(
+        p
+        for p in Permission
+        if p not in _EXTERNAL_SET and p not in _PLATFORM_SET and p not in _PLATFORM_MANAGED_SET
+    ),
     "case_manager": tuple(
         p
         for p in Permission
@@ -108,9 +129,10 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
             # imports dossiers (bulk onboarding is case work). An agency can
             # still revoke it via the matrix (data, no deploy).
             Permission.NOTE_VIEW_CONFIDENTIAL,
-            # The Email module is admin-only by default: only the admin (and
-            # superadmin) holds it from the start, the agency grants it on.
-            *EMAIL_PERMISSIONS,
+            # The Email keys are platform-managed: no agency role holds them
+            # by default; the platform grants them (mirrors the admin
+            # exclusion).
+            *_PLATFORM_MANAGED_SET,
             *_EXTERNAL_SET,
             # agency.create, platform.task_manage and job.manage are
             # platform-only — case_manager never holds them (see
@@ -138,6 +160,8 @@ SYSTEM_ROLE_MATRIX: dict[str, tuple[Permission, ...]] = {
     # agency admin can never escalate into it. Still NO cross-agency access:
     # enforce() ignores agency_id and the repositories' WHERE agency_id
     # filters are untouched (cross-agency reach is the separate Phase 2).
+    # It keeps the platform-managed Email keys: it works in its home agency,
+    # Nidria's own, the module's pilot agency.
     "superadmin": tuple(p for p in Permission if p not in _EXTERNAL_SET),
 }
 
@@ -349,7 +373,13 @@ async def propagate_new_permissions_to_clones(db: AsyncSession) -> None:
     # whatever its origin holds and whenever the permission was born. A clone
     # of superadmin (the escalation closed on 08/10/2026 minted some) would
     # otherwise get them back at every boot, undoing the cleanup migration.
-    platform_ids = {row.id for row in permissions if row.key in PLATFORM_PERMISSION_KEYS}
+    # Nor a platform-managed one (the Email keys): only the platform grants
+    # those, role by role, and the boot is not the platform.
+    withheld_ids = {
+        row.id
+        for row in permissions
+        if row.key in PLATFORM_PERMISSION_KEYS or row.key in PLATFORM_MANAGED_PERMISSION_KEYS
+    }
     # The WHERE guarantees cloned_from is set; the map keeps the typer honest.
     origin_of: dict[uuid.UUID, uuid.UUID] = {
         c.id: c.cloned_from_role_id for c in clones if c.cloned_from_role_id is not None
@@ -365,7 +395,7 @@ async def propagate_new_permissions_to_clones(db: AsyncSession) -> None:
         matrix[rp.role_id].add(rp.permission_id)
     for clone in clones:
         decided_at = clone.permissions_reviewed_at
-        for pid in matrix[origin_of[clone.id]] - matrix[clone.id] - platform_ids:
+        for pid in matrix[origin_of[clone.id]] - matrix[clone.id] - withheld_ids:
             if born_at[pid] > decided_at:
                 db.add(RolePermission(role_id=clone.id, permission_id=pid))
     await db.commit()

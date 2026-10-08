@@ -41,6 +41,7 @@ from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.client_profile_plugin import MakeClientProfile
 from tests.plugins.email_plugin import (
     EmailWorld,
+    MakeEmailAdmin,
     MakeEmailMember,
     email_env,
 )
@@ -779,11 +780,10 @@ async def test_the_module_switched_off_answers_409_on_every_route(
 async def test_an_agency_without_a_row_has_no_module(
     client: AsyncClient,
     email_module_on: None,
-    make_agent: MakeAgent,
+    make_email_admin: MakeEmailAdmin,
     agent_headers: AuthHeaders,
-    system_roles: dict[str, Any],
 ) -> None:
-    admin = await make_agent(role=system_roles["admin"])
+    admin = await make_email_admin()
     response = await client.get("/email/meta", headers=agent_headers(admin))
     assert response.status_code == 409 and response.json()["code"] == "email.module_disabled"
 
@@ -812,16 +812,15 @@ async def test_the_launch_and_the_sync_are_refused_under_impersonation(
     email_world: EmailWorld,
     both: Both,
     fake_email_provider: FakeProvider,
-    make_agent: MakeAgent,
+    make_email_admin: MakeEmailAdmin,
     agent_headers: AuthHeaders,
-    system_roles: dict[str, Any],
 ) -> None:
     """Under a mask, the Launch and the Sync would send real emails in the
     client's name: refused whatever the target may do (an admin here), and
     nothing reaches Lemlist. Reading stays open, the other gestures too."""
     side = both.here
     await set_status(client, side.headers, side.campaign_id, "ACTIVE")
-    target = await make_agent(agency_id=side.agency_id, role=system_roles["admin"])
+    target = await make_email_admin(agency_id=side.agency_id)
     issued = await client.post(
         f"/agencies/me/members/{target.id}/impersonate", headers=email_world.headers
     )

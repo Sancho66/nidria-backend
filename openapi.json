@@ -4689,6 +4689,132 @@
         }
       }
     },
+    "/agencies/{agency_id}/email-module/roles": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "List Agency Email Roles",
+        "description": "The roles the agency hands out to its members, as its own role list\nshows them (its internal system roles, the platform role left out, and\nits own roles; a system role through the agency's copy-on-write clone\nonce it has one), each with its active wearers in the agency and the\nEmail keys it carries. Nobody holds `email.*` until the platform grants\nit here, the agency admin included.",
+        "operationId": "list_agency_email_roles_agencies__agency_id__email_module_roles_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EmailModuleRoleRead"
+                  },
+                  "title": "Response List Agency Email Roles Agencies  Agency Id  Email Module Roles Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agency_id}/email-module/roles/{role_id}": {
+      "put": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Set Agency Email Role Permissions",
+        "description": "The role carries exactly these Email keys from now on (empty: none),\nits other permissions untouched; the answer is the updated list. A\nshared system role is never written: the agency's copy-on-write clone\ncarries the grant (made if needed, the agency's wearers of the system\nrole moved onto it), and no other agency is touched. 404\n`role.not_found` for the platform role, an external role or another\nagency's role; 409 `role.clone_name_taken` when a custom role of the\nagency already bears the system role's name. Allowed while the module\nis off for the agency: the rights are prepared before switching it on.",
+        "operationId": "set_agency_email_role_permissions_agencies__agency_id__email_module_roles__role_id__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailModuleRolePermissionsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EmailModuleRoleRead"
+                  },
+                  "title": "Response Set Agency Email Role Permissions Agencies  Agency Id  Email Module Roles  Role Id  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/email/provider": {
       "get": {
         "tags": [
@@ -34511,6 +34637,74 @@
         ],
         "title": "EmailMetaRead",
         "description": "What the agency's Email pages need before anything else."
+      },
+      "EmailModuleRolePermissionsUpdate": {
+        "properties": {
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "permissions"
+        ],
+        "title": "EmailModuleRolePermissionsUpdate",
+        "description": "The `email.*` keys the role carries from now on, exactly: a subset of\nthe six (a repeated key counts once), empty to withdraw them all. Any\nother key is refused (422)."
+      },
+      "EmailModuleRoleRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_system": {
+            "type": "boolean",
+            "title": "Is System"
+          },
+          "cloned_from_role_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloned From Role Id"
+          },
+          "active_agents": {
+            "type": "integer",
+            "title": "Active Agents"
+          },
+          "email_permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array",
+            "title": "Email Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_system",
+          "cloned_from_role_id",
+          "active_agents",
+          "email_permissions"
+        ],
+        "title": "EmailModuleRoleRead",
+        "description": "A role the agency hands out to its members, as the agency sees it (a\nsystem role through the agency's copy-on-write clone once it has one),\nand the Email keys the platform granted it."
       },
       "EmailOutreachCampaign": {
         "properties": {

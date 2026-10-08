@@ -237,12 +237,14 @@ async def test_system_role_matrix_seeded_as_specified(
     # The internal system roles (external system roles also exist now).
     assert {"admin", "case_manager", "member", "viewer", "superadmin"} <= set(system_roles)
     # admin = everything EXCEPT the external.* permissions (those belong
-    # only to external roles — structural barrier, wave B) AND the
-    # platform-scope permissions (those belong only to superadmin).
+    # only to external roles: structural barrier, wave B), the
+    # platform-scope permissions (those belong only to superadmin) AND the
+    # Email keys (the platform grants them agency by agency, 08/10/2026).
     external_keys = {p.value for p in EXTERNAL_PERMISSIONS}
     platform_keys = {p.value for p in PLATFORM_PERMISSIONS}
+    email_keys = {p.value for p in Permission if p.value.startswith("email.")}
     admin = await keys_of(system_roles["admin"])
-    assert admin == {p.value for p in Permission} - external_keys - platform_keys
+    assert admin == {p.value for p in Permission} - external_keys - platform_keys - email_keys
     assert Permission.AGENCY_CREATE.value not in admin  # platform-only, never an agency admin
     # The scheduler serves every agency: platform-only since 08/10/2026.
     assert Permission.JOB_MANAGE.value in platform_keys
@@ -254,11 +256,11 @@ async def test_system_role_matrix_seeded_as_specified(
     assert Permission.AGENCY_CREATE.value not in case_manager  # platform-only
     assert Permission.JOB_MANAGE.value not in case_manager  # platform-only
     assert external_keys.isdisjoint(case_manager)  # no external.* on an internal role
-    # The Email module is admin-only by default (the "right to activate"):
+    # The Email module (the "right to activate") is granted by the platform
+    # only: no agency role holds it by default, the admin included;
     # case_manager is built by exclusion and must exclude all six keys.
-    email_keys = {p.value for p in Permission if p.value.startswith("email.")}
     assert len(email_keys) == 6
-    assert email_keys <= admin
+    assert email_keys.isdisjoint(admin)
     assert email_keys.isdisjoint(case_manager)
     member = await keys_of(system_roles["member"])
     assert Permission.REMINDER_APPROVE.value in member

@@ -1,5 +1,5 @@
-"""What an agency flow may resolve and hand out: the platform barrier and the
-delegation ceiling, in one place.
+"""What an agency flow may resolve and hand out: the platform barrier, the
+platform-managed keys and the delegation ceiling, in one place.
 
 Every agency door that resolves a role id or grants permissions (the role
 screens, the member role, the invitation, the impersonation target) reads
@@ -21,6 +21,28 @@ Closed on 08/10/2026: an agency admin who knew the id of the superadmin role
 renamed it (the copy-on-write clone carried every platform permission into
 the agency), invited someone with the clone (no ceiling there, and a check on
 the role name only) and the invitee reached /jobs.
+
+The PLATFORM-MANAGED keys (PLATFORM_MANAGED_PERMISSIONS, the Email module's
+`email.*`, decision of Alexandre on 08/10/2026) sit between the two: an
+agency role may carry them, but only the platform puts them on it or takes
+them off (the superadmin routes of src/email_campaigns/email_admin_router.py,
+through RolesManager.set_platform_managed_permissions). In the agency flows,
+whoever acts (an operator in its home agency included):
+
+- a new role starts without them: creating one with a platform-managed key
+  is refused;
+- a matrix edit leaves them exactly as they are: adding or removing one is
+  refused, and the ones kept are not the actor's to hand out, so they stay
+  out of the ceiling;
+- a copy never carries them: a copy-on-write clone starts without them (the
+  platform's grant for a system role lives on the agency's clone, so a clone
+  still to be made carries none), and neither does a duplicate;
+- an assignment or an invitation hands out a role whole: the ceiling counts
+  them like any key. The platform decides which roles carry them; the
+  agency decides who wears which role, within its ceiling.
+
+The refusal is ONE code, `role.platform_managed`, params `keys`: the
+platform-managed keys the request would add or remove.
 """
 
 import uuid
@@ -29,7 +51,11 @@ from collections.abc import Iterable
 from shared.models.agent import Agent
 from shared.models.rbac import Role
 from src.core.exceptions import ForbiddenError
-from src.core.rbac.baseline import PLATFORM_PERMISSION_KEYS, PLATFORM_ROLE_NAMES
+from src.core.rbac.baseline import (
+    PLATFORM_MANAGED_PERMISSION_KEYS,
+    PLATFORM_PERMISSION_KEYS,
+    PLATFORM_ROLE_NAMES,
+)
 from src.core.rbac.enforcement import effective_permissions
 
 
@@ -67,4 +93,25 @@ def assert_within_ceiling(actor: Agent, requested_keys: Iterable[str]) -> None:
         raise ForbiddenError(
             f"Beyond your permission ceiling: {', '.join(missing)}.",
             code="role.beyond_ceiling",
+        )
+
+
+def platform_managed(keys: Iterable[str]) -> set[str]:
+    """The platform-managed keys among `keys`."""
+    return set(keys) & PLATFORM_MANAGED_PERMISSION_KEYS
+
+
+def assert_platform_managed_unchanged(current: Iterable[str], requested: Iterable[str]) -> None:
+    """An agency flow neither adds nor removes a platform-managed key: the
+    role's `requested` matrix carries exactly the ones it carries now
+    (`current`; none for a role still to be made). Checked before the
+    ceiling, so the answer is the same whoever acts."""
+    changed = sorted(platform_managed(current) ^ platform_managed(requested))
+    if changed:
+        # The keys ride in params (permission keys, never ids), like the
+        # one of permission.denied, for the front's labels.
+        raise ForbiddenError(
+            f"Only the platform grants or withdraws: {', '.join(changed)}.",
+            code="role.platform_managed",
+            params={"keys": changed},
         )

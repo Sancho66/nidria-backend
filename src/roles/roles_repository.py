@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,24 @@ class RolesRepository:
     ) -> list[PermissionRow]:
         stmt = select(PermissionRow).where(PermissionRow.id.in_(permission_ids))
         return list((await self.db.execute(stmt)).scalars())
+
+    async def get_permissions_by_keys(self, keys: Sequence[str]) -> list[PermissionRow]:
+        stmt = select(PermissionRow).where(PermissionRow.key.in_(keys))
+        return list((await self.db.execute(stmt)).scalars())
+
+    async def keys_of_roles(
+        self, role_ids: Sequence[uuid.UUID], keys: Iterable[str]
+    ) -> dict[uuid.UUID, set[str]]:
+        """{role_id: the ones of `keys` it carries}, for many roles at once."""
+        stmt = (
+            select(RolePermission.role_id, PermissionRow.key)
+            .join(PermissionRow, PermissionRow.id == RolePermission.permission_id)
+            .where(RolePermission.role_id.in_(role_ids), PermissionRow.key.in_(list(keys)))
+        )
+        held: dict[uuid.UUID, set[str]] = {role_id: set() for role_id in role_ids}
+        for role_id, key in (await self.db.execute(stmt)).all():
+            held[role_id].add(key)
+        return held
 
     # --- roles ---------------------------------------------------------------------
 
@@ -83,6 +101,27 @@ class RolesRepository:
     async def count_role_assignments(self, role_id: uuid.UUID) -> int:
         stmt = select(func.count()).select_from(Agent).where(Agent.role_id == role_id)
         return (await self.db.execute(stmt)).scalar_one()
+
+    async def count_active_wearers(
+        self, agency_id: uuid.UUID, role_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """{role_id: its wearers in THIS agency}: internal agents, the
+        deactivated ones left out (a shared system role is worn in many
+        agencies, only this one's count)."""
+        stmt = (
+            select(Agent.role_id, func.count())
+            .where(
+                Agent.agency_id == agency_id,
+                Agent.role_id.in_(role_ids),
+                Agent.is_external.is_(False),
+                Agent.deactivated_at.is_(None),
+            )
+            .group_by(Agent.role_id)
+        )
+        counts: dict[uuid.UUID, int] = {role_id: 0 for role_id in role_ids}
+        for role_id, count in (await self.db.execute(stmt)).all():
+            counts[role_id] = count
+        return counts
 
     async def delete_role(self, role: Role) -> None:
         await self.db.delete(role)

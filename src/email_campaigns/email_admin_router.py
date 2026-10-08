@@ -1,15 +1,18 @@
 """Platform routes of the Email module: switch it on per agency, bind the
 agency to the platform's Lemlist team (phase 1), pause all its campaigns
-(decision of 08/10/2026), and read the platform's Lemlist account or create
-(or recreate) its webhook (phase 4, spec 10.5).
+(decision of 08/10/2026), grant the Email keys to the agency's roles
+(decision of 08/10/2026: nobody holds them otherwise, the agency admin
+included), and read the platform's Lemlist account or create (or recreate)
+its webhook (phase 4, spec 10.5).
 
 Superadmin only, exactly like PATCH /agencies/{agency_id}/subscription: the
-bindings carry `agency.create` (activation, binding) and
+bindings carry `agency.create` (activation, binding, the Email keys) and
 `platform.task_manage` (the account), PLATFORM permissions no agency role
 holds (an agency admin gets 403). No cross-agency data is opened: these
-routes read and write the agency's switch and count its campaigns, or read
-the platform's own Lemlist account, nothing else. The Lemlist key is never
-shown (its sha256[:12] only), the webhook secret never.
+routes read and write the agency's switch, count its campaigns, list its
+roles and their Email keys, or read the platform's own Lemlist account,
+nothing else. The Lemlist key is never shown (its sha256[:12] only), the
+webhook secret never.
 """
 
 import uuid
@@ -24,6 +27,11 @@ from src.core.enums import Audience
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_admin_manager import EmailAdminManager
+from src.email_campaigns.email_rights_manager import EmailRightsManager
+from src.email_campaigns.email_rights_schema import (
+    EmailModuleRolePermissionsUpdate,
+    EmailModuleRoleRead,
+)
 from src.email_campaigns.email_schema import (
     AgencyEmailModuleResponse,
     AgencyEmailModuleUpdateRequest,
@@ -54,6 +62,15 @@ BINDINGS = [
     RouteBinding(
         "DELETE",
         "/agencies/{agency_id}/email-module/team",
+        Audience.AGENT,
+        Permission.AGENCY_CREATE,
+    ),
+    RouteBinding(
+        "GET", "/agencies/{agency_id}/email-module/roles", Audience.AGENT, Permission.AGENCY_CREATE
+    ),
+    RouteBinding(
+        "PUT",
+        "/agencies/{agency_id}/email-module/roles/{role_id}",
         Audience.AGENT,
         Permission.AGENCY_CREATE,
     ),
@@ -122,6 +139,42 @@ async def unbind_agency_email_team(
     """Unbind the agency's Lemlist team: it runs in dry run again. 409
     `email.team_has_history` once one of its campaigns exists at Lemlist."""
     return await EmailAdminManager(db).unbind_team(agent, agency_id)
+
+
+# ── the Email keys, granted by the platform (decision of 08/10/2026) ────────
+
+
+@router.get("/{agency_id}/email-module/roles", response_model=list[EmailModuleRoleRead])
+async def list_agency_email_roles(
+    agency_id: uuid.UUID, agent: AgentDep, db: DbDep
+) -> list[EmailModuleRoleRead]:
+    """The roles the agency hands out to its members, as its own role list
+    shows them (its internal system roles, the platform role left out, and
+    its own roles; a system role through the agency's copy-on-write clone
+    once it has one), each with its active wearers in the agency and the
+    Email keys it carries. Nobody holds `email.*` until the platform grants
+    it here, the agency admin included."""
+    return await EmailRightsManager(db).roles_of(agency_id)
+
+
+@router.put("/{agency_id}/email-module/roles/{role_id}", response_model=list[EmailModuleRoleRead])
+async def set_agency_email_role_permissions(
+    agency_id: uuid.UUID,
+    role_id: uuid.UUID,
+    body: EmailModuleRolePermissionsUpdate,
+    agent: AgentDep,
+    db: DbDep,
+) -> list[EmailModuleRoleRead]:
+    """The role carries exactly these Email keys from now on (empty: none),
+    its other permissions untouched; the answer is the updated list. A
+    shared system role is never written: the agency's copy-on-write clone
+    carries the grant (made if needed, the agency's wearers of the system
+    role moved onto it), and no other agency is touched. 404
+    `role.not_found` for the platform role, an external role or another
+    agency's role; 409 `role.clone_name_taken` when a custom role of the
+    agency already bears the system role's name. Allowed while the module
+    is off for the agency: the rights are prepared before switching it on."""
+    return await EmailRightsManager(db).set_role_permissions(agency_id, role_id, body.permissions)
 
 
 # ── the platform's Lemlist account (phase 4, spec 10.5) ─────────────────────

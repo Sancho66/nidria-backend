@@ -1,15 +1,18 @@
 """The Email module's place in the RBAC engine.
 
 - The catalogue carries exactly six `email.*` keys, category `email`.
-- The default matrix (spec 4.2, the "right to activate"): admin and
-  superadmin hold the six; case_manager, member and viewer hold none;
-  external roles never. The keys are written out literally here, so this
-  test does not lean on the constant it guards.
-- A copy-on-write clone of the admin frozen before the release receives them
-  at the next boot; a clone of case_manager never does.
-- The platform routes are bound `agency.create` (activation) and
-  `platform.task_manage` (the Lemlist account, phase 4), superadmin only;
-  the boot check passes with them, and fails when one loses its binding.
+- The default matrix (decision of 08/10/2026, replacing the spec's N3):
+  only superadmin holds the six; admin, case_manager, member and viewer hold
+  none; external roles never. The platform grants them agency by agency
+  (tests/test_email_rights.py). The keys are written out literally here, so
+  this test does not lean on the constant it guards.
+- The boot never hands them to a copy-on-write clone, frozen before the
+  release or not: an admin clone, a case_manager clone, a clone of
+  superadmin.
+- The platform routes are bound `agency.create` (activation, the grant of
+  the Email keys) and `platform.task_manage` (the Lemlist account, phase 4),
+  superadmin only; the boot check passes with them, and fails when one loses
+  its binding.
 """
 
 import uuid
@@ -52,6 +55,9 @@ ACTIVATION_ROUTES = {
     ("POST", "/agencies/{agency_id}/email-module/pause-all"),
     ("PUT", "/agencies/{agency_id}/email-module/team"),
     ("DELETE", "/agencies/{agency_id}/email-module/team"),
+    # The grant of the Email keys (decision of 08/10/2026).
+    ("GET", "/agencies/{agency_id}/email-module/roles"),
+    ("PUT", "/agencies/{agency_id}/email-module/roles/{role_id}"),
 }
 ACCOUNT_ROUTES = {
     ("GET", "/admin/email/provider"),
@@ -88,12 +94,13 @@ async def test_the_catalogue_has_the_six_email_keys_in_their_category(
     assert {category for _, category in rows} == {"email"}
 
 
-async def test_only_admin_and_superadmin_hold_the_email_keys_by_default(
+async def test_only_superadmin_holds_the_email_keys_by_default(
     db_session: AsyncSession, system_roles: dict[str, Role]
 ) -> None:
-    for name in ("admin", "superadmin"):
-        assert await _keys_of(db_session, system_roles[name].id) >= EMAIL_KEYS, name
-    for name in ("case_manager", "member", "viewer", *EXTERNAL_ROLE_NAMES):
+    """The agency admin included: nobody in an agency holds them until the
+    platform grants them."""
+    assert await _keys_of(db_session, system_roles["superadmin"].id) >= EMAIL_KEYS
+    for name in ("admin", "case_manager", "member", "viewer", *EXTERNAL_ROLE_NAMES):
         held = await _keys_of(db_session, system_roles[name].id)
         assert EMAIL_KEYS.isdisjoint(held), f"{name} holds {EMAIL_KEYS & held}"
 
@@ -132,17 +139,35 @@ async def _freeze_before_the_email_release(db: AsyncSession, clone_id: uuid.UUID
     await db.commit()
 
 
-async def test_an_admin_clone_receives_the_email_keys_at_the_next_boot(
+async def test_an_admin_clone_never_receives_the_email_keys_at_the_next_boot(
     db_session: AsyncSession, make_agent: MakeAgent, system_roles: dict[str, Role]
 ) -> None:
+    """Not even when its origin still holds them (the system admin of a
+    database the migration l5c9e2a7d4f1 has not cleaned yet) and the clone's
+    last matrix decision predates their birth: only the platform grants
+    them. The birth-date rule itself still runs: case.view comes back."""
+    admin_role_id = system_roles["admin"].id
     admin = await make_agent(role=system_roles["admin"])
     clone_id = await _clone(db_session, admin.id, system_roles["admin"], "Admin (perso)")
+    email_ids = await db_session.execute(
+        select(PermissionRow.id).where(PermissionRow.key.in_(EMAIL_KEYS))
+    )
+    for permission_id in email_ids.scalars():
+        db_session.add(RolePermission(role_id=admin_role_id, permission_id=permission_id))
+    case_view_id = select(PermissionRow.id).where(PermissionRow.key == "case.view")
+    await db_session.execute(
+        delete(RolePermission).where(
+            RolePermission.role_id == clone_id, RolePermission.permission_id.in_(case_view_id)
+        )
+    )
     await _freeze_before_the_email_release(db_session, clone_id)
-    assert EMAIL_KEYS.isdisjoint(await _keys_of(db_session, clone_id))  # the gap
+    assert await _keys_of(db_session, admin_role_id) >= EMAIL_KEYS  # the origin holds them
 
     await seed_rbac_baseline(db_session, bindings=collect_bindings())  # the deployment
     db_session.expire_all()
-    assert await _keys_of(db_session, clone_id) >= EMAIL_KEYS
+    keys = await _keys_of(db_session, clone_id)
+    assert EMAIL_KEYS.isdisjoint(keys)
+    assert "case.view" in keys  # born after the freeze: ignorance, filled
 
 
 async def test_a_case_manager_clone_never_receives_them(

@@ -164,16 +164,19 @@ async def test_the_clone_the_probe_left_opens_no_invitation(
 ) -> None:
     """Steps 2 to 4 of the probe, with a clone already in the agency: the
     invitation is capped by the inviter's ceiling, which never holds a
-    platform permission, an operator inviting in its home agency included."""
-    for actor in (admin, operator):
+    platform permission, an operator inviting in its home agency included.
+    The admin's refusal names the clone's Email keys too: since 08/10/2026
+    only the platform grants those, and this admin was granted none."""
+    email = "email.enroll, email.manage, email.pause, email.remove, email.sync, email.view, "
+    for actor, also_missing in ((admin, email), (operator, "")):
         clone = await _clone_left_by_the_hole(
             make_role, system_roles["superadmin"], actor.agency_id
         )
         status, body = await _invite(barrier_client, agent_headers(actor), clone.id)
         assert status == 403, body
         assert body == {
-            "detail": "Beyond your permission ceiling: agency.create, job.manage, "
-            "platform.task_manage.",
+            "detail": "Beyond your permission ceiling: agency.create, "
+            f"{also_missing}job.manage, platform.task_manage.",
             "code": "role.beyond_ceiling",
             "params": {},
         }

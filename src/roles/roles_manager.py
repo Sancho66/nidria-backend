@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +14,13 @@ from src.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from src.core.rbac.baseline import PLATFORM_PERMISSION_KEYS
+from src.core.rbac.baseline import PLATFORM_MANAGED_PERMISSION_KEYS, PLATFORM_PERMISSION_KEYS
 from src.core.rbac.delegation import (
+    assert_platform_managed_unchanged,
     assert_within_ceiling,
     is_platform_role,
     is_reachable_role,
+    platform_managed,
 )
 from src.core.rbac.enforcement import effective_permissions
 from src.core.rbac.permissions import Permission
@@ -96,17 +98,18 @@ class RolesManager:
 
     # --- copy-on-write -----------------------------------------------------------------
 
-    async def _clone_for_edit(self, actor: Agent, system_role: Role) -> Role:
+    async def _clone_for_edit(self, agency_id: uuid.UUID, system_role: Role) -> Role:
         """Copy-on-write: editing a system role never touches it. The
         agency gets (or reuses) a CUSTOM clone — same name, same matrix,
         `cloned_from_role_id` set — and every agent of THIS agency
         wearing the system role is rebound to the clone. The rebind
         copies the exact permission set, so it can never trip the
-        anti-lockout guard by itself."""
-        existing = await self.repo.get_clone_of(actor.agency_id, system_role.id)
+        anti-lockout guard by itself. Shared by the agency flows and the
+        platform's grant of the platform-managed keys."""
+        existing = await self.repo.get_clone_of(agency_id, system_role.id)
         if existing is not None:
             return existing
-        conflicting = await self.repo.get_role_by_name(actor.agency_id, system_role.name)
+        conflicting = await self.repo.get_role_by_name(agency_id, system_role.name)
         if conflicting is not None:
             # No name param: a system role's name is a technical key
             # ("case_manager") the screen labels itself.
@@ -115,18 +118,23 @@ class RolesManager:
                 "agency and is not a clone of the system role.",
                 code="role.clone_name_taken",
             )
-        clone = self.repo.add_role(
-            actor.agency_id, system_role.name, cloned_from_role_id=system_role.id
-        )
+        clone = self.repo.add_role(agency_id, system_role.name, cloned_from_role_id=system_role.id)
         await self.db.flush()
         # A clone is an agency row: it never copies a platform permission,
         # whatever its origin holds (defense in depth: the platform role
-        # itself never gets here, _editable_role answers it a 404).
+        # itself never gets here, _editable_role answers it a 404). Nor a
+        # platform-managed one: the platform's grant for a system role lives
+        # on the agency's clone, so a clone still to be made carries none.
         await self.repo.replace_role_permissions(
             clone.id,
-            [p.id for p in system_role.permissions if p.key not in PLATFORM_PERMISSION_KEYS],
+            [
+                p.id
+                for p in system_role.permissions
+                if p.key not in PLATFORM_PERMISSION_KEYS
+                and p.key not in PLATFORM_MANAGED_PERMISSION_KEYS
+            ],
         )
-        await self.repo.rebind_agents(actor.agency_id, system_role.id, clone.id)
+        await self.repo.rebind_agents(agency_id, system_role.id, clone.id)
         await self.db.flush()
         await self.db.refresh(clone, ["permissions"])
         return clone
@@ -140,7 +148,7 @@ class RolesManager:
         if role is None or not is_reachable_role(role, actor.agency_id):
             raise NotFoundError("Role not found.", code="role.not_found")
         if role.is_system:
-            return await self._clone_for_edit(actor, role)
+            return await self._clone_for_edit(actor.agency_id, role)
         return role
 
     # --- catalogue ---------------------------------------------------------------------
@@ -163,7 +171,11 @@ class RolesManager:
         self, actor: Agent, name: str, permission_ids: Sequence[uuid.UUID]
     ) -> Role:
         permissions = await self._resolve_permissions(permission_ids)
-        assert_within_ceiling(actor, (p.key for p in permissions))
+        keys = {p.key for p in permissions}
+        # A new role starts without platform-managed keys: asking for one is
+        # adding it.
+        assert_platform_managed_unchanged((), keys)
+        assert_within_ceiling(actor, keys)
         await self._assert_name_free(actor.agency_id, name)
         role = self.repo.add_role(actor.agency_id, name)
         await self.db.flush()
@@ -186,8 +198,12 @@ class RolesManager:
     ) -> Role:
         role = await self._editable_role(actor, role_id)
         permissions = await self._resolve_permissions(permission_ids)
-        assert_within_ceiling(actor, (p.key for p in permissions))
         new_keys = {p.key for p in permissions}
+        # The platform-managed keys stay exactly as the role carries them
+        # (none on a clone this edit just made). The ones kept are the
+        # platform's grant, not the actor's to hand out: out of the ceiling.
+        assert_platform_managed_unchanged((p.key for p in role.permissions), new_keys)
+        assert_within_ceiling(actor, new_keys - platform_managed(new_keys))
         await self._assert_agency_keeps_manager(actor.agency_id, edited_role=(role.id, new_keys))
         await self.repo.replace_role_permissions(role.id, [p.id for p in permissions])
         # This matrix write IS the agency's decision moment — and the ONLY
@@ -243,15 +259,18 @@ class RolesManager:
         """The explicit 'start from a role' path: clones the matrix into
         a CUSTOM role of the actor's agency, with NO copy-on-write link
         (a duplicate never masks its source). Subject to the ceiling —
-        otherwise duplicating an oversized role is the copy bypass."""
+        otherwise duplicating an oversized role is the copy bypass. The
+        copy leaves the platform-managed keys behind: the platform granted
+        them to the source, not to a new role."""
         source = await self.repo.get_role_with_permissions(role_id)
         if source is None or not is_reachable_role(source, actor.agency_id):
             raise NotFoundError("Role not found.", code="role.not_found")
-        assert_within_ceiling(actor, (p.key for p in source.permissions))
+        copied = [p for p in source.permissions if p.key not in PLATFORM_MANAGED_PERMISSION_KEYS]
+        assert_within_ceiling(actor, (p.key for p in copied))
         await self._assert_name_free(actor.agency_id, name)
         duplicate = self.repo.add_role(actor.agency_id, name)
         await self.db.flush()
-        await self.repo.replace_role_permissions(duplicate.id, [p.id for p in source.permissions])
+        await self.repo.replace_role_permissions(duplicate.id, [p.id for p in copied])
         await self.db.commit()
         await self.db.refresh(duplicate, ["permissions"])
         return duplicate
@@ -296,6 +315,9 @@ class RolesManager:
                 )
 
         new_keys = {p.key for p in role.permissions}
+        # The whole role, its platform-managed keys included: the platform
+        # decides which roles carry them, the agency who wears which role,
+        # within its own ceiling.
         assert_within_ceiling(actor, new_keys)
         await self._assert_agency_keeps_manager(
             actor.agency_id, reassigned_agent=(target.id, new_keys)
@@ -312,3 +334,46 @@ class RolesManager:
         # Explicit refresh: the role relationship must reflect the swap.
         await self.db.refresh(target, ["role"])
         return target
+
+    # --- the platform's grant of the platform-managed keys ------------------------------
+
+    async def set_platform_managed_permissions(
+        self, agency_id: uuid.UUID, role_id: uuid.UUID, keys: Iterable[str]
+    ) -> Role:
+        """The platform's door (superadmin routes only, never an agency
+        flow): from now on the role carries EXACTLY `keys` among the
+        platform-managed keys, its other permissions untouched.
+
+        A role the agency hands out: a shared internal system role, or the
+        agency's own row. A shared system role is never written (every
+        agency would be touched): the agency's copy-on-write clone carries
+        the grant, the existing one or one made like an agency edit makes
+        it, the agency's wearers of the system role rebound (409
+        `role.clone_name_taken` when a custom role of the agency already
+        bears the system role's name). The platform role, an external role
+        or another agency's role answers like an unknown role (404
+        `role.not_found`). `permissions_reviewed_at` is not bumped: a grant
+        is not the agency's matrix decision."""
+        wanted = set(keys)
+        outside = sorted(wanted - PLATFORM_MANAGED_PERMISSION_KEYS)
+        if outside:
+            # The routes accept the platform-managed keys only (422 there):
+            # an integrity net for another caller.
+            raise ValidationError(f"Not platform-managed: {', '.join(outside)}.")
+        role = await self.repo.get_role_with_permissions(role_id)
+        if role is None or not is_reachable_role(role, agency_id) or role.is_external:
+            raise NotFoundError("Role not found.", code="role.not_found")
+        if role.is_system:
+            role = await self._clone_for_edit(agency_id, role)
+        granted = await self.repo.get_permissions_by_keys(sorted(wanted))
+        if len(granted) != len(wanted):
+            # Category code on purpose: the catalogue is synced at every boot
+            # (insert-only), so a missing key is an integrity net, not a screen.
+            raise ConflictError("A platform-managed permission is missing from the catalogue.")
+        kept = [p.id for p in role.permissions if p.key not in PLATFORM_MANAGED_PERMISSION_KEYS]
+        await self.repo.replace_role_permissions(role.id, [*kept, *(p.id for p in granted)])
+        await self.db.commit()
+        # Explicit refresh: with expire_on_commit=False the identity map
+        # would hand back the stale pre-grant collection.
+        await self.db.refresh(role, ["permissions"])
+        return role

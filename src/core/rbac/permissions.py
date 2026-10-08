@@ -49,13 +49,13 @@ class Permission(StrEnum):
     # case_manager hold it by default; viewer/member do not.
     IMPORT_MANAGE = "import.manage"
     # Email module (Lemlist campaigns, ported from Prism's outreach.*). The
-    # "right to activate": an agency the platform switched on still grants
-    # these one by one (Settings > Roles). Only admin and superadmin hold
-    # them by default; case_manager EXCLUDES them (baseline.py), member and
-    # viewer never list them, external roles never hold them. email.view
-    # goes with case.view (checked by the module's Manager, like Prism's
-    # outreach.view + contacts.view): the module shows client names and
-    # email addresses.
+    # "right to activate", PLATFORM-MANAGED since 08/10/2026 (see
+    # PLATFORM_MANAGED_PERMISSIONS in baseline.py): only superadmin holds
+    # them by default; a superadmin grants them agency by agency, role by
+    # role, the agency admin included, and no agency flow adds or removes
+    # one. External roles never hold them. email.view goes with case.view
+    # (checked by the module's Manager, like Prism's outreach.view +
+    # contacts.view): the module shows client names and email addresses.
     EMAIL_VIEW = "email.view"
     # Create, edit, duplicate, archive, delete campaigns, steps and AI
     # variables; previews and AI tests; senders.

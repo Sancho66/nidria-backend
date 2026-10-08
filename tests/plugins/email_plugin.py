@@ -1,6 +1,8 @@
 """Email module harness: row factories, the module's env switches, a
 `GET /team` double for the Lemlist team lookup, the provider double of the
-manager (`fake_email_provider`) and a two-agency world for the agent routes.
+manager (`fake_email_provider`), the platform's grant of the Email keys
+(`grant_email`, `make_email_admin`) and a two-agency world for the agent
+routes.
 
 Factories write rows straight to the database (`make_*(**overrides)`), so a
 test can stand a campaign, a membership, a render, a message, an event or an
@@ -14,7 +16,7 @@ by an in-process double. No test can reach the network.
 
 import os
 import uuid
-from collections.abc import Awaitable, Callable, Generator, Iterator
+from collections.abc import Awaitable, Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,9 +43,11 @@ from shared.models.email_campaign import (
 )
 from shared.models.rbac import Role
 from src.core.config import get_settings
+from src.core.rbac.baseline import EMAIL_PERMISSIONS
 from src.email_campaigns import email_manager, lemlist_team
 from src.email_campaigns.providers.base import EmailProvider
 from src.email_campaigns.suppression import email_hash
+from src.roles.roles_manager import RolesManager
 from tests.email_fakes import FakeProvider
 from tests.plugins.agency_plugin import MakeAgency
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
@@ -421,12 +425,72 @@ def fake_email_provider(monkeypatch: pytest.MonkeyPatch) -> Generator[FakeProvid
         email_manager.clear_caches()
 
 
+# --- the platform's grant of the Email keys (decision of 08/10/2026) --------------------
+#
+# Nobody holds email.* by default, the agency admin included: a superadmin
+# grants the keys agency by agency, role by role (PUT
+# /agencies/{agency_id}/email-module/roles/{role_id}). The test world grants
+# them the same way, through the platform's own door
+# (RolesManager.set_platform_managed_permissions): on the agency's
+# copy-on-write clone of the system admin. An agent made with the SYSTEM
+# admin role holds none of them: a test that needs one more admin with the
+# keys asks `make_email_admin`.
+
+GrantEmail = Callable[..., Awaitable[uuid.UUID]]
+MakeEmailAdmin = Callable[..., Awaitable[Agent]]
+EMAIL_KEYS: tuple[str, ...] = tuple(p.value for p in EMAIL_PERMISSIONS)
+
+
+@pytest_asyncio.fixture
+async def grant_email(db_session: AsyncSession, system_roles: dict[str, Role]) -> GrantEmail:
+    """`await grant_email(agency_id=…, role_id=…, keys=…)`: the role carries
+    exactly `keys` (default: the six) among the Email keys, like a platform
+    grant. Default role: the system admin, so the agency's admin clone. The
+    answer is the id of the role that carries them (the agency's clone for a
+    system role); granting again reuses it."""
+    admin_role_id = system_roles["admin"].id
+
+    async def _grant(
+        *,
+        agency_id: uuid.UUID,
+        role_id: uuid.UUID | None = None,
+        keys: Iterable[str] = EMAIL_KEYS,
+    ) -> uuid.UUID:
+        role = await RolesManager(db_session).set_platform_managed_permissions(
+            agency_id, admin_role_id if role_id is None else role_id, keys
+        )
+        return role.id
+
+    return _grant
+
+
+@pytest_asyncio.fixture
+async def make_email_admin(
+    db_session: AsyncSession,
+    make_agency: MakeAgency,
+    make_agent: MakeAgent,
+    grant_email: GrantEmail,
+) -> MakeEmailAdmin:
+    """An admin of the agency (a new agency without `agency_id`) wearing the
+    agency's admin role with the six Email keys the platform granted it."""
+
+    async def _make(*, agency_id: uuid.UUID | None = None, **overrides: Any) -> Agent:
+        if agency_id is None:
+            agency_id = (await make_agency()).id
+        role = await db_session.get(Role, await grant_email(agency_id=agency_id))
+        assert role is not None
+        return await make_agent(agency_id=agency_id, role=role, **overrides)
+
+    return _make
+
+
 # --- two agencies with the module on --------------------------------------------------
 
 
 @dataclass
 class EmailWorld:
-    """Two agencies with the Email module on, an admin in each. Ids and
+    """Two agencies with the Email module on, an admin in each, holding the
+    Email keys the platform granted to its agency's admin role. Ids and
     headers are plain values: a test's request that rolls the shared session
     back never expires them."""
 
@@ -440,17 +504,16 @@ class EmailWorld:
 @pytest_asyncio.fixture
 async def email_world(
     email_module_on: None,
-    system_roles: dict[str, Role],
     make_agency: MakeAgency,
-    make_agent: MakeAgent,
     agent_headers: AuthHeaders,
     make_agency_email_module: MakeAgencyEmailModule,
+    make_email_admin: MakeEmailAdmin,
 ) -> EmailWorld:
     email_manager.clear_caches()
     agency: Agency = await make_agency(name="Relocation Lisboa")
     other: Agency = await make_agency(name="Expat Porto")
-    admin: Agent = await make_agent(agency_id=agency.id, role=system_roles["admin"])
-    other_admin: Agent = await make_agent(agency_id=other.id, role=system_roles["admin"])
+    admin: Agent = await make_email_admin(agency_id=agency.id)
+    other_admin: Agent = await make_email_admin(agency_id=other.id)
     await make_agency_email_module(agency_id=agency.id)
     await make_agency_email_module(agency_id=other.id)
     return EmailWorld(
