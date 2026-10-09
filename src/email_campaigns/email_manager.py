@@ -711,6 +711,18 @@ def _reply_read(message: EmailMessage) -> EmailReplyRead:
     )
 
 
+def _sent_read(message: EmailMessage | None) -> tuple[str | None, str | None]:
+    """An imported campaign's email as Lemlist really sent it, once the job
+    read it from the contact's inbox (AVAILABLE): its subject and its text
+    (the history it quotes left out, never the HTML); else nothing."""
+    if message is None or message.content_state != "AVAILABLE":
+        return None, None
+    text = message.body_text
+    if text is None and message.body_html:
+        text = html_to_text(message.body_html) or None
+    return message.subject, text
+
+
 def _event_read(event: Any) -> EmailEventRead:
     return EmailEventRead(
         id=event.id,
@@ -2126,7 +2138,8 @@ class EmailManager:
             else:
                 status = None
             # Nidria's render is the content; an imported campaign's emails
-            # have none: Lemlist sent its own template, personalized there.
+            # have none: Lemlist sent its own template, personalized there,
+            # whose text the job reads afterwards from the contact's inbox.
             content_state: ContentState | None = (
                 cast(ContentState, message.content_state)
                 if message is not None and render is None
@@ -2135,6 +2148,7 @@ class EmailManager:
                 else None
             )
             planned = plan.steps.get(position)
+            sent_subject, sent_body = _sent_read(message) if render is None else (None, None)
             timeline.append(
                 EmailStepTimeline(
                     position=position,
@@ -2145,8 +2159,8 @@ class EmailManager:
                     planned_overdue=bool(planned and planned.overdue),
                     status=status,
                     content_state=content_state,
-                    subject=render.subject if render else None,
-                    body=render.body if render else None,
+                    subject=render.subject if render else sent_subject,
+                    body=render.body if render else sent_body,
                     ai_values={
                         key: str(entry.get("value"))
                         for key, entry in (render.ai_values or {}).items()

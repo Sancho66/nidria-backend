@@ -2059,3 +2059,60 @@ class EmailRepository:
             .execution_options(populate_existing=True)
         )
         return list(rows.scalars().all())
+
+    async def provider_only_recipients(
+        self, campaign_id: uuid.UUID, limit: int, attempts: int
+    ) -> list[tuple[uuid.UUID, str | None, str | None]]:
+        """The recipients of the campaign with an email Lemlist sent whose
+        text Nidria has not read yet (PROVIDER_ONLY, read fewer than
+        `attempts` times), the latest sent first: (membership, lead id,
+        contact id), plain values that outlive the transaction. Only those
+        with a Lemlist contact id, which the inbox is keyed by: one without
+        waits for a later activity or listing to give it."""
+        latest = func.max(EmailMessage.sent_at)
+        waiting = (
+            select(EmailMessage.campaign_member_id.label("member_id"), latest.label("latest"))
+            .where(
+                EmailMessage.campaign_id == campaign_id,
+                EmailMessage.direction == "OUTBOUND",
+                EmailMessage.content_state == "PROVIDER_ONLY",
+                EmailMessage.content_attempts < attempts,
+                EmailMessage.campaign_member_id.is_not(None),
+            )
+            .group_by(EmailMessage.campaign_member_id)
+            .subquery()
+        )
+        rows = await self.db.execute(
+            select(
+                EmailCampaignMember.id,
+                EmailCampaignMember.provider_lead_id,
+                EmailCampaignMember.provider_contact_id,
+            )
+            .join(waiting, waiting.c.member_id == EmailCampaignMember.id)
+            .where(
+                EmailCampaignMember.provider_contact_id.is_not(None),
+                EmailCampaignMember.provider_contact_id != "",
+            )
+            .order_by(waiting.c.latest.desc().nulls_last(), EmailCampaignMember.id)
+            .limit(limit)
+        )
+        return [(member_id, lead, contact) for member_id, lead, contact in rows.all()]
+
+    async def provider_only_messages(
+        self, member_id: uuid.UUID, attempts: int
+    ) -> list[EmailMessage]:
+        """A recipient's emails sent by Lemlist whose text is not read yet,
+        by step, locked."""
+        rows = await self.db.execute(
+            select(EmailMessage)
+            .where(
+                EmailMessage.campaign_member_id == member_id,
+                EmailMessage.direction == "OUTBOUND",
+                EmailMessage.content_state == "PROVIDER_ONLY",
+                EmailMessage.content_attempts < attempts,
+            )
+            .order_by(EmailMessage.step_position, EmailMessage.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return list(rows.scalars().all())

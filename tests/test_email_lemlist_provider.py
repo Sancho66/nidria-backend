@@ -466,6 +466,8 @@ def test_activities_are_read_page_by_page_since_a_date(fake_lemlist: Double) -> 
 
 
 def test_the_inbox_thread_is_read_by_contact_page_by_page(fake_lemlist: Double) -> None:
+    """As Lemlist serves it (measured 09/10/2026): 10 items a page at most,
+    newest first, the next page by `page` (`skip` is ignored)."""
     fake, provider = fake_lemlist
     assert provider.get_messages(LeadRef("lea_1")) == []  # no contact id: no call
     assert fake.calls == []
@@ -478,7 +480,7 @@ def test_the_inbox_thread_is_read_by_contact_page_by_page(fake_lemlist: Double) 
             "message": "<p>Hi</p>",
             "createdAt": "2026-10-05T09:00:00Z",
         }
-        for i in range(100)
+        for i in range(10)
     ]
     fake.queue("GET", "/inbox/ctc_1", 200, {"data": first_page, "pagination": {"nextPage": 2}})
     fake.queue(
@@ -494,15 +496,15 @@ def test_the_inbox_thread_is_read_by_contact_page_by_page(fake_lemlist: Double) 
         },
     )
     messages = provider.get_messages(LeadRef("lea_1", "ctc_1"))
-    assert len(messages) == 101
+    assert len(messages) == 11
     assert (messages[0].direction, messages[0].step_position) == ("OUTBOUND", 1)
     reply = messages[-1]
     assert (reply.direction, reply.body_html, reply.lead_id) == ("INBOUND", "<p>Oui</p>", "lea_1")
     # The body is kept apart from the record.
     assert "message" not in reply.payload
     assert [q for _, _, q, _ in fake.calls] == [
-        {"limit": "100", "skip": "0"},
-        {"limit": "100", "skip": "100"},
+        {"limit": "10", "page": "1"},
+        {"limit": "10", "page": "2"},
     ]
 
 

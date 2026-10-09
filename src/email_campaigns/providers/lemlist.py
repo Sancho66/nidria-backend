@@ -23,7 +23,10 @@ measured by Prism in production; none is guessed:
     GET    /leads?id= | ?email= &version=v2
     GET    /campaigns/{id}/leads?limit=&offset=          the leads and their state
     GET    /activities?version=v2&campaignId=&leadId=&minDate=
-    GET    /inbox/{contactId}?limit=&skip=              a contact's thread, replies'
+    GET    /inbox/{contactId}?limit=&page=              a contact's thread, newest
+                                                        first, 10 a page (measured
+                                                        09/10/2026: `skip` ignored),
+                                                        sent emails' and replies'
                                                         content included (never
                                                         markAsRead: reading changes
                                                         nothing in Lemlist)
@@ -171,8 +174,11 @@ _MAX_ACTIVITY_PAGES = 100
 #: incomplete.
 _LEAD_PAGE = 100
 _MAX_LEAD_PAGES = 200
-_INBOX_PAGE = 100
-_MAX_INBOX_PAGES = 10
+#: `/inbox/{contactId}` pages by `page` (from 1), newest first, 10 items at
+#: most: measured live on 09/10/2026 (`limit` 20 or 100 is served as
+#: `perPage` 10; `skip` is ignored, `page=2` serves the next items).
+_INBOX_PAGE = 10
+_MAX_INBOX_PAGES = 20
 #: `GET /campaigns?version=v2`: `limit` 100 at most, paginated by `offset`.
 _CAMPAIGN_PAGE = 100
 _MAX_CAMPAIGN_PAGES = 50
@@ -1053,15 +1059,16 @@ class LemlistEmailProvider:
 
     def get_messages(self, lead: LeadRef) -> list[ProviderMessage]:
         """The contact's inbox thread: sent emails and replies, each with its
-        HTML body (`message`). Keyed by the CONTACT id; empty without one."""
+        HTML body (`message`), page by page while Lemlist names a next one.
+        Keyed by the CONTACT id; empty without one."""
         if not lead.contact_id:
             return []
         messages: list[ProviderMessage] = []
-        for page in range(_MAX_INBOX_PAGES):
+        for page in range(1, _MAX_INBOX_PAGES + 1):
             response = self._request(
                 "GET",
                 f"/inbox/{lead.contact_id}",
-                params={"limit": _INBOX_PAGE, "skip": page * _INBOX_PAGE},
+                params={"limit": _INBOX_PAGE, "page": page},
             )
             body = _json(response)
             data: Any = body.get("data") if body else _json_list(response)
@@ -1069,7 +1076,7 @@ class LemlistEmailProvider:
             messages.extend(m for m in (_message(row) for row in rows) if m is not None)
             pagination = body.get("pagination")
             more = isinstance(pagination, dict) and bool(pagination.get("nextPage"))
-            if len(rows) < _INBOX_PAGE or not more:
+            if not rows or not more:
                 break
         return messages
 

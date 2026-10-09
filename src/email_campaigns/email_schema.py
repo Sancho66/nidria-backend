@@ -60,7 +60,8 @@ MessageStatus = Literal["QUEUED", "SENT", "DELIVERED", "OPENED", "CLICKED", "REP
 #: RENDERED = Nidria's frozen render is the content; a reply's content is
 #: PENDING (read at the next sync), AVAILABLE, or UNAVAILABLE from the provider;
 #: PROVIDER_ONLY = an email of an imported campaign, sent by Lemlist from its
-#: own template: its personalized content is not in Nidria.
+#: own template, whose personalized text Nidria has not read: once the job
+#: reads it from the contact's inbox, it is AVAILABLE.
 ContentState = Literal["RENDERED", "PENDING", "AVAILABLE", "UNAVAILABLE", "PROVIDER_ONLY"]
 #: Why one step cannot be deleted now (`EmailStepCapabilities.delete_reason`).
 #: first_step_in_use: the first email of a sequence Lemlist holds leads of;
@@ -814,10 +815,11 @@ class EmailStepTimeline(BaseModel):
     #: None while the provider has not received this email.
     status: MessageStatus | None
     #: Where this email's content is: RENDERED (`subject` and `body` are the
-    #: email Nidria rendered for this lead), PROVIDER_ONLY (an imported
-    #: campaign's: sent by Lemlist from its own template, its personalized
-    #: content is not in Nidria, `subject` and `body` are null), or null
-    #: (nothing for this step yet).
+    #: email Nidria rendered for this lead), AVAILABLE (an imported
+    #: campaign's, as Lemlist sent it: `subject` and `body` were read from
+    #: the contact's inbox, the history it quotes left out), PROVIDER_ONLY
+    #: (an imported campaign's whose text Nidria has not read: `subject`
+    #: and `body` are null), or null (nothing for this step yet).
     content_state: ContentState | None = None
     subject: str | None
     body: str | None

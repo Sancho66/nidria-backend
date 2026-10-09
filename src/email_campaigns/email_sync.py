@@ -48,9 +48,11 @@ or resume done in Lemlist's app mirrored, an unsubscribe applied, a lead
 absent from a complete listing flagged `missing`, never ended), the
 activities since the checkpoint (overlapping it by an hour, by a day on the
 first read of each UTC day), and the content of new replies from the
-contact's inbox. It pushes nothing, launches nobody, pauses nothing at the
-provider and generates no AI value; name, status, settings, steps and
-contents stay Nidria's.
+contact's inbox; for an imported campaign, then, the text Lemlist really
+sent of its emails, from the same inbox, once the campaign's own
+transaction is over (`_read_sent_contents`). It pushes nothing, launches
+nobody, pauses nothing at the provider and generates no AI value; name,
+status, settings, steps and contents stay Nidria's.
 
 `ingest`, the ONE ingestion of the webhook, the job and the Sync: the same
 normalized events, each stored once (`uq_email_provider_event`), its agency
@@ -84,8 +86,10 @@ An imported campaign (lot C, `email_import`) is only READ, by everything
 here: its Sync is the reconciliation (`_sync_imported`), never a push; the
 job and the webhook read it as any other. On it, an event's step is the one
 Lemlist names (`stepId`), else its rank in the main sequence, and none for
-a conditional branch (not imported); an email it sent has no render
-(`PROVIDER_ONLY`). The import replays a campaign's whole history through
+a conditional branch (not imported); an email it sent has no render: it
+is `PROVIDER_ONLY` until the job reads the text Lemlist sent from the
+contact's inbox (`AVAILABLE`), and stays so after three reads without it.
+The import replays a campaign's whole history through
 `ingest` in its `history` mode: events, messages, times and the steps sent
 are kept, the opposition list is fed, but no status moves (the import set
 each one from what Lemlist says now, and a block is never lifted). The job
@@ -177,6 +181,7 @@ from src.email_campaigns.providers.base import (
     CampaignSpec,
     EmailProvider,
     ImportReader,
+    LeadRef,
     LeadSpec,
     ProviderError,
     ProviderEvent,
@@ -272,8 +277,14 @@ CONTENT_ATTEMPTS = 3
 #: A reply found in the inbox under another id still matches its event when
 #: they are this close in time.
 REPLY_MATCH_WINDOW = timedelta(minutes=10)
-#: A reply's HTML kept, at most (its text is capped by `html_text`: 50,000).
+#: A reply's HTML kept, at most (its text is capped by `html_text`: 50,000);
+#: the same cap holds an email Lemlist sent.
 MAX_REPLY_HTML = 500_000
+#: An imported campaign's recipients whose sent emails' text is read per
+#: campaign and per run (one inbox thread each, every email of it at once),
+#: the latest sent first: a whole campaign's history is caught up within a
+#: few runs.
+SENT_CONTENTS_PER_RUN = 150
 #: The provider's words kept in a `status_reason` param, at most.
 _MAX_REASON = 500
 #: The keys Nidria itself keeps in a provider metadata, never overwritten by
@@ -394,6 +405,8 @@ class CampaignReconcile:
     events_duplicate: int = 0
     by_type: Counter[str] = field(default_factory=Counter)
     reply_contents: int = 0
+    #: An imported campaign's emails whose text, as Lemlist sent it, was read.
+    sent_contents: int = 0
     leads_missing: int = 0
     unsubscribed: int = 0
     #: A contact's variable unsubscribed: stored, never applied.
@@ -545,6 +558,26 @@ def _matching_reply(
     return min(candidates, key=lambda r: abs(r.occurred_at - received), default=None)
 
 
+def _matching_sent(
+    message: EmailMessage, sent: Sequence[ProviderMessage], campaign_id: str | None
+) -> ProviderMessage | None:
+    """The inbox email a SENT event announced: the same id (Lemlist gives the
+    inbox message its activity's id), else the one email of the campaign at
+    that step, sent within minutes of it (another time is another email)."""
+    for item in sent:
+        if message.provider_message_id and item.message_id == message.provider_message_id:
+            return item
+    at = message.sent_at
+    candidates = [
+        item
+        for item in sent
+        if item.campaign_id == campaign_id
+        and item.step_position == message.step_position
+        and (at is None or abs(item.occurred_at - at) <= REPLY_MATCH_WINDOW)
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def describe(report: CampaignReconcile) -> str:
     """One log line of the job for a campaign: ids, counts and codes only
     (no em dash, no sentence a translation would need)."""
@@ -558,6 +591,8 @@ def describe(report: CampaignReconcile) -> str:
         f"events ({counts}), {report.events_duplicate} already stored, "
         f"{report.reply_contents} reply contents"
     )
+    if report.sent_contents:
+        line += f", {report.sent_contents} sent texts"
     if report.leads_missing:
         line += f", {report.leads_missing} missing at the provider"
     if report.unknown_leads:
@@ -1182,7 +1217,7 @@ class EmailSyncManager:
         for campaign_id in campaign_ids:
             try:
                 done = await self.reconcile_campaign(
-                    campaign_id, agency_id, provider=provider, key_team=key_team
+                    campaign_id, agency_id, provider=provider, key_team=key_team, read_sent=True
                 )
             except Exception:  # noqa: BLE001 (one campaign never stops the others)
                 logger.exception("email sync of campaign %s failed", campaign_id)
@@ -1201,12 +1236,16 @@ class EmailSyncManager:
         *,
         provider: EmailProvider,
         key_team: str | None,
+        read_sent: bool = False,
     ) -> CampaignReconcile:
         """Bring one campaign of the agency in line with the provider, in
         one transaction: if any read fails, nothing of this run is kept for
         it, its checkpoint stays, and the next run reads the same window
         again. Another agency's campaign is not found (rule N1). Read only
-        toward the provider: nothing is pushed, launched or paused there."""
+        toward the provider: nothing is pushed, launched or paused there.
+        With `read_sent` (the job's), an imported campaign's sent texts are
+        read afterwards (`_read_sent_contents`): a Sync asked from the
+        interface does not wait for them."""
         started = datetime.now(UTC)
         campaign = await self.repo.campaign(agency_id, campaign_id, lock=True)
         if campaign is None:
@@ -1262,6 +1301,8 @@ class EmailSyncManager:
         campaign.last_provider_sync_at = datetime.now(UTC)
         campaign.last_provider_error = report.errors[0] if report.errors else None
         await self.db.commit()
+        if read_sent and is_imported(campaign):
+            await self._read_sent_contents(provider, campaign, report)
         return report
 
     async def _reconcile_leads(
@@ -1408,6 +1449,49 @@ class EmailSyncManager:
                 message.content_state = "AVAILABLE"
                 message.payload = {**(message.payload or {}), "inbox": found.payload}
                 report.reply_contents += 1
+
+    async def _read_sent_contents(
+        self, provider: EmailProvider, campaign: EmailCampaign, report: CampaignReconcile
+    ) -> None:
+        """The text Lemlist really sent of an imported campaign's emails
+        (`PROVIDER_ONLY`): a recipient's inbox thread (`GET
+        /inbox/{contactId}`) holds every email sent to them, personalized,
+        with its HTML. At most `SENT_CONTENTS_PER_RUN` recipients per run,
+        the latest sent first, and only once the campaign's transaction is
+        over: nothing is locked while Lemlist answers, each recipient's
+        emails are then written in a short transaction of their own. An
+        email the thread does not have is read again next run, and is no
+        longer read after `CONTENT_ATTEMPTS` reads (it stays PROVIDER_ONLY);
+        a recipient without a Lemlist contact id is not read and nothing is
+        counted against them, until a later activity or listing gives it; a
+        failing read ends this run's reading, the next run goes on."""
+        lemlist_id = campaign.provider_campaign_id
+        recipients = await self.repo.provider_only_recipients(
+            campaign.id, SENT_CONTENTS_PER_RUN, CONTENT_ATTEMPTS
+        )
+        # Plain values only from here: the rollback expires every instance.
+        await self.db.rollback()
+        for member_id, lead_id, contact_id in recipients:
+            try:
+                thread = await asyncio.to_thread(
+                    provider.get_messages, LeadRef(lead_id or "", contact_id)
+                )
+            except ProviderError as exc:
+                report.errors.append(provider_error_code(exc))
+                return
+            sent = [m for m in thread if m.direction == "OUTBOUND"]
+            for message in await self.repo.provider_only_messages(member_id, CONTENT_ATTEMPTS):
+                found = _matching_sent(message, sent, lemlist_id)
+                if found is None or not found.body_html:
+                    message.content_attempts = (message.content_attempts or 0) + 1
+                    continue
+                message.subject = found.subject or message.subject
+                message.body_html = found.body_html[:MAX_REPLY_HTML]
+                message.body_text = html_to_text(found.body_html)
+                message.content_state = "AVAILABLE"
+                message.payload = {**(message.payload or {}), "inbox": found.payload}
+                report.sent_contents += 1
+            await self.db.commit()
 
     async def _record_failure(
         self, campaign_id: uuid.UUID, agency_id: uuid.UUID, code: str

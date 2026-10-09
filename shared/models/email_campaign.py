@@ -124,7 +124,8 @@ MESSAGE_STATUSES = ("QUEUED", "SENT", "DELIVERED", "BOUNCED", "OPENED", "CLICKED
 #: content is its frozen render. PENDING / AVAILABLE / UNAVAILABLE: a reply's
 #: content, read from the provider's inbox when it provides it.
 #: PROVIDER_ONLY: an outbound email of an imported campaign, sent by Lemlist
-#: from its own template: its personalized content is not in Nidria.
+#: from its own template, whose personalized text Nidria has not read; the
+#: job reads it from the contact's inbox, and the email is then AVAILABLE.
 CONTENT_STATES = ("RENDERED", "PENDING", "AVAILABLE", "UNAVAILABLE", "PROVIDER_ONLY")
 
 _EMPTY_JSON = text("'{}'::jsonb")
