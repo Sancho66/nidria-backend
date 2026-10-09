@@ -172,8 +172,10 @@ class FakeProvider:
     Lot C: the import's reads (`ImportReader`), scripted per campaign: the
     team's campaigns (`campaign_rows`), a campaign's sequences
     (`sequence_reads`), the leads Lemlist lists beyond those Nidria added
-    (`listed`), its export (`exports`), the contacts lookup (`contacts`); a
-    campaign's activities are `events`. All are reads, recorded in `ops`
+    (`listed`), its export (the leads Nidria added, then `exports`), the
+    contacts lookup (`contacts`); a campaign's activities are `events`.
+    `unlisted`: leads a listing misses though Lemlist still has them (in the
+    export), as its shifting pages do. All are reads, recorded in `ops`
     like the rest; `resume_campaign` is the one write of an imported
     campaign's resume."""
 
@@ -193,6 +195,9 @@ class FakeProvider:
         self.added: dict[str, list[LeadRef]] = {}
         #: Leads Lemlist no longer lists (removed in its UI).
         self.gone: set[str] = set()
+        #: Leads a listing misses though Lemlist still has them (its pages
+        #: shift, measured on the real team): in the export all the same.
+        self.unlisted: set[str] = set()
         #: campaign id -> what Lemlist says of it (default: running).
         self.remote: dict[str, ProviderCampaign] = {}
         #: contact id -> the inbox thread.
@@ -356,13 +361,13 @@ class FakeProvider:
                 },
             )
             for lead in self.added.get(ref.campaign_id, [])
-            if lead.lead_id not in self.gone
+            if lead.lead_id not in self.gone | self.unlisted
         ]
         # The leads a campaign holds at Lemlist without Nidria adding them
         # (an imported campaign's), as listed: a pause here shows as Lemlist
         # shows it, in the state.
         for lead in self.listed.get(ref.campaign_id, []):
-            if lead.lead_id in self.gone:
+            if lead.lead_id in self.gone | self.unlisted:
                 continue
             paused = lead.lead_id in self.paused
             leads.append(
@@ -393,14 +398,29 @@ class FakeProvider:
         return self.sequence_reads.get(ref.campaign_id, ProviderSequences(ref.sequence_id, []))
 
     def export_leads(self, ref: CampaignRef) -> list[ProviderLeadIdentity]:
+        """Every lead Lemlist has: the ones Nidria added, then the scripted
+        rows (an imported campaign's); a lead removed there is in none."""
         self._op("export_leads", campaign=ref.campaign_id)
         self._fail("export_leads", ref.campaign_id)
-        return list(self.exports.get(ref.campaign_id, []))
+        added = [
+            ProviderLeadIdentity(lead.lead_id, None, last_state="emailsSent")
+            for lead in self.added.get(ref.campaign_id, [])
+        ]
+        return [
+            row
+            for row in (*added, *self.exports.get(ref.campaign_id, []))
+            if row.lead_id not in self.gone
+        ]
 
-    def lookup_contacts(self, contact_ids: Sequence[str]) -> list[ProviderContact]:
-        self._op("lookup_contacts", count=len(contact_ids))
+    def lookup_contacts(self, ids_or_emails: Sequence[str]) -> list[ProviderContact]:
+        self._op("lookup_contacts", count=len(ids_or_emails))
         self._fail("lookup_contacts", "team")
-        return [self.contacts[c] for c in contact_ids if c in self.contacts]
+        wanted = {value.lower() for value in ids_or_emails}
+        return [
+            contact
+            for contact in self.contacts.values()
+            if contact.contact_id.lower() in wanted or (contact.email or "").lower() in wanted
+        ]
 
     def read_activities(self, ref: CampaignRef) -> ProviderActivityRead:
         self._op("read_activities", campaign=ref.campaign_id)

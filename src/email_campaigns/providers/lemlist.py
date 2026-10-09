@@ -133,6 +133,26 @@ from src.email_campaigns.providers.base import (
 
 logger = logging.getLogger(__name__)
 
+
+class _AddressFreeRequestLog(logging.Filter):
+    """httpx logs every request's full URL at INFO (`HTTP Request: GET
+    <url> ...`), which would put in the logs a query naming addresses
+    (`idsOrEmails`, `email`): such a URL is logged without its query. Never
+    an address in a log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) > 1 and isinstance(args[1], httpx.URL):
+            url = args[1]
+            if any("@" in key or "@" in value for key, value in url.params.multi_items()):
+                record.args = (args[0], url.copy_with(query=None), *args[2:])
+        return True
+
+
+_HTTPX_LOG = logging.getLogger("httpx")
+if not any(isinstance(known, _AddressFreeRequestLog) for known in _HTTPX_LOG.filters):
+    _HTTPX_LOG.addFilter(_AddressFreeRequestLog())
+
 #: Lemlist's public API, the one base URL of every Lemlist call Nidria makes
 #: (`lemlist_team.team_of_key` reads it from here).
 LEMLIST_API_BASE_URL = "https://api.lemlist.com/api"
@@ -946,13 +966,14 @@ class LemlistEmailProvider:
                 )
         return list(found.values())
 
-    def lookup_contacts(self, contact_ids: Sequence[str]) -> list[ProviderContact]:
-        """Contacts by id (`GET /contacts?idsOrEmails=`, 100 values at most
-        per call, comma separated): the address, the names
+    def lookup_contacts(self, ids_or_emails: Sequence[str]) -> list[ProviderContact]:
+        """Contacts by id or by address (`GET /contacts?idsOrEmails=`, 100
+        values at most per call, comma separated): the address, the names
         (`fields.firstName`, `fields.lastName`) and, per campaign and lead,
         the lead's status there (`campaigns[].leadState`, a status value).
-        The company is not part of this answer."""
-        wanted = list(dict.fromkeys(c for c in contact_ids if c))
+        The company is not part of this answer. A query naming addresses is
+        logged without them (`_AddressFreeRequestLog`)."""
+        wanted = list(dict.fromkeys(c for c in ids_or_emails if c))
         found: dict[str, ProviderContact] = {}
         for start in range(0, len(wanted), _CONTACTS_PER_CALL):
             response = self._request(

@@ -89,9 +89,12 @@ a conditional branch (not imported); an email it sent has no render
 `ingest` in its `history` mode: events, messages, times and the steps sent
 are kept, the opposition list is fed, but no status moves (the import set
 each one from what Lemlist says now, and a block is never lifted). The job
-and a Sync count its `unknown_leads`, and since Lemlist's listing proves a
-pause (`state` paused) but never its end, they never resume an imported
-lead from it (an event or the import does).
+and a Sync also read its export, Lemlist's reference (one GET, every lead;
+the listing's pages shift and lose a lead now and then): they count its
+`unknown_leads` on both, and a lead the listing missed but the export has
+is not missing. Since Lemlist's listing proves a pause (`state` paused) but
+never its end, they never resume an imported lead from it (an event or the
+import does).
 
 `webhook`: Lemlist's activity webhook (`POST /webhooks/lemlist`, PUBLIC):
 the body's `secret` against EMAIL_WEBHOOK_SECRET (`hmac.compare_digest`),
@@ -110,7 +113,7 @@ import hmac
 import logging
 import uuid
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -173,9 +176,11 @@ from src.email_campaigns.providers.base import (
     CampaignRef,
     CampaignSpec,
     EmailProvider,
+    ImportReader,
     LeadSpec,
     ProviderError,
     ProviderEvent,
+    ProviderLeadIdentity,
     ProviderLeadListing,
     ProviderMessage,
     ScheduleSpec,
@@ -1229,7 +1234,7 @@ class EmailSyncManager:
             if campaign.provider_metadata != merged:
                 campaign.provider_metadata = merged
             listing = await asyncio.to_thread(provider.list_contacts, ref)
-            await self._reconcile_leads(campaign, listing, report)
+            await self._reconcile_leads(campaign, listing, report, provider, ref)
             since = activity_since(campaign.last_activity_sync_at, started)
             events = await asyncio.to_thread(provider.sync_campaign, ref, since)
             stats = await self.ingest(
@@ -1260,29 +1265,63 @@ class EmailSyncManager:
         return report
 
     async def _reconcile_leads(
-        self, campaign: EmailCampaign, listing: ProviderLeadListing, report: CampaignReconcile
+        self,
+        campaign: EmailCampaign,
+        listing: ProviderLeadListing,
+        report: CampaignReconcile,
+        provider: EmailProvider,
+        ref: CampaignRef,
     ) -> None:
         """The provider's word on each lead it holds: its raw state kept
         (Nidria's own keys untouched), a pause or resume done in Lemlist's
-        app mirrored, an unsubscribe applied. A lead it no longer lists is
-        flagged, never ended: absence is not a removal, and it counts only
-        from a complete listing that is not empty while leads are held.
+        app mirrored, an unsubscribe applied.
 
-        An imported campaign: its leads are only ever paused from the
-        listing (`state` paused proves a pause; no state proves its end, and
-        the import set the status from Lemlist's own `status`), and the
-        leads Lemlist lists that Nidria does not know are counted
-        (`unknown_leads`)."""
+        A lead the provider no longer has is flagged, never ended: absence
+        is not a removal. Lemlist's listing alone never proves it: its pages
+        shift and lose a lead now and then (measured on the real team). So
+        whenever the listing misses a lead still running, the campaign's
+        export is read too, Lemlist's reference (one GET, every lead): a lead
+        is missing only when absent from both, and a lead flagged before
+        that the export has is cleared. Without a usable export (none, or
+        empty while leads are held), absence counts only from a complete
+        listing that is not empty while leads are held.
+
+        An imported campaign: its export is read every time, and its leads
+        Lemlist has and Nidria does not know are counted on both
+        (`unknown_leads`); its leads are only ever paused from the listing
+        (`state` paused proves a pause; no state proves its end, and the
+        import set the status from Lemlist's own words)."""
         imported = is_imported(campaign)
         members = await self.repo.at_provider(campaign.id)
         report.contacts = len(members)
         remote = {lead.lead_id: lead for lead in listing.leads}
-        absence_counts = listing.complete and (bool(remote) or not members)
+        missed = any(
+            (member.provider_lead_id or "") not in remote and member.status not in _TERMINAL
+            for member in members
+        )
+        exported: dict[str, ProviderLeadIdentity] = {}
+        whole = False
+        if (imported or missed) and isinstance(provider, ImportReader):
+            rows = await asyncio.to_thread(provider.export_leads, ref)
+            exported = {row.lead_id: row for row in rows}
+            whole = bool(exported) or not members
+        present = set(remote) | set(exported)
+        absence_counts = whole or (listing.complete and (bool(remote) or not members))
         if imported:
-            report.unknown_leads = await self.count_unknown_leads(campaign, listing)
+            report.unknown_leads = await self.count_unknown_leads(
+                campaign, present if whole else None
+            )
         for member in members:
             lead = remote.get(member.provider_lead_id or "")
             if lead is None:
+                row = exported.get(member.provider_lead_id or "")
+                if row is not None:
+                    # Missed by this listing, in the export: at Lemlist.
+                    if member.provider_status == MISSING:
+                        member.provider_status = (row.last_state or "")[:60] or None
+                    if member.status_reason == REASON_MISSING_AT_PROVIDER:
+                        set_status_reason(member, None)
+                    continue
                 if (
                     absence_counts
                     and member.status not in _TERMINAL
@@ -1314,19 +1353,20 @@ class EmailSyncManager:
                 report.pause_changes += 1
 
     async def count_unknown_leads(
-        self, campaign: EmailCampaign, listing: ProviderLeadListing
+        self, campaign: EmailCampaign, lead_ids: Collection[str] | None
     ) -> int | None:
-        """The leads of an imported campaign that Lemlist lists and Nidria
-        does not know: no membership of the campaign holds them and the
-        last import did not set them aside. Kept on the campaign (its
-        import metadata) with when it was counted; None (not counted) from
-        an incomplete listing. Writes the campaign, never commits."""
+        """The leads of an imported campaign that Lemlist has (`lead_ids`:
+        its export's, the reference, and its listing's) and Nidria does not
+        know: no membership of the campaign holds them and the last import
+        did not set them aside. Kept on the campaign (its import metadata)
+        with when it was counted; None (not counted) without the export.
+        Writes the campaign, never commits."""
         count: int | None = None
         noted = import_metadata(campaign.provider_metadata)
-        if listing.complete:
+        if lead_ids is not None:
             known = await self.repo.lead_ids_of_campaign(campaign.id)
             aside = {str(lead_id) for lead_id in noted.get("set_aside") or []}
-            count = len({lead.lead_id for lead in listing.leads} - known - aside)
+            count = len(set(lead_ids) - known - aside)
         noted.update(unknown_leads=count, unknown_leads_at=datetime.now(UTC).isoformat())
         campaign.provider_metadata = {
             **(campaign.provider_metadata or {}),

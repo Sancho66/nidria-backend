@@ -546,11 +546,11 @@ class EmailCampaignRead(BaseModel):
     #: NIDRIA, or LEMLIST_IMPORT: a mirror of a Lemlist campaign, whose
     #: content, settings and recipients are Lemlist's (lot C).
     origin: CampaignOrigin = "NIDRIA"
-    #: An imported campaign: the leads Lemlist lists that Nidria does not
-    #: know (neither imported nor set aside by the last import), as last
-    #: counted (the import, the Email Sync job, a Sync); null when never
-    #: counted or when Lemlist's listing was incomplete. Above zero, running
-    #: the import again brings them in.
+    #: An imported campaign: the leads Lemlist has (its export, the
+    #: reference, and its listing) that Nidria does not know (neither
+    #: imported nor set aside by the last import), as last counted (the
+    #: import, the Email Sync job, a Sync); null when never counted. Above
+    #: zero, running the import again brings them in.
     unknown_leads: int | None = None
     #: An imported campaign: when it was last imported.
     last_imported_at: datetime | None = None
@@ -1140,7 +1140,8 @@ class EmailSyncResult(BaseModel):
     notes: list[EmailSyncNote] = Field(default_factory=list)
     last_synced_at: datetime | None = None
     #: An imported campaign (whose Sync only reads Lemlist): the leads
-    #: Lemlist lists that Nidria does not know; null when not counted.
+    #: Lemlist has (its export and its listing) that Nidria does not know;
+    #: null when not counted.
     unknown_leads: int | None = None
 
 
@@ -1492,13 +1493,27 @@ class EmailImportStepsRead(BaseModel):
 
 
 class EmailImportLeadsRead(BaseModel):
-    """A campaign's leads, in counts only."""
+    """A campaign's leads, in counts only. They are the export's (Lemlist's
+    reference: one answer, every lead) and the ones only the listing gives:
+    the listing's pages shift, a lead read twice taking another's place."""
 
     #: Distinct leads of Lemlist's listing, whether it was read in full,
     #: and its rows naming a lead already read (a page shifting meanwhile).
     listed: int
     listing_complete: bool
     listing_duplicates: int
+    #: Distinct leads of the export; the campaign's leads (the export's and
+    #: the listing's together); the export's leads the listing did not give.
+    exported: int
+    total: int
+    not_listed: int
+    #: Of those, the ones whose contact id the contacts lookup found by
+    #: their address; and the leads to import or refresh left without a
+    #: contact id: imported all the same, the text of their replies is not
+    #: read until Lemlist names their contact (an activity, a later
+    #: listing).
+    contact_ids_found: int
+    without_contact_id: int
     #: Leads whose identity was found: by the campaign's export, else by
     #: the contacts lookup; and those left without an address.
     identities: int
@@ -1529,7 +1544,8 @@ class EmailImportCallsRead(BaseModel):
     """Lemlist calls, retries aside. `reads`: this campaign's in the plan:
     the campaign (1), its sequences (1), its listing (one page per 100
     leads, plus the short or empty page that ends it), its export (1) and
-    its contacts lookups (one per 100 leads the export did not identify).
+    its contacts lookups (one per 100 listed leads the export did not
+    identify, one per 100 addresses of the export's leads not listed).
     `apply_min`: its share of an application: the same reads again (an
     application computes the whole plan again) and its activities, read
     only then, one page per 100 activities: counted 1 here."""

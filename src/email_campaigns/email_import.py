@@ -15,7 +15,9 @@ receive the placeholder, spec 9.2). The few gestures it still takes are in
    do, in counts only (never an address nor a person's name): its steps by
    Lemlist type (only the main sequence is imported: conditional branches
    and A/B steps are counted, the text kept is variant A's); its leads
-   (listed, identified, without an address, sharing one); the client records
+   (exported, listed, both together, the export's the listing missed and
+   their contact ids found, identified, without an address, sharing one,
+   imported without a contact id); the client records
    found by address (rule N2) or to create; the conflicts (a person live in
    another campaign of the agency, or in an importable campaign planned
    before); every combination of Lemlist's words met (`state` of the
@@ -48,12 +50,18 @@ receive the placeholder, spec 9.2). The few gestures it still takes are in
 
 Lemlist is only read (`ImportReader`, GET only; each route sourced in
 notes/lemlist-import-research.txt): the team's campaigns (§6), one campaign
-for its main sequence id (§4), its sequences (§5), its leads (§1.1: pages of
-100 by offset, a lead listed twice kept once), their identities from the
-campaign's export (§1.2 a: one answer, no pagination documented, so every
-listed lead is checked to have come back), completed for the missing ones
-by the contacts lookup (§1.2 d: 100 contact ids per call), and, at
-application only, the campaign's activities (§3: pages of 100).
+for its main sequence id (§4), its sequences (§5), its export (§1.2 a: one
+answer, every lead, measured on the real team, §17), its listing (§1.1:
+pages of 100 by offset, a lead listed twice kept once), the contacts lookup
+(§1.2 d: 100 values per call) and, at application only, the campaign's
+activities (§3: pages of 100). A campaign's leads are the export's, the
+reference, and the ones only the listing gives: the listing's pages shift
+(measured: a lead read twice takes another's place), so it serves for what
+it alone gives, a lead's contact id and state. The lookup identifies, by
+contact id, the listed leads the export did not, and finds, by address,
+the contact id of the export's leads the listing missed; one not found is
+imported all the same (only reading its replies' text needs it, and an
+activity or a later listing names it).
 
 A lead's status is decided by `propose` over the written mapping `RULES`
 (Lemlist's words in notes §2); a combination it does not cover is not
@@ -349,6 +357,9 @@ class LeadRead:
     company_name: str | None = None
     #: Where its identity came from: "export", "contacts", or None.
     identity: str | None = None
+    #: In the listing; False: only the export gives it (no listing state,
+    #: its contact id from the lookup by address, if found).
+    listed: bool = True
 
     @property
     def status_word(self) -> str | None:
@@ -372,9 +383,18 @@ class CampaignRead:
     timezone: str | None = None
     error: str | None = None
     sequences: ProviderSequences | None = None
+    #: Its leads, the export's and the listing's together: the listed ones,
+    #: then the export's the listing missed.
     leads: list[LeadRead] = field(default_factory=list)
     listing_complete: bool = True
     listing_duplicates: int = 0
+    #: Distinct leads of the listing and of the export; the export's the
+    #: listing did not give, and those whose contact id the lookup by
+    #: address found.
+    listed: int = 0
+    exported: int = 0
+    not_listed: int = 0
+    contact_ids_found: int = 0
     reads: int = 0
 
     @property
@@ -423,9 +443,16 @@ _NO_IDENTITY = ProviderLeadIdentity(lead_id="", email=None)
 
 def read_campaign(reader: ImportReader, row: ProviderCampaignRow) -> CampaignRead:
     """One campaign's reads: the campaign (its main sequence id), its
-    sequences, its listing, its export and, for the leads the export did not
-    identify, the contacts lookup. A failed read is kept as the campaign's
-    `error`, never raised."""
+    sequences, its listing, its export and the contacts lookups. Its leads
+    are the export's, Lemlist's reference (one answer, every lead, measured
+    on the real team: notes §17), and the ones only the listing gives: the
+    listing's pages shift (a lead read twice takes another's place), so it
+    serves for what it alone gives, a lead's contact id and state. The
+    contacts lookup identifies the listed leads the export did not, by
+    contact id, and finds the contact id of the export's leads the listing
+    did not give, by address; one it does not find is imported all the
+    same (only reading the text of its replies needs it). A failed read is
+    kept as the campaign's `error`, never raised."""
     read = CampaignRead(row, name=row.name, status=row.status)
     try:
         read.reads += 1
@@ -460,10 +487,14 @@ def read_campaign(reader: ImportReader, row: ProviderCampaignRow) -> CampaignRea
                     lead.contact_id if lead.contact_id and len(lead.contact_id) <= _ID_MAX else None
                 )
                 listed[lead.lead_id] = (contact, lead.state)
+        read.listed = len(listed)
         read.reads += 1
-        identities: dict[str, ProviderLeadIdentity] = {
-            identity.lead_id: identity for identity in reader.export_leads(ref)
-        }
+        identities: dict[str, ProviderLeadIdentity] = {}
+        for identity in reader.export_leads(ref):
+            if len(identity.lead_id) <= _ID_MAX:
+                identities.setdefault(identity.lead_id, identity)
+        read.exported = len(identities)
+        # The listed leads the export did not identify: by contact id.
         missing = sorted(
             {
                 contact
@@ -475,13 +506,66 @@ def read_campaign(reader: ImportReader, row: ProviderCampaignRow) -> CampaignRea
         if missing:
             read.reads += math.ceil(len(missing) / _LOOKUP)
             contacts = {c.contact_id: c for c in reader.lookup_contacts(missing)}
+        # The export's leads the listing did not give: their contact id, by
+        # address.
+        unlisted = {
+            lead_id: _address(identity.email)
+            for lead_id, identity in identities.items()
+            if lead_id not in listed
+        }
+        read.not_listed = len(unlisted)
+        addresses = sorted({address for address in unlisted.values() if address})
+        found: dict[str, ProviderContact] = {}
+        if addresses:
+            read.reads += math.ceil(len(addresses) / _LOOKUP)
+            found = _contacts_by_lead(reader.lookup_contacts(addresses), row.campaign_id, unlisted)
+            read.contact_ids_found = len(found)
+            contacts.update({contact.contact_id: contact for contact in found.values()})
         read.leads = [
             _lead(row.campaign_id, lead_id, contact, state, identities.get(lead_id), contacts)
             for lead_id, (contact, state) in listed.items()
+        ] + [
+            _lead(
+                row.campaign_id,
+                lead_id,
+                found[lead_id].contact_id if lead_id in found else None,
+                None,
+                identities[lead_id],
+                contacts,
+                listed=False,
+            )
+            for lead_id in unlisted
         ]
     except ProviderError as exc:
         read.error = provider_error_code(exc)
     return read
+
+
+def _contacts_by_lead(
+    contacts: Iterable[ProviderContact], campaign_id: str, unlisted: Mapping[str, str | None]
+) -> dict[str, ProviderContact]:
+    """Lead id -> its contact, among those the lookup by address returned:
+    the contact naming this lead in this campaign, else the only one with
+    its address."""
+    by_lead: dict[str, ProviderContact] = {}
+    by_address: dict[str, list[ProviderContact]] = {}
+    for contact in contacts:
+        if not contact.contact_id or len(contact.contact_id) > _ID_MAX:
+            continue
+        for campaign, lead_id in contact.lead_statuses:
+            if campaign == campaign_id:
+                by_lead.setdefault(lead_id, contact)
+        address = _address(contact.email)
+        if address is not None:
+            by_address.setdefault(address, []).append(contact)
+    found: dict[str, ProviderContact] = {}
+    for lead_id, address in unlisted.items():
+        match = by_lead.get(lead_id)
+        if match is None and address is not None and len(by_address.get(address, [])) == 1:
+            match = by_address[address][0]
+        if match is not None:
+            found[lead_id] = match
+    return found
 
 
 def _lead(
@@ -491,11 +575,13 @@ def _lead(
     state: str | None,
     identity: ProviderLeadIdentity | None,
     contacts: Mapping[str, ProviderContact],
+    *,
+    listed: bool = True,
 ) -> LeadRead:
-    """A listed lead with its identity: the export's, else the contacts
-    lookup's (which carries no company); its status word, the export's
-    `status`, else its `stateSystem`, else the lead's status in this
-    campaign by the lookup."""
+    """A lead with its identity: the export's, else the contacts lookup's
+    (which carries no company); its state, the listing's, else the
+    export's; its status word, the export's `status`, else its
+    `stateSystem`, else the lead's status in this campaign by the lookup."""
     contact = contacts.get(contact_id) if contact_id else None
     found = identity or _NO_IDENTITY
     looked_up = contact.lead_statuses.get((campaign_id, lead_id)) if contact is not None else None
@@ -515,6 +601,7 @@ def _lead(
         state_system=found.state_system,
         status_source=source,
         company_name=_text(found.company_name, _COMPANY_MAX),
+        listed=listed,
     )
     if _address(found.email):
         lead.email, lead.identity = _address(found.email), "export"
@@ -721,13 +808,24 @@ def _skipped(plan: CampaignPlan) -> Counter[str]:
 
 
 def _leads_read(plan: CampaignPlan) -> EmailImportLeadsRead:
-    leads = plan.read.leads
+    read = plan.read
+    leads = read.leads
     creates = [v for v in plan.verdicts if v.action == "create"]
     skipped = _skipped(plan)
     return EmailImportLeadsRead(
-        listed=len(leads),
-        listing_complete=plan.read.listing_complete,
-        listing_duplicates=plan.read.listing_duplicates,
+        listed=read.listed,
+        listing_complete=read.listing_complete,
+        listing_duplicates=read.listing_duplicates,
+        exported=read.exported,
+        total=len(leads),
+        not_listed=read.not_listed,
+        contact_ids_found=read.contact_ids_found,
+        without_contact_id=sum(
+            1
+            for v in plan.verdicts
+            if v.action != "skip"
+            and not (v.lead.contact_id or (v.member.provider_contact_id if v.member else None))
+        ),
         identities=sum(1 for lead in leads if lead.identity),
         from_export=sum(1 for lead in leads if lead.identity == "export"),
         from_contacts=sum(1 for lead in leads if lead.identity == "contacts"),
@@ -1152,11 +1250,9 @@ class EmailImportManager:
         await self._opposition(agency_id, fresh, members, result)
         set_aside = sorted(v.lead.lead_id for v in fresh.verdicts if v.action == "skip")
         known = await self.repo.lead_ids_of_campaign(campaign.id)
-        unknown = (
-            len({lead.lead_id for lead in read.leads} - known - set(set_aside))
-            if read.listing_complete
-            else None
-        )
+        # Counted on the campaign's leads, the export's included: whole even
+        # when the listing is not.
+        unknown = len({lead.lead_id for lead in read.leads} - known - set(set_aside))
         now = datetime.now(UTC)
         noted = import_metadata(campaign.provider_metadata)
         noted.update(

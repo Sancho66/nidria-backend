@@ -32403,7 +32403,7 @@
           "apply_min"
         ],
         "title": "EmailImportCallsRead",
-        "description": "Lemlist calls, retries aside. `reads`: this campaign's in the plan:\nthe campaign (1), its sequences (1), its listing (one page per 100\nleads, plus the short or empty page that ends it), its export (1) and\nits contacts lookups (one per 100 leads the export did not identify).\n`apply_min`: its share of an application: the same reads again (an\napplication computes the whole plan again) and its activities, read\nonly then, one page per 100 activities: counted 1 here."
+        "description": "Lemlist calls, retries aside. `reads`: this campaign's in the plan:\nthe campaign (1), its sequences (1), its listing (one page per 100\nleads, plus the short or empty page that ends it), its export (1) and\nits contacts lookups (one per 100 listed leads the export did not\nidentify, one per 100 addresses of the export's leads not listed).\n`apply_min`: its share of an application: the same reads again (an\napplication computes the whole plan again) and its activities, read\nonly then, one page per 100 activities: counted 1 here."
       },
       "EmailImportCampaignPlan": {
         "properties": {
@@ -32697,6 +32697,26 @@
             "type": "integer",
             "title": "Listing Duplicates"
           },
+          "exported": {
+            "type": "integer",
+            "title": "Exported"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "not_listed": {
+            "type": "integer",
+            "title": "Not Listed"
+          },
+          "contact_ids_found": {
+            "type": "integer",
+            "title": "Contact Ids Found"
+          },
+          "without_contact_id": {
+            "type": "integer",
+            "title": "Without Contact Id"
+          },
           "identities": {
             "type": "integer",
             "title": "Identities"
@@ -32758,6 +32778,11 @@
           "listed",
           "listing_complete",
           "listing_duplicates",
+          "exported",
+          "total",
+          "not_listed",
+          "contact_ids_found",
+          "without_contact_id",
           "identities",
           "from_export",
           "from_contacts",
@@ -32773,7 +32798,7 @@
           "not_imported"
         ],
         "title": "EmailImportLeadsRead",
-        "description": "A campaign's leads, in counts only."
+        "description": "A campaign's leads, in counts only. They are the export's (Lemlist's\nreference: one answer, every lead) and the ones only the listing gives:\nthe listing's pages shift, a lead read twice taking another's place."
       },
       "EmailImportPlanCallsRead": {
         "properties": {

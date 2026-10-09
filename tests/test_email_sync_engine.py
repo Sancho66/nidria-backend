@@ -669,6 +669,39 @@ async def test_lemlist_side_pauses_unsubscribes_removals_and_completion(
     assert eve_row.provider_metadata["contactId"] == eve.contact_id
 
 
+async def test_a_lead_one_listing_misses_is_missing_only_when_the_export_lacks_it_too(
+    db_session: AsyncSession,
+    client: AsyncClient,
+    live: Live,
+    make_client_profile: MakeClientProfile,
+) -> None:
+    """Lemlist's listing pages shift and lose a lead now and then (measured
+    on the real team): before a lead it misses is called missing, the
+    campaign's export is read, Lemlist's reference, only then. A lead the
+    export has is not missing; one Lemlist has nowhere is flagged."""
+    provider = live.provider
+    cid, members = await _live_campaign(
+        client, make_client_profile, live.world, people=("Ana Lopez", "Ben Ready", "Cal Doe")
+    )
+    ben, cal = [await _lead(db_session, members[first]) for first in ("Ben", "Cal")]
+    provider.ops.clear()
+    first = await _run(live.sessions)
+    assert first.stats["missing_leads"] == 0
+    # Every lead listed: no export read.
+    assert "export_leads" not in provider.names()
+
+    provider.unlisted.add(ben.lead_id)
+    provider.gone.add(cal.lead_id)
+    provider.ops.clear()
+    second = await _run(live.sessions)
+    assert second.stats["missing_leads"] == 1
+    assert provider.names().count("export_leads") == 1
+    ben_row, cal_row = [await _member(db_session, lead.member_id) for lead in (ben, cal)]
+    assert (ben_row.provider_status, ben_row.status_reason) == ("emailsSent", None)
+    assert (cal_row.provider_status, cal_row.status_reason) == ("missing", "missing_at_provider")
+    assert cal_row.status == "EMAIL_QUEUED"
+
+
 async def test_the_detail_shows_each_step_its_content_ai_values_events_and_reply(
     client: AsyncClient,
     db_session: AsyncSession,

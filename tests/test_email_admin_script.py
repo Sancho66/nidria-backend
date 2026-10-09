@@ -732,9 +732,15 @@ async def test_import_verify_sets_nidria_against_lemlist_and_explains_each_gap(
     assert a["events_by_type"] and a["messages"]["OUTBOUND"]["total"] > 0
     assert a["lemlist"]["read"] is True
     assert (a["lemlist"]["listed"], a["lemlist"]["without_email"]) == (16, 1)
+    # The export misses one listed lead (identified by its contact): 16 in all.
+    assert (a["lemlist"]["exported"], a["lemlist"]["total"], a["lemlist"]["not_listed"]) == (
+        15,
+        16,
+        0,
+    )
     assert sum(a["lemlist"]["by_status"].values()) == sum(a["lemlist"]["by_state"].values()) == 16
     assert a["gaps"] == {
-        "listed_minus_open_memberships": 6,
+        "lemlist_minus_open_memberships": 6,
         "set_aside_by_plan": 6,
         "set_aside_by_reason": {
             "conflict": 1,
@@ -745,7 +751,7 @@ async def test_import_verify_sets_nidria_against_lemlist_and_explains_each_gap(
             "status_uncovered": 1,
         },
         "new_at_lemlist": 0,
-        "open_memberships_not_listed": 0,
+        "open_memberships_not_at_lemlist": 0,
         "explained": True,
     }
     b = by_id[LEMLIST_B]

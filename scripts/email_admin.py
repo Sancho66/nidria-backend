@@ -982,11 +982,13 @@ async def imported_counts(db: AsyncSession, agent: Agent) -> list[dict[str, Any]
 
 async def cmd_import_verify(ctx: Context, args: argparse.Namespace) -> Outcome:
     """Each imported campaign of the agency: Nidria's counts against
-    Lemlist's, read again in GET only by the plan (its listing, the
-    export's identities, its leads by `status` and by state), the gap
-    between Lemlist's listing and Nidria's open memberships, and what
-    explains it: the leads the plan sets aside (by reason), the ones it
-    would import now, the memberships whose lead Lemlist no longer lists."""
+    Lemlist's, read again in GET only by the plan (its export, its listing,
+    both together, the export's leads the listing missed, its leads by
+    status word and by state), the gap between Lemlist's leads (the export's
+    and the listing's together: the listing's pages shift and lose a lead
+    now and then) and Nidria's open memberships, and what explains it: the
+    leads the plan sets aside (by reason), the ones it would import now, the
+    memberships whose lead Lemlist no longer has."""
     plan = await import_plan(ctx)
     counted = await through(ctx, CAMPAIGNS, imported_counts)
     planned = {campaign.provider_campaign_id: campaign for campaign in plan.campaigns}
@@ -1014,7 +1016,12 @@ async def cmd_import_verify(ctx: Context, args: argparse.Namespace) -> Outcome:
             entry["lemlist"] = {
                 "read": True,
                 "status": campaign.status,
+                "exported": leads.exported,
                 "listed": leads.listed,
+                "total": leads.total,
+                "not_listed": leads.not_listed,
+                "contact_ids_found": leads.contact_ids_found,
+                "without_contact_id": leads.without_contact_id,
                 "listing_complete": leads.listing_complete,
                 "listing_duplicates": leads.listing_duplicates,
                 "identities": leads.identities,
@@ -1025,15 +1032,15 @@ async def cmd_import_verify(ctx: Context, args: argparse.Namespace) -> Outcome:
                 "by_state": dict(sorted(by_state.items())),
             }
             set_aside = sum(leads.not_imported.values())
-            not_listed = nidria["open_with_lead_id"] - leads.to_update
-            gap = leads.listed - nidria["open_with_lead_id"]
+            gone = nidria["open_with_lead_id"] - leads.to_update
+            gap = leads.total - nidria["open_with_lead_id"]
             entry["gaps"] = {
-                "listed_minus_open_memberships": gap,
+                "lemlist_minus_open_memberships": gap,
                 "set_aside_by_plan": set_aside,
                 "set_aside_by_reason": dict(sorted(leads.not_imported.items())),
                 "new_at_lemlist": leads.to_create,
-                "open_memberships_not_listed": not_listed,
-                "explained": gap == set_aside + leads.to_create - not_listed,
+                "open_memberships_not_at_lemlist": gone,
+                "explained": gap == set_aside + leads.to_create - gone,
             }
         campaigns.append(entry)
     return Outcome(

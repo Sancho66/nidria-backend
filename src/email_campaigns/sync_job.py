@@ -40,8 +40,9 @@ the agency and campaign they are about, never sentences, at most ten), plus
 `agencies` (read) and `agencies_skipped` (switched on but not bound to the
 key's team, or busy), `variable_unsubscribed` (a contact's variable
 unsubscribed at Lemlist: stored, never applied) and `unknown_leads` (lot C:
-the leads of the imported campaigns that Lemlist lists and Nidria does not
-know; the job never creates a client record, the import does). Log lines
+the leads of the imported campaigns that Lemlist has, by their export and
+their listing, and Nidria does not know; the job never creates a client
+record, the import does). Log lines
 carry ids, counts and codes only.
 """
 

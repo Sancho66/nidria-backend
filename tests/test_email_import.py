@@ -13,6 +13,7 @@ reaches Lemlist.
 """
 
 import asyncio
+import logging
 import time
 import uuid
 from collections.abc import Iterator, Sequence
@@ -24,7 +25,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -96,6 +97,7 @@ TEAM = "tea_current"
 LEMLIST_A = "cam_avocats_s2"
 LEMLIST_B = "cam_avocats_s4"
 LEMLIST_C = "cam_experts_s2"
+LEMLIST_U = "cam_avocats_s5"
 #: What reading Lemlist may call on an imported campaign (the job, a Sync,
 #: the webhook's pause re-read, the import's own reads).
 READS = {
@@ -479,6 +481,12 @@ async def test_the_plan_counts_what_an_import_would_do_campaign_by_campaign(
         "listed": 16,
         "listing_complete": True,
         "listing_duplicates": 0,
+        # The export misses lea_a13 (identified by its contact): 16 in all.
+        "exported": 15,
+        "total": 16,
+        "not_listed": 0,
+        "contact_ids_found": 0,
+        "without_contact_id": 7,
         "identities": 16,
         "from_export": 15,
         "from_contacts": 1,
@@ -1781,4 +1789,230 @@ async def test_the_real_export_decides_each_lead_by_its_state_system(
         )
     ).all()
     assert len(names) == 9 and {tuple(n) for n in names} == {(None, None)}
+    assert {method for method, _p, _q, _b in fake.calls} == {"GET"}
+
+
+# ── a listing that loses a lead: the export is the reference ────────────────
+
+
+@pytest_asyncio.fixture
+async def unstable_live(
+    db_session: AsyncSession,
+    email_world: EmailWorld,
+    lemlist_live: LemlistTeamDouble,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[EmailWorld, FakeLemlist]:
+    """The agency live at Lemlist through the REAL adapter, one paused
+    campaign whose leads each test sets (`answer_leads`): as measured on the
+    real team, its listing's pages shift (a lead read twice takes another's
+    place) while its export gives every lead in one answer. The contacts
+    lookup knows lea_u4's contact, no other."""
+    fake = await through_the_adapter(db_session, email_world.agency_id, monkeypatch)
+    name = "Avocats s5 EN"
+    for method, path, body in (
+        (
+            "GET",
+            "/campaigns",
+            [
+                {
+                    "_id": LEMLIST_U,
+                    "name": name,
+                    "status": "paused",
+                    "createdAt": "2026-09-20T09:00:00.000Z",
+                }
+            ],
+        ),
+        (
+            "GET",
+            f"/campaigns/{LEMLIST_U}",
+            {"_id": LEMLIST_U, "name": name, "status": "paused", "sequenceId": "seq_u"},
+        ),
+        (
+            "GET",
+            f"/campaigns/{LEMLIST_U}/sequences",
+            {
+                "seq_u": {
+                    "_id": "seq_u",
+                    "level": 0,
+                    "steps": [
+                        {
+                            "_id": "stp_u1",
+                            "type": "email",
+                            "delay": 0,
+                            "index": 1,
+                            "sequenceStep": 0,
+                            "subject": "{{objet}}",
+                            "message": "<p>{{mail1}}</p>",
+                        }
+                    ],
+                }
+            },
+        ),
+        (
+            "GET",
+            "/contacts",
+            [
+                {
+                    "_id": "ctc_u4",
+                    "email": "person4@unstable.example",
+                    "campaigns": [
+                        {"campaignId": LEMLIST_U, "leadId": "lea_u4", "leadState": "running"}
+                    ],
+                }
+            ],
+        ),
+    ):
+        fake.answer(method, path, 200, body)
+    return email_world, fake
+
+
+def answer_leads(fake: FakeLemlist, *, exported: Sequence[int], listed: Sequence[int]) -> None:
+    """Lemlist's leads now: the export's rows (every lead, real format) and
+    the listing's (in order, a repeat included)."""
+    fake.answer(
+        "GET",
+        f"/v2/campaigns/{LEMLIST_U}/export/leads",
+        200,
+        [
+            observed_export_row(
+                f"lea_u{n}", f"person{n}@unstable.example", "emailsSent", "inProgress"
+            )
+            for n in exported
+        ],
+    )
+    fake.answer(
+        "GET",
+        f"/campaigns/{LEMLIST_U}/leads",
+        200,
+        [{"_id": f"lea_u{n}", "contactId": f"ctc_u{n}", "state": "emailsSent"} for n in listed],
+    )
+
+
+async def test_a_lead_the_listing_loses_is_imported_from_the_export_and_counted(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unstable_live: tuple[EmailWorld, FakeLemlist],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Measured on the real team: the listing repeats a lead in place of
+    another, the export has them all. Every lead is imported, the missed
+    one's contact found by its address; `unknown_leads` is counted on the
+    export (the listing alone says 0); a lead the listing missed is not
+    missing; importing again adds the new lead, no duplicate, even without
+    its contact id. Every call a GET, and no address in a log."""
+    world, fake = unstable_live
+    caplog.set_level(logging.INFO, logger="httpx")
+    answer_leads(fake, exported=(1, 2, 3, 4), listed=(1, 2, 2, 3))
+
+    [campaign] = (await plan_of(client, world.headers))["campaigns"]
+    keys = ("listed", "listing_duplicates", "exported", "total", "not_listed")
+    keys += ("contact_ids_found", "without_contact_id", "to_create")
+    assert {key: campaign["leads"][key] for key in keys} == {
+        "listed": 3,
+        "listing_duplicates": 1,
+        "exported": 4,
+        "total": 4,
+        "not_listed": 1,
+        "contact_ids_found": 1,
+        "without_contact_id": 0,
+        "to_create": 4,
+    }
+    # The campaign, its sequences, the listing, the export, the lookup.
+    assert campaign["calls"]["reads"] == 5
+
+    [row] = (await import_(client, world.headers, LEMLIST_U))["campaigns"]
+    assert (row["ok"], row["members_created"], row["unknown_leads"]) == (True, 4, 0), row
+    imported = await campaign_of(db_session, LEMLIST_U)
+    members = await members_by_lead(db_session, imported.id)
+    assert sorted(members) == ["lea_u1", "lea_u2", "lea_u3", "lea_u4"]
+    assert members["lea_u4"].provider_contact_id == "ctc_u4"
+
+    # A fifth lead at Lemlist; this listing misses lea_u4 and lea_u5.
+    answer_leads(fake, exported=(1, 2, 3, 4, 5), listed=(1, 2, 3, 3))
+    synced = await client.post(
+        f"/email/campaigns/{imported.id}/sync", json={}, headers=world.headers
+    )
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["unknown_leads"] == 1
+    missed = (await members_by_lead(db_session, imported.id))["lea_u4"]
+    assert (missed.provider_status, missed.status_reason) == ("emailsSent", None)
+
+    [campaign] = (await plan_of(client, world.headers))["campaigns"]
+    assert (
+        campaign["leads"]["to_create"],
+        campaign["leads"]["to_update"],
+        campaign["leads"]["without_contact_id"],
+    ) == (1, 4, 1)
+    [row] = (await import_(client, world.headers, LEMLIST_U))["campaigns"]
+    assert (row["ok"], row["members_created"], row["members_updated"]) == (True, 1, 4), row
+    assert row["unknown_leads"] == 0
+    members = await members_by_lead(db_session, imported.id)
+    assert sorted(members) == ["lea_u1", "lea_u2", "lea_u3", "lea_u4", "lea_u5"]
+    assert (
+        await count(db_session, EmailCampaignMember, EmailCampaignMember.campaign_id == imported.id)
+        == 5
+    )
+    assert (members["lea_u4"].provider_contact_id, members["lea_u5"].provider_contact_id) == (
+        "ctc_u4",
+        None,
+    )
+
+    assert {method for method, _p, _q, _b in fake.calls} == {"GET"}
+    requests = [record.getMessage() for record in caplog.records if record.name == "httpx"]
+    assert any("api.lemlist.com/api/contacts " in line for line in requests), requests
+    assert "unstable.example" not in caplog.text and "%40" not in caplog.text
+
+
+@pytest_asyncio.fixture
+async def unstable_job(
+    db_session: AsyncSession,
+    unstable_live: tuple[EmailWorld, FakeLemlist],
+    job_db: sessionmaker[Session],  # noqa: F811
+) -> tuple[EmailWorld, FakeLemlist, sessionmaker[Session]]:
+    """`unstable_live`, the Email Sync job switched on."""
+    await _enable_job(db_session)
+    world, fake = unstable_live
+    return world, fake, job_db
+
+
+async def test_the_job_calls_missing_only_a_lead_lemlist_has_nowhere(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unstable_job: tuple[EmailWorld, FakeLemlist, sessionmaker[Session]],
+) -> None:
+    """A lead one read of the listing misses is never missing while the
+    export has it, and a flag set before is cleared; one Lemlist has nowhere
+    is flagged, never ended. The job's `missing_leads` and `unknown_leads`
+    are counted on both."""
+    world, fake, sessions = unstable_job
+    answer_leads(fake, exported=(1, 2, 3, 4), listed=(1, 2, 3, 4))
+    [row] = (await import_(client, world.headers, LEMLIST_U))["campaigns"]
+    assert (row["ok"], row["members_created"]) == (True, 4), row
+    imported = await campaign_of(db_session, LEMLIST_U)
+    # A flag the listing alone set, before.
+    await db_session.execute(
+        update(EmailCampaignMember)
+        .where(
+            EmailCampaignMember.campaign_id == imported.id,
+            EmailCampaignMember.provider_lead_id == "lea_u2",
+        )
+        .values(provider_status="missing", status_reason="missing_at_provider")
+    )
+    await db_session.commit()
+
+    # This listing repeats lea_u1 and misses lea_u2 and lea_u4, still in the
+    # export; Lemlist no longer has lea_u3; lea_u5 is new.
+    answer_leads(fake, exported=(1, 2, 4, 5), listed=(1, 1))
+    run = await _run(sessions)
+    assert run.status == "success", run.log_output
+    assert (run.stats["missing_leads"], run.stats["unknown_leads"]) == (1, 1), run.stats
+    members = await members_by_lead(db_session, imported.id)
+    assert {lead: (m.provider_status, m.status_reason) for lead, m in members.items()} == {
+        "lea_u1": ("emailsSent", None),
+        "lea_u2": ("emailsSent", None),
+        "lea_u3": ("missing", "missing_at_provider"),
+        "lea_u4": ("emailsSent", None),
+    }
+    # Flagged, never ended.
+    assert {member.status for member in members.values()} == {"EMAIL_ACTIVE"}
     assert {method for method, _p, _q, _b in fake.calls} == {"GET"}

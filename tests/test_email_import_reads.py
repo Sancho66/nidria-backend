@@ -15,8 +15,19 @@ from typing import Any
 
 import pytest
 
-from src.email_campaigns.email_import import RULES, STATE_SYSTEM_STATUS, propose, read_status
-from src.email_campaigns.providers.base import CampaignRef, ImportReader, ProviderError
+from src.email_campaigns.email_import import (
+    RULES,
+    STATE_SYSTEM_STATUS,
+    propose,
+    read_campaign,
+    read_status,
+)
+from src.email_campaigns.providers.base import (
+    CampaignRef,
+    ImportReader,
+    ProviderCampaignRow,
+    ProviderError,
+)
 from src.email_campaigns.providers.dry_run import DryRunEmailProvider
 from src.email_campaigns.providers.lemlist import LemlistEmailProvider
 from tests.email_fakes import FakeLemlist, FakeProvider, lemlist_double, observed_export_row
@@ -314,6 +325,78 @@ def test_contacts_are_looked_up_by_a_hundred_ids_at_most(fake_lemlist: Double) -
     _only_gets(fake)
 
 
+# ── a campaign's leads: the export's, and the ones only the listing gives ────
+
+
+def test_a_campaigns_leads_are_the_exports_when_the_listing_loses_some(
+    fake_lemlist: Double,
+) -> None:
+    """Measured on the real team: the listing's pages shift (offset, newest
+    first), a lead read twice taking another's place, while the export
+    gives every lead in one answer. The export is the reference; the
+    listing gives what it alone has (contact id, state); the contact id of
+    a lead it missed is looked up by address (`GET /contacts?idsOrEmails=`),
+    and one not found leaves the lead without it, imported all the same."""
+    fake, provider = fake_lemlist
+    ids = [f"lea_{i:03}" for i in range(103)]
+    for path, body in (
+        ("/campaigns/cam_u", _campaign_row("cam_u", sequenceId="seq_u")),
+        ("/campaigns/cam_u/sequences", {"seq_u": {"_id": "seq_u", "level": 0, "steps": []}}),
+        (
+            "/v2/campaigns/cam_u/export/leads",
+            [
+                observed_export_row(i, f"{i}@unstable.example", "emailsSent", "inProgress")
+                for i in ids
+            ],
+        ),
+    ):
+        fake.answer("GET", path, 200, body)
+    listed = [{"_id": i, "contactId": f"ctc_{i}", "state": "emailsSent"} for i in ids[:100]]
+    # The second page repeats the first one's last two: three leads lost.
+    fake.queue("GET", "/campaigns/cam_u/leads", 200, listed)
+    fake.queue("GET", "/campaigns/cam_u/leads", 200, listed[98:])
+    fake.queue(
+        "GET",
+        "/contacts",
+        200,
+        [
+            # Names the lead in this campaign.
+            {
+                "_id": "ctc_lea_100",
+                "email": "lea_100@unstable.example",
+                "campaigns": [{"campaignId": "cam_u", "leadId": "lea_100", "leadState": "running"}],
+            },
+            # Its address only.
+            {"_id": "ctc_lea_101", "email": "LEA_101@unstable.example"},
+        ],
+    )
+    read = read_campaign(provider, ProviderCampaignRow("cam_u", "U", "paused", None))
+    assert read.error is None
+    assert (read.listed, read.listing_duplicates, read.exported) == (100, 2, 103)
+    assert (read.not_listed, read.contact_ids_found) == (3, 2)
+    leads = {lead.lead_id: lead for lead in read.leads}
+    assert sorted(leads) == ids
+    assert [
+        (leads[i].listed, leads[i].contact_id, leads[i].state, leads[i].email)
+        for i in ("lea_000", "lea_100", "lea_101", "lea_102")
+    ] == [
+        (True, "ctc_lea_000", "emailsSent", "lea_000@unstable.example"),
+        (False, "ctc_lea_100", "emailsSent", "lea_100@unstable.example"),
+        (False, "ctc_lea_101", "emailsSent", "lea_101@unstable.example"),
+        (False, None, "emailsSent", "lea_102@unstable.example"),
+    ]
+    # The missed leads' addresses, in one lookup; every call a GET.
+    [lookup] = [query for _m, path, query, _b in fake.calls if path == "/contacts"]
+    assert lookup["idsOrEmails"].split(",") == [
+        "lea_100@unstable.example",
+        "lea_101@unstable.example",
+        "lea_102@unstable.example",
+    ]
+    # Campaign, sequences, two listing pages, the export, the lookup.
+    assert read.reads == len(fake.calls) == 6
+    _only_gets(fake)
+
+
 # ── the history: GET /activities?version=v2&campaignId= ──────────────────────
 
 
@@ -463,7 +546,6 @@ def test_the_import_order_is_lemlists_creation_oldest_first() -> None:
     """Sanity of the import's order: Lemlist's `createdAt`, oldest first, an
     unreadable one last."""
     from src.email_campaigns.email_import import _created
-    from src.email_campaigns.providers.base import ProviderCampaignRow
 
     rows = [
         ProviderCampaignRow("cam_c", "C", "paused", None),
