@@ -77,6 +77,17 @@ DEFAULT_JOB_CONFIGS: list[dict[str, Any]] = [
         "cron_expression": "*/10 * * * *",
         "is_enabled": False,
     },
+    {
+        "job_id": "email_auto_import",
+        "name": "Email auto-import (Lemlist)",
+        # Alexandre's decision of 11/10/2026 (« import auto via un script
+        # cron »): the campaigns created in Lemlist come in by themselves.
+        # Twice an hour, at minutes 5 and 35, between two email_sync runs; a
+        # run with nothing new costs one Lemlist call. Seeded DISABLED like
+        # email_sync: switched on at go-live, never by a deploy.
+        "cron_expression": "5,35 * * * *",
+        "is_enabled": False,
+    },
 ]
 
 

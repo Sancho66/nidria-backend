@@ -97,10 +97,13 @@ What each command may change:
   deleted at Lemlist), the campaign archived (paused at Lemlist), then the
   client records the smoke test created deleted, never a reused one;
   refused for a campaign without the mark;
-- `job-enable`: `job_config.is_enabled` of `email_sync`, taken by the running
+- `job-enable [--job email_sync|email_auto_import]`: that job's
+  `job_config.is_enabled` (`email_sync` by default), taken by the running
   API's scheduler within a minute;
-- `job-run`: one run of `email_sync` (a `job_run` row; Lemlist read only);
-  its `log_output`, which may name recipients, is never printed;
+- `job-run [--job …]`: one run of that job (a `job_run` row; `email_sync`
+  reads Lemlist only, `email_auto_import` imports the campaigns Nidria does
+  not know yet, Alexandre's decision of 11/10/2026); its `log_output`, which
+  may name recipients, is never printed;
 - `platform-roles-audit`: nothing (whether the flaw of the superadmin role,
   closed on 08/10/2026, was used: its clones and their holders, the roles
   still holding a platform permission, the invitations and the logged
@@ -221,7 +224,8 @@ from src.email_campaigns.email_schema import (  # noqa: E402
     EmailSyncResult,
 )
 from src.email_campaigns.email_sync import EmailSyncManager  # noqa: E402
-from src.email_campaigns.sync_job import JOB_ID  # noqa: E402
+from src.email_campaigns.import_job import JOB_ID as AUTO_IMPORT_JOB_ID  # noqa: E402
+from src.email_campaigns.sync_job import JOB_ID as SYNC_JOB_ID  # noqa: E402
 from src.jobs.jobs_manager import JobsManager  # noqa: E402
 from src.jobs.jobs_schema import (  # noqa: E402
     JobConfigResponse,
@@ -1648,7 +1652,7 @@ async def cmd_smoke_cleanup(ctx: Context, args: argparse.Namespace) -> Outcome:
 
 
 async def cmd_job_enable(ctx: Context, args: argparse.Namespace) -> Outcome:
-    """PATCH /jobs/email_sync {"is_enabled": true} (E1). The route reloads
+    """PATCH /jobs/{--job} {"is_enabled": true} (E1). The route reloads
     the scheduler of the API that serves it (`request.app.state`); this
     process has none. An API whose scheduler runs (SCHEDULER_ENABLED) brings
     it in line with `job_config` every RECONCILE_INTERVAL_SECONDS
@@ -1658,7 +1662,7 @@ async def cmd_job_enable(ctx: Context, args: argparse.Namespace) -> Outcome:
     body = JobConfigUpdateRequest(is_enabled=True)
 
     async def update(db: AsyncSession, _agent: Agent) -> dict[str, Any]:
-        config = await JobsManager(db).update_job(JOB_ID, body, None, None)
+        config = await JobsManager(db).update_job(args.job, body, None, None)
         return JobConfigResponse.model_validate(config).model_dump()
 
     job = await through(ctx, JOB_UPDATE, update)
@@ -1674,17 +1678,17 @@ async def cmd_job_enable(ctx: Context, args: argparse.Namespace) -> Outcome:
 
 
 async def cmd_job_run(ctx: Context, args: argparse.Namespace) -> Outcome:
-    """POST /jobs/email_sync/trigger {"dry_run": false}: the run's id,
+    """POST /jobs/{--job}/trigger {"dry_run": false}: the run's id,
     status and statistics (counts and codes); never its `log_output`, which
     may name recipients, and of an error its class only."""
     body = JobTriggerRequest(dry_run=False)
 
     async def trigger(db: AsyncSession, agent: Agent) -> dict[str, Any]:
-        run = await JobsManager(db).trigger_job(agent, JOB_ID, body.dry_run, ctx.sync_sessions())
+        run = await JobsManager(db).trigger_job(agent, args.job, body.dry_run, ctx.sync_sessions())
         config = (
             await db.execute(
                 select(JobConfig)
-                .where(JobConfig.job_id == JOB_ID)
+                .where(JobConfig.job_id == args.job)
                 .execution_options(populate_existing=True)
             )
         ).scalar_one()
@@ -1943,6 +1947,15 @@ def _smoke_start_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _job_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--job",
+        choices=(SYNC_JOB_ID, AUTO_IMPORT_JOB_ID),
+        default=SYNC_JOB_ID,
+        help="the Email job (default: email_sync)",
+    )
+
+
 def _campaign_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--campaign", type=uuid.UUID, required=True, metavar="ID", help="the Nidria campaign id"
@@ -2044,15 +2057,17 @@ COMMANDS: dict[str, Command] = {
         ),
         Command(
             "job-enable",
-            "switch the email_sync job on",
+            "switch an Email job on (email_sync unless --job)",
             cmd_job_enable,
             _routes(JOB_UPDATE),
+            _job_options,
         ),
         Command(
             "job-run",
-            "run the email_sync job now",
+            "run an Email job now (email_sync unless --job)",
             cmd_job_run,
             _routes(JOB_TRIGGER),
+            _job_options,
         ),
         Command(
             "platform-roles-audit",

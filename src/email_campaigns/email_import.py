@@ -78,6 +78,16 @@ a past bounce or unsubscribe still lists the address on the opposition
 list, which nothing lifts. Running the import again never lifts a block
 either: a membership UNSUBSCRIBED or BOUNCED keeps it, whatever Lemlist says.
 
+3. `auto_import`, the platform job `email_auto_import` (Alexandre's
+   decision of 11/10/2026: « import auto via un script cron »), for no
+   agent: the team's campaigns running or paused at Lemlist that Nidria
+   does not know yet (neither imported nor its own), and the imported ones,
+   not archived, where the Email Sync job counted leads Nidria does not
+   know, imported exactly as `apply` does (same plan, same transactions,
+   conflicts set aside, opposition list fed). What it writes names no agent
+   (`imported_by` "auto"). Nothing to import: one Lemlist call, the
+   listing.
+
 Concurrency. Each campaign's transaction holds the agency's import lock
 (`EmailRepository.lock_import`) and the campaign's row, and decides again,
 from the database as it is then, every record and membership to create: two
@@ -636,6 +646,24 @@ class Known:
 
 
 @dataclass
+class AutoImport:
+    """What the platform job's import did for one agency (`auto_import`):
+    counts and codes only."""
+
+    #: The team's campaigns Lemlist listed.
+    listed: int = 0
+    #: Running or paused at Lemlist, unknown to Nidria: imported now.
+    new: int = 0
+    #: Imported already, not archived, with leads Nidria does not know:
+    #: imported again.
+    stale: int = 0
+    #: Lemlist calls, the listing's included.
+    calls: int = 0
+    #: `apply`'s answer, campaign by campaign; None when nothing was due.
+    result: EmailImportResult | None = None
+
+
+@dataclass
 class Facts:
     """What the agency's database says of the people being planned."""
 
@@ -992,13 +1020,53 @@ class EmailImportManager:
         access, reader, team = await self._open(agent)
         listing = await self._list(reader)
         known = await self._known(access, listing)
+        return await self._apply(access, reader, team, listing, known, request.campaign_ids)
+
+    async def auto_import(self, agency_id: uuid.UUID) -> AutoImport:
+        """The platform job's import (`email_auto_import`, see the module
+        docstring, step 3): the campaigns Nidria does not know yet and the
+        imported ones with unknown leads, by `apply`'s own path. 409
+        `email.module_disabled` or `email.provider_unavailable` as for the
+        route when the agency cannot be read."""
+        access = await self.manager.platform_access(agency_id)
+        reader, team = await self._reader(access)
+        listing = await self._list(reader)
+        known = await self._known(access, listing)
+        new = [row.campaign_id for row in known.importable if row.campaign_id not in known.imported]
+        stale = [
+            row.campaign_id
+            for row in known.importable
+            if (campaign := known.imported.get(row.campaign_id)) is not None
+            and campaign.status != "ARCHIVED"
+            and int(import_metadata(campaign.provider_metadata).get("unknown_leads") or 0) > 0
+        ]
+        outcome = AutoImport(
+            listed=len(listing.campaigns), new=len(new), stale=len(stale), calls=listing.pages
+        )
+        if not new and not stale:
+            await self.db.rollback()
+            return outcome
+        outcome.result = await self._apply(access, reader, team, listing, known, [*new, *stale])
+        outcome.calls = outcome.result.calls
+        return outcome
+
+    async def _apply(
+        self,
+        access: Access,
+        reader: ImportReader,
+        team: str,
+        listing: ProviderCampaignListing,
+        known: Known,
+        campaign_ids: Sequence[str],
+    ) -> EmailImportResult:
+        """`apply`'s path, for an agent or for the platform's job."""
         reads = await asyncio.to_thread(read_campaigns, reader, known.importable)
         facts = await self._facts(access.agency_id, reads, known.imported, lock=False)
         plans = plan_campaigns(reads, known.imported, facts)
         # The plan's reads end here: each campaign is its own transaction.
         await self.db.rollback()
         calls = listing.pages + sum(read.reads for read in reads)
-        wanted = set(request.campaign_ids)
+        wanted = set(campaign_ids)
         results: dict[str, EmailImportCampaignResult] = {}
         for plan in plans:
             campaign_id = plan.read.campaign_id
@@ -1019,7 +1087,7 @@ class EmailImportManager:
             calls += pages
         listed = {row.campaign_id: row for row in listing.campaigns}
         nidria = {row.campaign_id for row in known.created_by_nidria}
-        for campaign_id in request.campaign_ids:
+        for campaign_id in campaign_ids:
             if campaign_id in results:
                 continue
             row = listed.get(campaign_id)
@@ -1049,6 +1117,12 @@ class EmailImportManager:
         access = await self.manager.access(agent, Permission.EMAIL_SYNC)
         access.require(Permission.EMAIL_MANAGE)
         access.require(CLIENT_PROFILE_CREATE)
+        reader, team = await self._reader(access)
+        return access, reader, team
+
+    async def _reader(self, access: Access) -> tuple[ImportReader, str]:
+        """The agency's Lemlist read for real, and the team the platform key
+        opens (see `_open`), for an agent or for the platform's job."""
         provider = await self.manager.provider(access)
         if not provider.external or not isinstance(provider, ImportReader):
             raise await self._unavailable(access, provider.external)
@@ -1062,7 +1136,7 @@ class EmailImportManager:
                 code="email.provider_unavailable",
                 params={"reason": "team_unknown"},
             )
-        return access, provider, team
+        return provider, team
 
     async def _unavailable(self, access: Access, external: bool) -> ConflictError:
         settings = self.manager.settings
@@ -1257,7 +1331,8 @@ class EmailImportManager:
         noted = import_metadata(campaign.provider_metadata)
         noted.update(
             imported_at=now.isoformat(),
-            imported_by_agent_id=str(access.agent_id),
+            imported_by_agent_id=str(access.agent_id) if access.agent_id else None,
+            imported_by="agent" if access.agent_id else "auto",
             unknown_leads=unknown,
             unknown_leads_at=now.isoformat(),
             set_aside=set_aside,

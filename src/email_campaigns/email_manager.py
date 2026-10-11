@@ -271,8 +271,9 @@ STATUS_REASON_PARAMS_KEY = "status_reason_params"
 #: Where an imported campaign (and each of its memberships) keeps what the
 #: import noted, in its `provider_metadata`: Nidria's own key, never
 #: overwritten by what Lemlist says. A campaign's: `imported_at`,
-#: `imported_by_agent_id`, `unknown_leads` and `unknown_leads_at`, and
-#: `set_aside` (the lead ids the last import did not import). A
+#: `imported_by_agent_id` (null when the platform's automatic import did
+#: it, `imported_by` then "auto"), `unknown_leads` and `unknown_leads_at`,
+#: and `set_aside` (the lead ids the last import did not import). A
 #: membership's: `company_name` (Lemlist's), `status`, `state_system` and
 #: `last_state` (Lemlist's words when imported), `imported_at`.
 IMPORT_METADATA_KEY = "import"
@@ -813,9 +814,11 @@ def _invalid_period() -> BadRequestError:
 class Access:
     """An agent inside the Email module of its agency: the module is on and
     the agent holds `email.view` and `case.view`. Plain values only, so a
-    rollback (which expires the session's objects) never reaches them."""
+    rollback (which expires the session's objects) never reaches them.
+    `agent_id` is None for the platform's own job acting in the agency (the
+    automatic import, `platform_access`): what it writes names no agent."""
 
-    agent_id: uuid.UUID
+    agent_id: uuid.UUID | None
     agency_id: uuid.UUID
     module: AgencyEmailModule
     permissions: frozenset[str]
@@ -926,6 +929,28 @@ class EmailManager:
         if permission is not None:
             access.require(permission)
         return access
+
+    async def platform_access(self, agency_id: uuid.UUID) -> Access:
+        """The platform's own job inside the agency's Email module (the
+        automatic import, `email_auto_import`): no agent, the keys an import
+        takes. 409 `email.module_disabled` while the module is off for the
+        agency, as for an agent."""
+        module = require_email_module(await self.repo.get_module(agency_id), self.settings)
+        return Access(
+            agent_id=None,
+            agency_id=agency_id,
+            module=module,
+            permissions=frozenset(
+                key.value
+                for key in (
+                    Permission.EMAIL_VIEW,
+                    Permission.CASE_VIEW,
+                    Permission.EMAIL_SYNC,
+                    Permission.EMAIL_MANAGE,
+                    Permission.CASE_EDIT,
+                )
+            ),
+        )
 
     async def provider(self, access: Access) -> EmailProvider:
         """The agency's provider (rules N4, N5): Lemlist only when the agency

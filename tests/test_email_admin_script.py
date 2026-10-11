@@ -1041,6 +1041,46 @@ async def test_job_run_on_a_disabled_job_is_skipped_until_job_enable(
     assert "log_output" not in ran.text
 
 
+async def test_the_auto_import_job_is_enabled_and_run_by_name(
+    sessions: async_sessionmaker[AsyncSession],
+    db_session: AsyncSession,
+    sync_session_local: sessionmaker[Session],
+    root: Agent,
+) -> None:
+    """`--job email_auto_import` (Alexandre, 11/10/2026): that job alone,
+    email_sync left as it was; an unknown job is a usage refusal."""
+    await seed_job_configs(db_session)
+    enabled = await script(sessions, "--as", ROOT_EMAIL, "job-enable", "--job", "email_auto_import")
+    assert enabled.code == 0, enabled.doc
+    assert enabled.doc["result"]["job"]["job_id"] == "email_auto_import"
+    assert enabled.doc["result"]["job"]["is_enabled"] is True
+    assert enabled.doc["result"]["job"]["cron_expression"] == "5,35 * * * *"
+    sync = await db_session.scalar(
+        select(JobConfig)
+        .where(JobConfig.job_id == "email_sync")
+        .execution_options(populate_existing=True)
+    )
+    assert sync is not None and sync.is_enabled is False
+
+    ran = await script(
+        sessions,
+        "--as",
+        ROOT_EMAIL,
+        "job-run",
+        "--job",
+        "email_auto_import",
+        sync_sessions=sync_session_local,
+    )
+    assert ran.code == 0, ran.doc
+    run = ran.doc["result"]["run"]
+    assert (run["job_id"], run["status"]) == ("email_auto_import", "success")
+    # Real effects are off in the tests: the pipeline's own skip, no call.
+    assert run["stats"] == {"skipped": True, "reason": "dry_run"}
+
+    unknown = await script(sessions, "--as", ROOT_EMAIL, "job-run", "--job", "trial_nurture")
+    assert (unknown.code, unknown.doc["code"]) == (2, "script.usage")
+
+
 # ── the audit of the superadmin role ─────────────────────────────────────────
 
 
