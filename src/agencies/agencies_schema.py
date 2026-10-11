@@ -390,6 +390,11 @@ class AgencyResponse(BaseModel):
     # this payload (GET/PATCH /me, client-terms validate, logo/cover, the
     # platform list and create), so no response erases it in the front store.
     email_enabled: bool = False
+    # The platform's in-house agency (`agency.is_internal`: Nidria's own,
+    # outside billing; set by migration for nidria-demo, read only since).
+    # The Email rights show only there (Alexandre, 11/10/2026: « BETTERSOFT
+    # UNIQUEMENT »: the module is internal).
+    is_internal: bool = False
     # The agency's OWN client documents, shown to ITS clients (lot 13/08 —
     # the Nidria fallback is dead, every agency has its own). Filled on
     # GET/PATCH /agencies/me from the active consent_document; the Settings

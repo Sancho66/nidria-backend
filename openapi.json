@@ -23248,6 +23248,11 @@
             "title": "Email Enabled",
             "default": false
           },
+          "is_internal": {
+            "type": "boolean",
+            "title": "Is Internal",
+            "default": false
+          },
           "client_terms_md": {
             "anyOf": [
               {

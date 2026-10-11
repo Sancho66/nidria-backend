@@ -82,6 +82,42 @@ async def test_admin_row_carries_the_badge(
     assert by_id[str(superadmin.agency_id)]["is_internal"] is False
 
 
+async def test_the_fiche_serves_the_internal_flag(
+    client: AsyncClient,
+    internal_admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    """Every route answering the agency fiche carries `is_internal`: the front
+    shows the Email rights in the in-house agency only (Alexandre, 11/10/2026)."""
+    client_admin = await make_agent(role=system_roles["admin"])
+    for admin, expected in ((internal_admin, True), (client_admin, False)):
+        h = agent_headers(admin)
+        me = await client.get("/agencies/me", headers=h)
+        patched = await client.patch("/agencies/me", headers=h, json={"name": "Renamed agency"})
+        logo = await client.delete("/agencies/me/logo", headers=h)
+        cover = await client.delete("/agencies/me/cover", headers=h)
+        for response in (me, patched, logo, cover):
+            assert response.status_code == 200, response.text
+            assert response.json()["is_internal"] is expected, response.request.url
+
+
+async def test_the_platform_list_serves_each_internal_flag(
+    client: AsyncClient,
+    internal_admin: Agent,
+    make_agent: MakeAgent,
+    system_roles: dict[str, Role],
+    agent_headers: AuthHeaders,
+) -> None:
+    superadmin = await make_agent(role=system_roles["superadmin"], email="root-list@platform.io")
+    response = await client.get("/agencies", headers=agent_headers(superadmin))
+    assert response.status_code == 200
+    flags = {item["id"]: item["is_internal"] for item in response.json()}
+    assert flags[str(internal_admin.agency_id)] is True
+    assert flags[str(superadmin.agency_id)] is False
+
+
 async def test_nurture_skips_internal(
     db_session: AsyncSession, internal_admin: Agent, sync_session_local
 ) -> None:
