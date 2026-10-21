@@ -1,0 +1,1749 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nidria isolated demo entry",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo/session": {
+      "post": {
+        "summary": "Session",
+        "operationId": "session_demo_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/expat/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Expat Me",
+        "operationId": "expat_me_auth_expat_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpatMeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/consents/expat/pending": {
+      "get": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Expat Pending",
+        "description": "Documents still to accept, grouped PER AGENCY holding a live case\nof this client (the agency is the data controller).",
+        "operationId": "expat_pending_consents_expat_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatAgencyPendingResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Expat Pending Consents Expat Pending Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/expat/cases": {
+      "get": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "List My Cases",
+        "operationId": "list_my_cases_expat_cases_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatCaseSummaryResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List My Cases Expat Cases Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/expat/cases/{case_id}": {
+      "get": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "Get My Case",
+        "operationId": "get_my_case_expat_cases__case_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpatCaseDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/notifications": {
+      "get": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "List Notifications",
+        "operationId": "list_notifications_expat_cases__case_id__notifications_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatNotificationResponse"
+                  },
+                  "title": "Response List Notifications Expat Cases  Case Id  Notifications Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/documents": {
+      "get": {
+        "tags": [
+          "documents-expat"
+        ],
+        "summary": "List Documents As Expat",
+        "operationId": "list_documents_as_expat_expat_cases__case_id__documents_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "step_progress_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Step Progress Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatDocumentResponse"
+                  },
+                  "title": "Response List Documents As Expat Expat Cases  Case Id  Documents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/documents/{document_id}/download": {
+      "get": {
+        "tags": [
+          "documents-expat"
+        ],
+        "summary": "Download Document As Expat",
+        "operationId": "download_document_as_expat_expat_cases__case_id__documents__document_id__download_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/signatures": {
+      "get": {
+        "tags": [
+          "signatures"
+        ],
+        "summary": "My Signatures",
+        "operationId": "my_signatures_expat_cases__case_id__signatures_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExpatSignatureResponse"
+                  },
+                  "title": "Response My Signatures Expat Cases  Case Id  Signatures Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expat/cases/{case_id}/steps/{progress_id}/comments": {
+      "get": {
+        "tags": [
+          "comments-expat"
+        ],
+        "summary": "List Comments As Expat",
+        "operationId": "list_comments_as_expat_expat_cases__case_id__steps__progress_id__comments_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Progress Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CommentResponse"
+                  },
+                  "title": "Response List Comments As Expat Expat Cases  Case Id  Steps  Progress Id  Comments Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CommentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "author_type": {
+            "type": "string",
+            "title": "Author Type"
+          },
+          "author_label": {
+            "type": "string",
+            "title": "Author Label"
+          },
+          "is_mine": {
+            "type": "boolean",
+            "title": "Is Mine"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "edited": {
+            "type": "boolean",
+            "title": "Edited"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "author_type",
+          "author_label",
+          "is_mine",
+          "body",
+          "document_id",
+          "edited",
+          "deleted",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CommentResponse",
+        "description": "One message in a step thread, shaped identically for both faces.\nNo raw `author_id` is exposed (respects the expat exclusion contract /\nno internal UUID): `author_label` carries the resolved display name\nand `is_mine` (computed from the authenticated identity) drives the\nedit/delete affordances. `body` is null for a soft-deleted message\n(the row stays so the thread keeps its order — front renders\n\"message supprimé\")."
+      },
+      "CustomFieldDefinitionInline": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "field_type": {
+            "type": "string",
+            "title": "Field Type"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label",
+          "field_type",
+          "options",
+          "required",
+          "position",
+          "scope"
+        ],
+        "title": "CustomFieldDefinitionInline",
+        "description": "Active custom-field definitions, embedded in the case detail so\nthe frontend renders the person form in one fetch (no second call /\nno cross-case cache staleness)."
+      },
+      "DeadlineCounter": {
+        "properties": {
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Remaining"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_date",
+          "days_remaining",
+          "source"
+        ],
+        "title": "DeadlineCounter",
+        "description": "Resolved days-remaining counter for a step, computed backend-side\nso both faces read the same number. `target_date` is the firm\n`due_at` if set (source=\"deadline\"), else started_at + estimated_days\n(source=\"estimated\"), else null (source=null → no gauge). The\ngreen/orange/red thresholds are a FRONT decision on `days_remaining`\n(negative = overdue)."
+      },
+      "DemoSessionRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "DemoSessionRequest"
+      },
+      "DemoSessionResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "default": 7200
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en"
+            ],
+            "title": "Language"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "case_id",
+          "language"
+        ],
+        "title": "DemoSessionResponse"
+      },
+      "ExpatAgencyPendingResponse": {
+        "properties": {
+          "agency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agency Id"
+          },
+          "agency_name": {
+            "type": "string",
+            "title": "Agency Name"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/PendingDocumentResponse"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency_id",
+          "agency_name",
+          "documents"
+        ],
+        "title": "ExpatAgencyPendingResponse",
+        "description": "Pending documents of ONE agency (the expat accepts per agency)."
+      },
+      "ExpatAgencyResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "has_logo": {
+            "type": "boolean",
+            "title": "Has Logo",
+            "default": false
+          },
+          "has_cover": {
+            "type": "boolean",
+            "title": "Has Cover",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "slug"
+        ],
+        "title": "ExpatAgencyResponse"
+      },
+      "ExpatCaseDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agency": {
+            "$ref": "#/components/schemas/ExpatAgencyResponse"
+          },
+          "origin_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Country"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "steps_done": {
+            "type": "integer",
+            "title": "Steps Done"
+          },
+          "steps_total": {
+            "type": "integer",
+            "title": "Steps Total"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "viewer_role": {
+            "type": "string",
+            "enum": [
+              "principal",
+              "member"
+            ],
+            "title": "Viewer Role",
+            "default": "principal"
+          },
+          "client_lang": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Client Lang"
+          },
+          "referent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExpatReferentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/ExpatTimelineStepResponse"
+            },
+            "type": "array",
+            "title": "Timeline"
+          },
+          "custom_field_definitions": {
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldDefinitionInline"
+            },
+            "type": "array",
+            "title": "Custom Field Definitions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agency",
+          "origin_country",
+          "dest_country",
+          "status",
+          "steps_done",
+          "steps_total",
+          "created_at",
+          "updated_at",
+          "client_lang",
+          "referent",
+          "timeline",
+          "custom_field_definitions"
+        ],
+        "title": "ExpatCaseDetailResponse"
+      },
+      "ExpatCaseSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agency": {
+            "$ref": "#/components/schemas/ExpatAgencyResponse"
+          },
+          "origin_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Country"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "steps_done": {
+            "type": "integer",
+            "title": "Steps Done"
+          },
+          "steps_total": {
+            "type": "integer",
+            "title": "Steps Total"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "viewer_role": {
+            "type": "string",
+            "enum": [
+              "principal",
+              "member"
+            ],
+            "title": "Viewer Role",
+            "default": "principal"
+          },
+          "client_lang": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Client Lang"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agency",
+          "origin_country",
+          "dest_country",
+          "status",
+          "steps_done",
+          "steps_total",
+          "created_at",
+          "updated_at",
+          "client_lang"
+        ],
+        "title": "ExpatCaseSummaryResponse"
+      },
+      "ExpatDocumentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Id"
+          },
+          "uploaded_by_type": {
+            "type": "string",
+            "title": "Uploaded By Type"
+          },
+          "source_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Request Id"
+          },
+          "is_mine": {
+            "type": "boolean",
+            "title": "Is Mine"
+          },
+          "validation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Status"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Name"
+          },
+          "requirement_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Reference"
+          },
+          "is_requirement": {
+            "type": "boolean",
+            "title": "Is Requirement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "case_id",
+          "filename",
+          "kind",
+          "person_id",
+          "uploaded_by_type",
+          "is_mine",
+          "validation_status",
+          "expires_at",
+          "created_at",
+          "step_name",
+          "requirement_reference",
+          "is_requirement"
+        ],
+        "title": "ExpatDocumentResponse",
+        "description": "Client-facing document — the exclusion contract: NO internal UUID\n(no uploaded_by_id). The uploader is conveyed by `uploaded_by_type`\n+ `is_mine` (the front renders \"Vous\" / \"Votre conseiller\"). Same\naggregated-view context as the agent face."
+      },
+      "ExpatMeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "preferred_lang": {
+            "type": "string",
+            "title": "Preferred Lang"
+          },
+          "has_avatar": {
+            "type": "boolean",
+            "title": "Has Avatar",
+            "default": false
+          },
+          "impersonator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImpersonatorInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "email",
+          "preferred_lang"
+        ],
+        "title": "ExpatMeResponse"
+      },
+      "ExpatNotificationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "message_body": {
+            "type": "string",
+            "title": "Message Body"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sent At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "message_body",
+          "sent_at"
+        ],
+        "title": "ExpatNotificationResponse",
+        "description": "A SENT in_app reminder IS the notification (Q8 — no extra table).\nIts own id stays: the V1.5 mark-as-read will need it."
+      },
+      "ExpatParticipantResponse": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "type",
+          "name"
+        ],
+        "title": "ExpatParticipantResponse",
+        "description": "A step participant as the client sees it (responsible refonte, N).\nSame anti-staffing as the responsible: 'agency' (no internal name),\n'you', or 'external' with the provider's name; plus the role."
+      },
+      "ExpatReferentResponse": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_name",
+          "last_name",
+          "email"
+        ],
+        "title": "ExpatReferentResponse",
+        "description": "The named human contact at the agency (the case owner) —\nthe brief: « nom du référent + son mail »."
+      },
+      "ExpatRequirementResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "person_label": {
+            "type": "string",
+            "title": "Person Label"
+          },
+          "signature_required": {
+            "type": "boolean",
+            "title": "Signature Required",
+            "default": false
+          },
+          "value": {
+            "title": "Value"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "default": "person"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "reference",
+          "scope",
+          "status",
+          "person_label"
+        ],
+        "title": "ExpatRequirementResponse",
+        "description": "A concrete requirement the client can see (and, for the writable\nkinds, fulfill). `person_label` is the RESOLVED name so the client\nknows whose passport/field is asked (\"vous\" is a frontend label —\nthe API ships the real name). Archived custom-field requirements are\nfiltered out upstream, never exposed."
+      },
+      "ExpatResponsibleResponse": {
+        "properties": {
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "name"
+        ],
+        "title": "ExpatResponsibleResponse",
+        "description": "Displayable responsible: type 'agency' (no internal agent name —\nstaffing doesn't face the client), 'you', or 'external' with the\ncontact's name. type None = not assigned yet."
+      },
+      "ExpatSignatureResponse": {
+        "properties": {
+          "signer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Signer Id"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "requirement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Id"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "request_status": {
+            "type": "string",
+            "title": "Request Status"
+          },
+          "embed_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Slug"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "request_signed_count": {
+            "type": "integer",
+            "title": "Request Signed Count",
+            "default": 0
+          },
+          "request_signer_total": {
+            "type": "integer",
+            "title": "Request Signer Total",
+            "default": 0
+          },
+          "awaiting_agency": {
+            "type": "boolean",
+            "title": "Awaiting Agency",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "signer_id",
+          "request_id",
+          "requirement_id",
+          "reference",
+          "status",
+          "request_status",
+          "embed_slug",
+          "expires_at",
+          "signed_at"
+        ],
+        "title": "ExpatSignatureResponse",
+        "description": "UNE tâche de signature de LA personne qui regarde — jamais celle\nd'un autre (le slug est personnel : il ouvre SA session de signature).\n`embed_slug` est la ref opaque provider pour l'embed front."
+      },
+      "ExpatTimelineStepResponse": {
+        "properties": {
+          "progress_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Progress Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "estimated_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Days"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "blocked_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked By"
+          },
+          "responsible": {
+            "$ref": "#/components/schemas/ExpatResponsibleResponse"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ExpatParticipantResponse"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/ExpatRequirementResponse"
+            },
+            "type": "array",
+            "title": "Requirements"
+          },
+          "completion_mode": {
+            "type": "string",
+            "title": "Completion Mode"
+          },
+          "comment_count": {
+            "type": "integer",
+            "title": "Comment Count"
+          },
+          "counter": {
+            "$ref": "#/components/schemas/DeadlineCounter"
+          },
+          "content_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Note"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/StepContentAttachment"
+            },
+            "type": "array",
+            "title": "Attachments"
+          },
+          "can_validate": {
+            "type": "boolean",
+            "title": "Can Validate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "progress_id",
+          "name",
+          "position",
+          "status",
+          "estimated_days",
+          "completed_at",
+          "blocked_by",
+          "responsible",
+          "participants",
+          "requirements",
+          "completion_mode",
+          "comment_count",
+          "counter",
+          "content_note",
+          "attachments",
+          "can_validate"
+        ],
+        "title": "ExpatTimelineStepResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImpersonatorInfo": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "first_name",
+          "last_name"
+        ],
+        "title": "ImpersonatorInfo",
+        "description": "Present on /me when the token was issued by impersonation —\nthe frontend banner reads it."
+      },
+      "PendingDocumentResponse": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "version",
+          "content",
+          "content_hash"
+        ],
+        "title": "PendingDocumentResponse",
+        "description": "An active document awaiting acceptance. `content` is content_md\nwith the {agency_name} token resolved; `content_hash` covers the RAW\ntext (what the acceptance will carry)."
+      },
+      "StepContentAttachment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "position"
+        ],
+        "title": "StepContentAttachment",
+        "description": "A file the agency attached to a step (Feature 2), as projected onto\nthe CASE timeline for all three faces. Deliberately NO `step_id`: the\nfaces address the download via (case_id, progress_id, attachment_id) —\nthe template id never leaks to the expat/external timelines (same\n\"names/instance-ids, never template ids\" rule as blocked_by)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/auth/expat/login"
+          }
+        }
+      }
+    }
+  }
+}
