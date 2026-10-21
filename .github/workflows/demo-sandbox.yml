@@ -1,0 +1,49 @@
+name: Demo sandbox
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-sandbox
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: make check-fast
+      - run: bash scripts/test_ci_isolated.sh
+      - name: Sandbox contract is current
+        env:
+          DATABASE_URL: postgresql+asyncpg://placeholder/placeholder
+          DATABASE_URL_SYNC: postgresql+psycopg2://placeholder/placeholder
+          JWT_AGENT_SECRET: placeholder-agent
+          JWT_EXPAT_SECRET: placeholder-expat
+          JWT_REFRESH_SECRET: placeholder-refresh
+        run: |
+          uv run python -m src.demo_sandbox.export_openapi
+          git diff --exit-code -- demo-sandbox/openapi.json
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && vars.DEMO_SANDBOX_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy the isolated API only
+        env:
+          FLY_API_TOKEN: ${{ secrets.DEMO_FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only --config demo-sandbox/fly.toml --app nidria-demo-api --ha=false
+      - name: Check sandbox identity
+        run: |
+          curl --fail --retry 5 --retry-delay 5 https://nidria-demo-api.fly.dev/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d == {"status":"ok","environment":"demo_sandbox"}'

@@ -1,0 +1,45 @@
+# Separate application and credentials. Never deploy this configuration to nidria-api.
+app = 'nidria-demo-api'
+primary_region = 'cdg'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[processes]
+  app = '/app/.venv/bin/uvicorn src.demo_sandbox.application:app --host 0.0.0.0 --port 8000'
+
+[env]
+  ENVIRONMENT = 'demo_sandbox'
+  MOCK_SERVICES = 'true'
+  MOCK_EMAIL = 'true'
+  MOCK_STORAGE = 'true'
+  MOCK_LEMLIST = 'true'
+  SCHEDULER_ENABLED = 'false'
+  EMAIL_MODULE_ENABLED = 'false'
+  EMAIL_PROVIDER_EXTERNAL_EFFECTS = 'false'
+  BILLING_CHECKOUT_ENABLED = 'false'
+  RESEND_MONITOR_ENABLED = 'false'
+  ONBOARDING_EMAIL_ENABLED = 'false'
+  SIGNUP_ALERT_ENABLED = 'false'
+  SIGNATURES_ENABLED = 'true'
+  CORS_ORIGINS = 'https://demo.nidria.com,https://nidria-demo.pages.dev'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  processes = ['app']
