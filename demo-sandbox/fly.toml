@@ -3,7 +3,8 @@ app = 'nidria-demo-api'
 primary_region = 'cdg'
 
 [build]
-  dockerfile = 'Dockerfile'
+  # Relative to this configuration; the build context remains the repository root.
+  dockerfile = '../Dockerfile'
 
 [processes]
   app = '/app/.venv/bin/uvicorn src.demo_sandbox.application:app --host 0.0.0.0 --port 8000'
