@@ -1,7 +1,7 @@
 # Sandbox des 40 courriers, tâche 2c
 
-État au 21/10/2026 : implémentation locale, aucune infrastructure créée ni livraison.
-La base backend est `f278d1d` (v0.160.0), la base frontend `79e134b`, dont le code
+Architecture de la tâche 2c, établie le 21/10/2026.
+La base applicative backend est `f278d1d` (v0.160.0), la base frontend `79e134b`, dont le code
 app correspond à la production v1.244.1. Les composants de l'espace client et les
 gestionnaires de lecture sont ceux de ces dépôts, sans copie de l'interface.
 
@@ -25,18 +25,18 @@ gestionnaires de lecture sont ceux de ces dépôts, sans copie de l'interface.
 - Sur les écrans réels : bandeau de démonstration, écritures inertes, sécurité du
   compte et déconnexion masquées, car aucun compte personnel n'est créé par le visiteur.
 
-## Mise en ligne préparée
+## Déploiement et maintenance
 
-Infrastructure proposée : une machine API 512 Mo, une machine PostgreSQL 1 Go
+Infrastructure dédiée : une machine API 512 Mo, une machine PostgreSQL 1 Go
 dans la région CDG, un volume de 1 Go, et le projet Pages `nidria-demo`.
 PostgreSQL n'a aucun service Internet public. Une instance unique suffit pour ces
 données fictives reconstructibles ; elle n'apporte pas de haute disponibilité.
 
 Estimation : environ 12 à 15 USD/mois, hors taxes et trafic exceptionnel, à confirmer
 à la création. Les [tarifs Fly](https://docs.fly.io/about/pricing) dépendent de la
-région et de la durée de fonctionnement. Cette dépense nouvelle n'est pas engagée.
+région et de la durée de fonctionnement. Alexandre a approuvé ce budget le 21/10/2026.
 
-1. Après validation de cet hébergement, créer `nidria-demo-db` et `nidria-demo-api`
+1. Pour une première installation, créer `nidria-demo-db` et `nidria-demo-api`
    dans l'organisation Fly existante. Ne jamais attacher la base de production.
 2. Créer dans la base dédiée `nidria_demo_seed` (propriétaire) et
    `nidria_demo_reader` (aucun droit administratif, SELECT seulement). Mettre
@@ -48,7 +48,11 @@ région et de la durée de fonctionnement. Cette dépense nouvelle n'est pas eng
    les politiques RLS SELECT du lecteur. Ne jamais passer ce rôle au serveur.
 4. Enregistrer dans `nidria-demo-api` uniquement les deux URL du lecteur et les
    trois secrets JWT. Créer un jeton de déploiement limité à cette app et le
-   stocker dans le secret GitHub `DEMO_FLY_API_TOKEN`, sans l'afficher.
+   stocker dans le secret GitHub `DEMO_FLY_API_TOKEN`, sans l'afficher. Le jeton
+   installé le 21/10 est limité à cette application et à 720 heures : il expire
+   le 20/11 vers 18:05 UTC. Son expiration bloque les déploiements suivants, pas
+   les démos déjà en ligne. Prévoir son renouvellement autorisé avant une nouvelle
+   livraison ; ne jamais réutiliser le jeton de production.
 5. Fusionner après CI, activer `DEMO_SANDBOX_DEPLOY_ENABLED=true` dans les deux
    dépôts et déclencher leurs workflows **Demo sandbox**. Ne pas déclencher le
    workflow backend **CI & Deploy** manuellement : il vise la production.
