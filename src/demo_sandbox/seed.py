@@ -2,6 +2,7 @@
 
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from shared.models.step_requirement import StepRequirement
 from src.cases.cases_manager import CasesManager
 from src.cases.cases_schema import CaseCreateRequest
 from src.core.enums import CaseStatus
+from src.core.exceptions import ValidationError
 from src.core.rbac.baseline import collect_bindings, seed_rbac_baseline
 from src.core.security import hash_password
 from src.demo_sandbox.bindings import BINDINGS
@@ -33,8 +35,8 @@ from src.journeys.import_manager import JourneyImportManager
 async def seed_catalog(db: AsyncSession, catalog: DemoCatalog) -> dict[str, int]:
     """Idempotent for a complete seed; refuse unknown or partially seeded data.
 
-    Only the offline seed command may call this function. The serving process
-    has SELECT privileges and never imports this module.
+    Only the offline seed command may call this batch function. Public reads
+    use a SELECT-only role; signed management calls use seed_record separately.
     """
     existing = list((await db.scalars(select(Agency))).all())
     if existing:
@@ -50,14 +52,19 @@ async def seed_catalog(db: AsyncSession, catalog: DemoCatalog) -> dict[str, int]
     role = (await db.scalars(select(Role).where(Role.name == "admin", Role.is_system))).one()
     password = hash_password(secrets.token_urlsafe(48))
     for record in catalog.records:
-        await _seed_record(db, catalog, record, role, password)
+        await seed_record(db, catalog.fingerprint, record, role, password)
     load_demo_documents(catalog)
     return {"created": len(catalog.records), "already_present": 0}
 
 
-async def _seed_record(
-    db: AsyncSession, catalog: DemoCatalog, record: DemoRecord, role: Role, password: str
-) -> None:
+async def seed_record(
+    db: AsyncSession,
+    fingerprint: str,
+    record: DemoRecord,
+    role: Role,
+    password: str,
+    extra_settings: dict[str, Any] | None = None,
+) -> Agency:
     now = datetime.now(UTC)
     agency = Agency(
         name=record.name,
@@ -65,12 +72,15 @@ async def _seed_record(
         default_language=record.language,
         is_internal=True,
         settings={
-            "sandbox_catalog": catalog.fingerprint,
+            "sandbox_catalog": fingerprint,
             "sandbox_record": record.id,
             "auto_reminders_enabled": False,
             "client_step_notifications_enabled": False,
+            **(extra_settings or {}),
         },
     )
+    if record.state.get("logo"):
+        agency.logo_path = record.state["logo"]["path"]
     db.add(agency)
     await db.flush()
     owner = Agent(
@@ -83,10 +93,21 @@ async def _seed_record(
     )
     db.add(owner)
     await db.commit()
+    preview = await JourneyImportManager(db).run(
+        owner, record.journey_import["parcours"], preview=True
+    )
+    if preview.steps_ignored or len(preview.steps_created) != len(record.state["steps"]):
+        raise ValidationError(
+            "Every demo step must import successfully.", code="demo.invalid_journey"
+        )
     imported = await JourneyImportManager(db).run(
         owner, record.journey_import["parcours"], preview=False
     )
-    if not imported.created or len(imported.steps_created) != 7 or imported.steps_ignored:
+    if (
+        not imported.created
+        or len(imported.steps_created) != len(record.state["steps"])
+        or imported.steps_ignored
+    ):
         raise RuntimeError("Approved journey did not import completely")
     case = await CasesManager(db).create_case(
         owner,
@@ -131,9 +152,12 @@ async def _seed_record(
         ).all()
     )
     provided = [doc for doc in record.state["documents"] if doc["status"] == "validated"]
-    documents: dict[str, Document] = {}
-    for position, item in enumerate(provided + [record.state["signature"]]):
-        progress = rows[1][0] if position == len(provided) else rows[2][0]
+    documents: dict[tuple[str, str], Document] = {}
+    steps_by_ref = {item["ref"]: rows[index][0] for index, item in enumerate(record.state["steps"])}
+    signature = record.state["signature"]
+    signature_items = [signature] if signature.get("enabled", True) else []
+    for position, item in enumerate(provided + signature_items):
+        progress = steps_by_ref[item["step_ref"]]
         doc = Document(
             case_id=case.id,
             step_progress_id=progress.id,
@@ -146,17 +170,25 @@ async def _seed_record(
         )
         db.add(doc)
         await db.flush()
-        documents[item["label"]] = doc
+        documents[(item["step_ref"], item["label"])] = doc
     for index, (progress, step) in enumerate(rows):
         progress.status = record.state["steps"][index]["status"]
         if progress.status == "done":
-            progress.completed_at = now - timedelta(days=3 - index)
+            progress.completed_at = now - timedelta(
+                days=max(1, record.state["progress"]["done"] - index)
+            )
             progress.completed_by_agent_id = owner.id
-        if index > 2:
+        if extra_settings is None and index > 2:
             continue
         for definition in [item for item in definitions if item.step_id == step.id]:
-            signature = index == 1 and definition.kind == "document"
-            provided_doc = documents.get(definition.reference)
+            step_ref = record.state["steps"][index]["ref"]
+            is_signature = (
+                bool(signature_items)
+                and step_ref == record.state["signature"]["step_ref"]
+                and definition.kind == "document"
+                and definition.reference == record.state["signature"]["label"]
+            )
+            provided_doc = documents.get((step_ref, definition.reference))
             requirement = CaseStepRequirement(
                 case_step_progress_id=progress.id,
                 step_requirement_id=definition.id,
@@ -167,12 +199,12 @@ async def _seed_record(
                 status="provided" if provided_doc else "pending",
                 document_id=provided_doc.id if provided_doc else None,
                 provided_at=now - timedelta(days=1) if provided_doc else None,
-                signature_required=signature,
+                signature_required=is_signature,
                 signature_level="ses",
             )
             db.add(requirement)
             await db.flush()
-            if signature:
+            if is_signature:
                 request = SignatureRequest(
                     case_id=case.id,
                     case_step_progress_id=progress.id,
@@ -181,7 +213,7 @@ async def _seed_record(
                     provider="mock",
                     level="ses",
                     status="completed",
-                    completed_at=progress.completed_at,
+                    completed_at=progress.completed_at or now,
                 )
                 db.add(request)
                 await db.flush()
@@ -191,7 +223,7 @@ async def _seed_record(
                         case_person_id=person.id,
                         case_step_requirement_id=requirement.id,
                         status="signed",
-                        signed_at=progress.completed_at,
+                        signed_at=progress.completed_at or now,
                         details={"fictional": True, "notice": record.state["signature"]["notice"]},
                     )
                 )
@@ -199,7 +231,7 @@ async def _seed_record(
         db.add(
             Reminder(
                 case_id=case.id,
-                step_progress_id=rows[2][0].id,
+                step_progress_id=steps_by_ref[reminder["step_ref"]].id,
                 channel="in_app",
                 status="sent",
                 recipient_type="expat",
@@ -208,3 +240,4 @@ async def _seed_record(
             )
         )
     await db.commit()
+    return agency

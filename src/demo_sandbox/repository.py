@@ -1,5 +1,7 @@
 """Resolve a cabinet to its only fictional client and case."""
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 from sqlalchemy import exists, or_, select
@@ -9,7 +11,7 @@ from shared.models.agency import Agency
 from shared.models.case_person import CasePerson
 from shared.models.client_case import ClientCase
 from shared.models.expat_user import ExpatUser
-from src.demo_sandbox.catalog import DemoRecord
+from src.demo_sandbox.catalog import DemoCatalog, DemoRecord
 
 
 @dataclass(frozen=True)
@@ -22,7 +24,20 @@ class DemoRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def resolve(self, record: DemoRecord, fingerprint: str) -> DemoIdentity | None:
+    async def entry(self, code: str, catalog: DemoCatalog) -> tuple[DemoRecord, str] | None:
+        agency = await self.db.scalar(select(Agency).where(Agency.slug == f"demo-sandbox-{code}"))
+        if agency is None or agency.settings.get("sandbox_enabled", True) is not True:
+            return None
+        raw = agency.settings.get("sandbox_dynamic_entry")
+        if raw is not None:
+            record = DemoRecord.model_validate(raw)
+            return (record, record_fingerprint(record)) if record.public_code == code else None
+        legacy = catalog.by_code(code)
+        return (legacy, catalog.fingerprint) if legacy else None
+
+    async def resolve(
+        self, record: DemoRecord, fingerprint: str, *, allow_disabled: bool = False
+    ) -> DemoIdentity | None:
         rows = (
             await self.db.execute(
                 select(ClientCase, ExpatUser, Agency)
@@ -36,6 +51,7 @@ class DemoRepository:
         case, expat, agency = rows[0]
         if (
             not case.is_demo
+            or (not allow_disabled and agency.settings.get("sandbox_enabled", True) is not True)
             or expat.activated_at is None
             or expat.preferred_lang != record.language
             or agency.settings.get("sandbox_catalog") != fingerprint
@@ -58,3 +74,9 @@ class DemoRepository:
             )
         )
         return None if other_case else DemoIdentity(case=case, expat=expat)
+
+
+def record_fingerprint(record: DemoRecord) -> str:
+    return hashlib.sha256(
+        json.dumps(record.model_dump(), sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()

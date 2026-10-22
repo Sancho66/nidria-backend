@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from src.auth.auth_router import router as auth_router
 from src.comments.comments_router import expat_router as comments_router
 from src.consents.consents_router import router as consents_router
@@ -25,6 +26,7 @@ from src.core.exceptions import NotFoundError, register_exception_handlers
 from src.core.rbac.enforcement import enforce
 from src.core.rbac.integrity import assert_all_routes_bound
 from src.demo_sandbox.catalog import DemoCatalog, load_catalog
+from src.demo_sandbox.control import control_application
 from src.demo_sandbox.guards import SANDBOX_DB_NAME, assert_isolated_settings
 from src.demo_sandbox.manager import DemoManager
 from src.demo_sandbox.schema import DemoSessionRequest, DemoSessionResponse
@@ -38,6 +40,7 @@ from src.signatures.signatures_router import router as signatures_router
 READ_ROUTES = frozenset(
     {
         "/auth/expat/me",
+        "/expat/agencies/{agency_id}/logo",
         "/consents/expat/pending",
         "/expat/cases",
         "/expat/cases/{case_id}",
@@ -96,11 +99,31 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         """)
             )
         ).one()
-        if tuple(counts) != (40, 40, 40):
-            raise RuntimeError("Sandbox must contain exactly forty fictional agencies and cases")
+        if counts.agencies < 40 or counts.agencies != counts.cases or counts.cases != counts.demos:
+            raise RuntimeError("Sandbox must contain only fictional agencies with one case each")
         for record in catalog.records:
-            if await DemoManager(db, catalog).repo.resolve(record, catalog.fingerprint) is None:
+            if (
+                await DemoManager(db, catalog).repo.resolve(
+                    record, catalog.fingerprint, allow_disabled=True
+                )
+                is None
+            ):
                 raise RuntimeError("Sandbox seed is incomplete or differs from the catalog")
+        for agency in await db.scalars(select(Agency)):
+            if agency.settings.get("sandbox_dynamic_entry"):
+                from src.demo_sandbox.catalog import DemoRecord
+                from src.demo_sandbox.repository import record_fingerprint
+
+                record = DemoRecord.model_validate(agency.settings["sandbox_dynamic_entry"])
+                if (
+                    await DemoManager(db, catalog).repo.resolve(
+                        record, record_fingerprint(record), allow_disabled=True
+                    )
+                    is None
+                ):
+                    raise RuntimeError("Invalid dynamic sandbox demo")
+            elif catalog.by_id(agency.settings.get("sandbox_record", "")) is None:
+                raise RuntimeError("Unexpected agency in the isolated sandbox")
         load_demo_documents(catalog)
         await db.rollback()
     yield
@@ -128,7 +151,7 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
     @application.middleware("http")
     async def no_cache(request: Request, call_next: Any) -> Any:
         if request.method not in {"GET", "HEAD", "OPTIONS"} and not (
-            request.method == "POST" and request.url.path == "/demo/session"
+            request.method == "POST" and request.url.path in {"/demo/session", "/_control/demos"}
         ):
             response = JSONResponse(
                 {"detail": "This demo is read-only.", "code": "impersonation.read_only"},
@@ -183,6 +206,7 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
     if {route.path for route in selected.routes if isinstance(route, APIRoute)} != READ_ROUTES:
         raise RuntimeError("The production client portal contract has changed")
     application.include_router(selected, dependencies=[Depends(scope), Depends(enforce)])
+    application.mount("/_control", control_application(application.state.demo_catalog))
     return application
 
 

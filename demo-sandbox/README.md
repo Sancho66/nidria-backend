@@ -9,14 +9,16 @@ gestionnaires de lecture sont ceux de ces dépôts, sans copie de l'interface.
 
 - Entrée dédiée `src.demo_sandbox.application:app`. `src.main` ne l'importe pas.
 - Base distincte `nidria_demo_sandbox`, hôte privé `nidria-demo-db.internal`.
-- 40 agences, 40 clients fictifs et 40 dossiers. Les imports passent par le vrai
+- Les 40 agences, 40 clients fictifs et 40 dossiers initiaux restent inchangés.
+  Les nouvelles démos ajoutent une agence et un dossier fictifs chacune. Les imports passent par le vrai
   `JourneyImportManager`, puis les états approuvés sont matérialisés dans les mêmes
   tables que l'app. Les 40 codes, les 25 langues FR et les 15 EN sont conservés.
 - Le code public ouvre un JWT expat limité au dossier, valable deux heures, sans
   refresh token. Les identifiants d'authentification appartiennent uniquement à la
   sandbox. Un second dossier rattaché par erreur invalide le lien.
-- Seuls les gestionnaires GET du portail sont montés. Les mutations sont refusées
-  avant leur exécution. RBAC, appartenance au dossier, rôle PostgreSQL SELECT et
+- Côté public, seuls les gestionnaires GET du portail sont montés. Les mutations
+  publiques sont refusées avant leur exécution. Le canal signé de gestion décrit
+  ci-dessous est réservé au serveur de production. RBAC, appartenance au dossier, rôle PostgreSQL SELECT et
   transactions en lecture seule se cumulent.
 - Aucun ordonnanceur, webhook, envoi, checkout ou appel de signature. Les deux
   PDF par dossier sont générés à partir des données fictives et servis en mémoire.
@@ -73,7 +75,7 @@ statiques précédentes restent le comportement par défaut ; aucun code n'est r
 ## Vérification et maintien
 
 `python -m src.demo_sandbox.export_openapi` exporte le contrat isolé ; le contrat
-de production `openapi.json` ne change pas. Les tests `tests/test_demo_sandbox.py`
+de production `openapi.json` porte séparément les routes superadmin `/admin/demos`. Les tests `tests/test_demo_sandbox.py`
 utilisent PostgreSQL Testcontainers et le garde réseau obligatoire.
 
 Le rôle seed est utilisé hors ligne uniquement. En cas de changement du catalogue,
@@ -83,3 +85,57 @@ Les codes restent ceux du manifeste original. Pour chaque évolution de producti
 repartir du même commit applicatif, appliquer les migrations à la sandbox via le
 rôle seed et rejouer la recette avant sa republication. Les workflows dédiés ne
 suivent pas automatiquement une release encore non validée.
+
+## Outil superadmin, complément du 22/10/2026
+
+`/admin/demos` dans l'app de production utilise la permission plateforme existante
+`agency.create`. Aucun compte d'agence ni visiteur public n'a cette permission.
+Le serveur de production n'ouvre aucune connexion à la base de démo : il signe
+les demandes vers la seule origine `https://nidria-demo-api.fly.dev`. Il ne
+transmet ni cookie ni JWT utilisateur. La signature HMAC porte la méthode, le
+chemin, l'heure, l'opérateur et l'empreinte exacte du corps ; validité de 60 s.
+
+Le canal `/_control/demos` de la sandbox vérifie cette signature avant tout accès
+au rôle `nidria_demo_writer`. Ce rôle n'a aucun droit administratif, aucun droit
+DELETE/TRUNCATE et ne peut pas écrire dans les tables d'authentification/RBAC.
+Son droit INSERT/UPDATE est limité aux 23 tables nécessaires aux parcours et
+états fictifs. Les lectures publiques gardent `nidria_demo_reader`, SELECT seul.
+Une transaction extérieure englobe les commits des gestionnaires réutilisés.
+Un identifiant de requête verrouillé rend la création idempotente.
+
+Le formulaire propose les 40 modèles de parcours déjà validés (FR/EN), un import
+JSON identique à `POST /journeys/import` ou les instructions de l'outil existant
+« Créer avec mon IA ». Les sept langues de l'app sont disponibles via import.
+Les affectations à de vrais prestataires sont interdites. Logo optionnel validé
+et réencodé, avancement, documents présents/manquants et exemples de relance et
+de signature sont stockés dans la seule base fictive. Les nouveaux codes sont
+aléatoires sur 128 bits. Les PDF Unicode et logos sont reconstructibles après
+redémarrage ; le cache des nouvelles démos est borné à huit dossiers.
+
+La désactivation coupe les nouvelles entrées et les lectures d'une session déjà
+ouverte. Elle est idempotente, ne supprime rien et conserve le journal d'audit.
+La liste inclut les 40 démos initiales, sans changer leurs codes ni leurs états.
+
+Installation complémentaire, sans migration ni nouvel hébergement :
+
+1. Créer `nidria_demo_writer` dans la seule base sandbox, avec mot de passe
+   indépendant, LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION,
+   NOBYPASSRLS. Ne pas accorder de rôle parent.
+2. Avec le rôle propriétaire hors ligne, exécuter
+   `python -m src.demo_sandbox.prepare_management`. Cela pose uniquement les
+   grants et politiques du writer. Ne pas relancer l'initialisation des 40
+   dossiers après la création de nouvelles démos.
+3. Générer un nouveau `DEMO_CONTROL_SECRET` d'au moins 48 caractères. L'enregistrer
+   côté serveur dans les secrets Fly de `nidria-api` et `nidria-demo-api`, avec
+   `DEMO_ADMIN_ENABLED=true`. Seule `nidria-demo-api` reçoit aussi
+   `DEMO_WRITER_DATABASE_URL`, URL asyncpg du writer sur le serveur privé dédié.
+   Ne modifier aucun secret JWT, lecteur ou fournisseur existant.
+4. Publier l'API sandbox par son workflow dédié, le backend de production par
+   sa release habituelle, puis les deux builds frontend du même commit.
+5. Recette : droits refusés hors superadmin, création/import/logo/état, lien mobile,
+   désactivation et 40 anciens QR. Eric et Claude doivent encore créer une démo
+   depuis le navigateur d'Eric avant la clôture définitive de la tâche 2c.
+
+Arrêt du seul outil : `DEMO_ADMIN_ENABLED=false` sur les deux API. Les liens
+actifs restent utilisables en lecture seule. Ne jamais réactiver une démo
+expressément désactivée en remplaçant son code par une ancienne page statique.

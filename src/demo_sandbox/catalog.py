@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.core.i18n import Language
+
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "demo-sandbox" / "catalog.json"
 
 
@@ -17,7 +19,7 @@ class DemoRecord(BaseModel):
 
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     name: str = Field(min_length=1, max_length=200)
-    language: Literal["fr", "en"]
+    language: Language
     public_code: str = Field(pattern=r"^[a-f0-9]{32}$")
     promised_journey: str
     state: dict[str, Any]
@@ -35,19 +37,30 @@ class DemoRecord(BaseModel):
             or state.get("language") != self.language
             or state.get("fictional_data") is not True
             or state.get("read_only") is not True
-            or state.get("progress") != {"done": 2, "total": 7}
         ):
             raise ValueError("Demo identity, language or fictional state mismatch")
         steps = state["steps"]
         source = self.journey_import["parcours"]
-        if len(steps) != 7 or len(source["etapes"]) != 7:
-            raise ValueError("Each letter must retain its seven original steps")
+        total = len(steps)
+        done = state.get("progress", {}).get("done")
+        if (
+            not 1 <= total <= 80
+            or len(source["etapes"]) != total
+            or not isinstance(done, int)
+            or not 0 <= done <= total
+        ):
+            raise ValueError("Invalid demo progression")
+        if state.get("progress") != {"done": done, "total": total}:
+            raise ValueError("Invalid demo progress totals")
         if source["langue_par_defaut"] != self.language:
             raise ValueError("Import language differs from the letter")
         for step, original in zip(steps, source["etapes"], strict=True):
             if step["ref"] != original["ref"] or step["label"] != original["nom"][self.language]:
                 raise ValueError("State differs from the approved journey import")
-        if [step["status"] for step in steps] != ["done", "done", "in_progress"] + ["todo"] * 4:
+        statuses = ["done"] * done + (
+            ["in_progress"] + ["todo"] * (total - done - 1) if done < total else []
+        )
+        if [step["status"] for step in steps] != statuses:
             raise ValueError("Unexpected demo progression")
         if any(doc.get("fictional") is not True for doc in state["documents"]):
             raise ValueError("Only fictional documents are permitted")
@@ -77,6 +90,8 @@ class DemoCatalog(BaseModel):
             or len({r.id for r in self.records}) != 40
         ):
             raise ValueError("Duplicate public code or cabinet identifier")
+        if any(record.state["progress"] != {"done": 2, "total": 7} for record in self.records):
+            raise ValueError("The original letters must retain their approved progression")
         return self
 
     @cached_property

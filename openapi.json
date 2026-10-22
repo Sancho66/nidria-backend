@@ -2866,6 +2866,246 @@
         ]
       }
     },
+    "/admin/demos": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "List Demos",
+        "operationId": "list_demos_admin_demos_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Create Demo",
+        "operationId": "create_demo_admin_demos_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/demos/templates": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Demo Templates",
+        "operationId": "demo_templates_admin_demos_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DemoTemplateRead"
+                  },
+                  "type": "array",
+                  "title": "Response Demo Templates Admin Demos Templates Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/demos/preview": {
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Preview Demo",
+        "operationId": "preview_demo_admin_demos_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoJourneyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoJourneyPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/demos/{code}/disable": {
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Disable Demo",
+        "operationId": "disable_demo_admin_demos__code__disable_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$",
+              "title": "Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/help/search-miss": {
       "post": {
         "tags": [
@@ -30111,6 +30351,351 @@
         ],
         "title": "DeliveryWebhookAck",
         "description": "Always 200 for a VERIFIED event (Svix stops re-delivering); `status`\nsays what happened: processed | duplicate | ignored — the Paddle ack\ndoctrine, verbatim."
+      },
+      "DemoCreateRequest": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Language",
+            "default": "fr"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "journey_import": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JourneyImportRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "completed_steps": {
+            "type": "integer",
+            "maximum": 80.0,
+            "minimum": 0.0,
+            "title": "Completed Steps",
+            "default": 2
+          },
+          "provided_documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Provided Documents"
+          },
+          "include_reminder": {
+            "type": "boolean",
+            "title": "Include Reminder",
+            "default": true
+          },
+          "include_signature": {
+            "type": "boolean",
+            "title": "Include Signature",
+            "default": true
+          },
+          "logo_data_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 350000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Data Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "name"
+        ],
+        "title": "DemoCreateRequest"
+      },
+      "DemoDocumentChoice": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "step_ref": {
+            "type": "string",
+            "title": "Step Ref"
+          },
+          "step_label": {
+            "type": "string",
+            "title": "Step Label"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "step_ref",
+          "step_label",
+          "label"
+        ],
+        "title": "DemoDocumentChoice"
+      },
+      "DemoJourneyInput": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Language",
+            "default": "fr"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "journey_import": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JourneyImportRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DemoJourneyInput"
+      },
+      "DemoJourneyPreview": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Language"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DemoDocumentChoice"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "language",
+          "steps",
+          "documents"
+        ],
+        "title": "DemoJourneyPreview"
+      },
+      "DemoListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DemoRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "DemoListResponse"
+      },
+      "DemoRead": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Language"
+          },
+          "journey_name": {
+            "type": "string",
+            "title": "Journey Name"
+          },
+          "completed_steps": {
+            "type": "integer",
+            "title": "Completed Steps"
+          },
+          "total_steps": {
+            "type": "integer",
+            "title": "Total Steps"
+          },
+          "public_url": {
+            "type": "string",
+            "title": "Public Url"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "has_logo": {
+            "type": "boolean",
+            "title": "Has Logo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "language",
+          "journey_name",
+          "completed_steps",
+          "total_steps",
+          "public_url",
+          "enabled",
+          "created_at",
+          "has_logo"
+        ],
+        "title": "DemoRead"
+      },
+      "DemoTemplateRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
+            ],
+            "title": "Language"
+          },
+          "steps": {
+            "type": "integer",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "language",
+          "steps"
+        ],
+        "title": "DemoTemplateRead"
       },
       "DeprecatedToken": {
         "properties": {
