@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     database_url: str
     database_url_sync: str
 
+    # Isolated demo management. Only the sandbox receives the writer URL.
+    demo_admin_enabled: bool = False
+    demo_control_url: str = "https://nidria-demo-api.fly.dev"
+    demo_control_secret: str = ""
+    demo_writer_database_url: str = ""
+
     # Auth (JWT) — two access audiences (agent / expat) with separate
     # secrets, plus a single refresh secret. The refresh token carries
     # an `audience` claim validated by each refresh endpoint.

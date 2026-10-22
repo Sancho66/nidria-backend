@@ -122,6 +122,52 @@
         ]
       }
     },
+    "/expat/agencies/{agency_id}/logo": {
+      "get": {
+        "tags": [
+          "expat-portal"
+        ],
+        "summary": "Expat Agency Logo",
+        "operationId": "expat_agency_logo_expat_agencies__agency_id__logo_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agency Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/expat/cases": {
       "get": {
         "tags": [
@@ -718,7 +764,12 @@
             "type": "string",
             "enum": [
               "fr",
-              "en"
+              "en",
+              "es",
+              "ru",
+              "pt",
+              "it",
+              "hu"
             ],
             "title": "Language"
           },

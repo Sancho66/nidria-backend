@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.activity.activity_router import router as activity_router
 from src.activity.activity_router import stats_router as activity_stats_router
 from src.admin.admin_router import router as admin_router
+from src.admin.demo_router import router as demo_admin_router
 from src.agencies.agencies_router import public_router as agencies_public_router
 from src.agencies.agencies_router import router as agencies_router
 from src.agencies.profile_sections_router import router as profile_sections_router
@@ -207,6 +208,7 @@ app.include_router(billing_router)
 app.include_router(activity_router)
 app.include_router(activity_stats_router)
 app.include_router(admin_router)
+app.include_router(demo_admin_router)
 app.include_router(help_router)
 app.include_router(agencies_router)
 app.include_router(email_admin_router)

@@ -198,6 +198,7 @@ def collect_bindings() -> list[RouteBinding]:
     """
     from src.activity.activity_router import BINDINGS as activity_bindings
     from src.admin.admin_router import BINDINGS as admin_bindings
+    from src.admin.demo_router import BINDINGS as demo_admin_bindings
     from src.agencies.agencies_router import BINDINGS as agencies_bindings
     from src.agencies.profile_sections_router import BINDINGS as profile_sections_bindings
     from src.auth.auth_router import BINDINGS as auth_bindings
@@ -246,6 +247,7 @@ def collect_bindings() -> list[RouteBinding]:
         *help_bindings,
         *export_bindings,
         *admin_bindings,
+        *demo_admin_bindings,
         *roles_bindings,
         *impersonation_bindings,
         *journeys_bindings,
