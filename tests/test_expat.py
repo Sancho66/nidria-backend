@@ -36,7 +36,7 @@ SUMMARY_KEYS = {
     # dossier's agency — the space's default display language.
     "client_lang",
 }
-DETAIL_KEYS = SUMMARY_KEYS | {"referent", "timeline", "custom_field_definitions"}
+DETAIL_KEYS = SUMMARY_KEYS | {"journey_name", "referent", "timeline", "custom_field_definitions"}
 STEP_KEYS = {
     "progress_id",
     "name",
@@ -162,6 +162,7 @@ async def test_exact_field_contract(
         await portal_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))
     ).json()
     assert set(detail.keys()) == DETAIL_KEYS
+    assert detail["journey_name"] == "T"
     for step in detail["timeline"]:
         assert set(step.keys()) == STEP_KEYS  # zero internal UUID
         assert set(step["responsible"].keys()) == {"type", "name"}
@@ -342,3 +343,41 @@ async def test_notifications_are_sent_in_app_reminders_only(
     assert notification["message_body"] == "Your step moved!"
     assert datetime.fromisoformat(notification["sent_at"]).tzinfo is not None
     assert datetime.fromisoformat(notification["sent_at"]) <= datetime.now(UTC)
+
+
+async def test_client_journey_title_uses_display_language(
+    portal_client: AsyncClient,
+    manager_agent: Agent,
+    expat: ExpatUser,
+    make_client_case: MakeClientCase,
+    agent_headers: AuthHeaders,
+    expat_headers: AuthHeaders,
+) -> None:
+    headers = agent_headers(manager_agent)
+    created = await portal_client.post(
+        "/journeys",
+        headers=headers,
+        json={"name": "Installation", "name_i18n": {"fr": "Installation", "en": "Relocation"}},
+    )
+    assert created.status_code == 201
+    case = await make_client_case(
+        agency_id=manager_agent.agency_id, principal_expat_user_id=expat.id
+    )
+    empty = await portal_client.get(f"/expat/cases/{case.id}", headers=expat_headers(expat))
+    assert empty.json()["journey_name"] is None
+    assigned = await portal_client.post(
+        f"/cases/{case.id}/journey",
+        headers=headers,
+        json={"journey_template_id": created.json()["id"]},
+    )
+    assert assigned.status_code == 201
+    for language, expected in [
+        ("fr", "Installation"),
+        ("en", "Relocation"),
+        ("es", "Installation"),
+    ]:
+        result = await portal_client.get(
+            f"/expat/cases/{case.id}?lang={language}", headers=expat_headers(expat)
+        )
+        assert result.status_code == 200
+        assert result.json()["journey_name"] == expected

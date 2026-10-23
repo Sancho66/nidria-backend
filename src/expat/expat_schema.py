@@ -166,6 +166,8 @@ class RequirementValueRequest(BaseModel):
 
 
 class ExpatCaseDetailResponse(ExpatCaseSummaryResponse):
+    # Client-visible label only, resolved in the requested display language.
+    journey_name: str | None = None
     referent: ExpatReferentResponse | None
     timeline: list[ExpatTimelineStepResponse]
     # Active custom-field definitions of the agency (archived filtered) —
