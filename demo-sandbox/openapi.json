@@ -926,6 +926,17 @@
             ],
             "title": "Client Lang"
           },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
+          },
           "referent": {
             "anyOf": [
               {

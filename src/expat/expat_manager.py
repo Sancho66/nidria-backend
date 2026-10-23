@@ -28,7 +28,7 @@ from src.core.enums import (
     StepValidatorType,
 )
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
-from src.core.i18n import DEFAULT_LANG
+from src.core.i18n import DEFAULT_LANG, resolve_i18n
 from src.custom_fields.custom_fields_manager import CustomFieldsManager
 from src.custom_fields.custom_fields_validation import validate_and_merge
 from src.documents.documents_manager import DocumentsManager
@@ -46,6 +46,7 @@ from src.expat.expat_schema import (
     RequirementValueRequest,
 )
 from src.imports.target_labels import ADDRESS_SUBFIELD_LABELS, CIVIL_LABELS
+from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
@@ -263,10 +264,20 @@ class ExpatPortalManager:
         # renders a custom_field requirement identically (no divergence).
         definitions = await CustomFieldsManager(self.db).active_definitions(case.agency_id)
         langs = await client_langs_by_agency(self.db, expat.id, expat.preferred_lang, [agency])
+        journey_name = None
+        if case.journey_template_id is not None:
+            template = await JourneysRepository(self.db).get_template_in_agency(
+                case.agency_id, case.journey_template_id
+            )
+            if template is not None:
+                journey_name = resolve_i18n(
+                    template.name_i18n, lang, agency.default_language, template.name
+                )
         return ExpatCaseDetailResponse(
             **self._summary(
                 case, agency, counts, is_member=is_member, client_lang=langs[agency.id]
             ).model_dump(),
+            journey_name=journey_name,
             referent=referent,
             timeline=timeline,
             custom_field_definitions=[
