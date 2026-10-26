@@ -24,4 +24,5 @@ class DemoSessionResponse(BaseModel):
     face: Literal["agent", "expat"] = "expat"
     agency_name: str = ""
     agency_demo: bool = False
+    country: str | None = None
     expires_at: str | None = None

@@ -1,6 +1,5 @@
 """Turn the approved six email steps into the real journey import contract."""
 
-import re
 import uuid
 
 from src.admin.demo_schema import AgencyDemoInput, DemoCreateRequest
@@ -94,12 +93,76 @@ DOCUMENTS = {
 }
 
 
-def short_step(description: str) -> str:
-    """Keep the supplied wording, with the full sentence in the description."""
-    compact = re.sub(r"\s+", " ", description).strip()
-    if len(compact) <= 80:
-        return compact
-    return compact[:77].rsplit(" ", 1)[0] + "…"
+STEP_TITLES = {
+    "en": {
+        "accountant": [
+            "Engagement letter",
+            "Document collection",
+            "Automatic reminders",
+            "Accounts preparation",
+            "Review and signature",
+            "Filing and follow-up",
+        ],
+        "lawyer": [
+            "Initial consultation",
+            "Document collection",
+            "Automatic reminders",
+            "Application preparation",
+            "Signature and filing",
+            "Application follow-up",
+        ],
+        "formation": [
+            "Project confirmation",
+            "Document collection",
+            "Automatic reminders",
+            "Document preparation",
+            "Review and signature",
+            "Registration follow-up",
+        ],
+        "relocation": [
+            "Initial consultation",
+            "Document collection",
+            "Automatic reminders",
+            "Move preparation",
+            "Arrival arrangements",
+            "Settling in",
+        ],
+    },
+    "fr": {
+        "accountant": [
+            "Lettre de mission",
+            "Collecte des pièces",
+            "Relances automatiques",
+            "Préparation des comptes",
+            "Vérification et signature",
+            "Dépôt et suivi",
+        ],
+        "lawyer": [
+            "Premier entretien",
+            "Collecte des pièces",
+            "Relances automatiques",
+            "Préparation du dossier",
+            "Signature et dépôt",
+            "Suivi du dossier",
+        ],
+        "formation": [
+            "Confirmation du projet",
+            "Collecte des pièces",
+            "Relances automatiques",
+            "Préparation des documents",
+            "Vérification et signature",
+            "Suivi de l'immatriculation",
+        ],
+        "relocation": [
+            "Premier entretien",
+            "Collecte des pièces",
+            "Relances automatiques",
+            "Préparation du départ",
+            "Organisation de l'arrivée",
+            "Suivi de l'installation",
+        ],
+    },
+}
 
 
 def agency_record(payload: AgencyDemoInput, code: str, catalog: DemoCatalog) -> DemoRecord:
@@ -114,13 +177,21 @@ def agency_record(payload: AgencyDemoInput, code: str, catalog: DemoCatalog) -> 
             "AU": "Income statement",
             "NZ": "Income summary",
         }.get(payload.country, documents[2])
+    if payload.documents:
+        documents = payload.documents
+    # Preserve the explicit labels, with a mix of received and missing pieces.
+    # Each requirement and its sample file derive from this single list.
+    step_documents = [documents[index::6] for index in range(6)]
+    titles = payload.step_titles or [""] * 6
     source = {
-        "nom": {language: JOURNEYS[language][payload.profession]},
+        "nom": {language: payload.journey_name or JOURNEYS[language][payload.profession]},
         "langue_par_defaut": language,
         "etapes": [
             {
                 "ref": f"step-{index + 1}",
-                "nom": {language: short_step(description)},
+                "nom": {
+                    language: titles[index] or STEP_TITLES[language][payload.profession][index]
+                },
                 "informations_fournies": {"note": {language: description}},
                 "delai_jours": [2, 5, 3, 4, 2, 1][index],
                 "validee_par": "agence",
@@ -142,7 +213,8 @@ def agency_record(payload: AgencyDemoInput, code: str, catalog: DemoCatalog) -> 
                 else [],
                 "prerequis": [f"step-{index}"] if index else [],
                 "documents_a_fournir": [
-                    {"libelle": {language: documents[index]}, "pour": "client"}
+                    {"libelle": {language: document}, "pour": "client"}
+                    for document in step_documents[index]
                 ],
             }
             for index, description in enumerate(payload.steps)
@@ -155,7 +227,11 @@ def agency_record(payload: AgencyDemoInput, code: str, catalog: DemoCatalog) -> 
             language=language,
             journey_import=JourneyImportRequest(parcours=source),
             completed_steps=2,
-            provided_documents=["step-1/0", "step-2/0"],
+            provided_documents=[
+                f"step-{index + 1}/{position}"
+                for index in range(2)
+                for position in range(len(step_documents[index]))
+            ],
             logo_data_url=payload.logo_data_url,
         ),
         code,

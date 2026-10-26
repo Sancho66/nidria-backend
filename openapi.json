@@ -23348,6 +23348,34 @@
             "minItems": 6,
             "title": "Steps"
           },
+          "step_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "title": "Step Titles"
+          },
+          "journey_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Name"
+          },
+          "documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Documents"
+          },
           "persona": {
             "type": "string",
             "enum": [

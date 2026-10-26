@@ -53,7 +53,33 @@ existant. Le corps contient un UUID `request_id` et de un à cinq `items` :
 `country`, `city`, `persona`, six `steps` et éventuellement `logo_data_url`.
 Le logo est une image encodée validée ; aucune URL externe n’est téléchargée.
 L’interface accepte les colonnes CSV `m2_s1` à `m2_s6` et restitue `email;demo_link`.
-La phrase complète reste dans la note de l’étape ; son titre est borné à 80 caractères.
+La phrase complète reste dans la note de l’étape (« Given to the client »).
+
+Complément du 26/10, tâche `cd772589-f874-4a8d-bc48-282688ac7b1a` :
+
+- CSV facultatif `step_title_1` à `step_title_6`, transmis dans `step_titles` :
+  deux à cinq mots par titre, au plus 80 caractères. Une cellule vide prend le
+  titre court du métier. La phrase longue n'est jamais tronquée pour faire un titre.
+- CSV facultatif `journey_name` : titre du parcours (200 caractères maximum).
+- CSV facultatif `documents` : noms exacts séparés par `|`, transmis en liste.
+  Pas de libellé vide ou dupliqué, au plus 60 pièces et 200 caractères par nom.
+  Les exigences, pièces présentes/manquantes et PDF fictifs utilisent cette même
+  liste. Sans cette colonne, les pièces génériques du métier restent le repli.
+- Noms fictifs déterministes selon le pays et le cabinet. Adresses lisibles sur
+  un domaine `.example` réservé à chaque agence, suffixe numérique si homonyme ;
+  aucun code public dans une adresse. Aucun client fictif partagé entre agences.
+- Équipe : un administrateur, un gestionnaire de dossiers, un membre et un
+  prestataire, avec les rôles système existants. Aucune modification des permissions.
+- Pays du parcours et de la session renseigné. L'anglais est harmonisé en
+  `advisor` pour US/CA, `adviser` pour GB/IE/AU/NZ. Le pays de la démo remplace le
+  drapeau anglais générique sur le parcours ; le choix des langues reste disponible.
+- Les actions de démonstration restent cliquables et montrent le refus habituel,
+  y compris celles sans saisie préalable. Les sections mot de passe et double
+  authentification du profil sont absentes. Les protections API/SQL ne changent pas.
+
+Ce complément ne réécrit pas les données des démos existantes. Les cinq nouveaux
+pilotes doivent être recréés depuis le CSV validé de Claude avant la clôture de la
+recette commerciale. Ne pas générer le lot complet sans la validation d'Eric.
 
 La transaction extérieure du canal de gestion englobe tous les commits des
 managers. Une répétition avec le même UUID et le même contenu restitue les codes

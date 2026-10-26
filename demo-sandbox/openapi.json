@@ -7945,6 +7945,17 @@
             "title": "Agency Demo",
             "default": false
           },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "expires_at": {
             "anyOf": [
               {

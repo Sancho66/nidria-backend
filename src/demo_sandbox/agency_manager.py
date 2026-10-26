@@ -56,6 +56,7 @@ class AgencyDemoManager:
             face=face,
             agency_name=identity.agency.name,
             agency_demo=True,
+            country=identity.agency.country,
             expires_at=identity.metadata["expires_at"],
         )
 

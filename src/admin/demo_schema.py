@@ -88,6 +88,9 @@ class AgencyDemoInput(BaseModel):
     country: Literal["GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"]
     city: str = Field(min_length=1, max_length=150)
     steps: list[str] = Field(min_length=6, max_length=6)
+    step_titles: list[str] = Field(default_factory=list, max_length=6)
+    journey_name: str | None = Field(default=None, max_length=200)
+    documents: list[str] = Field(default_factory=list, max_length=60)
     persona: Literal["client", "director", "employer", "couple", "family"]
     logo_data_url: str | None = Field(default=None, max_length=350_000)
 
@@ -97,6 +100,28 @@ class AgencyDemoInput(BaseModel):
         normalized = [step.strip() for step in steps]
         if any(not step or len(step) > 1000 for step in normalized):
             raise ValueError("Six nonempty step descriptions are required")
+        return normalized
+
+    @field_validator("step_titles")
+    @classmethod
+    def short_titles(cls, titles: list[str]) -> list[str]:
+        normalized = [" ".join(title.split()) for title in titles]
+        if normalized and len(normalized) != 6:
+            raise ValueError("Supply six titles; blanks use the profession defaults")
+        if any(
+            title and (not 2 <= len(title.split()) <= 5 or len(title) > 80) for title in normalized
+        ):
+            raise ValueError("Step titles must contain two to five words, at most 80 characters")
+        return normalized if any(normalized) else []
+
+    @field_validator("documents")
+    @classmethod
+    def document_labels(cls, documents: list[str]) -> list[str]:
+        normalized = [document.strip() for document in documents]
+        if any(not document or len(document) > 200 for document in normalized):
+            raise ValueError("Document names must contain 1 to 200 characters")
+        if len({document.casefold() for document in normalized}) != len(normalized):
+            raise ValueError("Document names must be unique")
         return normalized
 
 

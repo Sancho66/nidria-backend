@@ -29,6 +29,7 @@ from src.core.rbac.baseline import collect_bindings, seed_rbac_baseline
 from src.core.security import hash_password
 from src.demo_sandbox.bindings import BINDINGS
 from src.demo_sandbox.catalog import DemoCatalog, DemoRecord
+from src.demo_sandbox.people import fictional_email
 from src.demo_sandbox.repository import DemoRepository
 from src.demo_sandbox.storage import document_path, load_demo_documents
 from src.journeys.import_manager import JourneyImportManager
@@ -66,12 +67,17 @@ async def seed_record(
     role: Role,
     password: str,
     extra_settings: dict[str, Any] | None = None,
+    *,
+    owner_name: tuple[str, str] | None = None,
+    client_name: tuple[str, str] | None = None,
+    mail_domain: str | None = None,
 ) -> Agency:
     agency = Agency(
         name=record.name,
         slug=record.agency_slug,
         default_language=record.language,
         is_internal=True,
+        contact_email=f"office@{mail_domain}" if mail_domain else None,
         settings={
             "sandbox_catalog": fingerprint,
             "sandbox_record": record.id,
@@ -87,9 +93,11 @@ async def seed_record(
     owner = Agent(
         agency_id=agency.id,
         role_id=role.id,
-        first_name="Demo" if record.language == "en" else "Démo",
-        last_name="Team" if record.language == "en" else "Équipe",
-        email=f"demo-team-{record.public_code}@example.com",
+        first_name=owner_name[0] if owner_name else "Demo" if record.language == "en" else "Démo",
+        last_name=owner_name[1] if owner_name else "Team" if record.language == "en" else "Équipe",
+        email=fictional_email(owner_name, mail_domain)
+        if owner_name and mail_domain
+        else f"demo-team-{record.public_code}@example.com",
         password_hash=password,
     )
     db.add(owner)
@@ -112,7 +120,14 @@ async def seed_record(
     ):
         raise RuntimeError("Approved journey did not import completely")
     await seed_case(
-        db, record, owner, imported.template_id, all_requirements=extra_settings is not None
+        db,
+        record,
+        owner,
+        imported.template_id,
+        all_requirements=extra_settings is not None,
+        first_name=client_name[0] if client_name else None,
+        last_name=client_name[1] if client_name else None,
+        email=fictional_email(client_name, mail_domain) if client_name and mail_domain else None,
     )
     return agency
 
