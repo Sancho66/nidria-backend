@@ -1,6 +1,8 @@
 name: Demo sandbox
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -40,7 +42,7 @@ jobs:
           git diff --exit-code -- demo-sandbox/openapi.json
   deploy:
     needs: check
-    if: github.ref == 'refs/heads/main' && vars.DEMO_SANDBOX_DEPLOY_ENABLED == 'true'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEMO_SANDBOX_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

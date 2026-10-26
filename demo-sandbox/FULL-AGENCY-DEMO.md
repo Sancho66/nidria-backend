@@ -85,3 +85,9 @@ Ne pas relancer `initialize` sur la base enrichie de nouvelles démos.
 Tests ciblés : `tests/test_agency_demo.py`, `tests/test_demo_sandbox.py`,
 `tests/test_demo_admin.py`. Les tests utilisent PostgreSQL éphémère et la garde réseau.
 Les deux contrats OpenAPI et les types frontend doivent être régénérés ensemble.
+
+Le workflow sandbox est aussi déclenché par chaque release publiée. Il teste et
+déploie le même commit backend dans l’environnement isolé, avec les secrets démo
+existants. Le frontend applique la même règle pour ses propres releases ; la
+copie ne reste donc pas figée sur une version historique. Une nouvelle migration
+ou un nouveau droit de lecture demande toujours sa préparation sandbox habituelle.
