@@ -4,6 +4,7 @@ import hashlib
 import json
 import secrets
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,10 @@ class AgencyDemoControlManager:
             for key in ("step_titles", "journey_name", "documents"):
                 if not content[key]:
                     content.pop(key)
+            if payload.batch:
+                content["batch"] = payload.batch.strip()
+            if payload.lifetime_days != 60:
+                content["lifetime_days"] = payload.lifetime_days
             fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
             await self.db.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
@@ -80,8 +85,15 @@ class AgencyDemoControlManager:
                 },
             )
             metadata = await populate_agency(self.db, agency, record, item, domain)
+            metadata["expires_at"] = (
+                datetime.now(UTC) + timedelta(days=payload.lifetime_days)
+            ).isoformat()
             metadata["version"] = fingerprint
-            agency.settings = {**agency.settings, "sandbox_full_demo": metadata}
+            agency.settings = {
+                **agency.settings,
+                "sandbox_full_demo": metadata,
+                "sandbox_batch": payload.batch.strip(),
+            }
             await self.db.commit()
             if await AgencyDemoRepository(self.db).resolve(record.public_code) is None:
                 raise RuntimeError("The new fictional agency failed its isolation check")

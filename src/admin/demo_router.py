@@ -1,6 +1,6 @@
 """Authenticated platform operators manage demos through an isolated service."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Query
 
@@ -9,11 +9,16 @@ from src.admin.demo_manager import AdminDemoManager
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
     AgencyDemoBatchResponse,
+    DemoBulkRequest,
+    DemoBulkResponse,
     DemoCreateRequest,
+    DemoExportResponse,
+    DemoFilters,
     DemoJourneyInput,
     DemoJourneyPreview,
     DemoListResponse,
     DemoRead,
+    DemoSelection,
     DemoTemplateRead,
 )
 from src.core.enums import Audience
@@ -30,6 +35,9 @@ BINDINGS = [
         ("GET", "/admin/demos/templates"),
         ("POST", "/admin/demos/preview"),
         ("POST", "/admin/demos/{code}/disable"),
+        ("POST", "/admin/demos/export"),
+        ("POST", "/admin/demos/bulk"),
+        ("GET", "/admin/demos/archive"),
     )
 ]
 
@@ -40,8 +48,34 @@ async def list_demos(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     search: str = Query("", max_length=200),
+    batch: str = Query("", max_length=100),
+    status: Literal["all", "active", "disabled", "expired"] = "all",
+    opened: Literal["all", "opened", "unopened"] = "all",
 ) -> DemoListResponse:
-    return await AdminDemoManager().list_demos(agent.id, page, page_size, search)
+    return await AdminDemoManager().list_demos(
+        agent.id,
+        page,
+        page_size,
+        search,
+        DemoFilters(search=search, batch=batch, status=status, opened=opened),
+    )
+
+
+@router.post("/export", response_model=DemoExportResponse)
+async def export_demos(payload: DemoSelection, agent: AgentDep) -> DemoExportResponse:
+    return await AdminDemoManager().export_selection(agent.id, payload)
+
+
+@router.post("/bulk", response_model=DemoBulkResponse)
+async def bulk_demos(payload: DemoBulkRequest, agent: AgentDep) -> DemoBulkResponse:
+    return await AdminDemoManager().bulk(agent.id, payload)
+
+
+@router.get("/archive", response_model=DemoExportResponse)
+async def demo_archive(
+    agent: AgentDep, batch: str = Query("", max_length=100)
+) -> DemoExportResponse:
+    return await AdminDemoManager().archive(agent.id, batch)
 
 
 @router.get("/templates", response_model=list[DemoTemplateRead])

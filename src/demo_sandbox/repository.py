@@ -3,6 +3,7 @@
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,9 @@ class DemoRepository:
     async def entry(self, code: str, catalog: DemoCatalog) -> tuple[DemoRecord, str] | None:
         agency = await self.db.scalar(select(Agency).where(Agency.slug == f"demo-sandbox-{code}"))
         if agency is None or agency.settings.get("sandbox_enabled", True) is not True:
+            return None
+        expires_at = agency.settings.get("sandbox_expires_at")
+        if expires_at and datetime.fromisoformat(expires_at) <= datetime.now(UTC):
             return None
         raw = agency.settings.get("sandbox_dynamic_entry")
         if raw is not None:
@@ -56,6 +60,12 @@ class DemoRepository:
             or expat.preferred_lang != record.language
             or agency.settings.get("sandbox_catalog") != fingerprint
             or agency.settings.get("sandbox_record") != record.id
+            or (
+                not allow_disabled
+                and agency.settings.get("sandbox_expires_at")
+                and datetime.fromisoformat(agency.settings["sandbox_expires_at"])
+                <= datetime.now(UTC)
+            )
         ):
             return None
         # A future administrative mistake must not expand a public link's scope.

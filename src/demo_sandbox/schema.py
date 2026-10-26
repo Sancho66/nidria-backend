@@ -1,9 +1,23 @@
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.core.i18n import Language
+
+
+class DemoTourEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    step: int = Field(ge=0, le=8)
+    status: Literal["started", "completed", "skipped"] = "started"
+
+    @model_validator(mode="after")
+    def valid_progress(self) -> "DemoTourEvent":
+        if (self.status == "completed" and self.step != 8) or (
+            self.status == "started" and self.step == 0
+        ):
+            raise ValueError("Invalid tour progress")
+        return self
 
 
 class DemoSessionRequest(BaseModel):
@@ -12,6 +26,7 @@ class DemoSessionRequest(BaseModel):
     face: Literal["agent", "expat"] | None = None
     case_id: uuid.UUID | None = None
     visit_id: uuid.UUID | None = None
+    tour: DemoTourEvent | None = None
 
 
 class DemoSessionResponse(BaseModel):
@@ -26,3 +41,4 @@ class DemoSessionResponse(BaseModel):
     agency_demo: bool = False
     country: str | None = None
     expires_at: str | None = None
+    persona: str | None = None

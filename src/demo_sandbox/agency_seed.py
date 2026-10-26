@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
-from shared.models.agency_email_module import AgencyEmailModule
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_cost import CaseStepCost
@@ -19,12 +18,6 @@ from shared.models.client_profile import ClientProfile
 from shared.models.client_profile_note import ClientProfileNote
 from shared.models.company_profile import CompanyProfile, CompanyProfileRole
 from shared.models.document_template import DocumentTemplate
-from shared.models.email_campaign import (
-    EmailCampaign,
-    EmailCampaignMember,
-    EmailCampaignStep,
-    EmailMessage,
-)
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import JourneyTemplate, JourneyTemplateStep
@@ -401,73 +394,6 @@ async def populate_agency(
             state="active",
         )
     )
-    db.add(AgencyEmailModule(agency_id=agency.id, enabled=True, enabled_at=now))
-    for group in range(2):
-        title = (
-            ("Préparer votre dossier" if group == 0 else "Suivi de votre demande")
-            if fr
-            else ("Getting your case ready" if group == 0 else "Following up on your enquiry")
-        )
-        campaign = EmailCampaign(
-            agency_id=agency.id,
-            name=f"{payload.company_name}{' : ' if fr else ': '}{title}",
-            status="PAUSED",
-            created_by_agent_id=owner.id,
-            settings={
-                "fictional": True,
-                "timezone": {
-                    "GB": "Europe/London",
-                    "US": "America/New_York",
-                    "IE": "Europe/Dublin",
-                    "CA": "America/Toronto",
-                    "AU": "Australia/Sydney",
-                    "NZ": "Pacific/Auckland",
-                }.get(payload.country, "Europe/Paris"),
-                "sender": {"user_id": "fictional-sender", "email": agency.contact_email},
-            },
-        )
-        db.add(campaign)
-        await db.flush()
-        step = EmailCampaignStep(
-            campaign_id=campaign.id,
-            position=1,
-            name=title,
-            subject_template=title,
-            body_template="Exemple fictif : consultez l'avancement de votre dossier."
-            if fr
-            else "Sample message: check the progress of your case.",
-        )
-        db.add(step)
-        await db.flush()
-        for profile in profiles[group * 5 : (group + 1) * 5]:
-            campaign_member = EmailCampaignMember(
-                agency_id=agency.id,
-                campaign_id=campaign.id,
-                client_profile_id=profile.id,
-                status="EMAIL_PAUSED",
-                added_by_agent_id=owner.id,
-                last_sent_at=now - timedelta(days=1),
-            )
-            db.add(campaign_member)
-            await db.flush()
-            db.add(
-                EmailMessage(
-                    agency_id=agency.id,
-                    campaign_id=campaign.id,
-                    campaign_member_id=campaign_member.id,
-                    campaign_step_id=step.id,
-                    step_position=1,
-                    provider="LEMLIST",
-                    direction="OUTBOUND",
-                    status="DELIVERED",
-                    content_state="AVAILABLE",
-                    subject=title,
-                    body_text=step.body_template,
-                    sent_at=now - timedelta(days=1),
-                    delivered_at=now - timedelta(days=1),
-                    payload={"fictional": True},
-                )
-            )
     await db.commit()
     return {
         "agent_id": str(owner.id),

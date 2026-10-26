@@ -2912,6 +2912,48 @@
               "default": "",
               "title": "Search"
             }
+          },
+          {
+            "name": "batch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Batch"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "active",
+                "disabled",
+                "expired"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "opened",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "opened",
+                "unopened"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Opened"
+            }
           }
         ],
         "responses": {
@@ -2965,6 +3007,147 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DemoRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/demos/export": {
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Export Demos",
+        "operationId": "export_demos_admin_demos_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoExportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/demos/bulk": {
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Bulk Demos",
+        "operationId": "bulk_demos_admin_demos_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoBulkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/demos/archive": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Demo Archive",
+        "operationId": "demo_archive_admin_demos_archive_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Batch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoExportResponse"
                 }
               }
             }
@@ -23261,6 +23444,22 @@
             "maxItems": 5,
             "minItems": 1,
             "title": "Items"
+          },
+          "batch": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Batch",
+            "default": ""
+          },
+          "lifetime_days": {
+            "type": "integer",
+            "enum": [
+              30,
+              60,
+              90
+            ],
+            "title": "Lifetime Days",
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -23383,7 +23582,8 @@
               "director",
               "employer",
               "couple",
-              "family"
+              "family",
+              "employee"
             ],
             "title": "Persona"
           },
@@ -30566,6 +30766,55 @@
         "title": "DeliveryWebhookAck",
         "description": "Always 200 for a VERIFIED event (Svix stops re-delivering); `status`\nsays what happened: processed | duplicate | ignored — the Paddle ack\ndoctrine, verbatim."
       },
+      "DemoBulkRequest": {
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/DemoSelection"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "disable",
+              "delete"
+            ],
+            "title": "Action"
+          },
+          "expected_count": {
+            "type": "integer",
+            "maximum": 5000.0,
+            "minimum": 1.0,
+            "title": "Expected Count"
+          },
+          "selection_token": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Selection Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection",
+          "action",
+          "expected_count",
+          "selection_token"
+        ],
+        "title": "DemoBulkRequest"
+      },
+      "DemoBulkResponse": {
+        "properties": {
+          "affected": {
+            "type": "integer",
+            "title": "Affected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "affected"
+        ],
+        "title": "DemoBulkResponse"
+      },
       "DemoCreateRequest": {
         "properties": {
           "language": {
@@ -30651,6 +30900,22 @@
               }
             ],
             "title": "Logo Data Url"
+          },
+          "batch": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Batch",
+            "default": ""
+          },
+          "lifetime_days": {
+            "type": "integer",
+            "enum": [
+              30,
+              60,
+              90
+            ],
+            "title": "Lifetime Days",
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -30688,6 +30953,69 @@
           "label"
         ],
         "title": "DemoDocumentChoice"
+      },
+      "DemoExportResponse": {
+        "properties": {
+          "csv": {
+            "type": "string",
+            "title": "Csv"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "selection_token": {
+            "type": "string",
+            "title": "Selection Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "csv",
+          "count",
+          "selection_token"
+        ],
+        "title": "DemoExportResponse"
+      },
+      "DemoFilters": {
+        "properties": {
+          "search": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Search",
+            "default": ""
+          },
+          "batch": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Batch",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "disabled",
+              "expired"
+            ],
+            "title": "Status",
+            "default": "all"
+          },
+          "opened": {
+            "type": "string",
+            "enum": [
+              "all",
+              "opened",
+              "unopened"
+            ],
+            "title": "Opened",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DemoFilters"
       },
       "DemoJourneyInput": {
         "properties": {
@@ -30918,6 +31246,61 @@
             "type": "integer",
             "title": "Visits",
             "default": 0
+          },
+          "batch": {
+            "type": "string",
+            "title": "Batch",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "expired"
+            ],
+            "title": "Status",
+            "default": "active"
+          },
+          "tour_status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "started",
+              "completed",
+              "skipped"
+            ],
+            "title": "Tour Status",
+            "default": "not_started"
+          },
+          "tour_last_step": {
+            "type": "integer",
+            "title": "Tour Last Step",
+            "default": 0
+          },
+          "tour_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tour Started At"
+          },
+          "tour_completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tour Completed At"
           }
         },
         "type": "object",
@@ -30934,6 +31317,47 @@
           "has_logo"
         ],
         "title": "DemoRead"
+      },
+      "DemoSelection": {
+        "properties": {
+          "codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 5000,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codes"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DemoFilters"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "excluded_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Excluded Codes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DemoSelection"
       },
       "DemoTemplateRead": {
         "properties": {

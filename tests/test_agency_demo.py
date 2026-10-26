@@ -94,9 +94,6 @@ async def test_full_agency_and_old_client_links(
             "/document-templates",
             "/reminders",
             "/message-templates",
-            "/email/meta",
-            "/email/campaigns",
-            "/email/senders",
             "/agencies/me/members",
             "/agencies/me/external-members",
             "/agencies/me/external-contacts",
@@ -128,7 +125,8 @@ async def test_full_agency_and_old_client_links(
             headers=headers,
             params={"start": (today - timedelta(days=7)).isoformat(), "end": today.isoformat()},
         )
-        assert outreach.status_code == 200, outreach.text
+        assert outreach.status_code == 404, outreach.text
+        assert responses["/agencies/me"]["email_enabled"] is False
         assert not any(key.startswith("sandbox_") for key in responses["/agencies/me"]["settings"])
         preview = await client.get("/demo/ai-preview", headers=headers)
         assert preview.status_code == 200, preview.text
@@ -154,7 +152,6 @@ async def test_full_agency_and_old_client_links(
             "/agencies/me/invitations",
             "/billing/checkout",
             "/journeys/import",
-            "/email/campaigns",
         ]:
             assert (await client.post(path, headers=headers, json={})).status_code == 403
         client_session = await client.post(

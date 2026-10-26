@@ -41,6 +41,12 @@ async def seed_catalog(db: AsyncSession, catalog: DemoCatalog) -> dict[str, int]
     Only the offline seed command may call this batch function. Public reads
     use a SELECT-only role; signed management calls use seed_record separately.
     """
+    from sqlalchemy import text
+
+    if await db.scalar(text("SELECT to_regclass('public.demo_history')")) and await db.scalar(
+        text("SELECT EXISTS (SELECT 1 FROM demo_history)")
+    ):
+        raise RuntimeError("Deleted demos must never be restored by the seed command")
     existing = list((await db.scalars(select(Agency))).all())
     if existing:
         if len(existing) != len(catalog.records):

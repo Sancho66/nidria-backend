@@ -30,8 +30,6 @@ from src.demo_sandbox.agency_manager import AgencyDemoManager
 from src.demo_sandbox.catalog import DemoRecord
 from src.document_templates.document_templates_router import router as templates_router
 from src.documents.documents_router import agent_router as documents_router
-from src.email_campaigns.email_router import router as email_router
-from src.email_campaigns.email_schema import EmailSenderOption, EmailSendersRead
 from src.external.external_router import agency_router as providers_router
 from src.journeys.import_manager import JourneyImportManager
 from src.journeys.journeys_router import router as journeys_router
@@ -106,15 +104,6 @@ AGENT_READ_ROUTES = frozenset(
         "/reminders",
         "/reminders/{reminder_id}",
         "/message-templates",
-        "/email/meta",
-        "/email/campaigns",
-        "/email/campaigns/{campaign_id}",
-        "/email/campaigns/{campaign_id}/steps",
-        "/email/campaigns/{campaign_id}/performance",
-        "/email/outreach",
-        "/email/members",
-        "/email/members/{member_id}",
-        "/email/client-profiles/{client_profile_id}",
     }
 )
 
@@ -152,7 +141,6 @@ def agency_read_router() -> APIRouter:
         dashboard_router,
         templates_router,
         documents_router,
-        email_router,
         providers_router,
         journeys_router,
         progress_router,
@@ -181,6 +169,7 @@ def agency_read_router() -> APIRouter:
         response = await get_my_agency(agent, db)
         # Management metadata contains the prospect email and opaque access code;
         # it belongs only in the authenticated platform operator's demo tool.
+        response.email_enabled = False
         response.settings = {
             key: value for key, value in response.settings.items() if not key.startswith("sandbox_")
         }
@@ -196,20 +185,6 @@ def agency_read_router() -> APIRouter:
         # sentences. No input, AI service, commit or creation on this route.
         return await JourneyImportManager(db).run(
             identity.agent, record.journey_import["parcours"], preview=True
-        )
-
-    @router.get("/email/senders", response_model=EmailSendersRead)
-    async def fictional_sender(agent: AgentDep, db: DbDep) -> EmailSendersRead:
-        agency = await get_my_agency(agent, db)
-        # A local fixture, not even the provider adapter: this read can never
-        # acquire credentials or make a network call to Lemlist.
-        return EmailSendersRead(
-            external=False,
-            senders=[
-                EmailSenderOption(
-                    user_id="fictional-sender", email=agency.contact_email, campaigns=2
-                )
-            ],
         )
 
     # Separate production routers can register /cases/{case_id} before

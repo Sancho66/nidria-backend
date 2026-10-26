@@ -174,7 +174,7 @@ async def test_country_identities_roles_and_no_shared_clients(db_session: AsyncS
                 select(EmailCampaign).where(EmailCampaign.agency_id == agency.id)
             )
         )
-        assert len(campaigns) == 2 and all(" : " not in campaign.name for campaign in campaigns)
+        assert campaigns == []
         session = await AgencyDemoManager(db_session).open_session(
             DemoSessionRequest(code=entry.code)
         )

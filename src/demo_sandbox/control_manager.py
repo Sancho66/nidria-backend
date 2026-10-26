@@ -4,6 +4,7 @@ import hashlib
 import json
 import secrets
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +15,16 @@ from shared.models.client_case import ClientCase
 from shared.models.rbac import Role
 from src.activity.activity_manager import ActivityManager
 from src.admin.demo_schema import (
+    DemoBulkRequest,
+    DemoBulkResponse,
     DemoCreateRequest,
+    DemoExportResponse,
+    DemoFilters,
     DemoJourneyInput,
     DemoJourneyPreview,
     DemoListResponse,
     DemoRead,
+    DemoSelection,
     DemoTemplateRead,
 )
 from src.core.enums import ActorType
@@ -26,6 +32,14 @@ from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.security import hash_password
 from src.demo_sandbox.catalog import DemoCatalog, DemoRecord
 from src.demo_sandbox.draft import build_record, journey_source, preview_journey
+from src.demo_sandbox.lifecycle import (
+    erase_demos,
+    filter_conditions,
+    history_csv,
+    selection_rows,
+    selection_token,
+    verify_selection,
+)
 from src.demo_sandbox.repository import DemoRepository, record_fingerprint
 from src.demo_sandbox.seed import seed_record
 from src.journeys.import_manager import JourneyImportManager
@@ -51,6 +65,10 @@ class DemoControlManager:
         record = self._record(agency)
         full = agency.settings.get("sandbox_full_demo", {})
         visits = agency.settings.get("sandbox_visits", {})
+        tour = agency.settings.get("sandbox_tour", {})
+        expires_at = agency.settings.get("sandbox_expires_at") or full.get("expires_at")
+        enabled = agency.settings.get("sandbox_enabled", True) is True
+        expired = bool(expires_at and datetime.fromisoformat(expires_at) <= datetime.now(UTC))
         return DemoRead(
             code=record.public_code,
             name=record.name,
@@ -59,19 +77,27 @@ class DemoControlManager:
             completed_steps=record.state["progress"]["done"],
             total_steps=len(record.state["steps"]),
             public_url=f"https://app.nidria.com/demo/{record.public_code}",
-            enabled=agency.settings.get("sandbox_enabled", True) is True,
+            enabled=enabled,
             created_at=agency.created_at,
             has_logo=agency.logo_path is not None,
             scope="agency" if full else "client",
             lead_email=full.get("email"),
-            expires_at=full.get("expires_at"),
+            expires_at=expires_at,
             first_opened_at=visits.get("first"),
             last_opened_at=visits.get("last"),
             visits=visits.get("count", 0),
+            batch=agency.settings.get("sandbox_batch", ""),
+            status="expired" if expired else "active" if enabled else "disabled",
+            tour_status=tour.get("status", "not_started"),
+            tour_last_step=tour.get("last_step", 0),
+            tour_started_at=tour.get("started_at"),
+            tour_completed_at=tour.get("completed_at"),
         )
 
-    async def list_demos(self, page: int, page_size: int, search: str) -> DemoListResponse:
-        conditions = [Agency.slug.startswith("demo-sandbox-")]
+    async def list_demos(
+        self, page: int, page_size: int, search: str, filters: DemoFilters | None = None
+    ) -> DemoListResponse:
+        conditions = filter_conditions(filters or DemoFilters())
         if search.strip():
             query = search.strip()
             legacy_ids = [
@@ -82,6 +108,9 @@ class DemoControlManager:
             conditions.append(
                 or_(
                     Agency.name.icontains(query, autoescape=True),
+                    Agency.settings["sandbox_full_demo"]["email"].astext.icontains(
+                        query, autoescape=True
+                    ),
                     Agency.settings["sandbox_dynamic_entry"]["promised_journey"].astext.icontains(
                         query, autoescape=True
                     ),
@@ -131,9 +160,12 @@ class DemoControlManager:
         return result
 
     async def create(self, actor_id: uuid.UUID, payload: DemoCreateRequest) -> DemoRead:
-        fingerprint = hashlib.sha256(
-            json.dumps(payload.model_dump(mode="json"), sort_keys=True).encode()
-        ).hexdigest()
+        content = payload.model_dump(mode="json")
+        if not content["batch"]:
+            content.pop("batch")
+        if content["lifetime_days"] == 60:
+            content.pop("lifetime_days")
+        fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
         # The connection's outer transaction retains this lock even when a
         # reused business manager commits its own savepoint.
         await self.db.execute(
@@ -168,6 +200,10 @@ class DemoControlManager:
                 "sandbox_request_id": str(payload.request_id),
                 "sandbox_request_hash": fingerprint,
                 "sandbox_created_by": str(actor_id),
+                "sandbox_batch": payload.batch.strip(),
+                "sandbox_expires_at": (
+                    datetime.now(UTC) + timedelta(days=payload.lifetime_days)
+                ).isoformat(),
             },
         )
         identity = await DemoRepository(self.db).resolve(record, record_fingerprint(record))
@@ -186,6 +222,33 @@ class DemoControlManager:
         )
         await self.db.commit()
         return self.read(agency)
+
+    async def export_selection(
+        self, actor_id: uuid.UUID, selection: DemoSelection
+    ) -> DemoExportResponse:
+        import time
+
+        rows = [
+            self.read(agency)
+            for agency in await selection_rows(self.db, selection, catalog=self.catalog)
+        ]
+        return DemoExportResponse(
+            csv=history_csv([row.model_dump(mode="json") for row in rows]),
+            count=len(rows),
+            selection_token=selection_token(rows, actor_id, int(time.time())),
+        )
+
+    async def bulk(self, actor_id: uuid.UUID, payload: DemoBulkRequest) -> DemoBulkResponse:
+        agencies = await selection_rows(self.db, payload.selection, lock=True, catalog=self.catalog)
+        rows = [self.read(agency) for agency in agencies]
+        verify_selection(payload, rows, actor_id)
+        if payload.action == "delete":
+            await erase_demos(self.db, agencies, rows)
+        else:
+            for agency in agencies:
+                agency.settings = {**agency.settings, "sandbox_enabled": False}
+        await self.db.commit()
+        return DemoBulkResponse(affected=len(rows))
 
     async def disable(self, actor_id: uuid.UUID, code: str) -> DemoRead:
         agency = await self.db.scalar(
