@@ -121,29 +121,37 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 is None
             ):
                 raise RuntimeError("Sandbox seed is incomplete or differs from the catalog")
-        for agency in await db.scalars(select(Agency)):
-            if agency.settings.get("sandbox_full_demo"):
-                if (
-                    await AgencyDemoRepository(db).resolve(
-                        agency.slug.removeprefix("demo-sandbox-"), allow_disabled=True
-                    )
-                    is None
-                ):
-                    raise RuntimeError("Invalid fictional agency demo")
-            elif agency.settings.get("sandbox_dynamic_entry"):
-                from src.demo_sandbox.catalog import DemoRecord
-                from src.demo_sandbox.repository import record_fingerprint
+        # Keyset pages keep startup memory and database round-trips bounded
+        # after thousands of imports. All isolation checks still run.
+        after = None
+        while True:
+            query = select(Agency).order_by(Agency.id).limit(100)
+            if after is not None:
+                query = query.where(Agency.id > after)
+            agencies = list(await db.scalars(query))
+            if not agencies:
+                break
+            full = [agency for agency in agencies if agency.settings.get("sandbox_full_demo")]
+            if not await AgencyDemoRepository(db).valid_population(full):
+                raise RuntimeError("Invalid fictional agency demo")
+            for agency in agencies:
+                if agency in full:
+                    continue
+                if agency.settings.get("sandbox_dynamic_entry"):
+                    from src.demo_sandbox.catalog import DemoRecord
+                    from src.demo_sandbox.repository import record_fingerprint
 
-                record = DemoRecord.model_validate(agency.settings["sandbox_dynamic_entry"])
-                if (
-                    await DemoManager(db, catalog).repo.resolve(
-                        record, record_fingerprint(record), allow_disabled=True
-                    )
-                    is None
-                ):
-                    raise RuntimeError("Invalid dynamic sandbox demo")
-            elif catalog.by_id(agency.settings.get("sandbox_record", "")) is None:
-                raise RuntimeError("Unexpected agency in the isolated sandbox")
+                    record = DemoRecord.model_validate(agency.settings["sandbox_dynamic_entry"])
+                    if (
+                        await DemoManager(db, catalog).repo.resolve(
+                            record, record_fingerprint(record), allow_disabled=True
+                        )
+                        is None
+                    ):
+                        raise RuntimeError("Invalid dynamic sandbox demo")
+                elif catalog.by_id(agency.settings.get("sandbox_record", "")) is None:
+                    raise RuntimeError("Unexpected agency in the isolated sandbox")
+            after = agencies[-1].id
         load_demo_documents(catalog)
         await db.rollback()
 
@@ -161,12 +169,19 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 logging.getLogger(__name__).exception("Isolated demo expiry sweep failed")
                 await asyncio.sleep(300)
 
-    task = asyncio.create_task(purge_loop()) if get_settings().demo_admin_enabled else None
+    from src.demo_sandbox.import_manager import import_loop
+
+    tasks = (
+        [asyncio.create_task(purge_loop()), asyncio.create_task(import_loop(catalog))]
+        if get_settings().demo_admin_enabled
+        else []
+    )
     try:
         yield
     finally:
-        if task is not None:
+        for task in tasks:
             task.cancel()
+        for task in tasks:
             with suppress(asyncio.CancelledError):
                 await task
 

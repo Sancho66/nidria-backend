@@ -148,3 +148,51 @@ réseau non simulé ; contrôles ciblés du cycle de vie et des privilèges SQL.
 Le CSV enrichi annoncé par Claude n’est toujours pas joint à la tâche lors de
 sa relecture à 12:06 UTC. Les cinq pilotes commerciaux ne sont pas recréés depuis
 une source inventée.
+
+## Import par paquets de 500, 26 octobre 2026
+
+Le bouton d’import ouvre désormais un paquet CSV de 1 à 500 lignes (8 Mo UTF-8
+maximum). La confirmation affiche le nombre exact et le nom du lot, obligatoire.
+La durée reste au choix de l’opérateur : 30, 60 ou 90 jours. La ville peut manquer ;
+les six personas existantes restent acceptées. Les colonnes et contenus de parcours
+validés pour les pilotes sont conservés.
+
+`POST /admin/demos/imports` enregistre une demande persistante, puis répond 202.
+Le navigateur consulte la progression et les vingt imports récents ; fermer la
+page ne suspend pas la création. Les routes GET de détail, d’export par paquet
+(liens ou erreurs) et d’export cumulé du lot portent toutes `agency.create`.
+La production transmet au seul service sandbox via le canal signé existant.
+
+La sandbox prépare `demo_import_job` et `demo_import_row`, deux tables privées
+hors métadonnées de production. Installer ces tables avec le rôle de préparation
+isolé avant de déployer le worker (`python -m src.demo_sandbox.prepare_management`).
+Le lecteur public n’a aucun droit sur elles ; le writer reçoit seulement SELECT,
+INSERT et UPDATE. Aucune migration ne crée ces tables dans la base de production.
+
+Le worker traite une ligne à la fois, sous verrou PostgreSQL transactionnel commun
+aux instances. Une interruption annule la ligne entière, y compris les commits des
+managers réutilisés, et laisse la ligne à reprendre. Les erreurs de données ou de
+création sont isolées ; une perte de connexion conserve la ligne en attente.
+Une nouvelle demande du même email et du même lot retrouve la démo existante sans
+la modifier, même dans un autre paquet. Le verrou email/lot est partagé avec
+l’ancien endpoint des cinq pilotes, qui reste compatible.
+
+Après traitement : CSV `email;company_name;demo_url;lot;expiration` pour le paquet
+ou tout le lot (5 000 démos maximum), CSV `row;column;reason` pour les erreurs.
+Les exports sont disponibles après la fin du traitement concerné. Les valeurs
+pouvant former une formule sont échappées. Les textes bruts des lignes traitées
+sont effacés de la file ; le résultat et les erreurs restent dans l’historique.
+
+Au démarrage, les contrôles des identités fictives sont exécutés par groupes de
+cent agences, pour borner mémoire et requêtes sans relâcher le cloisonnement.
+La création n’utilise aucun email, paiement, signature externe ou fichier réel.
+Le lot commercial n’est pas lancé par la livraison technique : Claude l’importe
+après validation des pilotes par Eric.
+
+Validation de cet import : 3 087 tests backend et 28 sous-tests réussis,
+3 tests ignorés, zéro appel réseau non simulé ; types, lint, format et contrats
+OpenAPI vérifiés. Recette navigateur locale : paquet interrompu côté navigateur,
+reprise, ligne en erreur, doublons et exports, puis second paquet du même lot ;
+21 liens fictifs à 320 px, visite guidée, rechargement et absence de cookies.
+La préparation des deux tables privées dans la sandbox distante a conservé les
+empreintes des 89 tables préexistantes. La publication des API reste l’étape suivante.

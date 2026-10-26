@@ -28,6 +28,8 @@ DELETE_TABLES = frozenset(
 WRITABLE_TABLES = frozenset(
     {
         "demo_history",
+        "demo_import_job",
+        "demo_import_row",
         "agency",
         "agency_profile_section",
         "agent",
@@ -73,9 +75,11 @@ async def prepare_agency_permissions(db: AsyncSession) -> None:
 
 
 async def grant_management(db: AsyncSession) -> None:
+    from src.demo_sandbox.import_repository import prepare_imports
     from src.demo_sandbox.lifecycle import prepare_history
 
     await prepare_history(db)
+    await prepare_imports(db)
     await prepare_agency_permissions(db)
     role = (
         await db.execute(
@@ -108,6 +112,8 @@ async def grant_management(db: AsyncSession) -> None:
                 await db.execute(text(f"GRANT DELETE ON public.{quoted} TO nidria_demo_writer"))
         else:
             policy = "FOR SELECT TO nidria_demo_writer USING (true)"
+        if table in {"demo_import_job", "demo_import_row"}:
+            await db.execute(text(f"REVOKE ALL ON public.{quoted} FROM PUBLIC, nidria_demo_reader"))
         if table == "demo_history":
             await db.execute(text(f"GRANT SELECT ON public.{quoted} TO nidria_demo_reader"))
             await db.execute(text(f"DROP POLICY IF EXISTS demo_read_only ON public.{quoted}"))

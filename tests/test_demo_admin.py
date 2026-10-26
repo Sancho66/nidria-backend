@@ -187,6 +187,18 @@ async def test_creation_public_scope_restart_assets_disable_and_atomic_failure(
             "'INSERT,UPDATE,DELETE')"
         )
     )
+    for table in ("demo_import_job", "demo_import_row"):
+        assert not await db_session.scalar(
+            text(
+                "SELECT has_table_privilege('nidria_demo_reader', :table, "
+                "'SELECT,INSERT,UPDATE,DELETE')"
+            ),
+            {"table": table},
+        )
+        assert await db_session.scalar(
+            text("SELECT has_table_privilege('nidria_demo_writer', :table, 'INSERT,UPDATE')"),
+            {"table": table},
+        )
     monkeypatch.setattr(get_settings(), "demo_admin_enabled", True)
     monkeypatch.setattr(get_settings(), "demo_control_secret", "x" * 64)
     monkeypatch.setattr(get_settings(), "signatures_enabled", True)

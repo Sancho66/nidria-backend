@@ -3024,6 +3024,235 @@
         }
       }
     },
+    "/admin/demos/imports": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "List Demo Imports",
+        "operationId": "list_demo_imports_admin_demos_imports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoImportList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Start Demo Import",
+        "operationId": "start_demo_import_admin_demos_imports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoImportRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/demos/imports/batch-export": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Export Demo Batch",
+        "operationId": "export_demo_batch_admin_demos_imports_batch_export_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Batch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoImportExport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/demos/imports/{job_id}": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Read Demo Import",
+        "operationId": "read_demo_import_admin_demos_imports__job_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoImportRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/demos/imports/{job_id}/export": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Export Demo Import",
+        "operationId": "export_demo_import_admin_demos_imports__job_id__export_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "links",
+                "errors"
+              ],
+              "type": "string",
+              "default": "links",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoImportExport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/demos/export": {
       "post": {
         "tags": [
@@ -23535,8 +23764,8 @@
           "city": {
             "type": "string",
             "maxLength": 150,
-            "minLength": 1,
-            "title": "City"
+            "title": "City",
+            "default": ""
           },
           "steps": {
             "items": {
@@ -23607,7 +23836,6 @@
           "company_name",
           "profession",
           "country",
-          "city",
           "steps",
           "persona"
         ],
@@ -31016,6 +31244,187 @@
         "additionalProperties": false,
         "type": "object",
         "title": "DemoFilters"
+      },
+      "DemoImportExport": {
+        "properties": {
+          "csv": {
+            "type": "string",
+            "title": "Csv"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "csv",
+          "count"
+        ],
+        "title": "DemoImportExport"
+      },
+      "DemoImportIssue": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "column",
+          "reason"
+        ],
+        "title": "DemoImportIssue"
+      },
+      "DemoImportList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DemoImportRead"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DemoImportList"
+      },
+      "DemoImportRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "batch": {
+            "type": "string",
+            "title": "Batch"
+          },
+          "lifetime_days": {
+            "type": "integer",
+            "title": "Lifetime Days"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "processed": {
+            "type": "integer",
+            "title": "Processed"
+          },
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          },
+          "reused": {
+            "type": "integer",
+            "title": "Reused"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/DemoImportIssue"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "batch",
+          "lifetime_days",
+          "status",
+          "total",
+          "processed",
+          "created",
+          "reused",
+          "failed",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DemoImportRead"
+      },
+      "DemoImportRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "csv_text": {
+            "type": "string",
+            "maxLength": 8000000,
+            "minLength": 1,
+            "title": "Csv Text"
+          },
+          "batch": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Batch"
+          },
+          "lifetime_days": {
+            "type": "integer",
+            "enum": [
+              30,
+              60,
+              90
+            ],
+            "title": "Lifetime Days",
+            "default": 60
+          },
+          "expected_count": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Expected Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "csv_text",
+          "batch",
+          "expected_count"
+        ],
+        "title": "DemoImportRequest"
       },
       "DemoJourneyInput": {
         "properties": {

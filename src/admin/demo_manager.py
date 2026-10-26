@@ -2,6 +2,12 @@
 
 import uuid
 
+from src.admin.demo_import_schema import (
+    DemoImportExport,
+    DemoImportList,
+    DemoImportRead,
+    DemoImportRequest,
+)
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
     AgencyDemoBatchResponse,
@@ -23,6 +29,33 @@ from src.admin.demo_transport import DemoTransport
 class AdminDemoManager:
     def __init__(self) -> None:
         self.transport = DemoTransport()
+
+    async def start_import(self, actor_id: uuid.UUID, payload: DemoImportRequest) -> DemoImportRead:
+        return DemoImportRead.model_validate(
+            await self.transport.call(actor_id, "import_start", payload.model_dump(mode="json"))
+        )
+
+    async def list_imports(self, actor_id: uuid.UUID) -> DemoImportList:
+        return DemoImportList.model_validate(await self.transport.call(actor_id, "import_list", {}))
+
+    async def read_import(self, actor_id: uuid.UUID, job_id: uuid.UUID) -> DemoImportRead:
+        return DemoImportRead.model_validate(
+            await self.transport.call(actor_id, "import_get", {"job_id": str(job_id)})
+        )
+
+    async def export_import(
+        self, actor_id: uuid.UUID, job_id: uuid.UUID, kind: str
+    ) -> DemoImportExport:
+        return DemoImportExport.model_validate(
+            await self.transport.call(
+                actor_id, "import_export", {"job_id": str(job_id), "kind": kind}
+            )
+        )
+
+    async def export_import_batch(self, actor_id: uuid.UUID, batch: str) -> DemoImportExport:
+        return DemoImportExport.model_validate(
+            await self.transport.call(actor_id, "import_export_batch", {"batch": batch})
+        )
 
     async def create_agency_batch(
         self, actor_id: uuid.UUID, payload: AgencyDemoBatchRequest

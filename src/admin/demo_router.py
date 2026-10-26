@@ -1,10 +1,17 @@
 """Authenticated platform operators manage demos through an isolated service."""
 
+import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Query
 
 from src.admin.admin_router import AgentDep
+from src.admin.demo_import_schema import (
+    DemoImportExport,
+    DemoImportList,
+    DemoImportRead,
+    DemoImportRequest,
+)
 from src.admin.demo_manager import AdminDemoManager
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
@@ -30,6 +37,11 @@ BINDINGS = [
     RouteBinding(method, path, Audience.AGENT, Permission.AGENCY_CREATE)
     for method, path in (
         ("GET", "/admin/demos"),
+        ("POST", "/admin/demos/imports"),
+        ("GET", "/admin/demos/imports"),
+        ("GET", "/admin/demos/imports/batch-export"),
+        ("GET", "/admin/demos/imports/{job_id}"),
+        ("GET", "/admin/demos/imports/{job_id}/export"),
         ("POST", "/admin/demos"),
         ("POST", "/admin/demos/agency-batch"),
         ("GET", "/admin/demos/templates"),
@@ -59,6 +71,35 @@ async def list_demos(
         search,
         DemoFilters(search=search, batch=batch, status=status, opened=opened),
     )
+
+
+@router.post("/imports", response_model=DemoImportRead, status_code=202)
+async def start_demo_import(payload: DemoImportRequest, agent: AgentDep) -> DemoImportRead:
+    return await AdminDemoManager().start_import(agent.id, payload)
+
+
+@router.get("/imports", response_model=DemoImportList)
+async def list_demo_imports(agent: AgentDep) -> DemoImportList:
+    return await AdminDemoManager().list_imports(agent.id)
+
+
+@router.get("/imports/batch-export", response_model=DemoImportExport)
+async def export_demo_batch(
+    agent: AgentDep, batch: str = Query(min_length=1, max_length=100)
+) -> DemoImportExport:
+    return await AdminDemoManager().export_import_batch(agent.id, batch.strip())
+
+
+@router.get("/imports/{job_id}", response_model=DemoImportRead)
+async def read_demo_import(job_id: uuid.UUID, agent: AgentDep) -> DemoImportRead:
+    return await AdminDemoManager().read_import(agent.id, job_id)
+
+
+@router.get("/imports/{job_id}/export", response_model=DemoImportExport)
+async def export_demo_import(
+    job_id: uuid.UUID, agent: AgentDep, kind: Literal["links", "errors"] = "links"
+) -> DemoImportExport:
+    return await AdminDemoManager().export_import(agent.id, job_id, kind)
 
 
 @router.post("/export", response_model=DemoExportResponse)

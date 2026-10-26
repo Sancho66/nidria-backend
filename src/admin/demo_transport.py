@@ -14,6 +14,7 @@ from src.core.exceptions import NidriaError, UpstreamError
 
 CONTROL_PATH = "/_control/demos"
 MAX_BODY_BYTES = 750_000
+MAX_IMPORT_BODY_BYTES = 20_000_000
 
 
 def signature(secret: str, timestamp: str, actor: str, body: bytes) -> str:
@@ -35,7 +36,7 @@ class DemoTransport:
         body = json.dumps(
             {"operation": operation, "payload": payload}, separators=(",", ":")
         ).encode()
-        if len(body) > MAX_BODY_BYTES:
+        if len(body) > (MAX_IMPORT_BODY_BYTES if operation == "import_start" else MAX_BODY_BYTES):
             raise UpstreamError("Demo input is too large.", code="demo.input_too_large")
         timestamp, actor = str(int(time.time())), str(actor_id)
         headers = {

@@ -4,7 +4,7 @@ import hmac
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -25,7 +25,7 @@ from src.admin.demo_schema import (
     DemoJourneyInput,
     DemoSelection,
 )
-from src.admin.demo_transport import MAX_BODY_BYTES, signature
+from src.admin.demo_transport import MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES, signature
 from src.core.config import get_settings
 from src.core.exceptions import ForbiddenError, ValidationError, register_exception_handlers
 from src.demo_sandbox.catalog import DemoCatalog
@@ -54,7 +54,7 @@ def writer_engine() -> AsyncEngine:
     )
 
 
-async def control_db() -> AsyncIterator[AsyncSession]:
+async def control_db() -> AsyncGenerator[AsyncSession, None]:
     # The outer connection transaction makes all reused managers atomic, even
     # though each manager commits its own session (SQLAlchemy create_savepoint).
     async with writer_engine().connect() as connection, connection.begin():
@@ -89,7 +89,7 @@ async def authorize(request: Request) -> uuid.UUID:
     body = await request.body()
     if (
         not fresh
-        or len(body) > MAX_BODY_BYTES
+        or len(body) > MAX_IMPORT_BODY_BYTES
         or not hmac.compare_digest(
             supplied, signature(settings.demo_control_secret, timestamp, actor, body)
         )
@@ -114,13 +114,39 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
 
     @app.post("/demos")
     async def dispatch(
+        request: Request,
         actor: Annotated[uuid.UUID, Depends(authorize)],
         db: Annotated[AsyncSession, Depends(control_db, scope="function")],
         envelope: DemoControlEnvelope,
     ) -> Any:
+        if len(await request.body()) > MAX_BODY_BYTES and envelope.operation != "import_start":
+            raise ValidationError("Demo input is too large.", code="demo.input_too_large")
         manager = DemoControlManager(db, catalog)
         payload = envelope.payload
         match envelope.operation:
+            case (
+                "import_start"
+                | "import_list"
+                | "import_get"
+                | "import_export"
+                | "import_export_batch"
+            ):
+                from src.admin.demo_import_schema import DemoImportLookup, DemoImportRequest
+                from src.demo_sandbox.import_manager import DemoImportManager
+
+                imports = DemoImportManager(db)
+                if envelope.operation == "import_start":
+                    return await imports.start(actor, DemoImportRequest.model_validate(payload))
+                if envelope.operation == "import_list":
+                    return await imports.recent()
+                if envelope.operation == "import_export_batch":
+                    return await imports.export_batch(
+                        DemoArchiveRequest.model_validate(payload).batch
+                    )
+                import_query = DemoImportLookup.model_validate(payload)
+                if envelope.operation == "import_export":
+                    return await imports.export(import_query.job_id, import_query.kind)
+                return await imports.read(import_query.job_id)
             case "agency_batch":
                 from src.demo_sandbox.agency_control import AgencyDemoControlManager
 

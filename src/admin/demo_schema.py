@@ -94,7 +94,7 @@ class AgencyDemoInput(BaseModel):
     language: Literal["en", "fr"] = "en"
     profession: Literal["accountant", "lawyer", "formation", "relocation"]
     country: Literal["GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"]
-    city: str = Field(min_length=1, max_length=150)
+    city: str = Field(default="", max_length=150)
     steps: list[str] = Field(min_length=6, max_length=6)
     step_titles: list[str] = Field(default_factory=list, max_length=6)
     journey_name: str | None = Field(default=None, max_length=200)

@@ -1,12 +1,13 @@
-"""The authenticated management channel creates at most five pilot agencies."""
+"""The authenticated channel creates fixtures and reuses a batch/email identity."""
 
+import asyncio
 import hashlib
 import json
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -28,6 +29,7 @@ class AgencyDemoControlManager:
     def __init__(self, db: AsyncSession, catalog: DemoCatalog) -> None:
         self.db = db
         self.catalog = catalog
+        self.reused_codes: set[str] = set()
 
     async def create_batch(
         self, actor_id: uuid.UUID, payload: AgencyDemoBatchRequest
@@ -35,6 +37,29 @@ class AgencyDemoControlManager:
         result = []
         reader = DemoControlManager(self.db, self.catalog)
         for item in payload.items:
+            if payload.batch.strip():
+                # Shared by the old pilot endpoint and durable jobs. The lock
+                # is held until the outer fictional transaction commits.
+                await self.db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                    {"key": f"agency-demo-batch:{payload.batch.strip()}:{str(item.email).lower()}"},
+                )
+                existing_batch = await self.db.scalar(
+                    select(Agency)
+                    .where(
+                        Agency.slug.startswith("demo-sandbox-"),
+                        Agency.settings["sandbox_batch"].astext == payload.batch.strip(),
+                        func.lower(Agency.settings["sandbox_full_demo"]["email"].astext)
+                        == str(item.email).lower(),
+                    )
+                    .order_by(Agency.created_at, Agency.id)
+                    .limit(1)
+                )
+                if existing_batch is not None:
+                    previous = reader.read(existing_batch)
+                    self.reused_codes.add(previous.code)
+                    result.append(previous)
+                    continue
             request_id = str(uuid.uuid5(payload.request_id, str(item.email).casefold()))
             content = item.model_dump(mode="json")
             # Keep retry fingerprints compatible with imports predating these
@@ -59,7 +84,9 @@ class AgencyDemoControlManager:
                     raise ConflictError(
                         "This request has already been used.", code="demo.request_conflict"
                     )
-                result.append(reader.read(existing))
+                previous = reader.read(existing)
+                self.reused_codes.add(previous.code)
+                result.append(previous)
                 continue
             record = agency_record(item, secrets.token_hex(16), self.catalog)
             people = fictional_people(item)
@@ -72,7 +99,7 @@ class AgencyDemoControlManager:
                 record_fingerprint(record),
                 record,
                 role,
-                hash_password(secrets.token_urlsafe(48)),
+                await asyncio.to_thread(hash_password, secrets.token_urlsafe(48)),
                 owner_name=people.team[0],
                 client_name=people.clients[0],
                 mail_domain=domain,
