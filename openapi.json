@@ -3012,6 +3012,52 @@
         ]
       }
     },
+    "/admin/demos/agency-batch": {
+      "post": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Create Agency Batch",
+        "operationId": "create_agency_batch_admin_demos_agency_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgencyDemoBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgencyDemoBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/admin/demos/preview": {
       "post": {
         "tags": [
@@ -23200,6 +23246,146 @@
         "title": "AgencyDeletedResponse",
         "description": "The outcome of a hard deletion (also the trace's payload)."
       },
+      "AgencyDemoBatchRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgencyDemoInput"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "items"
+        ],
+        "title": "AgencyDemoBatchRequest"
+      },
+      "AgencyDemoBatchResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DemoRead"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AgencyDemoBatchResponse"
+      },
+      "AgencyDemoInput": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "company_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Company Name"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "fr"
+            ],
+            "title": "Language",
+            "default": "en"
+          },
+          "profession": {
+            "type": "string",
+            "enum": [
+              "accountant",
+              "lawyer",
+              "formation",
+              "relocation"
+            ],
+            "title": "Profession"
+          },
+          "country": {
+            "type": "string",
+            "enum": [
+              "GB",
+              "US",
+              "IE",
+              "CA",
+              "AU",
+              "NZ",
+              "FR",
+              "BE"
+            ],
+            "title": "Country"
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "City"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 6,
+            "title": "Steps"
+          },
+          "persona": {
+            "type": "string",
+            "enum": [
+              "client",
+              "director",
+              "employer",
+              "couple",
+              "family"
+            ],
+            "title": "Persona"
+          },
+          "logo_data_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 350000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Data Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "company_name",
+          "profession",
+          "country",
+          "city",
+          "steps",
+          "persona"
+        ],
+        "title": "AgencyDemoInput",
+        "description": "One approved prospect row; never a real client or production identifier."
+      },
       "AgencyEmailModuleResponse": {
         "properties": {
           "agency_id": {
@@ -30643,6 +30829,67 @@
           "has_logo": {
             "type": "boolean",
             "title": "Has Logo"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "client",
+              "agency"
+            ],
+            "title": "Scope",
+            "default": "client"
+          },
+          "lead_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Email"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "first_opened_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Opened At"
+          },
+          "last_opened_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Opened At"
+          },
+          "visits": {
+            "type": "integer",
+            "title": "Visits",
+            "default": 0
           }
         },
         "type": "object",

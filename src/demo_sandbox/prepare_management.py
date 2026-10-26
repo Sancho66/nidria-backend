@@ -2,16 +2,22 @@
 
 import asyncio
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.rbac import Permission as DbPermission
+from shared.models.rbac import Role, RolePermission
 from src.core.config import get_settings
 from src.core.database import async_session_maker, engine
+from src.core.rbac.baseline import collect_bindings, seed_bindings
+from src.core.rbac.permissions import Permission
+from src.demo_sandbox.bindings import BINDINGS
 from src.demo_sandbox.guards import assert_isolated_settings
 
 WRITABLE_TABLES = frozenset(
     {
         "agency",
+        "agency_profile_section",
         "agent",
         "activity_log",
         "agency_usage_milestone",
@@ -34,11 +40,54 @@ WRITABLE_TABLES = frozenset(
         "reminder",
         "signature_request",
         "signature_signer",
+        "step_comment",
+        "case_step_cost",
+        "client_profile_note",
+        "company_profile",
+        "company_field_definition",
+        "external_contact",
+        "company_profile_role",
+        "saved_view",
+        "message_template",
+        "document_template",
+        "agency_email_module",
+        "email_campaign",
+        "email_campaign_step",
+        "email_campaign_member",
+        "email_message",
     }
 )
 
 
+async def prepare_agency_permissions(db: AsyncSession) -> None:
+    """Fixture provisioning only; the public role can never edit this matrix."""
+    await seed_bindings(db, [*collect_bindings(), *BINDINGS])
+    admin = (await db.scalars(select(Role).where(Role.name == "admin", Role.is_system))).one()
+    granted = set(
+        await db.scalars(
+            select(RolePermission.permission_id).where(RolePermission.role_id == admin.id)
+        )
+    )
+    permissions = await db.scalars(
+        select(DbPermission).where(
+            DbPermission.key.in_(
+                [
+                    Permission.EMAIL_VIEW.value,
+                    Permission.EMAIL_MANAGE.value,
+                    Permission.EMAIL_ENROLL.value,
+                    Permission.EMAIL_SYNC.value,
+                ]
+            )
+        )
+    )
+    for permission in permissions:
+        if permission.id not in granted:
+            db.add(RolePermission(role_id=admin.id, permission_id=permission.id))
+    await db.commit()
+
+
 async def grant_management(db: AsyncSession) -> None:
+    await prepare_agency_permissions(db)
     role = (
         await db.execute(
             text(

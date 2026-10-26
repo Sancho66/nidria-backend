@@ -1,0 +1,490 @@
+"""Populate the real models with connected fictional agency data, offline only."""
+
+import secrets
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from shared.models.activity import ActivityLog
+from shared.models.agency import Agency
+from shared.models.agency_email_module import AgencyEmailModule
+from shared.models.agent import Agent
+from shared.models.case_person import CasePerson
+from shared.models.case_step_cost import CaseStepCost
+from shared.models.case_step_progress import CaseStepProgress
+from shared.models.client_case import ClientCase
+from shared.models.client_profile import ClientProfile
+from shared.models.client_profile_note import ClientProfileNote
+from shared.models.company_profile import CompanyProfile, CompanyProfileRole
+from shared.models.document_template import DocumentTemplate
+from shared.models.email_campaign import (
+    EmailCampaign,
+    EmailCampaignMember,
+    EmailCampaignStep,
+    EmailMessage,
+)
+from shared.models.expat_user import ExpatUser
+from shared.models.external_contact import ExternalContact
+from shared.models.journey import JourneyTemplateStep
+from shared.models.message_template import MessageTemplate
+from shared.models.rbac import Role
+from shared.models.reminder import Reminder
+from shared.models.saved_view import SavedView
+from shared.models.step_comment import StepComment
+from shared.models.usage import UsageEvent
+from src.admin.demo_schema import AgencyDemoInput
+from src.agencies.profile_sections_manager import list_sections
+from src.company_profiles.company_catalog import materialize_company_definitions
+from src.core.security import hash_password
+from src.demo_sandbox.catalog import DemoRecord
+from src.demo_sandbox.seed import seed_case
+from src.demo_sandbox.storage import document_path
+
+PROGRESS = (2, 0, 1, 1, 2, 3, 4, 4, 5, 6)
+NAMES = {
+    "en": (
+        ("Jamie", "Hawthorne"),
+        ("Amelia", "Bennett"),
+        ("Oliver", "Reed"),
+        ("Sophie", "Whitfield"),
+        ("Daniel", "Brooks"),
+        ("Grace", "Ellis"),
+        ("Noah", "Hartley"),
+        ("Chloe", "Warren"),
+        ("Adam", "Foster"),
+        ("Emma", "Sinclair"),
+    ),
+    "fr": (
+        ("Camille", "Morel"),
+        ("Hugo", "Perrin"),
+        ("Léa", "Roussel"),
+        ("Thomas", "Mercier"),
+        ("Alice", "Garnier"),
+        ("Louis", "Chevalier"),
+        ("Jade", "Lefèvre"),
+        ("Paul", "Fontaine"),
+        ("Manon", "Colin"),
+        ("Gabriel", "Roux"),
+    ),
+}
+
+
+def variant_record(record: DemoRecord, index: int) -> DemoRecord:
+    """Stable file paths and progression, reconstructed without storing ten imports."""
+    if index == 0:
+        return record
+    result = record.model_copy(deep=True)
+    result.id = f"{record.id}-case-{index}"
+    result.state["id"] = result.id
+    done = PROGRESS[index]
+    result.state["progress"]["done"] = done
+    for position, step in enumerate(result.state["steps"]):
+        step["status"] = (
+            "done" if position < done else "in_progress" if position == done else "todo"
+        )
+    for item in result.state["documents"]:
+        position = next(
+            i for i, step in enumerate(result.state["steps"]) if step["ref"] == item["step_ref"]
+        )
+        item["status"] = "validated" if position < done else "requested"
+    result.state["signature"]["enabled"] = done >= 2
+    result.state["reminders"] = [] if done == 0 or done == 6 else result.state["reminders"]
+    return DemoRecord.model_validate(result.model_dump())
+
+
+async def populate_agency(
+    db: AsyncSession, agency: Agency, record: DemoRecord, payload: AgencyDemoInput
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    fr = payload.language == "fr"
+    owner = (await db.scalars(select(Agent).where(Agent.agency_id == agency.id))).one()
+    first = (await db.scalars(select(ClientCase).where(ClientCase.agency_id == agency.id))).one()
+    assert first.journey_template_id is not None
+    owner.first_name, owner.last_name = ("Élodie", "Martin") if fr else ("Sarah", "Mitchell")
+    agency.country, agency.city = payload.country, payload.city
+    agency.legal_name = payload.company_name
+    agency.legal_form = "SAS" if fr else "LLC" if payload.country == "US" else "Ltd"
+    agency.registration_number = "DEMO-000001"
+    agency.address = "1 rue de l'Exemple" if fr else "1 Example Street"
+    agency.postal_code = "69000" if fr else "00000"
+    agency.contact_email = f"office-{record.public_code}@example.com"
+    agency.contact_phone = "+00 000 000 000"
+    agency.currency = {"GB": "GBP", "US": "USD", "CA": "CAD", "AU": "AUD", "NZ": "NZD"}.get(
+        payload.country, "EUR"
+    )
+    agency.onboarding_dismissed_at = now
+    agency.client_terms_reviewed_at = now
+    agency.settings = {**agency.settings, "auto_reminders_require_approval": True}
+    # Production GETs lazily materialize these defaults. Prepare them once
+    # in the isolated writer transaction, never during public consultation.
+    for surface in ("person", "company"):
+        await list_sections(db, agency.id, surface)
+    await materialize_company_definitions(db, agency.id)
+    password = hash_password(secrets.token_urlsafe(48))
+    members = [owner]
+    for index, (first_name, last_name) in enumerate(
+        (("Lucas", "Bernard"), ("Clara", "Petit"))
+        if fr
+        else (("James", "Cooper"), ("Olivia", "Turner"))
+    ):
+        member = Agent(
+            agency_id=agency.id,
+            role_id=owner.role_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=f"member-{index}-{record.public_code}@example.com",
+            password_hash=password,
+        )
+        db.add(member)
+        members.append(member)
+    provider_role = (
+        await db.scalars(select(Role).where(Role.name == "external_translator", Role.is_system))
+    ).one()
+    provider = Agent(
+        agency_id=agency.id,
+        role_id=provider_role.id,
+        first_name="Nora",
+        last_name="Laurent" if fr else "Reed",
+        email=f"translator-{record.public_code}@example.com",
+        password_hash=password,
+        is_external=True,
+    )
+    db.add(provider)
+    await db.flush()
+    db.add(
+        ExternalContact(
+            agency_id=agency.id,
+            agent_id=provider.id,
+            name=f"{provider.first_name} {provider.last_name}",
+            email=provider.email,
+            type="other",
+        )
+    )
+    cases = [first]
+    for index in range(1, 10):
+        name = NAMES[payload.language][index]
+        cases.append(
+            await seed_case(
+                db,
+                variant_record(record, index),
+                owner,
+                first.journey_template_id,
+                first_name=name[0],
+                last_name=name[1],
+                email=f"client-{index}-{record.public_code}@example.com",
+            )
+        )
+    profiles = []
+    for index, case in enumerate(cases):
+        client = await db.get(ExpatUser, case.principal_expat_user_id)
+        assert client is not None
+        client.first_name, client.last_name = NAMES[payload.language][index]
+        case.owner_agent_id = members[index % 3].id
+        case.dest_country = payload.country
+        case.dest_city = payload.city
+        case.reference = f"{now.year}-{index + 1:03}"
+        case.tags = ["Exemple fictif" if fr else "Sample data"]
+        case.source = "Exemple fictif" if fr else "Sample data"
+        if payload.persona in {"couple", "family"}:
+            db.add(
+                CasePerson(
+                    case_id=case.id,
+                    kind="family",
+                    full_name="Alex Morel" if fr else "Alex Hawthorne",
+                    relationship_kind="spouse",
+                    relationship="Conjoint" if fr else "Partner",
+                )
+            )
+            if payload.persona == "family":
+                db.add(
+                    CasePerson(
+                        case_id=case.id,
+                        kind="family",
+                        full_name="Lou Morel" if fr else "Sam Hawthorne",
+                        relationship_kind="child",
+                        relationship="Enfant" if fr else "Child",
+                    )
+                )
+        case.created_at = now - timedelta(days=2 + index * 3)
+        case.status = (
+            "closed"
+            if PROGRESS[index] == 6
+            else "awaiting_documents"
+            if index in (2, 3, 4)
+            else "in_progress"
+        )
+        profile = (
+            await db.scalars(
+                select(ClientProfile).where(
+                    ClientProfile.agency_id == agency.id, ClientProfile.expat_user_id == client.id
+                )
+            )
+        ).one()
+        profile.tags = ["Exemple fictif" if fr else "Sample data"]
+        profile.source = "Exemple fictif" if fr else "Sample data"
+        profile.profession = "Consultant"
+        profile.nationality = payload.country
+        profile.employer = "Atelier Horizon" if fr else "Willow Studio"
+        profile.place_of_birth = payload.city
+        principal = (
+            await db.scalars(
+                select(CasePerson).where(
+                    CasePerson.case_id == case.id, CasePerson.kind == "principal"
+                )
+            )
+        ).one()
+        principal.nationality = profile.nationality
+        principal.profession = profile.profession
+        principal.employer = profile.employer
+        principal.place_of_birth = profile.place_of_birth
+        profiles.append(profile)
+        db.add(
+            ClientProfileNote(
+                profile_id=profile.id,
+                author_agent_id=owner.id,
+                body=(
+                    "Données fictives. Le client a confirmé ses priorités "
+                    "et les prochaines pièces à transmettre."
+                )
+                if fr
+                else (
+                    "Sample data. The client has confirmed their priorities "
+                    "and the next documents to provide."
+                ),
+            )
+        )
+        rows = list(
+            (
+                await db.execute(
+                    select(CaseStepProgress, JourneyTemplateStep)
+                    .join(
+                        JourneyTemplateStep,
+                        JourneyTemplateStep.id == CaseStepProgress.template_step_id,
+                    )
+                    .where(CaseStepProgress.case_id == case.id)
+                    .order_by(JourneyTemplateStep.position)
+                )
+            ).all()
+        )
+        current = rows[min(PROGRESS[index], 5)][0]
+        for position, (progress, _step) in enumerate(rows):
+            progress.responsible_type = "agent"
+            progress.responsible_agent_id = case.owner_agent_id
+            progress.validated_by_agent_id = owner.id
+            if progress.status == "done":
+                progress.completed_by_agent_id = case.owner_agent_id
+                progress.completed_at = now - timedelta(days=index % 6, minutes=position + 1)
+            if progress.status != "done":
+                progress.due_at = now + timedelta(
+                    days=-2
+                    if index == 3 and progress.id == current.id
+                    else max(0, position - PROGRESS[index]) + index % 5 + 1
+                )
+        db.add(
+            ActivityLog(
+                case_id=case.id,
+                actor_type="agent",
+                actor_id=case.owner_agent_id,
+                action_type="case.status_changed" if PROGRESS[index] == 6 else "document.validated",
+                details={"fictional": True, "new": case.status},
+                created_at=now - timedelta(days=index % 6, minutes=index + 1),
+            )
+        )
+        db.add(
+            StepComment(
+                case_step_progress_id=current.id,
+                author_type="agent",
+                author_id=owner.id,
+                body=(
+                    "Nous avons vérifié les premières pièces. "
+                    "La liste des éléments restants est à jour."
+                )
+                if fr
+                else (
+                    "We have checked the first documents. "
+                    "The list of outstanding items is up to date."
+                ),
+            )
+        )
+        db.add(
+            StepComment(
+                case_step_progress_id=current.id,
+                author_type="expat",
+                author_id=client.id,
+                body="Merci, je vais préparer les documents restants."
+                if fr
+                else "Thank you, I will prepare the remaining documents.",
+            )
+        )
+        db.add(
+            CaseStepCost(
+                case_step_progress_id=current.id,
+                currency=agency.currency,
+                planned_currency=agency.currency,
+                planned_amount=Decimal("45.00"),
+                amount=Decimal("45.00") if index % 2 else None,
+                label="Frais de traduction, exemple" if fr else "Translation fee, sample",
+                author_agent_id=owner.id,
+            )
+        )
+        if PROGRESS[index] < 6:
+            db.add(
+                Reminder(
+                    case_id=case.id,
+                    step_progress_id=current.id,
+                    channel="mail",
+                    recipient_type="expat",
+                    status="to_approve" if index % 2 else "approved",
+                    scheduled_at=now + timedelta(days=index % 5 + 1),
+                    message_body=(
+                        "Exemple fictif. Les pièces restantes sont indiquées "
+                        "dans votre espace client."
+                    )
+                    if fr
+                    else "Sample message. Your client space lists the documents still needed.",
+                )
+            )
+        db.add(
+            UsageEvent(
+                agency_id=agency.id,
+                case_id=case.id,
+                actor_type="expat",
+                actor_id=client.id,
+                event_type="document.added",
+                details={"fictional": True},
+                created_at=now - timedelta(hours=index + 1),
+            )
+        )
+        if index < 3:
+            company = CompanyProfile(
+                agency_id=agency.id,
+                name=(f"Atelier Horizon {index + 1}" if fr else f"Willow Studio {index + 1}"),
+                source="Exemple fictif" if fr else "Sample data",
+                tags=["Exemple fictif" if fr else "Sample data"],
+            )
+            db.add(company)
+            await db.flush()
+            case.company_profile_id = company.id
+            db.add(
+                CompanyProfileRole(
+                    company_profile_id=company.id, client_profile_id=profile.id, role="manager"
+                )
+            )
+    db.add(
+        SavedView(
+            agency_id=agency.id,
+            agent_id=owner.id,
+            name="Pièces en attente" if fr else "Awaiting documents",
+            entity="cases",
+            filters={
+                "advanced_filters": [
+                    {"field": "status", "operator": "eq", "value": "awaiting_documents"}
+                ]
+            },
+            is_shared=True,
+        )
+    )
+    db.add(
+        MessageTemplate(
+            agency_id=agency.id,
+            name="Pièces manquantes" if fr else "Missing documents",
+            language=payload.language,
+            channel="mail",
+            body="Bonjour {client_name}, les pièces à transmettre sont indiquées dans votre espace."
+            if fr
+            else "Hello {client_name}, your client space lists the documents we still need.",
+        )
+    )
+    db.add(
+        DocumentTemplate(
+            agency_id=agency.id,
+            name="Lettre de mission, exemple" if fr else "Engagement letter, sample",
+            storage_path=document_path(record.id, 2),
+            filename="engagement-letter-sample.pdf",
+            provider="mock",
+            provider_template_ref=f"fictional-{record.public_code}",
+            fields_configured=True,
+            roles_count=1,
+            state="active",
+        )
+    )
+    db.add(AgencyEmailModule(agency_id=agency.id, enabled=True, enabled_at=now))
+    for group in range(2):
+        title = (
+            ("Préparer votre dossier" if group == 0 else "Suivi de votre demande")
+            if fr
+            else ("Getting your case ready" if group == 0 else "Following up on your enquiry")
+        )
+        campaign = EmailCampaign(
+            agency_id=agency.id,
+            name=f"{payload.company_name} : {title}",
+            status="PAUSED",
+            created_by_agent_id=owner.id,
+            settings={
+                "fictional": True,
+                "timezone": {
+                    "GB": "Europe/London",
+                    "US": "America/New_York",
+                    "IE": "Europe/Dublin",
+                    "CA": "America/Toronto",
+                    "AU": "Australia/Sydney",
+                    "NZ": "Pacific/Auckland",
+                }.get(payload.country, "Europe/Paris"),
+                "sender": {"user_id": "fictional-sender", "email": agency.contact_email},
+            },
+        )
+        db.add(campaign)
+        await db.flush()
+        step = EmailCampaignStep(
+            campaign_id=campaign.id,
+            position=1,
+            name=title,
+            subject_template=title,
+            body_template="Exemple fictif : consultez l'avancement de votre dossier."
+            if fr
+            else "Sample message: check the progress of your case.",
+        )
+        db.add(step)
+        await db.flush()
+        for profile in profiles[group * 5 : (group + 1) * 5]:
+            campaign_member = EmailCampaignMember(
+                agency_id=agency.id,
+                campaign_id=campaign.id,
+                client_profile_id=profile.id,
+                status="EMAIL_PAUSED",
+                added_by_agent_id=owner.id,
+                last_sent_at=now - timedelta(days=1),
+            )
+            db.add(campaign_member)
+            await db.flush()
+            db.add(
+                EmailMessage(
+                    agency_id=agency.id,
+                    campaign_id=campaign.id,
+                    campaign_member_id=campaign_member.id,
+                    campaign_step_id=step.id,
+                    step_position=1,
+                    provider="LEMLIST",
+                    direction="OUTBOUND",
+                    status="DELIVERED",
+                    content_state="AVAILABLE",
+                    subject=title,
+                    body_text=step.body_template,
+                    sent_at=now - timedelta(days=1),
+                    delivered_at=now - timedelta(days=1),
+                    payload={"fictional": True},
+                )
+            )
+    await db.commit()
+    return {
+        "agent_id": str(owner.id),
+        "case_ids": [str(case.id) for case in cases],
+        "email": str(payload.email),
+        "country": payload.country,
+        "profession": payload.profession,
+        "persona": payload.persona,
+        "steps": payload.steps,
+        "expires_at": (now + timedelta(days=60)).isoformat(),
+    }

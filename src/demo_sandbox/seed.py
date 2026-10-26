@@ -1,6 +1,7 @@
 """Load the approved imports through the real manager, then pose fictional state."""
 
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -12,6 +13,7 @@ from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.case_step_requirement import CaseStepRequirement
+from shared.models.client_case import ClientCase
 from shared.models.document import Document
 from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplateStep
@@ -65,7 +67,6 @@ async def seed_record(
     password: str,
     extra_settings: dict[str, Any] | None = None,
 ) -> Agency:
-    now = datetime.now(UTC)
     agency = Agency(
         name=record.name,
         slug=record.agency_slug,
@@ -86,8 +87,8 @@ async def seed_record(
     owner = Agent(
         agency_id=agency.id,
         role_id=role.id,
-        first_name="Demo",
-        last_name="Team" if record.language == "en" else "Equipe",
+        first_name="Demo" if record.language == "en" else "Démo",
+        last_name="Team" if record.language == "en" else "Équipe",
         email=f"demo-team-{record.public_code}@example.com",
         password_hash=password,
     )
@@ -105,19 +106,39 @@ async def seed_record(
     )
     if (
         not imported.created
+        or imported.template_id is None
         or len(imported.steps_created) != len(record.state["steps"])
         or imported.steps_ignored
     ):
         raise RuntimeError("Approved journey did not import completely")
+    await seed_case(
+        db, record, owner, imported.template_id, all_requirements=extra_settings is not None
+    )
+    return agency
+
+
+async def seed_case(
+    db: AsyncSession,
+    record: DemoRecord,
+    owner: Agent,
+    template_id: uuid.UUID,
+    *,
+    all_requirements: bool = True,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+) -> ClientCase:
+    """Reuse the production creation path with all outbound effects disabled."""
+    now = datetime.now(UTC)
     case = await CasesManager(db).create_case(
         owner,
         CaseCreateRequest(
-            first_name="Demo" if record.language == "en" else "Client",
-            last_name="Client" if record.language == "en" else "Demonstration",
-            email=f"demo-client-{record.public_code}@example.com",
+            first_name=first_name or ("Demo" if record.language == "en" else "Client"),
+            last_name=last_name or ("Client" if record.language == "en" else "Démonstration"),
+            email=email or f"demo-client-{record.public_code}@example.com",
             preferred_lang=record.language,
             send_invitation=False,
-            journey_template_id=imported.template_id,
+            journey_template_id=template_id,
             status=CaseStatus.IN_PROGRESS,
         ),
         email_sink=[],
@@ -178,7 +199,7 @@ async def seed_record(
                 days=max(1, record.state["progress"]["done"] - index)
             )
             progress.completed_by_agent_id = owner.id
-        if extra_settings is None and index > 2:
+        if not all_requirements and index > 2:
             continue
         for definition in [item for item in definitions if item.step_id == step.id]:
             step_ref = record.state["steps"][index]["ref"]
@@ -240,4 +261,4 @@ async def seed_record(
             )
         )
     await db.commit()
-    return agency
+    return case

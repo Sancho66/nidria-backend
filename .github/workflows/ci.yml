@@ -23,7 +23,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      # Match the production image; keep the isolated test process on Python 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
       - run: uv sync --frozen
       # Scope matches `make lint` so shared/ + tests/ + scripts/
       # + alembic/env.py also get caught here.
@@ -36,7 +42,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      # Match the production image; keep the isolated test process on Python 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
       - run: uv sync --frozen
       # Shared models are critical paths — type errors there surface
       # as runtime exceptions (no safety net).
@@ -55,7 +67,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      # Match the production image; keep the isolated test process on Python 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
       - run: uv sync --frozen
       # `-n auto` runs pytest in parallel across all available CPU
       # cores (2 on GH free runners, more on self-hosted). Each
@@ -79,7 +97,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      # Match the production image; keep the isolated test process on Python 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
       - run: uv sync --frozen
       # Contract-first (CLAUDE.md rule #12): the committed openapi.json IS the
       # front's source of truth for its schema.d.ts. A stale export is a DEAD

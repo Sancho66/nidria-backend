@@ -1,6 +1,8 @@
 name: Demo sandbox
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -18,7 +20,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      # Match the production image; keep the isolated test process on Python 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
       - run: uv sync --frozen
       - run: make check-fast
       - run: bash scripts/test_ci_isolated.sh
@@ -34,7 +42,7 @@ jobs:
           git diff --exit-code -- demo-sandbox/openapi.json
   deploy:
     needs: check
-    if: github.ref == 'refs/heads/main' && vars.DEMO_SANDBOX_DEPLOY_ENABLED == 'true'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEMO_SANDBOX_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

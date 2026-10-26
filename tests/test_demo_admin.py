@@ -64,6 +64,8 @@ async def test_only_superadmin_can_manage_demos(
             return []
         if operation == "list":
             return {"items": [], "total": 0, "page": 1, "page_size": 30}
+        if operation == "agency_batch":
+            return {"items": []}
         return {
             "code": "a" * 32,
             "name": "Example",
@@ -90,6 +92,25 @@ async def test_only_superadmin_can_manage_demos(
         ),
         ("POST", "/admin/demos/preview", {"template_id": "example"}),
         ("POST", "/admin/demos/" + "a" * 32 + "/disable", None),
+        (
+            "POST",
+            "/admin/demos/agency-batch",
+            {
+                "request_id": str(uuid.uuid4()),
+                "items": [
+                    {
+                        "email": "pilot@example.com",
+                        "company_name": "Willow Practice",
+                        "language": "en",
+                        "profession": "accountant",
+                        "country": "GB",
+                        "city": "Bristol",
+                        "persona": "director",
+                        "steps": ["One", "Two", "Three", "Four", "Five", "Six"],
+                    }
+                ],
+            },
+        ),
     ]
     for method, path, body in endpoints:
         assert (await client.request(method, path, json=body)).status_code == 401
@@ -113,6 +134,11 @@ async def test_only_superadmin_can_manage_demos(
         "/admin/demos/" + "a" * 32 + "/disable", headers=agent_headers(root)
     )
     assert disabled.status_code == 200 and disabled.json()["enabled"] is False
+    assert (
+        await client.post(
+            "/admin/demos/agency-batch", json=endpoints[-1][2], headers=agent_headers(root)
+        )
+    ).status_code == 201
     assert all(actor == root.id for actor, _ in calls)
 
 
