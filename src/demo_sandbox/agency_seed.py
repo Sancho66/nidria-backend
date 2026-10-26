@@ -1,5 +1,6 @@
 """Populate the real models with connected fictional agency data, offline only."""
 
+import asyncio
 import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -76,7 +77,7 @@ async def populate_agency(
     journey = await db.get(JourneyTemplate, first.journey_template_id)
     assert journey is not None
     journey.country = payload.country
-    agency.country, agency.city = payload.country, payload.city
+    agency.country, agency.city = payload.country, payload.city or None
     agency.legal_name = payload.company_name
     agency.legal_form = "SAS" if fr else "LLC" if payload.country == "US" else "Ltd"
     agency.registration_number = "DEMO-000001"
@@ -95,7 +96,7 @@ async def populate_agency(
     for surface in ("person", "company"):
         await list_sections(db, agency.id, surface)
     await materialize_company_definitions(db, agency.id)
-    password = hash_password(secrets.token_urlsafe(48))
+    password = await asyncio.to_thread(hash_password, secrets.token_urlsafe(48))
     members = [owner]
     roles = {
         name: role_id
@@ -160,7 +161,7 @@ async def populate_agency(
         client.first_name, client.last_name = people.clients[index]
         case.owner_agent_id = members[index % 3].id
         case.dest_country = payload.country
-        case.dest_city = payload.city
+        case.dest_city = payload.city or None
         case.reference = f"{now.year}-{index + 1:03}"
         case.tags = ["Exemple fictif" if fr else "Sample data"]
         case.source = "Exemple fictif" if fr else "Sample data"
@@ -209,7 +210,7 @@ async def populate_agency(
         profile.profession = "Consultant"
         profile.nationality = payload.country
         profile.employer = "Atelier Horizon" if fr else "Willow Studio"
-        profile.place_of_birth = payload.city
+        profile.place_of_birth = payload.city or None
         principal = (
             await db.scalars(
                 select(CasePerson).where(
