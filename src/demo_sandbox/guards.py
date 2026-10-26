@@ -27,10 +27,9 @@ def assert_isolated_settings(settings: Settings, *, seed: bool = False) -> None:
     if (
         settings.mock_lemlist is not True
         or settings.scheduler_enabled
-        or settings.email_module_enabled
         or settings.email_provider_external_effects
     ):
-        raise RuntimeError("Demo campaigns and scheduled jobs must remain disabled")
+        raise RuntimeError("Demo providers and scheduled jobs must remain disabled")
     if settings.billing_checkout_enabled or settings.resend_monitor_enabled:
         raise RuntimeError("Billing and provider monitoring are forbidden in the sandbox")
     if any(

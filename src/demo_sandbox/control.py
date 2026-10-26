@@ -15,7 +15,12 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
-from src.admin.demo_schema import DemoControlEnvelope, DemoCreateRequest, DemoJourneyInput
+from src.admin.demo_schema import (
+    AgencyDemoBatchRequest,
+    DemoControlEnvelope,
+    DemoCreateRequest,
+    DemoJourneyInput,
+)
 from src.admin.demo_transport import MAX_BODY_BYTES, signature
 from src.core.config import get_settings
 from src.core.exceptions import ForbiddenError, ValidationError, register_exception_handlers
@@ -113,6 +118,12 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
         manager = DemoControlManager(db, catalog)
         payload = envelope.payload
         match envelope.operation:
+            case "agency_batch":
+                from src.demo_sandbox.agency_control import AgencyDemoControlManager
+
+                return await AgencyDemoControlManager(db, catalog).create_batch(
+                    actor, AgencyDemoBatchRequest.model_validate(payload)
+                )
             case "list":
                 query = ListInput.model_validate(payload)
                 return await manager.list_demos(query.page, query.page_size, query.search)

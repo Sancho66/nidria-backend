@@ -3,6 +3,8 @@
 import uuid
 
 from src.admin.demo_schema import (
+    AgencyDemoBatchRequest,
+    AgencyDemoBatchResponse,
     DemoCreateRequest,
     DemoJourneyInput,
     DemoJourneyPreview,
@@ -16,6 +18,13 @@ from src.admin.demo_transport import DemoTransport
 class AdminDemoManager:
     def __init__(self) -> None:
         self.transport = DemoTransport()
+
+    async def create_agency_batch(
+        self, actor_id: uuid.UUID, payload: AgencyDemoBatchRequest
+    ) -> AgencyDemoBatchResponse:
+        return AgencyDemoBatchResponse.model_validate(
+            await self.transport.call(actor_id, "agency_batch", payload.model_dump(mode="json"))
+        )
 
     async def list_demos(
         self, actor_id: uuid.UUID, page: int, page_size: int, search: str

@@ -15,6 +15,7 @@ from shared.models.expat_user import ExpatUser
 from shared.models.journey import JourneyTemplateStep
 from shared.models.reminder import Reminder
 from shared.models.usage import UsageEvent
+from src.core.config import get_settings
 from src.core.enums import (
     ActorType,
     CaseStatus,
@@ -274,7 +275,9 @@ class ActivityRepository(DashboardRepository):
             .where(
                 UsageEvent.agency_id == agency_id,
                 UsageEvent.created_at >= since,
-                ClientCase.is_demo.is_(False),
+                # The isolated demo database contains fictional cases only.
+                # Production continues to exclude every demo from this pulse.
+                ClientCase.is_demo.is_(get_settings().environment == "demo_sandbox"),
                 ClientCase.deleted_at.is_(None),
                 or_(
                     and_(

@@ -1,4 +1,4 @@
-"""Serve the existing client portal API against a separate, read-only database.
+"""Serve existing agency/client reads against a separate, read-only database.
 
 Run only with `uvicorn src.demo_sandbox.application:app`. This module is not
 imported by `src.main`, so production gains no public authentication path.
@@ -25,17 +25,21 @@ from src.core.dependencies import get_expat_token_payload
 from src.core.exceptions import NotFoundError, register_exception_handlers
 from src.core.rbac.enforcement import enforce
 from src.core.rbac.integrity import assert_all_routes_bound
+from src.demo_sandbox.agency_manager import AgencyDemoManager
+from src.demo_sandbox.agency_repository import AgencyDemoRepository
+from src.demo_sandbox.agency_routes import agency_read_router
 from src.demo_sandbox.catalog import DemoCatalog, load_catalog
 from src.demo_sandbox.control import control_application
 from src.demo_sandbox.guards import SANDBOX_DB_NAME, assert_isolated_settings
 from src.demo_sandbox.manager import DemoManager
 from src.demo_sandbox.schema import DemoSessionRequest, DemoSessionResponse
 from src.demo_sandbox.storage import load_demo_documents
+from src.demo_sandbox.visits import track_visit
 from src.documents.documents_router import expat_router as documents_router
 from src.expat.expat_router import router as expat_router
 from src.signatures.signatures_router import router as signatures_router
 
-# Reuse the real handlers and response schemas. No agent API, webhook, provider
+# Reuse the real client handlers and schemas. No webhook, provider
 # callback, password, consent acceptance, upload or other write route is mounted.
 READ_ROUTES = frozenset(
     {
@@ -56,8 +60,10 @@ READ_ROUTES = frozenset(
 async def read_only_db() -> AsyncIterator[AsyncSession]:
     async with async_session_maker() as db:
         await db.execute(text("SET TRANSACTION READ ONLY"))
-        yield db
-        await db.rollback()
+        try:
+            yield db
+        finally:
+            await db.rollback()
 
 
 @asynccontextmanager
@@ -99,8 +105,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         """)
             )
         ).one()
-        if counts.agencies < 40 or counts.agencies != counts.cases or counts.cases != counts.demos:
-            raise RuntimeError("Sandbox must contain only fictional agencies with one case each")
+        if counts.agencies < 40 or counts.cases != counts.demos:
+            raise RuntimeError("Sandbox must contain only fictional agencies and cases")
         for record in catalog.records:
             if (
                 await DemoManager(db, catalog).repo.resolve(
@@ -110,7 +116,15 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             ):
                 raise RuntimeError("Sandbox seed is incomplete or differs from the catalog")
         for agency in await db.scalars(select(Agency)):
-            if agency.settings.get("sandbox_dynamic_entry"):
+            if agency.settings.get("sandbox_full_demo"):
+                if (
+                    await AgencyDemoRepository(db).resolve(
+                        agency.slug.removeprefix("demo-sandbox-"), allow_disabled=True
+                    )
+                    is None
+                ):
+                    raise RuntimeError("Invalid fictional agency demo")
+            elif agency.settings.get("sandbox_dynamic_entry"):
                 from src.demo_sandbox.catalog import DemoRecord
                 from src.demo_sandbox.repository import record_fingerprint
 
@@ -175,14 +189,24 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
     async def session(
         body: DemoSessionRequest, db: Annotated[AsyncSession, Depends(get_db)]
     ) -> DemoSessionResponse:
-        return await DemoManager(db, application.state.demo_catalog).open_session(body.code)
+        agency = await AgencyDemoManager(db).open_session(body)
+        result = agency or await DemoManager(db, application.state.demo_catalog).open_session(
+            body.code
+        )
+        if body.visit_id is not None:
+            await track_visit(body.code, body.visit_id)
+        return result
 
     async def scope(
         request: Request,
         payload: Annotated[dict[str, Any], Depends(get_expat_token_payload)],
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> None:
-        identity = await DemoManager(db, application.state.demo_catalog).verify_session(payload)
+        identity = (
+            await AgencyDemoManager(db).verify_expat(payload)
+            if payload.get("demo_agency_id")
+            else await DemoManager(db, application.state.demo_catalog).verify_session(payload)
+        )
         requested_case = request.path_params.get("case_id")
         if requested_case is not None and str(requested_case) != str(identity.case.id):
             raise NotFoundError("Case not found.", code="case.not_found")
@@ -206,6 +230,7 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
     if {route.path for route in selected.routes if isinstance(route, APIRoute)} != READ_ROUTES:
         raise RuntimeError("The production client portal contract has changed")
     application.include_router(selected, dependencies=[Depends(scope), Depends(enforce)])
+    application.include_router(agency_read_router())
     application.mount("/_control", control_application(application.state.demo_catalog))
     return application
 

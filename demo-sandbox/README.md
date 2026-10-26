@@ -1,5 +1,7 @@
 # Sandbox des 40 courriers, tâche 2c
 
+Le complément agence complète du 26/10 est décrit dans [FULL-AGENCY-DEMO.md](FULL-AGENCY-DEMO.md). Il remplace la redirection décrite ci-dessous par un proxy sur app.nidria.com et étend les droits de provisionnement fictif. Les sections datées ci-dessous décrivent la livraison initiale.
+
 Architecture de la tâche 2c, établie le 21/10/2026.
 La base applicative backend est `f278d1d` (v0.160.0), la base frontend `79e134b`, dont le code
 app correspond à la production v1.244.1. Les composants de l'espace client et les

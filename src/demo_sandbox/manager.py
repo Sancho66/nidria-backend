@@ -35,7 +35,10 @@ class DemoManager:
             expires_minutes=120,
         )
         return DemoSessionResponse(
-            access_token=token, case_id=identity.case.id, language=record.language
+            access_token=token,
+            case_id=identity.case.id,
+            language=record.language,
+            agency_name=record.name,
         )
 
     async def verify_session(self, payload: dict[str, Any]) -> DemoIdentity:

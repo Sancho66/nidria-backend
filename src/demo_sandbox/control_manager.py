@@ -47,8 +47,10 @@ class DemoControlManager:
             raise NotFoundError("Demo not found.", code="demo.not_found")
         return record
 
-    def _read(self, agency: Agency) -> DemoRead:
+    def read(self, agency: Agency) -> DemoRead:
         record = self._record(agency)
+        full = agency.settings.get("sandbox_full_demo", {})
+        visits = agency.settings.get("sandbox_visits", {})
         return DemoRead(
             code=record.public_code,
             name=record.name,
@@ -60,6 +62,12 @@ class DemoControlManager:
             enabled=agency.settings.get("sandbox_enabled", True) is True,
             created_at=agency.created_at,
             has_logo=agency.logo_path is not None,
+            scope="agency" if full else "client",
+            lead_email=full.get("email"),
+            expires_at=full.get("expires_at"),
+            first_opened_at=visits.get("first"),
+            last_opened_at=visits.get("last"),
+            visits=visits.get("count", 0),
         )
 
     async def list_demos(self, page: int, page_size: int, search: str) -> DemoListResponse:
@@ -93,7 +101,7 @@ class DemoControlManager:
             )
         ).all()
         return DemoListResponse(
-            items=[self._read(agency) for agency in rows],
+            items=[self.read(agency) for agency in rows],
             total=total,
             page=page,
             page_size=page_size,
@@ -142,7 +150,7 @@ class DemoControlManager:
                 raise ConflictError(
                     "This request has already been used.", code="demo.request_conflict"
                 )
-            return self._read(existing)
+            return self.read(existing)
         record = build_record(payload, secrets.token_hex(16), self.catalog)
         await self.preview(payload)
         role = (
@@ -177,7 +185,7 @@ class DemoControlManager:
             },
         )
         await self.db.commit()
-        return self._read(agency)
+        return self.read(agency)
 
     async def disable(self, actor_id: uuid.UUID, code: str) -> DemoRead:
         agency = await self.db.scalar(
@@ -201,4 +209,4 @@ class DemoControlManager:
                 details={"platform_operator": str(actor_id), "fictional": True},
             )
             await self.db.commit()
-        return self._read(agency)
+        return self.read(agency)

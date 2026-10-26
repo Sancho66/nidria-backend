@@ -7,6 +7,8 @@ from fastapi import APIRouter, Path, Query
 from src.admin.admin_router import AgentDep
 from src.admin.demo_manager import AdminDemoManager
 from src.admin.demo_schema import (
+    AgencyDemoBatchRequest,
+    AgencyDemoBatchResponse,
     DemoCreateRequest,
     DemoJourneyInput,
     DemoJourneyPreview,
@@ -24,6 +26,7 @@ BINDINGS = [
     for method, path in (
         ("GET", "/admin/demos"),
         ("POST", "/admin/demos"),
+        ("POST", "/admin/demos/agency-batch"),
         ("GET", "/admin/demos/templates"),
         ("POST", "/admin/demos/preview"),
         ("POST", "/admin/demos/{code}/disable"),
@@ -44,6 +47,13 @@ async def list_demos(
 @router.get("/templates", response_model=list[DemoTemplateRead])
 async def demo_templates(agent: AgentDep) -> list[DemoTemplateRead]:
     return await AdminDemoManager().templates(agent.id)
+
+
+@router.post("/agency-batch", response_model=AgencyDemoBatchResponse, status_code=201)
+async def create_agency_batch(
+    payload: AgencyDemoBatchRequest, agent: AgentDep
+) -> AgencyDemoBatchResponse:
+    return await AdminDemoManager().create_agency_batch(agent.id, payload)
 
 
 @router.post("/preview", response_model=DemoJourneyPreview)

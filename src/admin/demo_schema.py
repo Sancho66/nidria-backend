@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from src.core.i18n import Language
 from src.journeys.journeys_schema import JourneyImportRequest
@@ -68,6 +68,52 @@ class DemoRead(BaseModel):
     enabled: bool
     created_at: datetime
     has_logo: bool
+    scope: Literal["client", "agency"] = "client"
+    lead_email: str | None = None
+    expires_at: datetime | None = None
+    first_opened_at: datetime | None = None
+    last_opened_at: datetime | None = None
+    visits: int = 0
+
+
+class AgencyDemoInput(BaseModel):
+    """One approved prospect row; never a real client or production identifier."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    email: EmailStr
+    company_name: str = Field(min_length=1, max_length=200)
+    language: Literal["en", "fr"] = "en"
+    profession: Literal["accountant", "lawyer", "formation", "relocation"]
+    country: Literal["GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"]
+    city: str = Field(min_length=1, max_length=150)
+    steps: list[str] = Field(min_length=6, max_length=6)
+    persona: Literal["client", "director", "employer", "couple", "family"]
+    logo_data_url: str | None = Field(default=None, max_length=350_000)
+
+    @field_validator("steps")
+    @classmethod
+    def six_nonempty_steps(cls, steps: list[str]) -> list[str]:
+        normalized = [step.strip() for step in steps]
+        if any(not step or len(step) > 1000 for step in normalized):
+            raise ValueError("Six nonempty step descriptions are required")
+        return normalized
+
+
+class AgencyDemoBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: uuid.UUID
+    items: list[AgencyDemoInput] = Field(min_length=1, max_length=5)
+
+    @model_validator(mode="after")
+    def unique_emails(self) -> "AgencyDemoBatchRequest":
+        if len({str(item.email).casefold() for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate lead email in the batch")
+        return self
+
+
+class AgencyDemoBatchResponse(BaseModel):
+    items: list[DemoRead]
 
 
 class DemoListResponse(BaseModel):
