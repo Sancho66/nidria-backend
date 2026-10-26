@@ -4,8 +4,10 @@ Run only with `uvicorn src.demo_sandbox.application:app`. This module is not
 imported by `src.main`, so production gains no public authentication path.
 """
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -29,8 +31,9 @@ from src.demo_sandbox.agency_manager import AgencyDemoManager
 from src.demo_sandbox.agency_repository import AgencyDemoRepository
 from src.demo_sandbox.agency_routes import agency_read_router
 from src.demo_sandbox.catalog import DemoCatalog, load_catalog
-from src.demo_sandbox.control import control_application
+from src.demo_sandbox.control import control_application, control_db
 from src.demo_sandbox.guards import SANDBOX_DB_NAME, assert_isolated_settings
+from src.demo_sandbox.lifecycle import history, purge_expired
 from src.demo_sandbox.manager import DemoManager
 from src.demo_sandbox.schema import DemoSessionRequest, DemoSessionResponse
 from src.demo_sandbox.storage import load_demo_documents
@@ -105,9 +108,12 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         """)
             )
         ).one()
-        if counts.agencies < 40 or counts.cases != counts.demos:
+        if counts.cases != counts.demos:
             raise RuntimeError("Sandbox must contain only fictional agencies and cases")
+        deleted_codes = set(await db.scalars(select(history.c.code)))
         for record in catalog.records:
+            if record.public_code in deleted_codes:
+                continue
             if (
                 await DemoManager(db, catalog).repo.resolve(
                     record, catalog.fingerprint, allow_disabled=True
@@ -140,7 +146,29 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("Unexpected agency in the isolated sandbox")
         load_demo_documents(catalog)
         await db.rollback()
-    yield
+
+    async def purge_loop() -> None:
+        while True:
+            try:
+                async for writer in control_db():
+                    removed = await purge_expired(writer, catalog)
+                # Drain large expired batches gradually, without keeping a
+                # long transaction open or calling the production scheduler.
+                await asyncio.sleep(5 if removed == 100 else 3600)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.getLogger(__name__).exception("Isolated demo expiry sweep failed")
+                await asyncio.sleep(300)
+
+    task = asyncio.create_task(purge_loop()) if get_settings().demo_admin_enabled else None
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
@@ -194,7 +222,7 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
             body.code
         )
         if body.visit_id is not None:
-            await track_visit(body.code, body.visit_id)
+            await track_visit(body.code, body.visit_id, body.tour)
         return result
 
     async def scope(

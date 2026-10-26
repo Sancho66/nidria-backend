@@ -9,7 +9,7 @@ from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -17,9 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
+    DemoArchiveRequest,
+    DemoBulkRequest,
     DemoControlEnvelope,
     DemoCreateRequest,
+    DemoFilters,
     DemoJourneyInput,
+    DemoSelection,
 )
 from src.admin.demo_transport import MAX_BODY_BYTES, signature
 from src.core.config import get_settings
@@ -29,10 +33,9 @@ from src.demo_sandbox.control_manager import DemoControlManager
 from src.demo_sandbox.guards import SANDBOX_DB_HOSTS, SANDBOX_DB_NAME, assert_isolated_settings
 
 
-class ListInput(BaseModel):
+class ListInput(DemoFilters):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=30, ge=1, le=100)
-    search: str = Field(default="", max_length=200)
 
 
 @lru_cache
@@ -126,7 +129,15 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
                 )
             case "list":
                 query = ListInput.model_validate(payload)
-                return await manager.list_demos(query.page, query.page_size, query.search)
+                return await manager.list_demos(query.page, query.page_size, query.search, query)
+            case "export":
+                return await manager.export_selection(actor, DemoSelection.model_validate(payload))
+            case "bulk":
+                return await manager.bulk(actor, DemoBulkRequest.model_validate(payload))
+            case "archive":
+                from src.demo_sandbox.lifecycle import archived_export
+
+                return await archived_export(db, DemoArchiveRequest.model_validate(payload).batch)
             case "templates":
                 return manager.templates()
             case "preview":

@@ -45,7 +45,9 @@ class DemoTransport:
             "X-Demo-Signature": signature(settings.demo_control_secret, timestamp, actor, body),
         }
         try:
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                timeout=180.0 if operation == "bulk" else 60.0, follow_redirects=False
+            ) as client:
                 response = await client.post(origin + CONTROL_PATH, content=body, headers=headers)
         except httpx.HTTPError as exc:
             raise UpstreamError(

@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.activity import ActivityLog
 from shared.models.agency import Agency
-from shared.models.agency_email_module import AgencyEmailModule
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
 from shared.models.case_step_cost import CaseStepCost
@@ -19,15 +18,9 @@ from shared.models.client_profile import ClientProfile
 from shared.models.client_profile_note import ClientProfileNote
 from shared.models.company_profile import CompanyProfile, CompanyProfileRole
 from shared.models.document_template import DocumentTemplate
-from shared.models.email_campaign import (
-    EmailCampaign,
-    EmailCampaignMember,
-    EmailCampaignStep,
-    EmailMessage,
-)
 from shared.models.expat_user import ExpatUser
 from shared.models.external_contact import ExternalContact
-from shared.models.journey import JourneyTemplateStep
+from shared.models.journey import JourneyTemplate, JourneyTemplateStep
 from shared.models.message_template import MessageTemplate
 from shared.models.rbac import Role
 from shared.models.reminder import Reminder
@@ -39,36 +32,11 @@ from src.agencies.profile_sections_manager import list_sections
 from src.company_profiles.company_catalog import materialize_company_definitions
 from src.core.security import hash_password
 from src.demo_sandbox.catalog import DemoRecord
+from src.demo_sandbox.people import fictional_email, fictional_people
 from src.demo_sandbox.seed import seed_case
 from src.demo_sandbox.storage import document_path
 
 PROGRESS = (2, 0, 1, 1, 2, 3, 4, 4, 5, 6)
-NAMES = {
-    "en": (
-        ("Jamie", "Hawthorne"),
-        ("Amelia", "Bennett"),
-        ("Oliver", "Reed"),
-        ("Sophie", "Whitfield"),
-        ("Daniel", "Brooks"),
-        ("Grace", "Ellis"),
-        ("Noah", "Hartley"),
-        ("Chloe", "Warren"),
-        ("Adam", "Foster"),
-        ("Emma", "Sinclair"),
-    ),
-    "fr": (
-        ("Camille", "Morel"),
-        ("Hugo", "Perrin"),
-        ("Léa", "Roussel"),
-        ("Thomas", "Mercier"),
-        ("Alice", "Garnier"),
-        ("Louis", "Chevalier"),
-        ("Jade", "Lefèvre"),
-        ("Paul", "Fontaine"),
-        ("Manon", "Colin"),
-        ("Gabriel", "Roux"),
-    ),
-}
 
 
 def variant_record(record: DemoRecord, index: int) -> DemoRecord:
@@ -95,21 +63,26 @@ def variant_record(record: DemoRecord, index: int) -> DemoRecord:
 
 
 async def populate_agency(
-    db: AsyncSession, agency: Agency, record: DemoRecord, payload: AgencyDemoInput
+    db: AsyncSession, agency: Agency, record: DemoRecord, payload: AgencyDemoInput, domain: str
 ) -> dict[str, object]:
     now = datetime.now(UTC)
     fr = payload.language == "fr"
     owner = (await db.scalars(select(Agent).where(Agent.agency_id == agency.id))).one()
     first = (await db.scalars(select(ClientCase).where(ClientCase.agency_id == agency.id))).one()
     assert first.journey_template_id is not None
-    owner.first_name, owner.last_name = ("Élodie", "Martin") if fr else ("Sarah", "Mitchell")
+    people = fictional_people(payload)
+    owner.first_name, owner.last_name = people.team[0]
+    owner.email = fictional_email(people.team[0], domain)
+    journey = await db.get(JourneyTemplate, first.journey_template_id)
+    assert journey is not None
+    journey.country = payload.country
     agency.country, agency.city = payload.country, payload.city
     agency.legal_name = payload.company_name
     agency.legal_form = "SAS" if fr else "LLC" if payload.country == "US" else "Ltd"
     agency.registration_number = "DEMO-000001"
     agency.address = "1 rue de l'Exemple" if fr else "1 Example Street"
     agency.postal_code = "69000" if fr else "00000"
-    agency.contact_email = f"office-{record.public_code}@example.com"
+    agency.contact_email = f"office@{domain}"
     agency.contact_phone = "+00 000 000 000"
     agency.currency = {"GB": "GBP", "US": "USD", "CA": "CAD", "AU": "AUD", "NZ": "NZD"}.get(
         payload.country, "EUR"
@@ -124,17 +97,21 @@ async def populate_agency(
     await materialize_company_definitions(db, agency.id)
     password = hash_password(secrets.token_urlsafe(48))
     members = [owner]
-    for index, (first_name, last_name) in enumerate(
-        (("Lucas", "Bernard"), ("Clara", "Petit"))
-        if fr
-        else (("James", "Cooper"), ("Olivia", "Turner"))
+    roles = {
+        name: role_id
+        for name, role_id in (
+            await db.execute(select(Role.name, Role.id).where(Role.is_system))
+        ).all()
+    }
+    for role_name, (first_name, last_name) in zip(
+        ("case_manager", "member"), people.team[1:3], strict=True
     ):
         member = Agent(
             agency_id=agency.id,
-            role_id=owner.role_id,
+            role_id=roles[role_name],
             first_name=first_name,
             last_name=last_name,
-            email=f"member-{index}-{record.public_code}@example.com",
+            email=fictional_email((first_name, last_name), domain),
             password_hash=password,
         )
         db.add(member)
@@ -145,9 +122,9 @@ async def populate_agency(
     provider = Agent(
         agency_id=agency.id,
         role_id=provider_role.id,
-        first_name="Nora",
-        last_name="Laurent" if fr else "Reed",
-        email=f"translator-{record.public_code}@example.com",
+        first_name=people.team[3][0],
+        last_name=people.team[3][1],
+        email=fictional_email(people.team[3], domain),
         password_hash=password,
         is_external=True,
     )
@@ -164,7 +141,7 @@ async def populate_agency(
     )
     cases = [first]
     for index in range(1, 10):
-        name = NAMES[payload.language][index]
+        name = people.clients[index]
         cases.append(
             await seed_case(
                 db,
@@ -173,14 +150,14 @@ async def populate_agency(
                 first.journey_template_id,
                 first_name=name[0],
                 last_name=name[1],
-                email=f"client-{index}-{record.public_code}@example.com",
+                email=fictional_email(name, domain),
             )
         )
     profiles = []
     for index, case in enumerate(cases):
         client = await db.get(ExpatUser, case.principal_expat_user_id)
         assert client is not None
-        client.first_name, client.last_name = NAMES[payload.language][index]
+        client.first_name, client.last_name = people.clients[index]
         case.owner_agent_id = members[index % 3].id
         case.dest_country = payload.country
         case.dest_city = payload.city
@@ -192,7 +169,7 @@ async def populate_agency(
                 CasePerson(
                     case_id=case.id,
                     kind="family",
-                    full_name="Alex Morel" if fr else "Alex Hawthorne",
+                    full_name=f"Alex {client.last_name}",
                     relationship_kind="spouse",
                     relationship="Conjoint" if fr else "Partner",
                 )
@@ -202,7 +179,7 @@ async def populate_agency(
                     CasePerson(
                         case_id=case.id,
                         kind="family",
-                        full_name="Lou Morel" if fr else "Sam Hawthorne",
+                        full_name=f"{'Lou' if fr else 'Sam'} {client.last_name}",
                         relationship_kind="child",
                         relationship="Enfant" if fr else "Child",
                     )
@@ -222,6 +199,11 @@ async def populate_agency(
                 )
             )
         ).one()
+        profile.first_name, profile.last_name, profile.email = (
+            client.first_name,
+            client.last_name,
+            client.email,
+        )
         profile.tags = ["Exemple fictif" if fr else "Sample data"]
         profile.source = "Exemple fictif" if fr else "Sample data"
         profile.profession = "Consultant"
@@ -401,7 +383,9 @@ async def populate_agency(
         DocumentTemplate(
             agency_id=agency.id,
             name="Lettre de mission, exemple" if fr else "Engagement letter, sample",
-            storage_path=document_path(record.id, 2),
+            storage_path=document_path(
+                record.id, sum(doc["status"] == "validated" for doc in record.state["documents"])
+            ),
             filename="engagement-letter-sample.pdf",
             provider="mock",
             provider_template_ref=f"fictional-{record.public_code}",
@@ -410,73 +394,6 @@ async def populate_agency(
             state="active",
         )
     )
-    db.add(AgencyEmailModule(agency_id=agency.id, enabled=True, enabled_at=now))
-    for group in range(2):
-        title = (
-            ("Préparer votre dossier" if group == 0 else "Suivi de votre demande")
-            if fr
-            else ("Getting your case ready" if group == 0 else "Following up on your enquiry")
-        )
-        campaign = EmailCampaign(
-            agency_id=agency.id,
-            name=f"{payload.company_name} : {title}",
-            status="PAUSED",
-            created_by_agent_id=owner.id,
-            settings={
-                "fictional": True,
-                "timezone": {
-                    "GB": "Europe/London",
-                    "US": "America/New_York",
-                    "IE": "Europe/Dublin",
-                    "CA": "America/Toronto",
-                    "AU": "Australia/Sydney",
-                    "NZ": "Pacific/Auckland",
-                }.get(payload.country, "Europe/Paris"),
-                "sender": {"user_id": "fictional-sender", "email": agency.contact_email},
-            },
-        )
-        db.add(campaign)
-        await db.flush()
-        step = EmailCampaignStep(
-            campaign_id=campaign.id,
-            position=1,
-            name=title,
-            subject_template=title,
-            body_template="Exemple fictif : consultez l'avancement de votre dossier."
-            if fr
-            else "Sample message: check the progress of your case.",
-        )
-        db.add(step)
-        await db.flush()
-        for profile in profiles[group * 5 : (group + 1) * 5]:
-            campaign_member = EmailCampaignMember(
-                agency_id=agency.id,
-                campaign_id=campaign.id,
-                client_profile_id=profile.id,
-                status="EMAIL_PAUSED",
-                added_by_agent_id=owner.id,
-                last_sent_at=now - timedelta(days=1),
-            )
-            db.add(campaign_member)
-            await db.flush()
-            db.add(
-                EmailMessage(
-                    agency_id=agency.id,
-                    campaign_id=campaign.id,
-                    campaign_member_id=campaign_member.id,
-                    campaign_step_id=step.id,
-                    step_position=1,
-                    provider="LEMLIST",
-                    direction="OUTBOUND",
-                    status="DELIVERED",
-                    content_state="AVAILABLE",
-                    subject=title,
-                    body_text=step.body_template,
-                    sent_at=now - timedelta(days=1),
-                    delivered_at=now - timedelta(days=1),
-                    payload={"fictional": True},
-                )
-            )
     await db.commit()
     return {
         "agent_id": str(owner.id),
@@ -486,5 +403,8 @@ async def populate_agency(
         "profession": payload.profession,
         "persona": payload.persona,
         "steps": payload.steps,
+        "step_titles": payload.step_titles,
+        "journey_name": payload.journey_name,
+        "documents": payload.documents,
         "expires_at": (now + timedelta(days=60)).isoformat(),
     }

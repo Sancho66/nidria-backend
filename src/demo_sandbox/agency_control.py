@@ -4,6 +4,7 @@ import hashlib
 import json
 import secrets
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from src.demo_sandbox.agency_repository import AgencyDemoRepository
 from src.demo_sandbox.agency_seed import populate_agency
 from src.demo_sandbox.catalog import DemoCatalog
 from src.demo_sandbox.control_manager import DemoControlManager
+from src.demo_sandbox.people import email_domain, fictional_people
 from src.demo_sandbox.repository import record_fingerprint
 from src.demo_sandbox.seed import seed_record
 
@@ -34,9 +36,17 @@ class AgencyDemoControlManager:
         reader = DemoControlManager(self.db, self.catalog)
         for item in payload.items:
             request_id = str(uuid.uuid5(payload.request_id, str(item.email).casefold()))
-            fingerprint = hashlib.sha256(
-                json.dumps(item.model_dump(mode="json"), sort_keys=True).encode()
-            ).hexdigest()
+            content = item.model_dump(mode="json")
+            # Keep retry fingerprints compatible with imports predating these
+            # optional columns. Nonempty overrides remain part of the hash.
+            for key in ("step_titles", "journey_name", "documents"):
+                if not content[key]:
+                    content.pop(key)
+            if payload.batch:
+                content["batch"] = payload.batch.strip()
+            if payload.lifetime_days != 60:
+                content["lifetime_days"] = payload.lifetime_days
+            fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
             await self.db.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"agency-demo:{request_id}"},
@@ -52,6 +62,8 @@ class AgencyDemoControlManager:
                 result.append(reader.read(existing))
                 continue
             record = agency_record(item, secrets.token_hex(16), self.catalog)
+            people = fictional_people(item)
+            domain = await email_domain(self.db, item.company_name)
             role = (
                 await self.db.scalars(select(Role).where(Role.name == "admin", Role.is_system))
             ).one()
@@ -61,6 +73,9 @@ class AgencyDemoControlManager:
                 record,
                 role,
                 hash_password(secrets.token_urlsafe(48)),
+                owner_name=people.team[0],
+                client_name=people.clients[0],
+                mail_domain=domain,
                 extra_settings={
                     "sandbox_dynamic_entry": record.model_dump(),
                     "sandbox_enabled": True,
@@ -69,9 +84,16 @@ class AgencyDemoControlManager:
                     "sandbox_created_by": str(actor_id),
                 },
             )
-            metadata = await populate_agency(self.db, agency, record, item)
+            metadata = await populate_agency(self.db, agency, record, item, domain)
+            metadata["expires_at"] = (
+                datetime.now(UTC) + timedelta(days=payload.lifetime_days)
+            ).isoformat()
             metadata["version"] = fingerprint
-            agency.settings = {**agency.settings, "sandbox_full_demo": metadata}
+            agency.settings = {
+                **agency.settings,
+                "sandbox_full_demo": metadata,
+                "sandbox_batch": payload.batch.strip(),
+            }
             await self.db.commit()
             if await AgencyDemoRepository(self.db).resolve(record.public_code) is None:
                 raise RuntimeError("The new fictional agency failed its isolation check")

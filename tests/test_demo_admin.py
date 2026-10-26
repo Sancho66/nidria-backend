@@ -155,6 +155,9 @@ async def test_creation_public_scope_restart_assets_disable_and_atomic_failure(
     await db_session.execute(
         text("CREATE ROLE nidria_demo_writer NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS")
     )
+    await db_session.execute(
+        text("CREATE ROLE nidria_demo_reader NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS")
+    )
     from src.demo_sandbox.prepare_management import grant_management
 
     await grant_management(db_session)
@@ -162,7 +165,27 @@ async def test_creation_public_scope_restart_assets_disable_and_atomic_failure(
         text("SELECT has_table_privilege('nidria_demo_writer', 'role', 'INSERT,UPDATE,DELETE')")
     )
     assert not await db_session.scalar(
-        text("SELECT has_table_privilege('nidria_demo_writer', 'agency', 'DELETE,TRUNCATE')")
+        text("SELECT has_table_privilege('nidria_demo_writer', 'agency', 'TRUNCATE')")
+    )
+    assert await db_session.scalar(
+        text("SELECT has_table_privilege('nidria_demo_writer', 'agency', 'DELETE')")
+    )
+    for table in ("refresh_token", "password_reset_token", "mfa_totp", "mfa_challenge"):
+        assert not await db_session.scalar(
+            text("SELECT has_table_privilege('nidria_demo_writer', :table, 'INSERT,UPDATE')"),
+            {"table": table},
+        )
+    assert not await db_session.scalar(
+        text(
+            "SELECT has_table_privilege('nidria_demo_writer', 'email_campaign', "
+            "'INSERT,UPDATE,DELETE')"
+        )
+    )
+    assert not await db_session.scalar(
+        text(
+            "SELECT has_table_privilege('nidria_demo_reader', 'demo_history', "
+            "'INSERT,UPDATE,DELETE')"
+        )
     )
     monkeypatch.setattr(get_settings(), "demo_admin_enabled", True)
     monkeypatch.setattr(get_settings(), "demo_control_secret", "x" * 64)
@@ -285,6 +308,34 @@ async def test_creation_public_scope_restart_assets_disable_and_atomic_failure(
         with pytest.raises(RuntimeError, match="test failure"):
             await control_call(client, "create", {**body, "request_id": str(uuid.uuid4())}, actor)
         assert await db_session.scalar(select(func.count()).select_from(Agency)) == 1
+
+        from src.demo_sandbox import lifecycle
+
+        monkeypatch.setattr(
+            lifecycle, "SANDBOX_DB_NAME", await db_session.scalar(text("SELECT current_database()"))
+        )
+        exported = await control_call(client, "export", {"codes": [record["code"]]}, actor)
+        assert exported.status_code == 200 and exported.json()["count"] == 1
+        deleted = await control_call(
+            client,
+            "bulk",
+            {
+                "selection": {"codes": [record["code"]]},
+                "action": "delete",
+                "expected_count": 1,
+                "selection_token": exported.json()["selection_token"],
+            },
+            actor,
+        )
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["affected"] == 1
+        assert (await control_call(client, "archive", {}, actor)).json()["count"] == 1
+        assert (
+            await client.post("/demo/session", json={"code": record["code"]})
+        ).status_code == 404
+        # The standalone sandbox table is not part of production metadata.
+        await db_session.execute(lifecycle.history.delete())
+        await db_session.commit()
 
 
 @pytest.mark.asyncio

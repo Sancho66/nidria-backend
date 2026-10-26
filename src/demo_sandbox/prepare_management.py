@@ -2,20 +2,32 @@
 
 import asyncio
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.rbac import Permission as DbPermission
-from shared.models.rbac import Role, RolePermission
 from src.core.config import get_settings
 from src.core.database import async_session_maker, engine
 from src.core.rbac.baseline import collect_bindings, seed_bindings
-from src.core.rbac.permissions import Permission
 from src.demo_sandbox.bindings import BINDINGS
 from src.demo_sandbox.guards import assert_isolated_settings
 
+DELETE_TABLES = frozenset(
+    {
+        "agency",
+        "client_case",
+        "agent",
+        "agent_invitation",
+        "expat_user",
+        "refresh_token",
+        "password_reset_token",
+        "mfa_totp",
+        "mfa_challenge",
+    }
+)
+
 WRITABLE_TABLES = frozenset(
     {
+        "demo_history",
         "agency",
         "agency_profile_section",
         "agent",
@@ -50,11 +62,6 @@ WRITABLE_TABLES = frozenset(
         "saved_view",
         "message_template",
         "document_template",
-        "agency_email_module",
-        "email_campaign",
-        "email_campaign_step",
-        "email_campaign_member",
-        "email_message",
     }
 )
 
@@ -62,31 +69,13 @@ WRITABLE_TABLES = frozenset(
 async def prepare_agency_permissions(db: AsyncSession) -> None:
     """Fixture provisioning only; the public role can never edit this matrix."""
     await seed_bindings(db, [*collect_bindings(), *BINDINGS])
-    admin = (await db.scalars(select(Role).where(Role.name == "admin", Role.is_system))).one()
-    granted = set(
-        await db.scalars(
-            select(RolePermission.permission_id).where(RolePermission.role_id == admin.id)
-        )
-    )
-    permissions = await db.scalars(
-        select(DbPermission).where(
-            DbPermission.key.in_(
-                [
-                    Permission.EMAIL_VIEW.value,
-                    Permission.EMAIL_MANAGE.value,
-                    Permission.EMAIL_ENROLL.value,
-                    Permission.EMAIL_SYNC.value,
-                ]
-            )
-        )
-    )
-    for permission in permissions:
-        if permission.id not in granted:
-            db.add(RolePermission(role_id=admin.id, permission_id=permission.id))
     await db.commit()
 
 
 async def grant_management(db: AsyncSession) -> None:
+    from src.demo_sandbox.lifecycle import prepare_history
+
+    await prepare_history(db)
     await prepare_agency_permissions(db)
     role = (
         await db.execute(
@@ -109,11 +98,25 @@ async def grant_management(db: AsyncSession) -> None:
         await db.execute(text(f"REVOKE ALL ON public.{quoted} FROM nidria_demo_writer"))
         await db.execute(text(f"GRANT SELECT ON public.{quoted} TO nidria_demo_writer"))
         await db.execute(text(f"DROP POLICY IF EXISTS demo_management ON public.{quoted}"))
-        if table in WRITABLE_TABLES:
-            await db.execute(text(f"GRANT INSERT, UPDATE ON public.{quoted} TO nidria_demo_writer"))
+        if table in WRITABLE_TABLES or table in DELETE_TABLES:
+            if table in WRITABLE_TABLES:
+                await db.execute(
+                    text(f"GRANT INSERT, UPDATE ON public.{quoted} TO nidria_demo_writer")
+                )
             policy = "FOR ALL TO nidria_demo_writer USING (true) WITH CHECK (true)"
+            if table in DELETE_TABLES:
+                await db.execute(text(f"GRANT DELETE ON public.{quoted} TO nidria_demo_writer"))
         else:
             policy = "FOR SELECT TO nidria_demo_writer USING (true)"
+        if table == "demo_history":
+            await db.execute(text(f"GRANT SELECT ON public.{quoted} TO nidria_demo_reader"))
+            await db.execute(text(f"DROP POLICY IF EXISTS demo_read_only ON public.{quoted}"))
+            await db.execute(
+                text(
+                    f"CREATE POLICY demo_read_only ON public.{quoted} "
+                    "FOR SELECT TO nidria_demo_reader USING (true)"
+                )
+            )
         await db.execute(text(f"CREATE POLICY demo_management ON public.{quoted} {policy}"))
     await db.execute(text("REVOKE CREATE ON SCHEMA public FROM PUBLIC, nidria_demo_writer"))
     await db.commit()

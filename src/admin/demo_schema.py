@@ -34,6 +34,8 @@ class DemoCreateRequest(DemoJourneyInput):
     include_reminder: bool = True
     include_signature: bool = True
     logo_data_url: str | None = Field(default=None, max_length=350_000)
+    batch: str = Field(default="", max_length=100)
+    lifetime_days: Literal[30, 60, 90] = 60
 
 
 class DemoDocumentChoice(BaseModel):
@@ -74,6 +76,12 @@ class DemoRead(BaseModel):
     first_opened_at: datetime | None = None
     last_opened_at: datetime | None = None
     visits: int = 0
+    batch: str = ""
+    status: Literal["active", "disabled", "expired"] = "active"
+    tour_status: Literal["not_started", "started", "completed", "skipped"] = "not_started"
+    tour_last_step: int = 0
+    tour_started_at: datetime | None = None
+    tour_completed_at: datetime | None = None
 
 
 class AgencyDemoInput(BaseModel):
@@ -88,7 +96,10 @@ class AgencyDemoInput(BaseModel):
     country: Literal["GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"]
     city: str = Field(min_length=1, max_length=150)
     steps: list[str] = Field(min_length=6, max_length=6)
-    persona: Literal["client", "director", "employer", "couple", "family"]
+    step_titles: list[str] = Field(default_factory=list, max_length=6)
+    journey_name: str | None = Field(default=None, max_length=200)
+    documents: list[str] = Field(default_factory=list, max_length=60)
+    persona: Literal["client", "director", "employer", "couple", "family", "employee"]
     logo_data_url: str | None = Field(default=None, max_length=350_000)
 
     @field_validator("steps")
@@ -99,11 +110,35 @@ class AgencyDemoInput(BaseModel):
             raise ValueError("Six nonempty step descriptions are required")
         return normalized
 
+    @field_validator("step_titles")
+    @classmethod
+    def short_titles(cls, titles: list[str]) -> list[str]:
+        normalized = [" ".join(title.split()) for title in titles]
+        if normalized and len(normalized) != 6:
+            raise ValueError("Supply six titles; blanks use the profession defaults")
+        if any(
+            title and (not 2 <= len(title.split()) <= 5 or len(title) > 80) for title in normalized
+        ):
+            raise ValueError("Step titles must contain two to five words, at most 80 characters")
+        return normalized if any(normalized) else []
+
+    @field_validator("documents")
+    @classmethod
+    def document_labels(cls, documents: list[str]) -> list[str]:
+        normalized = [document.strip() for document in documents]
+        if any(not document or len(document) > 200 for document in normalized):
+            raise ValueError("Document names must contain 1 to 200 characters")
+        if len({document.casefold() for document in normalized}) != len(normalized):
+            raise ValueError("Document names must be unique")
+        return normalized
+
 
 class AgencyDemoBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: uuid.UUID
     items: list[AgencyDemoInput] = Field(min_length=1, max_length=5)
+    batch: str = Field(default="", max_length=100)
+    lifetime_days: Literal[30, 60, 90] = 60
 
     @model_validator(mode="after")
     def unique_emails(self) -> "AgencyDemoBatchRequest":
@@ -121,6 +156,62 @@ class DemoListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class DemoFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    search: str = Field(default="", max_length=200)
+    batch: str = Field(default="", max_length=100)
+    status: Literal["all", "active", "disabled", "expired"] = "all"
+    opened: Literal["all", "opened", "unopened"] = "all"
+
+
+class DemoSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    codes: list[str] | None = Field(default=None, min_length=1, max_length=5000)
+    filters: DemoFilters | None = None
+    excluded_codes: list[str] = Field(default_factory=list, max_length=5000)
+
+    @model_validator(mode="after")
+    def exactly_one_selector(self) -> "DemoSelection":
+        import re
+
+        if (self.codes is None) == (self.filters is None):
+            raise ValueError("Choose codes or filters")
+        if self.codes and (
+            len(set(self.codes)) != len(self.codes)
+            or any(not re.fullmatch(r"[a-f0-9]{32}", code) for code in self.codes)
+        ):
+            raise ValueError("Invalid demo codes")
+        if self.excluded_codes and (
+            self.filters is None
+            or any(not re.fullmatch(r"[a-f0-9]{32}", code) for code in self.excluded_codes)
+        ):
+            raise ValueError("Only a filtered selection can exclude valid codes")
+        return self
+
+
+class DemoExportResponse(BaseModel):
+    csv: str
+    count: int
+    selection_token: str
+
+
+class DemoBulkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    selection: DemoSelection
+    action: Literal["disable", "delete"]
+    expected_count: int = Field(ge=1, le=5000)
+    selection_token: str = Field(min_length=1, max_length=300)
+
+
+class DemoBulkResponse(BaseModel):
+    affected: int
+
+
+class DemoArchiveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    batch: str = Field(default="", max_length=100)
 
 
 class DemoControlEnvelope(BaseModel):

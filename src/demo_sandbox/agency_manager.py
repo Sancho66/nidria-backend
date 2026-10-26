@@ -56,7 +56,9 @@ class AgencyDemoManager:
             face=face,
             agency_name=identity.agency.name,
             agency_demo=True,
+            country=identity.agency.country,
             expires_at=identity.metadata["expires_at"],
+            persona=identity.metadata.get("persona"),
         )
 
     def load_documents(self, identity: AgencyDemoIdentity, case_id: uuid.UUID) -> None:
