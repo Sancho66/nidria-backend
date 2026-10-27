@@ -91,6 +91,7 @@ class AgencyDemoInput(BaseModel):
 
     email: EmailStr
     company_name: str = Field(min_length=1, max_length=200)
+    first_name: str = Field(default="", max_length=100)
     language: Literal["en", "fr"] = "en"
     profession: Literal["accountant", "lawyer", "formation", "relocation"]
     country: Literal["GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"]
@@ -101,6 +102,13 @@ class AgencyDemoInput(BaseModel):
     documents: list[str] = Field(default_factory=list, max_length=60)
     persona: Literal["client", "director", "employer", "couple", "family", "employee"]
     logo_data_url: str | None = Field(default=None, max_length=350_000)
+
+    @field_validator("first_name")
+    @classmethod
+    def prospect_first_name(cls, value: str) -> str:
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("First name must not contain control characters")
+        return " ".join(value.split())
 
     @field_validator("steps")
     @classmethod

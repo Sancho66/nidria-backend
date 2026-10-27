@@ -25,8 +25,15 @@ from src.admin.demo_schema import (
     DemoJourneyInput,
     DemoSelection,
 )
-from src.admin.demo_transport import MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES, signature
+from src.admin.demo_transport import (
+    CONTROL_PATH,
+    MAX_BODY_BYTES,
+    MAX_IMPORT_BODY_BYTES,
+    STATS_PATH,
+    signature,
+)
 from src.core.config import get_settings
+from src.core.database import async_session_maker
 from src.core.exceptions import ForbiddenError, ValidationError, register_exception_handlers
 from src.demo_sandbox.catalog import DemoCatalog
 from src.demo_sandbox.control_manager import DemoControlManager
@@ -89,13 +96,24 @@ async def authorize(request: Request) -> uuid.UUID:
     body = await request.body()
     if (
         not fresh
+        or request.url.path not in {CONTROL_PATH, STATS_PATH}
         or len(body) > MAX_IMPORT_BODY_BYTES
         or not hmac.compare_digest(
-            supplied, signature(settings.demo_control_secret, timestamp, actor, body)
+            supplied,
+            signature(settings.demo_control_secret, timestamp, actor, body, request.url.path),
         )
     ):
         raise ForbiddenError("Invalid management signature.")
     return actor_id
+
+
+async def stats_db() -> AsyncGenerator[AsyncSession, None]:
+    async with async_session_maker() as db:
+        await db.execute(text("SET TRANSACTION READ ONLY"))
+        try:
+            yield db
+        finally:
+            await db.rollback()
 
 
 def control_application(catalog: DemoCatalog) -> FastAPI:
@@ -111,6 +129,18 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
             {"detail": "Invalid demo input.", "code": "demo.invalid_input", "params": {}},
             status_code=422,
         )
+
+    @app.post("/stats", dependencies=[Depends(authorize)])
+    async def stats(
+        envelope: DemoControlEnvelope,
+        db: Annotated[AsyncSession, Depends(stats_db)],
+    ) -> Any:
+        from src.demo_reporting.schema import DemoStatsQuery
+        from src.demo_sandbox.stats import DemoStatsManager
+
+        if envelope.operation != "stats":
+            raise ForbiddenError("This channel only reads demo statistics.")
+        return await DemoStatsManager(db).read(DemoStatsQuery.model_validate(envelope.payload))
 
     @app.post("/demos")
     async def dispatch(

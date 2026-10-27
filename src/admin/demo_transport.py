@@ -13,16 +13,22 @@ from src.core.config import get_settings
 from src.core.exceptions import NidriaError, UpstreamError
 
 CONTROL_PATH = "/_control/demos"
+STATS_PATH = "/_control/stats"
 MAX_BODY_BYTES = 750_000
 MAX_IMPORT_BODY_BYTES = 20_000_000
 
 
-def signature(secret: str, timestamp: str, actor: str, body: bytes) -> str:
-    message = "\n".join(("POST", CONTROL_PATH, timestamp, actor, hashlib.sha256(body).hexdigest()))
+def signature(
+    secret: str, timestamp: str, actor: str, body: bytes, path: str = CONTROL_PATH
+) -> str:
+    message = "\n".join(("POST", path, timestamp, actor, hashlib.sha256(body).hexdigest()))
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 class DemoTransport:
+    async def read_stats(self, actor_id: uuid.UUID, payload: dict[str, Any]) -> Any:
+        return await self.call(actor_id, "stats", payload)
+
     async def call(self, actor_id: uuid.UUID, operation: str, payload: dict[str, Any]) -> Any:
         settings = get_settings()
         if not settings.demo_admin_enabled or len(settings.demo_control_secret) < 48:
@@ -38,18 +44,21 @@ class DemoTransport:
         ).encode()
         if len(body) > (MAX_IMPORT_BODY_BYTES if operation == "import_start" else MAX_BODY_BYTES):
             raise UpstreamError("Demo input is too large.", code="demo.input_too_large")
+        path = STATS_PATH if operation == "stats" else CONTROL_PATH
         timestamp, actor = str(int(time.time())), str(actor_id)
         headers = {
             "Content-Type": "application/json",
             "X-Demo-Time": timestamp,
             "X-Demo-Actor": actor,
-            "X-Demo-Signature": signature(settings.demo_control_secret, timestamp, actor, body),
+            "X-Demo-Signature": signature(
+                settings.demo_control_secret, timestamp, actor, body, path
+            ),
         }
         try:
             async with httpx.AsyncClient(
                 timeout=180.0 if operation == "bulk" else 60.0, follow_redirects=False
             ) as client:
-                response = await client.post(origin + CONTROL_PATH, content=body, headers=headers)
+                response = await client.post(origin + path, content=body, headers=headers)
         except httpx.HTTPError as exc:
             raise UpstreamError(
                 "The demo service is unavailable.", code="demo.unavailable"

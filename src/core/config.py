@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     # Isolated demo management. Only the sandbox receives the writer URL.
     demo_admin_enabled: bool = False
+    demo_measurement_enabled: bool = False
+    demo_stats_token_sha256: str = ""
     demo_control_url: str = "https://nidria-demo-api.fly.dev"
     demo_control_secret: str = ""
     demo_writer_database_url: str = ""

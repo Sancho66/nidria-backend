@@ -93,6 +93,7 @@ def parse_import(text: str) -> list[ImportRow]:
                 for key in (
                     "email",
                     "company_name",
+                    "first_name",
                     "language",
                     "profession",
                     "country",

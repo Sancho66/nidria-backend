@@ -72,7 +72,9 @@ async def populate_agency(
     first = (await db.scalars(select(ClientCase).where(ClientCase.agency_id == agency.id))).one()
     assert first.journey_template_id is not None
     people = fictional_people(payload)
-    owner.first_name, owner.last_name = people.team[0]
+    owner.first_name, owner.last_name = (
+        (payload.first_name, "") if payload.first_name else people.team[0]
+    )
     owner.email = fictional_email(people.team[0], domain)
     journey = await db.get(JourneyTemplate, first.journey_template_id)
     assert journey is not None

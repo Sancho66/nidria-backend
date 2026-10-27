@@ -3564,6 +3564,72 @@
         }
       }
     },
+    "/reports/demo-stats": {
+      "get": {
+        "tags": [
+          "demo-reporting"
+        ],
+        "summary": "Demo Stats",
+        "operationId": "demo_stats_reports_demo_stats_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Lot"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoStatsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/help/search-miss": {
       "post": {
         "tags": [
@@ -23728,6 +23794,12 @@
             "minLength": 1,
             "title": "Company Name"
           },
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "First Name",
+            "default": ""
+          },
           "language": {
             "type": "string",
             "enum": [
@@ -31543,6 +31615,85 @@
         ],
         "title": "DemoListResponse"
       },
+      "DemoMetrics": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created",
+            "default": 0
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened",
+            "default": 0
+          },
+          "visits": {
+            "type": "integer",
+            "title": "Visits",
+            "default": 0
+          },
+          "tour_started": {
+            "type": "integer",
+            "title": "Tour Started",
+            "default": 0
+          },
+          "tour_completed": {
+            "type": "integer",
+            "title": "Tour Completed",
+            "default": 0
+          },
+          "trial_clicked": {
+            "type": "integer",
+            "title": "Trial Clicked",
+            "description": "Distinct demos with an observed trial click.",
+            "default": 0
+          },
+          "signups": {
+            "type": "integer",
+            "title": "Signups",
+            "description": "Completed agency registrations, not form openings.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DemoMetrics"
+      },
+      "DemoOpening": {
+        "properties": {
+          "first_opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Opened At"
+          },
+          "last_opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Opened At"
+          },
+          "probably_robot": {
+            "type": "boolean",
+            "title": "Probably Robot",
+            "default": false
+          },
+          "excluded_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_opened_at",
+          "last_opened_at"
+        ],
+        "title": "DemoOpening"
+      },
       "DemoRead": {
         "properties": {
           "code": {
@@ -31767,6 +31918,257 @@
         "additionalProperties": false,
         "type": "object",
         "title": "DemoSelection"
+      },
+      "DemoStatsCoverage": {
+        "properties": {
+          "detailed_since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Detailed Since"
+          },
+          "historical_totals_include_unqualified_visits": {
+            "type": "boolean",
+            "title": "Historical Totals Include Unqualified Visits"
+          },
+          "trial_clicks_since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trial Clicks Since"
+          },
+          "signup_attribution": {
+            "type": "string",
+            "const": "utm_source=demo and opaque demo reference",
+            "title": "Signup Attribution",
+            "default": "utm_source=demo and opaque demo reference"
+          },
+          "unattributed_demo_signups_all_batches": {
+            "type": "integer",
+            "title": "Unattributed Demo Signups All Batches",
+            "default": 0
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detailed_since",
+          "historical_totals_include_unqualified_visits",
+          "trial_clicks_since"
+        ],
+        "title": "DemoStatsCoverage"
+      },
+      "DemoStatsDay": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "timezone": {
+            "type": "string",
+            "const": "Europe/Paris",
+            "title": "Timezone",
+            "default": "Europe/Paris"
+          },
+          "start_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Utc"
+          },
+          "end_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Utc"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DemoMetrics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "start_utc",
+          "end_utc",
+          "complete",
+          "totals"
+        ],
+        "title": "DemoStatsDay"
+      },
+      "DemoStatsEntry": {
+        "properties": {
+          "demo_id": {
+            "type": "string",
+            "title": "Demo Id"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "first_opened_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Opened At"
+          },
+          "last_opened_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Opened At"
+          },
+          "visits": {
+            "type": "integer",
+            "title": "Visits",
+            "default": 0
+          },
+          "tour_status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "started",
+              "completed",
+              "skipped"
+            ],
+            "title": "Tour Status",
+            "default": "not_started"
+          },
+          "tour_last_step": {
+            "type": "integer",
+            "title": "Tour Last Step",
+            "default": 0
+          },
+          "tour_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tour Started At"
+          },
+          "tour_completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tour Completed At"
+          },
+          "trial_clicked": {
+            "type": "boolean",
+            "title": "Trial Clicked",
+            "default": false
+          },
+          "signup": {
+            "type": "boolean",
+            "title": "Signup",
+            "default": false
+          },
+          "openings_on_date": {
+            "items": {
+              "$ref": "#/components/schemas/DemoOpening"
+            },
+            "type": "array",
+            "title": "Openings On Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "demo_id",
+          "email",
+          "company_name",
+          "created_at"
+        ],
+        "title": "DemoStatsEntry"
+      },
+      "DemoStatsResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "lot": {
+            "type": "string",
+            "title": "Lot"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DemoMetrics"
+          },
+          "daily": {
+            "$ref": "#/components/schemas/DemoStatsDay"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/DemoStatsCoverage"
+          },
+          "demos": {
+            "items": {
+              "$ref": "#/components/schemas/DemoStatsEntry"
+            },
+            "type": "array",
+            "title": "Demos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lot",
+          "generated_at",
+          "totals",
+          "daily",
+          "coverage",
+          "demos"
+        ],
+        "title": "DemoStatsResponse"
       },
       "DemoTemplateRead": {
         "properties": {
@@ -52097,6 +52499,10 @@
             "tokenUrl": "/auth/agent/login"
           }
         }
+      },
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

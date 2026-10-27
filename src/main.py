@@ -40,6 +40,7 @@ from src.costs.costs_router import router as costs_router
 from src.custom_fields.custom_fields_router import router as custom_fields_router
 from src.custom_fields.custom_fields_router import universe_router as field_universe_router
 from src.dashboard.dashboard_router import router as dashboard_router
+from src.demo_reporting.router import router as demo_reporting_router
 from src.document_templates.document_templates_router import (
     router as document_templates_router,
 )
@@ -209,6 +210,7 @@ app.include_router(activity_router)
 app.include_router(activity_stats_router)
 app.include_router(admin_router)
 app.include_router(demo_admin_router)
+app.include_router(demo_reporting_router)
 app.include_router(help_router)
 app.include_router(agencies_router)
 app.include_router(email_admin_router)

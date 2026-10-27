@@ -12,14 +12,21 @@ from src.demo_sandbox.schema import DemoTourEvent
 
 
 async def record_visit(
-    db: AsyncSession, code: str, visit_id: uuid.UUID, tour: DemoTourEvent | None = None
+    db: AsyncSession,
+    code: str,
+    visit_id: uuid.UUID,
+    tour: DemoTourEvent | None = None,
+    *,
+    trial_clicked: bool = False,
+    reason: str | None = None,
 ) -> None:
     agency = await db.scalar(
         select(Agency).where(Agency.slug == f"demo-sandbox-{code}").with_for_update()
     )
     if agency is None or agency.settings.get("sandbox_enabled", True) is not True:
         return
-    now = datetime.now(UTC).isoformat()
+    instant = datetime.now(UTC)
+    now = instant.isoformat()
     full = agency.settings.get("sandbox_full_demo", {})
     if full and datetime.fromisoformat(full["expires_at"]) <= datetime.now(UTC):
         return
@@ -29,6 +36,18 @@ async def record_visit(
     key = hashlib.sha256(visit_id.bytes).hexdigest()
     recent = list(previous.get("recent", []))
     fresh = key not in recent
+    from src.core.config import get_settings
+
+    if get_settings().demo_measurement_enabled:
+        from src.demo_sandbox.measurement import record_measurement
+
+        measured_fresh, reason = await record_measurement(
+            db, code, key, instant, reason, tour, trial_clicked
+        )
+        fresh = fresh and measured_fresh
+    if reason is not None:
+        await db.commit()
+        return
     if fresh:
         recent = [*recent[-511:], key]
     agency.settings = {
@@ -60,10 +79,17 @@ async def record_visit(
     await db.commit()
 
 
-async def track_visit(code: str, visit_id: uuid.UUID, tour: DemoTourEvent | None = None) -> None:
+async def track_visit(
+    code: str,
+    visit_id: uuid.UUID,
+    tour: DemoTourEvent | None = None,
+    *,
+    trial_clicked: bool = False,
+    reason: str | None = None,
+) -> None:
     # The HTTP reader keeps SELECT-only credentials. The only public writer
     # entry is this fixed operation, after the code's scope was resolved.
     from src.demo_sandbox.control import control_db
 
     async for db in control_db():
-        await record_visit(db, code, visit_id, tour)
+        await record_visit(db, code, visit_id, tour, trial_clicked=trial_clicked, reason=reason)

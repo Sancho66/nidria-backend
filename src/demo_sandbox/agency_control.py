@@ -64,7 +64,7 @@ class AgencyDemoControlManager:
             content = item.model_dump(mode="json")
             # Keep retry fingerprints compatible with imports predating these
             # optional columns. Nonempty overrides remain part of the hash.
-            for key in ("step_titles", "journey_name", "documents"):
+            for key in ("step_titles", "journey_name", "documents", "first_name"):
                 if not content[key]:
                     content.pop(key)
             if payload.batch:

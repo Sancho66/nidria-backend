@@ -56,6 +56,7 @@ class AgencyDemoManager:
             face=face,
             agency_name=identity.agency.name,
             agency_demo=True,
+            batch=identity.agency.settings.get("sandbox_batch"),
             country=identity.agency.country,
             expires_at=identity.metadata["expires_at"],
             persona=identity.metadata.get("persona"),

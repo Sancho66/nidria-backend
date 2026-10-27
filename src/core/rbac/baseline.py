@@ -215,6 +215,7 @@ def collect_bindings() -> list[RouteBinding]:
     from src.costs.costs_router import BINDINGS as costs_bindings
     from src.custom_fields.custom_fields_router import BINDINGS as custom_fields_bindings
     from src.dashboard.dashboard_router import BINDINGS as dashboard_bindings
+    from src.demo_reporting.router import BINDINGS as demo_reporting_bindings
     from src.document_templates.document_templates_router import (
         BINDINGS as document_templates_bindings,
     )
@@ -248,6 +249,7 @@ def collect_bindings() -> list[RouteBinding]:
         *export_bindings,
         *admin_bindings,
         *demo_admin_bindings,
+        *demo_reporting_bindings,
         *roles_bindings,
         *impersonation_bindings,
         *journeys_bindings,

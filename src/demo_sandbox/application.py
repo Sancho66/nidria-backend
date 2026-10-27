@@ -208,7 +208,8 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
     @application.middleware("http")
     async def no_cache(request: Request, call_next: Any) -> Any:
         if request.method not in {"GET", "HEAD", "OPTIONS"} and not (
-            request.method == "POST" and request.url.path in {"/demo/session", "/_control/demos"}
+            request.method == "POST"
+            and request.url.path in {"/demo/session", "/_control/demos", "/_control/stats"}
         ):
             response = JSONResponse(
                 {"detail": "This demo is read-only.", "code": "impersonation.read_only"},
@@ -230,14 +231,25 @@ def create_sandbox_app(catalog: DemoCatalog | None = None) -> FastAPI:
         "/demo/session", response_model=DemoSessionResponse, dependencies=[Depends(enforce)]
     )
     async def session(
-        body: DemoSessionRequest, db: Annotated[AsyncSession, Depends(get_db)]
+        body: DemoSessionRequest, request: Request, db: Annotated[AsyncSession, Depends(get_db)]
     ) -> DemoSessionResponse:
         agency = await AgencyDemoManager(db).open_session(body)
         result = agency or await DemoManager(db, application.state.demo_catalog).open_session(
             body.code
         )
+        from src.demo_sandbox.measurement import demo_attribution, excluded_reason
+
+        result.attribution_id = demo_attribution(body.code)
         if body.visit_id is not None:
-            await track_visit(body.code, body.visit_id, body.tour)
+            await track_visit(
+                body.code,
+                body.visit_id,
+                body.tour,
+                trial_clicked=body.trial_clicked,
+                reason=excluded_reason(
+                    body.admin_preview, body.automated, request.headers.get("User-Agent", "")
+                ),
+            )
         return result
 
     async def scope(
