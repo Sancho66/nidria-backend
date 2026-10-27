@@ -7055,6 +7055,21 @@
                 "type": "null"
               }
             ]
+          },
+          "trial_clicked": {
+            "type": "boolean",
+            "title": "Trial Clicked",
+            "default": false
+          },
+          "admin_preview": {
+            "type": "boolean",
+            "title": "Admin Preview",
+            "default": false
+          },
+          "automated": {
+            "type": "boolean",
+            "title": "Automated",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -7156,6 +7171,28 @@
               }
             ],
             "title": "Persona"
+          },
+          "attribution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution Id"
+          },
+          "batch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch"
           }
         },
         "type": "object",

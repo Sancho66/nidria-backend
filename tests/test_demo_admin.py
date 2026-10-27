@@ -161,6 +161,30 @@ async def test_creation_public_scope_restart_assets_disable_and_atomic_failure(
     from src.demo_sandbox.prepare_management import grant_management
 
     await grant_management(db_session)
+    for table in ("demo_measurement", "demo_telemetry_visit"):
+        assert await db_session.scalar(
+            text("SELECT has_table_privilege('nidria_demo_reader', :table, 'SELECT')"),
+            {"table": table},
+        )
+        assert not await db_session.scalar(
+            text(
+                "SELECT has_table_privilege('nidria_demo_reader', :table, "
+                "'INSERT,UPDATE,DELETE,TRUNCATE')"
+            ),
+            {"table": table},
+        )
+        assert not await db_session.scalar(
+            text("SELECT has_table_privilege('nidria_demo_writer', :table, 'DELETE,TRUNCATE')"),
+            {"table": table},
+        )
+    assert await db_session.scalar(
+        text("SELECT has_table_privilege('nidria_demo_writer', 'demo_telemetry_visit', 'INSERT')")
+    )
+    assert not await db_session.scalar(
+        text(
+            "SELECT has_table_privilege('nidria_demo_writer', 'demo_measurement', 'INSERT,UPDATE')"
+        )
+    )
     assert not await db_session.scalar(
         text("SELECT has_table_privilege('nidria_demo_writer', 'role', 'INSERT,UPDATE,DELETE')")
     )

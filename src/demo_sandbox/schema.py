@@ -27,6 +27,9 @@ class DemoSessionRequest(BaseModel):
     case_id: uuid.UUID | None = None
     visit_id: uuid.UUID | None = None
     tour: DemoTourEvent | None = None
+    trial_clicked: bool = False
+    admin_preview: bool = False
+    automated: bool = False
 
 
 class DemoSessionResponse(BaseModel):
@@ -42,3 +45,5 @@ class DemoSessionResponse(BaseModel):
     country: str | None = None
     expires_at: str | None = None
     persona: str | None = None
+    attribution_id: str | None = None
+    batch: str | None = None

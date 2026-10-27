@@ -24,6 +24,7 @@ primary_region = 'cdg'
   SIGNUP_ALERT_ENABLED = 'false'
   SIGNATURES_ENABLED = 'true'
   KPI_ENABLED = 'true'
+  DEMO_MEASUREMENT_ENABLED = 'true'
   CORS_ORIGINS = 'https://demo.nidria.com,https://nidria-demo.pages.dev'
 
 [http_service]
