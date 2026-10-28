@@ -131,6 +131,7 @@ from src.core.exceptions import ConflictError
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import (
     IMPORT_METADATA_KEY,
+    IMPORTED_CAMPAIGN_STATUSES,
     STATUS_REASON_PARAMS_KEY,
     Access,
     EmailManager,
@@ -189,9 +190,6 @@ SOURCE_LEMLIST = "lemlist"
 #: `client_profiles_router.BINDINGS`, a test keeps them equal): the import
 #: creates client records.
 CLIENT_PROFILE_CREATE = Permission.CASE_EDIT
-#: Lemlist's campaign statuses an import takes, and the Nidria status each
-#: becomes; the others (draft, ended, archived, errors) are listed apart.
-_CAMPAIGN_STATUS = {"running": "ACTIVE", "paused": "PAUSED"}
 #: A campaign the import does not take (params `status`, Lemlist's word).
 NOT_IMPORTABLE = "email.import_not_importable"
 #: Rows per page of a Lemlist listing, and contact ids per lookup.
@@ -473,7 +471,7 @@ def read_campaign(reader: ImportReader, row: ProviderCampaignRow) -> CampaignRea
         name = detail.metadata.get("name")
         read.name = name.strip() if isinstance(name, str) and name.strip() else row.name
         read.status = detail.status or row.status
-        if (read.status or "") not in _CAMPAIGN_STATUS:
+        if (read.status or "") not in IMPORTED_CAMPAIGN_STATUSES:
             # Ended, archived or back to a draft since it was listed.
             read.error = NOT_IMPORTABLE
             return read
@@ -1181,7 +1179,7 @@ class EmailImportManager:
         for row in sorted(listing.campaigns, key=_created):
             if row.campaign_id in nidria:
                 known.created_by_nidria.append(row)
-            elif (row.status or "") in _CAMPAIGN_STATUS:
+            elif (row.status or "") in IMPORTED_CAMPAIGN_STATUSES:
                 known.importable.append(row)
             else:
                 known.not_importable.append(row)
@@ -1369,7 +1367,7 @@ class EmailImportManager:
                 code="email.import_created_by_nidria",
             )
         name = (read.name or read.campaign_id)[:255]
-        status = _CAMPAIGN_STATUS.get(read.status or "", "PAUSED")
+        status = IMPORTED_CAMPAIGN_STATUSES.get(read.status or "", "PAUSED")
         main = read.sequences.main_sequence_id if read.sequences is not None else None
         created = mine is None
         if mine is None:

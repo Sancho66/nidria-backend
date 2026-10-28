@@ -277,6 +277,9 @@ STATUS_REASON_PARAMS_KEY = "status_reason_params"
 #: membership's: `company_name` (Lemlist's), `status`, `state_system` and
 #: `last_state` (Lemlist's words when imported), `imported_at`.
 IMPORT_METADATA_KEY = "import"
+#: Shared by the initial import and subsequent read-only reconciliation.
+#: Other provider states do not imply a local archive or a resumption.
+IMPORTED_CAMPAIGN_STATUSES = {"running": "ACTIVE", "paused": "PAUSED"}
 #: Where an internal smoke test campaign (scripts/email_admin.py,
 #: `smoke-start`) keeps its mark, in its `provider_metadata`: Nidria's own
 #: key, never overwritten by what Lemlist says. `created_profile_ids` (the
@@ -3388,6 +3391,7 @@ def _copy_step(
 
 __all__ = [
     "IMPORT_METADATA_KEY",
+    "IMPORTED_CAMPAIGN_STATUSES",
     "SMOKE_TEST_METADATA_KEY",
     "Access",
     "EmailManager",

@@ -51,8 +51,10 @@ first read of each UTC day), and the content of new replies from the
 contact's inbox; for an imported campaign, then, the text Lemlist really
 sent of its emails, from the same inbox, once the campaign's own
 transaction is over (`_read_sent_contents`). It pushes nothing, launches
-nobody, pauses nothing at the provider and generates no AI value; name,
-status, settings, steps and contents stay Nidria's.
+nobody, pauses nothing at the provider and generates no AI value. An imported
+campaign mirrors Lemlist's name and running/paused state, preserving a local
+archive. Nidria-created campaigns keep their own name and status; settings,
+steps and contents are not overwritten by reconciliation.
 
 `ingest`, the ONE ingestion of the webhook, the job and the Sync: the same
 normalized events, each stored once (`uq_email_provider_event`), its agency
@@ -144,6 +146,7 @@ from src.core.exceptions import (
 from src.core.rbac.permissions import Permission
 from src.email_campaigns.email_manager import (
     IMPORT_METADATA_KEY,
+    IMPORTED_CAMPAIGN_STATUSES,
     SMOKE_TEST_METADATA_KEY,
     STATUS_REASON_PARAMS_KEY,
     Access,
@@ -1267,6 +1270,13 @@ class EmailSyncManager:
                 raise ProviderError("Lemlist no longer has this campaign.", code="CAMPAIGN_MISSING")
             if campaign.provider_status != remote.status:
                 campaign.provider_status = remote.status
+            if is_imported(campaign) and campaign.status != "ARCHIVED":
+                campaign.status = IMPORTED_CAMPAIGN_STATUSES.get(
+                    remote.status or "", campaign.status
+                )
+                remote_name = remote.metadata.get("name")
+                if isinstance(remote_name, str) and remote_name:
+                    campaign.name = remote_name[:255]
             merged = merged_metadata(
                 campaign.provider_metadata, remote.metadata, _CAMPAIGN_OWN_KEYS
             )
