@@ -185,7 +185,8 @@ class EmailCampaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sync_error: Mapped[str | None] = mapped_column(Text)
     # The reconciliation (sync job): the provider's own view, read only.
-    # Nidria's name, status and settings are never overwritten from it.
+    # Imported campaigns mirror name and running/paused state; Nidria-owned
+    # campaigns keep their decisions. Settings are never overwritten here.
     provider_status: Mapped[str | None] = mapped_column(String(30))
     # Carries `team_id`: the Lemlist team the campaign was created in (N4).
     provider_metadata: Mapped[dict[str, Any]] = mapped_column(

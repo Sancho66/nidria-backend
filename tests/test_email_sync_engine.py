@@ -372,6 +372,98 @@ def _webhook_secret() -> Iterator[None]:
 # ── the job, end to end (Prism L245) ─────────────────────────────────────────
 
 
+@pytest.mark.parametrize(
+    ("origin", "local_status", "remote_status", "expected_status", "expected_name"),
+    [
+        ("LEMLIST_IMPORT", "PAUSED", "running", "ACTIVE", "Current Lemlist name"),
+        ("LEMLIST_IMPORT", "ACTIVE", "paused", "PAUSED", "Current Lemlist name"),
+        ("LEMLIST_IMPORT", "PAUSED", "paused", "PAUSED", "Current Lemlist name"),
+        ("LEMLIST_IMPORT", "PAUSED", None, "PAUSED", "Current Lemlist name"),
+        ("LEMLIST_IMPORT", "ACTIVE", "ended", "ACTIVE", "Current Lemlist name"),
+        ("LEMLIST_IMPORT", "ARCHIVED", "running", "ARCHIVED", "Original name"),
+        ("NIDRIA", "PAUSED", "running", "PAUSED", "Original name"),
+        ("NIDRIA", "ACTIVE", "paused", "ACTIVE", "Original name"),
+    ],
+)
+async def test_job_mirrors_imported_campaign_state_and_name_only(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    live: Live,
+    origin: str,
+    local_status: str,
+    remote_status: str | None,
+    expected_status: str,
+    expected_name: str,
+) -> None:
+    campaign = EmailCampaign(
+        agency_id=live.world.agency_id,
+        name="Original name",
+        origin=origin,
+        status=local_status,
+        provider_campaign_id="cam_mirror",
+        provider_metadata={"team_id": TEAM_A},
+        settings={"timezone": "Europe/Paris"},
+    )
+    db_session.add(campaign)
+    await db_session.commit()
+    cid = str(campaign.id)
+    live.provider.remote["cam_mirror"] = ProviderCampaign(
+        "cam_mirror",
+        exists=True,
+        status=remote_status,
+        metadata={"name": "Current Lemlist name", "timezone": "America/New_York"},
+    )
+    before = len(live.provider.ops)
+
+    run = await _run(live.sessions)
+    assert run.status == "success" and run.stats["errors"] == 0
+    stored = await _campaign(db_session, cid)
+    assert (stored.status, stored.name) == (expected_status, expected_name)
+    assert stored.settings == {"timezone": "Europe/Paris"}
+    assert {name for name, _ in live.provider.ops[before:]} <= READS | {"export_leads"}
+    if local_status == "ARCHIVED":
+        assert run.stats["campaigns"] == 0 and stored.provider_status is None
+    else:
+        assert run.stats["campaigns"] == 1 and stored.provider_status == remote_status
+    detail = await client.get(f"/email/campaigns/{cid}", headers=live.world.headers)
+    assert detail.status_code == 200, detail.text
+    assert (detail.json()["status"], detail.json()["name"]) == (expected_status, expected_name)
+
+
+async def test_imported_campaign_state_rolls_back_when_provider_read_fails(
+    db_session: AsyncSession,
+    live: Live,
+) -> None:
+    campaign = EmailCampaign(
+        agency_id=live.world.agency_id,
+        name="Original name",
+        origin="LEMLIST_IMPORT",
+        status="PAUSED",
+        provider_campaign_id="cam_mirror",
+        provider_metadata={"team_id": TEAM_A},
+    )
+    db_session.add(campaign)
+    await db_session.commit()
+    cid = str(campaign.id)
+    live.provider.remote["cam_mirror"] = ProviderCampaign(
+        "cam_mirror",
+        exists=True,
+        status="running",
+        metadata={"name": "Current Lemlist name"},
+    )
+    live.provider.failures[("list_contacts", "cam_mirror")] = ProviderError(
+        "Read timed out",
+        code="TIMEOUT",
+    )
+    run = await _run(live.sessions)
+    assert run.stats["campaigns_failed"] == 1
+    stored = await _campaign(db_session, cid)
+    assert (stored.status, stored.name, stored.provider_status) == ("PAUSED", "Original name", None)
+    assert stored.last_provider_sync_at is None
+    assert stored.last_provider_error is not None
+    assert {name for name, _ in live.provider.ops} <= READS | {"export_leads"}
+
+
 async def test_the_job_reconciles_messages_and_replies_and_never_counts_twice(
     client: AsyncClient,
     db_session: AsyncSession,
