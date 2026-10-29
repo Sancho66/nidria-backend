@@ -658,7 +658,7 @@ async def lemlist_team(
     make_company_link: MakeCompanyLink,
 ) -> FakeProvider:
     """Lot C's team: A (paused, Max live in a Nidria campaign: a conflict)
-    and B (running, Ana live in A: a conflict in the plan) importable."""
+    and B (running, Ana also observed in A: both histories kept) importable."""
     await team_scenario(
         email_world,
         fake_email_provider,
@@ -670,7 +670,7 @@ async def lemlist_team(
     return fake_email_provider
 
 
-async def test_import_apply_is_refused_while_the_plan_counts_conflicts(
+async def test_import_blocks_native_conflicts_but_preserves_provider_histories(
     sessions: async_sessionmaker[AsyncSession], root: Agent, lemlist_team: FakeProvider
 ) -> None:
     plan = await script(sessions, "--as", ROOT_EMAIL, "import-plan")
@@ -680,7 +680,7 @@ async def test_import_apply_is_refused_while_the_plan_counts_conflicts(
     assert [c["name"] for c in campaigns] == ["2026-08 · Avocats · s2", "2026-09 · Avocats · s4"]
     assert (campaigns[0]["leads"]["conflicts"], campaigns[1]["leads"]["conflicts_in_plan"]) == (
         1,
-        1,
+        0,
     )
     for name in ("Lopez", "Moss", "Stone", "Twice", "acme"):
         assert name not in plan.text
@@ -689,21 +689,26 @@ async def test_import_apply_is_refused_while_the_plan_counts_conflicts(
     assert (refused.code, refused.doc["code"], refused.doc["params"]) == (
         1,
         "script.import_conflicts",
-        {"conflicts": 2},
+        {"conflicts": 1},
     )
-    assert refused.doc["result"]["conflicts"] == {LEMLIST_A: 1, LEMLIST_B: 1}
-    named = await script(sessions, "--as", ROOT_EMAIL, "import-apply", "--campaign", LEMLIST_B)
+    assert refused.doc["result"]["conflicts"] == {LEMLIST_A: 1, LEMLIST_B: 0}
+    named = await script(sessions, "--as", ROOT_EMAIL, "import-apply", "--campaign", LEMLIST_A)
     assert (named.code, named.doc["params"]) == (1, {"conflicts": 1})
     async with sessions() as db:
         assert await count(db, EmailCampaign, EmailCampaign.origin == ORIGIN_LEMLIST_IMPORT) == 0
     assert "read_activities" not in lemlist_team.names()
+
+    # A provider-only overlap requires no bypass flag and duplicates no person.
+    named = await script(sessions, "--as", ROOT_EMAIL, "import-apply", "--campaign", LEMLIST_B)
+    assert named.code == 0, named.doc
+    assert named.doc["result"]["campaigns"][0]["members_created"] == 3
 
     accepted = await script(sessions, "--as", ROOT_EMAIL, "import-apply", "--accept-conflicts")
     assert accepted.code == 0, accepted.doc
     rows = {row["provider_campaign_id"]: row for row in accepted.doc["result"]["campaigns"]}
     assert rows[LEMLIST_A]["ok"] and rows[LEMLIST_B]["ok"]
     assert (rows[LEMLIST_A]["members_created"], rows[LEMLIST_A]["conflicts"]) == (10, 1)
-    assert rows[LEMLIST_B]["not_imported"] == {"conflict": 1}
+    assert rows[LEMLIST_B]["not_imported"] == {}
     async with sessions() as db:
         assert await count(db, EmailCampaign, EmailCampaign.origin == ORIGIN_LEMLIST_IMPORT) == 2
 
@@ -756,7 +761,7 @@ async def test_import_verify_sets_nidria_against_lemlist_and_explains_each_gap(
     }
     b = by_id[LEMLIST_B]
     assert b["gaps"]["explained"] is True
-    assert b["gaps"]["set_aside_by_reason"] == {"conflict": 1}
+    assert b["gaps"]["set_aside_by_reason"] == {}
     assert ran.doc["result"]["importable_not_imported"] == []
     for name in ("Lopez", "Moss", "Stone", "Twice", "acme"):
         assert name not in ran.text
