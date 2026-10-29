@@ -35,6 +35,7 @@ from typing import Any
 
 from sqlalchemy import (
     DDL,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -302,7 +303,7 @@ class EmailCampaignMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "uq_email_member_live",
             "client_profile_id",
             unique=True,
-            postgresql_where=text(_LIVE_MEMBER_PREDICATE),
+            postgresql_where=text(f"{_LIVE_MEMBER_PREDICATE} AND NOT is_provider_mirror"),
         ),
         # Every provider event is matched to its membership by lead id.
         Index("ix_email_campaign_member_provider_lead", "campaign_id", "provider_lead_id"),
@@ -320,6 +321,12 @@ class EmailCampaignMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     provider_lead_id: Mapped[str | None] = mapped_column(String(100))
     provider_contact_id: Mapped[str | None] = mapped_column(String(100))
+    # Observed participation in an imported campaign, never an enrollment
+    # Nidria can launch. Several provider campaigns may contain one person.
+    # Native enrollments keep their unique live membership and readiness guard.
+    is_provider_mirror: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, default="EMAIL_READY", server_default="EMAIL_READY", index=True
     )

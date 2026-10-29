@@ -508,13 +508,13 @@ async def test_the_plan_counts_what_an_import_would_do_campaign_by_campaign(
             "status_uncovered": 1,
         },
     }
-    # B: Ana is live in A (planned before), Cleo's record comes with A.
+    # Both imported participations are mirrored; Ana and Cleo reuse A's records.
     assert (
         b["leads"]["conflicts_in_plan"],
         b["leads"]["profiles_to_create"],
         b["leads"]["profiles_planned_before"],
         b["leads"]["to_create"],
-    ) == (1, 1, 1, 2)
+    ) == (0, 1, 2, 3)
 
     states = {(s["state"], s["status"]): s for s in a["states"]}
     assert states[("emailsSent", "running")]["count"] == 3
@@ -790,9 +790,9 @@ async def test_the_import_follows_the_plan_and_answers_campaign_by_campaign(
     assert rows["cam_nidria"]["code"] == "email.import_created_by_nidria"
     assert not any(rows[i]["ok"] for i in ("cam_unknown", "cam_draft", "cam_nidria"))
     b = rows[LEMLIST_B]
-    # Ana is live in A by now: a conflict; Cleo's record exists (made by A).
-    assert b["ok"] is True and b["not_imported"] == {"conflict": 1}
-    assert (b["members_created"], b["profiles_created"]) == (2, 1)
+    # Both imported histories are kept on the same client records.
+    assert b["ok"] is True and b["not_imported"] == {}
+    assert (b["members_created"], b["profiles_created"]) == (3, 1)
     nidria = await db_session.get(EmailCampaign, team.nidria_campaign)
     assert nidria is not None and nidria.origin == "NIDRIA"
     # Never two campaigns for one Lemlist campaign.
@@ -850,8 +850,8 @@ async def test_a_failed_campaign_is_undone_alone(
     )
     assert rows[LEMLIST_A]["members_created"] == 0
     assert rows[LEMLIST_B]["ok"] is True
-    # Ana is a conflict of the plan (A planned her live) even though A failed.
-    assert rows[LEMLIST_B]["not_imported"] == {"conflict_in_plan": 1}
+    # A failed: B still mirrors all its own leads.
+    assert rows[LEMLIST_B]["not_imported"] == {}
     assert (
         await count(db_session, EmailCampaign, EmailCampaign.provider_campaign_id == LEMLIST_A) == 0
     )

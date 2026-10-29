@@ -1333,20 +1333,9 @@ class EmailPerformanceRead(BaseModel):
 OutreachKind = Literal["SENT", "REPLIED", "BOUNCED", "UNSUBSCRIBED", "SCHEDULED", "OVERDUE"]
 
 
-class EmailOutreachItem(BaseModel):
-    """One activity of the queue. Past ones (SENT, REPLIED, BOUNCED,
-    UNSUBSCRIBED) are what the provider reported, at their time; SCHEDULED
-    is an estimated DAY (no hour: Lemlist chooses it within the window);
-    OVERDUE was estimated for a day already past and is not reported sent."""
+class EmailOutreachPerson(BaseModel):
+    """A recipient and the sequence step an outreach row refers to."""
 
-    kind: OutreachKind
-    #: The day it belongs to: an actual activity's day in the viewer's
-    #: timezone, an estimate's in its campaign's.
-    day: date
-    at: datetime | None = None
-    estimated: bool = False
-    #: An overdue email's original estimate.
-    estimated_day: date | None = None
     member_id: uuid.UUID
     client_profile_id: uuid.UUID
     full_name: str
@@ -1359,6 +1348,26 @@ class EmailOutreachItem(BaseModel):
     step_name: str | None = None
     status: MemberStatus
     sender: str | None = None
+
+
+class EmailOutreachItem(EmailOutreachPerson):
+    """A dated activity or estimated native send, never an undated mirror."""
+
+    kind: OutreachKind
+    day: date
+    at: datetime | None = None
+    estimated: bool = False
+    estimated_day: date | None = None
+
+
+class EmailOutreachPendingItem(EmailOutreachPerson):
+    """Next email and remaining email steps of an active imported lead.
+
+    These are sequence steps, not a provider-confirmed sending queue.
+    No date is available, and a reply or pause may prevent the next send.
+    """
+
+    remaining_emails: int
 
 
 class EmailOutreachCampaign(BaseModel):
@@ -1389,6 +1398,11 @@ class EmailOutreachRead(BaseModel):
     dry_run: int
     overdue: int
     campaigns: list[EmailOutreachCampaign]
+    #: Independent of the date window; other filters still apply.
+    provider_pending: list[EmailOutreachPendingItem] = Field(default_factory=list)
+    provider_pending_leads: int = 0
+    provider_pending_emails: int = 0
+    provider_pending_truncated: bool = False
 
 
 # ── The import of the Lemlist campaigns already running (lot C) ─────────────
@@ -1417,8 +1431,8 @@ ImportRule = Literal[
 #: address in the export nor the contacts lookup; duplicate_email: another
 #: lead of the campaign carries the address; already_in_campaign: the
 #: person already holds another membership of this campaign; conflict: the
-#: person is live in another campaign of the agency; conflict_in_plan: live
-#: in an importable campaign planned before (older at Lemlist);
+#: person has a live native enrollment in another campaign; conflict_in_plan
+#: is retained for old results but is no longer emitted for provider mirrors;
 #: skipped_at_provider, not_launched, status_unknown, status_uncovered: the
 #: mapping's own (see `ImportRule`).
 ImportSkipReason = Literal[

@@ -36892,52 +36892,6 @@
       },
       "EmailOutreachItem": {
         "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "SENT",
-              "REPLIED",
-              "BOUNCED",
-              "UNSUBSCRIBED",
-              "SCHEDULED",
-              "OVERDUE"
-            ],
-            "title": "Kind"
-          },
-          "day": {
-            "type": "string",
-            "format": "date",
-            "title": "Day"
-          },
-          "at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "At"
-          },
-          "estimated": {
-            "type": "boolean",
-            "title": "Estimated",
-            "default": false
-          },
-          "estimated_day": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Estimated Day"
-          },
           "member_id": {
             "type": "string",
             "format": "uuid",
@@ -37042,21 +36996,192 @@
               }
             ],
             "title": "Sender"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SENT",
+              "REPLIED",
+              "BOUNCED",
+              "UNSUBSCRIBED",
+              "SCHEDULED",
+              "OVERDUE"
+            ],
+            "title": "Kind"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "estimated": {
+            "type": "boolean",
+            "title": "Estimated",
+            "default": false
+          },
+          "estimated_day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Day"
           }
         },
         "type": "object",
         "required": [
-          "kind",
-          "day",
           "member_id",
           "client_profile_id",
           "full_name",
           "campaign_id",
           "campaign_name",
-          "status"
+          "status",
+          "kind",
+          "day"
         ],
         "title": "EmailOutreachItem",
-        "description": "One activity of the queue. Past ones (SENT, REPLIED, BOUNCED,\nUNSUBSCRIBED) are what the provider reported, at their time; SCHEDULED\nis an estimated DAY (no hour: Lemlist chooses it within the window);\nOVERDUE was estimated for a day already past and is not reported sent."
+        "description": "A dated activity or estimated native send, never an undated mirror."
+      },
+      "EmailOutreachPendingItem": {
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Member Id"
+          },
+          "client_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Campaign Id"
+          },
+          "campaign_name": {
+            "type": "string",
+            "title": "Campaign Name"
+          },
+          "step_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Position"
+          },
+          "step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "EMAIL_READY",
+              "EMAIL_QUEUED",
+              "EMAIL_ACTIVE",
+              "EMAIL_PAUSED",
+              "EMAIL_REPLIED",
+              "EMAIL_BOUNCED",
+              "EMAIL_COMPLETED",
+              "EMAIL_REMOVED",
+              "EMAIL_UNSUBSCRIBED"
+            ],
+            "title": "Status"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "remaining_emails": {
+            "type": "integer",
+            "title": "Remaining Emails"
+          }
+        },
+        "type": "object",
+        "required": [
+          "member_id",
+          "client_profile_id",
+          "full_name",
+          "campaign_id",
+          "campaign_name",
+          "status",
+          "remaining_emails"
+        ],
+        "title": "EmailOutreachPendingItem",
+        "description": "Next email and remaining email steps of an active imported lead.\n\nThese are sequence steps, not a provider-confirmed sending queue.\nNo date is available, and a reply or pause may prevent the next send."
       },
       "EmailOutreachRead": {
         "properties": {
@@ -37108,6 +37233,28 @@
             },
             "type": "array",
             "title": "Campaigns"
+          },
+          "provider_pending": {
+            "items": {
+              "$ref": "#/components/schemas/EmailOutreachPendingItem"
+            },
+            "type": "array",
+            "title": "Provider Pending"
+          },
+          "provider_pending_leads": {
+            "type": "integer",
+            "title": "Provider Pending Leads",
+            "default": 0
+          },
+          "provider_pending_emails": {
+            "type": "integer",
+            "title": "Provider Pending Emails",
+            "default": 0
+          },
+          "provider_pending_truncated": {
+            "type": "boolean",
+            "title": "Provider Pending Truncated",
+            "default": false
           }
         },
         "type": "object",

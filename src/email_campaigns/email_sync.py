@@ -129,6 +129,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.email_campaign import (
     BLOCKING_MEMBER_STATUSES,
+    LIVE_MEMBER_STATUSES,
     TERMINAL_MEMBER_STATUSES,
     EmailCampaign,
     EmailCampaignMember,
@@ -178,6 +179,7 @@ from src.email_campaigns.email_schema import (
 )
 from src.email_campaigns.flags import is_real_provider_id
 from src.email_campaigns.html_text import html_to_text
+from src.email_campaigns.import_fingerprint import lead_fingerprint
 from src.email_campaigns.lemlist_team import CAMPAIGN_TEAM_KEY
 from src.email_campaigns.providers.base import (
     CampaignRef,
@@ -188,6 +190,7 @@ from src.email_campaigns.providers.base import (
     LeadSpec,
     ProviderError,
     ProviderEvent,
+    ProviderLead,
     ProviderLeadIdentity,
     ProviderLeadListing,
     ProviderMessage,
@@ -831,8 +834,18 @@ class EmailSyncManager:
             )
             if not stored:
                 stats.duplicates += 1
-                continue
-            stats.stored += 1
+                if not (
+                    history
+                    and target is not None
+                    and is_imported(target)
+                    and member is not None
+                    and await self.repo.claim_orphan_event(
+                        provider_name, event.event_id, target, member, event.step_position
+                    )
+                ):
+                    continue
+            else:
+                stats.stored += 1
             if member is None:
                 stats.unmatched += 1
             if event.type == VARIABLE_UNSUBSCRIBED:
@@ -1339,9 +1352,9 @@ class EmailSyncManager:
 
         An imported campaign: its export is read every time, and its leads
         Lemlist has and Nidria does not know are counted on both
-        (`unknown_leads`); its leads are only ever paused from the listing
-        (`state` paused proves a pause; no state proves its end, and the
-        import set the status from Lemlist's own words)."""
+        (`unknown_leads`). Its export refreshes mapped states with the same
+        rules as import, without lifting durable blocks. The listing alone
+        still only proves pause/unsubscribe, never sequence completion."""
         imported = is_imported(campaign)
         members = await self.repo.at_provider(campaign.id)
         report.contacts = len(members)
@@ -1359,11 +1372,31 @@ class EmailSyncManager:
         present = set(remote) | set(exported)
         absence_counts = whole or (listing.complete and (bool(remote) or not members))
         if imported:
+            # Import and sync must interpret exactly the same provider words.
+            # Local import avoids the import manager/sync engine module cycle.
+            from src.email_campaigns.email_import import propose
+
+            fingerprints = {}
+            for lead_id in present:
+                row = exported.get(lead_id)
+                listed = remote.get(lead_id)
+                rule = propose(
+                    listed.state if listed else (row.last_state if row else None),
+                    row.status if row else None,
+                    row.state_system if row else None,
+                )
+                fingerprints[lead_id] = lead_fingerprint(
+                    row.email if row else (listed.email if listed else None),
+                    rule.proposed or rule.not_imported,
+                )
             report.unknown_leads = await self.count_unknown_leads(
-                campaign, present if whole else None
+                campaign, present if whole else None, fingerprints=fingerprints
             )
         for member in members:
             lead = remote.get(member.provider_lead_id or "")
+            row = exported.get(member.provider_lead_id or "")
+            if imported and row is not None:
+                await self._refresh_imported_status(member, row, lead, report)
             if lead is None:
                 row = exported.get(member.provider_lead_id or "")
                 if row is not None:
@@ -1403,20 +1436,68 @@ class EmailSyncManager:
             elif set_paused(member, lead.is_paused):
                 report.pause_changes += 1
 
+    async def _refresh_imported_status(
+        self,
+        member: EmailCampaignMember,
+        row: ProviderLeadIdentity,
+        lead: ProviderLead | None,
+        report: CampaignReconcile,
+    ) -> None:
+        """Refresh the mirror from the export without lifting a durable block."""
+        from src.email_campaigns.email_import import _set_status, propose
+
+        if member.removed_at is not None or member.status in {
+            "EMAIL_UNSUBSCRIBED",
+            "EMAIL_BOUNCED",
+        }:
+            return
+        rule = propose(lead.state if lead else row.last_state, row.status, row.state_system)
+        if rule.proposed is None or rule.proposed == member.status:
+            return
+        if rule.proposed in LIVE_MEMBER_STATUSES and member.status not in LIVE_MEMBER_STATUSES:
+            # Native enrollments retain their conflict guard, even when a
+            # provider lead resumes outside Nidria.
+            others = await self.repo.live_members(member.agency_id, [member.client_profile_id])
+            if any(m.id != member.id and not m.is_provider_mirror for m in others):
+                return
+        paused = member.status == "EMAIL_PAUSED" or rule.proposed == "EMAIL_PAUSED"
+        _set_status(member, rule.proposed, datetime.now(UTC))
+        if paused:
+            report.pause_changes += 1
+        if rule.opposition:
+            await self._block(member, row.email)
+            if rule.proposed == "EMAIL_UNSUBSCRIBED":
+                report.unsubscribed += 1
+
     async def count_unknown_leads(
-        self, campaign: EmailCampaign, lead_ids: Collection[str] | None
+        self,
+        campaign: EmailCampaign,
+        lead_ids: Collection[str] | None,
+        *,
+        fingerprints: Mapping[str, str] | None = None,
     ) -> int | None:
         """The leads of an imported campaign that Lemlist has (`lead_ids`:
         its export's, the reference, and its listing's) and Nidria does not
-        know: no membership of the campaign holds them and the last import
-        did not set them aside. Kept on the campaign (its import metadata)
+        know: no membership holds them, and no unchanged exclusion fingerprint
+        covers them. Legacy exclusions are retried once; native conflicts
+        are retried daily as well. Kept on the campaign (its import metadata)
         with when it was counted; None (not counted) without the export.
         Writes the campaign, never commits."""
         count: int | None = None
         noted = import_metadata(campaign.provider_metadata)
         if lead_ids is not None:
             known = await self.repo.lead_ids_of_campaign(campaign.id)
-            aside = {str(lead_id) for lead_id in noted.get("set_aside") or []}
+            previous = noted.get("set_aside_fingerprints") or {}
+            aside = {
+                str(lead_id)
+                for lead_id in noted.get("set_aside") or []
+                if fingerprints is not None
+                and previous.get(str(lead_id)) == fingerprints.get(str(lead_id))
+                and str(lead_id) in previous
+            }
+            retry = noted.get("retry_after_conflict")
+            if isinstance(retry, str) and retry <= datetime.now(UTC).isoformat():
+                aside -= set(noted.get("conflicts") or [])
             count = len(set(lead_ids) - known - aside)
         noted.update(unknown_leads=count, unknown_leads_at=datetime.now(UTC).isoformat())
         campaign.provider_metadata = {

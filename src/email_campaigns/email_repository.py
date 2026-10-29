@@ -1702,6 +1702,33 @@ class EmailRepository:
         )
         return result.scalar() is not None
 
+    async def claim_orphan_event(
+        self,
+        provider: str,
+        event_id: str,
+        campaign: EmailCampaign,
+        member: EmailCampaignMember,
+        step_position: int | None,
+    ) -> bool:
+        """Attach an unapplied event once, only inside its original tenant/campaign.
+
+        The update and the message application share the caller's transaction.
+        Concurrent replays cannot both claim the same event.
+        """
+        result = await self.db.execute(
+            update(EmailProviderEvent)
+            .where(
+                EmailProviderEvent.provider == provider,
+                EmailProviderEvent.provider_event_id == event_id,
+                EmailProviderEvent.agency_id == campaign.agency_id,
+                EmailProviderEvent.campaign_id == campaign.id,
+                EmailProviderEvent.campaign_member_id.is_(None),
+            )
+            .values(campaign_member_id=member.id, step_position=step_position)
+            .returning(EmailProviderEvent.id)
+        )
+        return result.scalar() is not None
+
     async def campaign_by_provider_id(
         self, provider: str, provider_campaign_id: str
     ) -> EmailCampaign | None:
