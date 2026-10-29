@@ -181,6 +181,7 @@ from src.email_campaigns.email_schema import (
     EmailMetaRead,
     EmailOutreachCampaign,
     EmailOutreachItem,
+    EmailOutreachPendingItem,
     EmailOutreachRead,
     EmailPerformanceDay,
     EmailPerformanceRates,
@@ -2545,21 +2546,19 @@ class EmailManager:
             )
         if await self.repo.open_in_campaign(target.id, [profile.id]):
             return _row_result(member, ok=False, code="email.already_in_campaign")
-        if member.status not in LIVE:
-            # An ended membership while the person lives in another campaign
-            # (decision A11): one live membership per person, never two.
-            live = [
-                m
-                for m in await self.repo.live_members(access.agency_id, [profile.id])
-                if m.id != member.id
-            ]
-            if live:
-                return _row_result(
-                    member,
-                    ok=False,
-                    code="email.in_other_campaign",
-                    params={"campaign_id": str(live[0].campaign_id)},
-                )
+        # Moving a mirror must not bypass another live membership.
+        live = [
+            m
+            for m in await self.repo.live_members(access.agency_id, [profile.id])
+            if m.id != member.id
+        ]
+        if live:
+            return _row_result(
+                member,
+                ok=False,
+                code="email.in_other_campaign",
+                params={"campaign_id": str(live[0].campaign_id)},
+            )
         failure = await self._end(
             access,
             row,
@@ -2808,6 +2807,8 @@ class EmailManager:
                 )
             )
         overdue = 0
+        pending: list[tuple[MemberRow, dict[str, Any]]] = []
+        kinds = set(filters.get("kinds") or ())
         for row in in_flight:
             loaded = campaigns.get(row.campaign.id)
             if loaded is None:
@@ -2823,6 +2824,33 @@ class EmailManager:
                 sending_end=settings.sending_end_time,
                 imported=is_imported(loaded),
             )
+            if (
+                plan.hold is not None
+                and plan.hold.code == "provider_schedule"
+                and (not kinds or "SCHEDULED" in kinds)
+            ):
+                active_ids = import_metadata(loaded.provider_metadata).get("active_step_ids")
+                remaining = sorted(
+                    (
+                        step
+                        for step in loaded.steps
+                        if step.type == "EMAIL"
+                        and step.position > (row.member.current_step or 0)
+                        and step.position not in sent.get(row.member.id, {})
+                        and (active_ids is None or step.provider_step_id in active_ids)
+                    ),
+                    key=lambda step: step.position,
+                )
+                if remaining:
+                    pending.append(
+                        (
+                            row,
+                            {
+                                "step_position": remaining[0].position,
+                                "remaining_emails": len(remaining),
+                            },
+                        )
+                    )
             today = today_in(settings.timezone)
             for planned in sorted(plan.steps.values(), key=lambda p: p.position):
                 if not planned.estimated or planned.day is None:
@@ -2854,11 +2882,21 @@ class EmailManager:
                             },
                         )
                     )
-        kinds = set(filters.get("kinds") or ())
         if kinds:
             found = [entry for entry in found if entry[1]["kind"] in kinds]
-        people = await self.people(access, [row.profile for row, _ in found])
-        items = [self._outreach_item(row, values, people, campaigns) for row, values in found]
+        pending.sort(key=lambda entry: (entry[0].campaign.name, str(entry[0].member.id)))
+        pending_emails = sum(values["remaining_emails"] for _, values in pending)
+        people = await self.people(
+            access, [row.profile for row, _ in [*found, *pending[:OUTREACH_LIMIT]]]
+        )
+        items = [
+            EmailOutreachItem(**self._outreach_values(row, values, people, campaigns))
+            for row, values in found
+        ]
+        pending_items = [
+            EmailOutreachPendingItem(**self._outreach_values(row, values, people, campaigns))
+            for row, values in pending[:OUTREACH_LIMIT]
+        ]
         rank: dict[OutreachKind, int] = {
             "OVERDUE": 0,
             "SENT": 1,
@@ -2887,6 +2925,10 @@ class EmailManager:
             on_hold=held,
             dry_run=dry_run,
             overdue=overdue,
+            provider_pending=pending_items,
+            provider_pending_leads=len(pending),
+            provider_pending_emails=pending_emails,
+            provider_pending_truncated=len(pending) > OUTREACH_LIMIT,
             campaigns=[
                 EmailOutreachCampaign(
                     id=c.id, name=c.name, status=c.status, sender=_sender_email(c)
@@ -2896,19 +2938,19 @@ class EmailManager:
         )
 
     @staticmethod
-    def _outreach_item(
+    def _outreach_values(
         row: MemberRow,
         values: dict[str, Any],
         people: People,
         campaigns: Mapping[uuid.UUID, EmailCampaign],
-    ) -> EmailOutreachItem:
+    ) -> dict[str, Any]:
         member, profile, campaign = row.member, row.profile, row.campaign
         identity = client_identity(profile, row.account)
         company = people.company(profile)
         loaded = campaigns.get(campaign.id)
         step_names = {s.position: s.name for s in loaded.steps} if loaded is not None else {}
         position = values.get("step_position")
-        return EmailOutreachItem(
+        return dict(
             member_id=member.id,
             client_profile_id=profile.id,
             full_name=_full_name(identity.first_name, identity.last_name),

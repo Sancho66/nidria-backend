@@ -18,9 +18,9 @@ receive the placeholder, spec 9.2). The few gestures it still takes are in
    (exported, listed, both together, the export's the listing missed and
    their contact ids found, identified, without an address, sharing one,
    imported without a contact id); the client records
-   found by address (rule N2) or to create; the conflicts (a person live in
-   another campaign of the agency, or in an importable campaign planned
-   before); every combination of Lemlist's words met (`state` of the
+   found by address (rule N2) or to create; conflicts with live native
+   enrollments (observed imported participations may coexist); every combination
+   of Lemlist's words met (`state` of the
    listing, and the lead's status word labelled with its source: the
    export's `status`, else its `stateSystem`, else the contacts lookup's
    `leadState`) with the Nidria status proposed; the Lemlist calls it took
@@ -29,7 +29,7 @@ receive the placeholder, spec 9.2). The few gestures it still takes are in
    itself (never imported).
 2. `apply` (POST /email/import/lemlist {campaign_ids}): the plan computed
    again server side (the listing and every importable campaign read again,
-   since earlier campaigns decide the conflicts of later ones), then each
+   reusing client records created by earlier imports), then each
    campaign asked for, in the plan's order, in its own transaction; a
    failure undoes that campaign only, its code in the answer, and the next
    one goes on. Per campaign: the campaign (its status mapped from Lemlist's,
@@ -86,7 +86,14 @@ either: a membership UNSUBSCRIBED or BOUNCED keeps it, whatever Lemlist says.
    know, imported exactly as `apply` does (same plan, same transactions,
    conflicts set aside, opposition list fed). What it writes names no agent
    (`imported_by` "auto"). Nothing to import: one Lemlist call, the
-   listing.
+   listing. Exclusions are reconsidered when their address/status fingerprint
+   changes; legacy exclusions without a fingerprint are retried once. Native
+   conflicts are also reconsidered daily without inventing a provider change.
+
+Imported memberships are observations, marked `is_provider_mirror` by the
+server. They preserve multiple provider histories for one person. Native
+memberships keep their unique live index; readiness and move guards check
+all live participations, including mirrors, before any native enrollment.
 
 Concurrency. Each campaign's transaction holds the agency's import lock
 (`EmailRepository.lock_import`) and the campaign's row, and decides again,
@@ -108,7 +115,7 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
 from pydantic import ValidationError as PydanticValidationError
@@ -167,6 +174,7 @@ from src.email_campaigns.email_sync import (
     EmailSyncManager,
 )
 from src.email_campaigns.flags import external_effects_on, provider_state_for
+from src.email_campaigns.import_fingerprint import lead_fingerprint
 from src.email_campaigns.lemlist_team import CAMPAIGN_TEAM_KEY
 from src.email_campaigns.providers.base import (
     CampaignRef,
@@ -701,28 +709,21 @@ class CampaignPlan:
     read: CampaignRead
     campaign: EmailCampaign | None
     verdicts: list[Verdict] = field(default_factory=list)
-    #: What the importable campaigns planned before it took live: an
-    #: address or a record there is a `conflict_in_plan` here.
-    taken_before: tuple[frozenset[str], frozenset[uuid.UUID]] = (frozenset(), frozenset())
 
 
 def plan_campaign(
     read: CampaignRead,
     campaign: EmailCampaign | None,
     facts: Facts,
-    taken_addresses: set[str],
-    taken_profiles: set[uuid.UUID],
     planned_records: set[str] | None = None,
 ) -> CampaignPlan:
-    """Each lead's verdict, in a fixed order (the leads already imported
-    first, then by lead id), and what the campaign takes live (added to
-    `taken_*` for the campaigns planned after it) or creates
-    (`planned_records`, the addresses whose record a campaign planned before
-    creates). Pure: reads `facts`."""
+    """Mirror each lead, preserving native enrollment conflicts and identities.
+
+    Multiple imported campaigns may observe the same person. Their client
+    record is reused; each campaign retains its own history and state.
+    """
     planned_records = planned_records if planned_records is not None else set()
-    plan = CampaignPlan(
-        read, campaign, taken_before=(frozenset(taken_addresses), frozenset(taken_profiles))
-    )
+    plan = CampaignPlan(read, campaign)
     own_by_lead = facts.open_by_lead.get(campaign.id, {}) if campaign is not None else {}
     own_by_profile = facts.open_by_profile.get(campaign.id, {}) if campaign is not None else {}
     seen: set[str] = set()
@@ -734,7 +735,7 @@ def plan_campaign(
         member = own_by_lead.get(lead.lead_id)
         verdict: Verdict
         if member is not None:
-            verdict = _refresh(lead, rule, member, facts, taken_addresses, taken_profiles)
+            verdict = _refresh(lead, rule, member, facts)
         elif address is None:
             verdict = Verdict(lead, rule, "skip", "no_email")
         elif rule.proposed is None:
@@ -748,14 +749,12 @@ def plan_campaign(
                 *facts.live_by_address.get(address, []),
             ]
             here = campaign.id if campaign is not None else None
-            if any(m.campaign_id != here for m in live):
+            if any(m.campaign_id != here and not m.is_provider_mirror for m in live):
                 verdict = Verdict(lead, rule, "skip", "conflict")
-            elif (profile_id is not None and profile_id in own_by_profile) or live:
-                verdict = Verdict(lead, rule, "skip", "already_in_campaign")
-            elif address in taken_addresses or (
-                profile_id is not None and profile_id in taken_profiles
+            elif (profile_id is not None and profile_id in own_by_profile) or any(
+                m.campaign_id == here for m in live
             ):
-                verdict = Verdict(lead, rule, "skip", "conflict_in_plan")
+                verdict = Verdict(lead, rule, "skip", "already_in_campaign")
             else:
                 verdict = Verdict(lead, rule, "create", profile_id=profile_id)
                 if profile_id is None:
@@ -763,12 +762,6 @@ def plan_campaign(
                     planned_records.add(address)
         if address is not None:
             seen.add(address)
-        final = verdict.status or (verdict.member.status if verdict.member else rule.proposed)
-        if verdict.action != "skip" and final in _LIVE:
-            if address is not None:
-                taken_addresses.add(address)
-            if verdict.profile_id is not None:
-                taken_profiles.add(verdict.profile_id)
         plan.verdicts.append(verdict)
     return plan
 
@@ -778,25 +771,24 @@ def _refresh(
     rule: Rule,
     member: EmailCampaignMember,
     facts: Facts,
-    taken_addresses: set[str],
-    taken_profiles: set[uuid.UUID],
 ) -> Verdict:
     """An imported membership refreshed: its status becomes the one Lemlist's
     words now map to, except a block (never lifted), a status not covered
-    (kept), and a live one while the person lives elsewhere (kept)."""
+    (kept), and a live one while a native enrollment exists elsewhere (kept)."""
     verdict = Verdict(lead, rule, "update", profile_id=member.client_profile_id, member=member)
     current, proposed = member.status, rule.proposed
     if current in _BLOCKING or proposed is None or proposed == current:
         return verdict
     if proposed in _LIVE and current not in _LIVE:
         elsewhere = [
-            m for m in facts.live_by_profile.get(member.client_profile_id, []) if m.id != member.id
+            m
+            for m in [
+                *facts.live_by_profile.get(member.client_profile_id, []),
+                *facts.live_by_address.get(lead.email or "", []),
+            ]
+            if m.id != member.id and not m.is_provider_mirror
         ]
-        if (
-            elsewhere
-            or member.client_profile_id in taken_profiles
-            or (lead.email is not None and lead.email in taken_addresses)
-        ):
+        if elsewhere:
             verdict.conflict = True
             return verdict
     verdict.status = proposed
@@ -806,27 +798,14 @@ def _refresh(
 def plan_campaigns(
     reads: Sequence[CampaignRead], imported: Mapping[str, EmailCampaign], facts: Facts
 ) -> list[CampaignPlan]:
-    """Every importable campaign planned in order, each knowing what the
-    ones before it took live."""
-    taken_addresses: set[str] = set()
-    taken_profiles: set[uuid.UUID] = set()
+    """Plan each provider mirror in order, sharing identities, not enrollments."""
     planned_records: set[str] = set()
-    plans: list[CampaignPlan] = []
-    for read in reads:
-        campaign = imported.get(read.campaign_id)
-        if read.error is not None:
-            plans.append(
-                CampaignPlan(
-                    read,
-                    campaign,
-                    taken_before=(frozenset(taken_addresses), frozenset(taken_profiles)),
-                )
-            )
-            continue
-        plans.append(
-            plan_campaign(read, campaign, facts, taken_addresses, taken_profiles, planned_records)
-        )
-    return plans
+    return [
+        CampaignPlan(read, imported.get(read.campaign_id))
+        if read.error is not None
+        else plan_campaign(read, imported.get(read.campaign_id), facts, planned_records)
+        for read in reads
+    ]
 
 
 def _skipped(plan: CampaignPlan) -> Counter[str]:
@@ -1295,10 +1274,7 @@ class EmailImportManager:
         facts = await self._facts(
             agency_id, [read], {} if created else {read.campaign_id: campaign}, lock=True
         )
-        taken_addresses, taken_profiles = plan.taken_before
-        fresh = plan_campaign(
-            read, None if created else campaign, facts, set(taken_addresses), set(taken_profiles)
-        )
+        fresh = plan_campaign(read, None if created else campaign, facts)
         assert read.sequences is not None  # a campaign read without error
         await self._steps(campaign, read.sequences, result)
         members = await self._members(access, campaign, fresh, result)
@@ -1334,6 +1310,16 @@ class EmailImportManager:
             unknown_leads=unknown,
             unknown_leads_at=now.isoformat(),
             set_aside=set_aside,
+            set_aside_fingerprints={
+                v.lead.lead_id: lead_fingerprint(
+                    v.lead.email, v.rule.proposed or v.rule.not_imported
+                )
+                for v in fresh.verdicts
+                if v.action == "skip"
+            },
+            # A native membership may end without any change at Lemlist.
+            retry_after_conflict=(now + timedelta(days=1)).isoformat(),
+            conflicts=[v.lead.lead_id for v in fresh.verdicts if v.reason == "conflict"],
         )
         campaign.provider_metadata = {
             **(campaign.provider_metadata or {}),
@@ -1411,6 +1397,13 @@ class EmailImportManager:
         Lemlist type in `provider_content`, the raw step). No Nidria
         template: the content is Lemlist's. A step Lemlist no longer has
         keeps its history, after the others."""
+        campaign.provider_metadata = {
+            **(campaign.provider_metadata or {}),
+            IMPORT_METADATA_KEY: {
+                **import_metadata(campaign.provider_metadata),
+                "active_step_ids": [step.step_id for step in sequences.steps],
+            },
+        }
         by_id = {s.provider_step_id: s for s in campaign.steps if s.provider_step_id}
         listed: list[EmailCampaignStep] = []
         for provider_step in sequences.steps:
@@ -1497,6 +1490,7 @@ class EmailImportManager:
                 agency_id=agency_id,
                 provider_lead_id=lead.lead_id,
                 provider_contact_id=lead.contact_id,
+                is_provider_mirror=True,
                 provider_status=(lead.state or "")[:60] or None,
                 provider_metadata=_member_metadata(lead, None, imported_at),
                 added_by_agent_id=access.agent_id,
@@ -1510,6 +1504,7 @@ class EmailImportManager:
             if verdict.action != "update" or verdict.member is None:
                 continue
             member, lead = verdict.member, verdict.lead
+            member.is_provider_mirror = True
             member.provider_metadata = _member_metadata(lead, member.provider_metadata, imported_at)
             if verdict.status is not None:
                 _set_status(member, verdict.status, now)

@@ -20,6 +20,7 @@ from alembic.operations import Operations
 from sqlalchemy import Connection, Engine, inspect, text
 
 from shared.models.base import Base
+from tests.test_email_provider_mirror_migration import mirror_migration
 
 TABLES = (
     "agency_email_module",
@@ -108,6 +109,7 @@ def test_email_campaigns_migration_round_trip(sync_engine: Engine) -> None:
                 == 0
             )
             migration.upgrade()
+            mirror_migration().upgrade()
         born_from_migration = _snapshot(connection)
     for table in TABLES:
         assert born_from_migration[table] == born_from_models[table], table

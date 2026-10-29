@@ -209,7 +209,7 @@ class ClientFacts:
     #: client profile id -> EMAIL_UNSUBSCRIBED or EMAIL_BOUNCED, from ANY of
     #: its memberships, removed ones included (A1); an unsubscribe wins.
     blocked: Mapping[uuid.UUID, str] = field(default_factory=dict)
-    #: client profile id -> its live membership (one at most, any campaign).
+    #: client profile id -> its first live membership (legacy callers).
     live: Mapping[uuid.UUID, EmailCampaignMember] = field(default_factory=dict)
     #: address fingerprint (`suppression.email_hash`) -> (EMAIL_UNSUBSCRIBED
     #: or EMAIL_BOUNCED, the client record the listed membership belonged
@@ -217,6 +217,8 @@ class ClientFacts:
     suppressed: Mapping[str, tuple[str, uuid.UUID | None]] = field(default_factory=dict)
     #: address -> the live memberships of the records with that address.
     live_addresses: Mapping[str, Sequence[EmailCampaignMember]] = field(default_factory=dict)
+    #: Every live mirror/native membership, including multiple campaigns.
+    live_profiles: Mapping[uuid.UUID, Sequence[EmailCampaignMember]] = field(default_factory=dict)
 
 
 async def load_client_facts(
@@ -233,13 +235,22 @@ async def load_client_facts(
     blocked: dict[uuid.UUID, str] = {}
     for profile_id, status in await repo.blocking_statuses(agency_id, ids):
         blocked[profile_id] = _worst(blocked.get(profile_id), status)
-    live = {m.client_profile_id: m for m in await repo.live_members(agency_id, ids)}
+    live_profiles: dict[uuid.UUID, list[EmailCampaignMember]] = {}
+    for member in await repo.live_members(agency_id, ids):
+        live_profiles.setdefault(member.client_profile_id, []).append(member)
+    live = {profile_id: rows[0] for profile_id, rows in live_profiles.items()}
     digests = sorted({d for d in (email_hash(email) for _, email in people) if d is not None})
     suppressed = await repo.suppressed(agency_id, digests)
     live_addresses: dict[str, list[EmailCampaignMember]] = {}
     for email, member in await repo.live_members_by_email(agency_id, addresses):
         live_addresses.setdefault(email, []).append(member)
-    return ClientFacts(blocked, live, suppressed, live_addresses)
+    return ClientFacts(
+        blocked=blocked,
+        live=live,
+        suppressed=suppressed,
+        live_addresses=live_addresses,
+        live_profiles=live_profiles,
+    )
 
 
 def _block_of(
@@ -281,8 +292,10 @@ def _live_elsewhere(
     """A live membership that is not the one being checked: the record's own
     first, else one of another record with the same address."""
     own = facts.live.get(profile_id)
-    if own is not None and own.id != member_id:
-        return own, None
+    candidates = facts.live_profiles.get(profile_id, (own,) if own is not None else ())
+    for candidate in candidates:
+        if candidate.id != member_id:
+            return candidate, None
     if address is None:
         return None
     others = sorted(
