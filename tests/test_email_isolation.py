@@ -100,6 +100,7 @@ EXPECTED_BINDINGS: dict[tuple[str, str], Permission] = {
     # phase 3B
     ("POST", "/email/campaigns/{campaign_id}/sync"): SYNC,
     ("GET", "/email/outreach"): VIEW,
+    ("GET", "/email/hot-leads"): VIEW,
     ("GET", "/email/campaigns/{campaign_id}/performance"): VIEW,
     ("GET", "/email/campaigns/{campaign_id}/launch"): VIEW,
     ("POST", "/email/campaigns/{campaign_id}/launch"): SYNC,
@@ -206,6 +207,7 @@ def _routes(s: Side) -> list[tuple[str, str, Any]]:
     campaign, step, variable, member = s.campaign_id, s.step_id, s.ai_variable_id, s.member_id
     return [
         ("GET", "/email/meta", None),
+        ("GET", "/email/hot-leads", None),
         ("GET", "/email/variables/fill", None),
         ("GET", "/email/senders", None),
         ("GET", "/email/campaigns", None),

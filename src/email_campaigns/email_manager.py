@@ -170,6 +170,8 @@ from src.email_campaigns.email_schema import (
     EmailClientProfileRead,
     EmailConversationItem,
     EmailEventRead,
+    EmailHotLeadListResponse,
+    EmailHotLeadRead,
     EmailIssueRead,
     EmailLaunchReadiness,
     EmailLaunchReadinessRow,
@@ -2109,6 +2111,35 @@ class EmailManager:
             page=page,
             page_size=page_size,
             status_counts=status_counts,
+        )
+
+    async def hot_leads(
+        self,
+        agent: Agent,
+        campaign_id: uuid.UUID | None,
+        search: str | None,
+        page: int,
+        page_size: int,
+    ) -> EmailHotLeadListResponse:
+        """Conversations that received a reply, with no sentiment inference."""
+        access = await self.access(agent)
+        rows, total = await self.repo.hot_leads_page(
+            access.agency_id, campaign_id, search, page, page_size
+        )
+        people = await self.people(access, [row.profile for row, _, _ in rows])
+        counts = await self.repo.step_counts(sorted({row.campaign.id for row, _, _ in rows}))
+        return EmailHotLeadListResponse(
+            items=[
+                EmailHotLeadRead(
+                    member=self.member_read(row, people, counts),
+                    latest_reply=_reply_read(reply),
+                    reply_count=count,
+                )
+                for row, reply, count in rows
+            ],
+            total=total,
+            page=page,
+            page_size=page_size,
         )
 
     async def member_detail(self, agent: Agent, member_id: uuid.UUID) -> EmailMemberDetail:
