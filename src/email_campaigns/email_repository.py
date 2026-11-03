@@ -696,6 +696,79 @@ class EmailRepository:
         rows = await self.member_rows(agency_id, [member_id])
         return rows[0] if rows else None
 
+    async def hot_leads_page(
+        self,
+        agency_id: uuid.UUID,
+        campaign_id: uuid.UUID | None,
+        search: str | None,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[tuple[MemberRow, EmailMessage, int]], int]:
+        """Latest inbound email per membership, newest first, including ended leads.
+
+        Rank before paginating so several replies never duplicate a recipient.
+        Both the messages and all joined records remain agency-scoped.
+        """
+        message = EmailMessage
+        ranked = (
+            select(
+                message.id.label("message_id"),
+                message.campaign_member_id.label("member_id"),
+                func.count().over(partition_by=message.campaign_member_id).label("reply_count"),
+                func.row_number()
+                .over(
+                    partition_by=message.campaign_member_id,
+                    order_by=(message.received_at.desc(), message.id.desc()),
+                )
+                .label("rank"),
+            )
+            .where(
+                message.agency_id == agency_id,
+                message.direction == "INBOUND",
+                message.type == "EMAIL",
+                message.received_at.is_not(None),
+            )
+            .subquery()
+        )
+        conditions = [ranked.c.rank == 1]
+        if campaign_id is not None:
+            conditions.append(EmailCampaignMember.campaign_id == campaign_id)
+        if search and search.strip():
+            conditions.append(
+                or_(
+                    self._member_search(agency_id, search.strip()),
+                    EmailCampaignMember.provider_metadata["import"]["company_name"].astext.ilike(
+                        f"%{search.strip()}%"
+                    ),
+                )
+            )
+        scoped = (
+            self._in_agency(
+                select(
+                    EmailCampaignMember,
+                    ClientProfile,
+                    ExpatUser,
+                    EmailCampaign,
+                    message,
+                    ranked.c.reply_count,
+                ),
+                agency_id,
+            )
+            .join(ranked, ranked.c.member_id == EmailCampaignMember.id)
+            .join(message, message.id == ranked.c.message_id)
+            .where(*conditions, message.campaign_id == EmailCampaign.id)
+        )
+        total = await self.db.scalar(select(func.count()).select_from(scoped.subquery()))
+        rows = await self.db.execute(
+            scoped.order_by(message.received_at.desc(), message.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return [
+            (MemberRow(member, profile, account, campaign), reply, int(count))
+            for member, profile, account, campaign, reply, count in rows.all()
+        ], int(total or 0)
+
     def _member_search(self, agency_id: uuid.UUID, search: str) -> ColumnElement[bool]:
         """A client's effective name or address, or the name of a company
         linked to it, contains `search`."""

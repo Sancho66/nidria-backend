@@ -7002,6 +7002,102 @@
         }
       }
     },
+    "/email/hot-leads": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Hot Leads",
+        "description": "Recipients with stored replies, one conversation per campaign, newest first.\n\nIncludes paused/archived campaigns and ended memberships. A reply is not a\npositive-interest classification. Reads Nidria only, without provider calls.",
+        "operationId": "hot_leads_email_hot_leads_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Campaign Id"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailHotLeadListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/email/members/{member_id}": {
       "get": {
         "tags": [
@@ -34485,6 +34581,59 @@
           "campaign_member_id"
         ],
         "title": "EmailEventRead"
+      },
+      "EmailHotLeadListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EmailHotLeadRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "EmailHotLeadListResponse"
+      },
+      "EmailHotLeadRead": {
+        "properties": {
+          "member": {
+            "$ref": "#/components/schemas/EmailMemberRead"
+          },
+          "latest_reply": {
+            "$ref": "#/components/schemas/EmailReplyRead"
+          },
+          "reply_count": {
+            "type": "integer",
+            "title": "Reply Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "member",
+          "latest_reply",
+          "reply_count"
+        ],
+        "title": "EmailHotLeadRead",
+        "description": "A recipient's conversation in one campaign, regardless of its current status.\n\nA reply proves that the recipient answered, not that they are interested.\nIts text is read from stored messages only, never fetched from the provider here."
       },
       "EmailImportCallsRead": {
         "properties": {

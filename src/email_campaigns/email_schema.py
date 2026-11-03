@@ -880,6 +880,25 @@ class EmailMemberListResponse(BaseModel):
     status_counts: dict[str, int]
 
 
+class EmailHotLeadRead(BaseModel):
+    """A recipient's conversation in one campaign, regardless of its current status.
+
+    A reply proves that the recipient answered, not that they are interested.
+    Its text is read from stored messages only, never fetched from the provider here.
+    """
+
+    member: EmailMemberRead
+    latest_reply: EmailReplyRead
+    reply_count: int
+
+
+class EmailHotLeadListResponse(BaseModel):
+    items: list[EmailHotLeadRead]
+    total: int
+    page: int
+    page_size: int
+
+
 class EmailMemberAction(BaseModel):
     ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
 

@@ -68,6 +68,7 @@ from src.email_campaigns.email_schema import (
     EmailCandidateCompanyList,
     EmailClientProfileRead,
     EmailDuplicateRequest,
+    EmailHotLeadListResponse,
     EmailImportPlanRead,
     EmailImportRequest,
     EmailImportResult,
@@ -121,6 +122,7 @@ BINDINGS = [
     # sync, launch, performance, outreach
     RouteBinding("POST", "/email/campaigns/{campaign_id}/sync", Audience.AGENT, _SYNC),
     RouteBinding("GET", "/email/outreach", Audience.AGENT, _VIEW),
+    RouteBinding("GET", "/email/hot-leads", Audience.AGENT, _VIEW),
     RouteBinding("GET", "/email/campaigns/{campaign_id}/performance", Audience.AGENT, _VIEW),
     RouteBinding("GET", "/email/campaigns/{campaign_id}/launch", Audience.AGENT, _VIEW),
     RouteBinding("POST", "/email/campaigns/{campaign_id}/launch", Audience.AGENT, _SYNC),
@@ -420,6 +422,23 @@ async def list_members(
         "search": search,
     }
     return await EmailManager(db).list_members(agent, filters, page, page_size)
+
+
+@router.get("/hot-leads", response_model=EmailHotLeadListResponse)
+async def hot_leads(
+    agent: AgentDep,
+    db: DbDep,
+    campaign_id: Annotated[uuid.UUID | None, Query()] = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> EmailHotLeadListResponse:
+    """Recipients with stored replies, one conversation per campaign, newest first.
+
+    Includes paused/archived campaigns and ended memberships. A reply is not a
+    positive-interest classification. Reads Nidria only, without provider calls.
+    """
+    return await EmailManager(db).hot_leads(agent, campaign_id, search, page, page_size)
 
 
 @router.get("/members/{member_id}", response_model=EmailMemberDetail)
