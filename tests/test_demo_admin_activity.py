@@ -173,6 +173,84 @@ async def test_metrics_filters_exclusions_and_incomplete_days(
 
 
 @pytest.mark.asyncio
+async def test_tour_progress_and_returns_share_the_list_stats_and_selection_population(
+    activity_db: AsyncSession, make_agency: MakeAgency, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.admin.demo_schema import DemoSelection
+    from src.demo_sandbox.lifecycle import selection_rows
+
+    monkeypatch.setattr(get_settings(), "demo_measurement_enabled", True)
+    db = activity_db
+    now = datetime.now(UTC)
+    today = now.astimezone(ZoneInfo("Europe/Paris")).date()
+    agencies = [
+        await demo(
+            make_agency,
+            i,
+            20,
+            now,
+            sandbox_tour={
+                "status": "completed" if i == 0 else "skipped" if i == 2 else "started",
+                "last_step": [8, 8, 5, 1][i],
+                "started_at": now.isoformat(),
+                "completed_at": now.isoformat() if i == 0 else None,
+            },
+        )
+        for i in range(4)
+    ]
+    codes = [a.slug.removeprefix("demo-sandbox-") for a in agencies]
+    for index, session, offset, reason in [
+        (0, "a", 0, None),
+        (0, "a", 1, None),  # One tab spanning two days.
+        (1, "b", 0, None),
+        (1, "c", 0, None),  # Two sessions on one day.
+        (2, "d", 0, "admin_preview"),
+        (2, "e", 1, "obvious_robot"),
+    ]:
+        await db.execute(
+            visits.insert().values(
+                code=codes[index],
+                visit_hash=session * 64,
+                day=today - timedelta(days=offset),
+                first_at=now,
+                last_at=now,
+                last_step=1,
+                excluded_reason=reason,
+            )
+        )
+    await db.commit()
+    await db.execute(text("SET TRANSACTION READ ONLY"))
+    manager = DemoControlManager(db, load_catalog())
+    page = await manager.list_demos(1, 1, "", sort=DemoSort.TOUR)
+    assert page.total == 4 and page.items[0].code == codes[0]
+    assert (page.items[0].measured_sessions, page.items[0].active_days) == (1, 2)
+    second = await manager.list_demos(2, 1, "", sort=DemoSort.TOUR)
+    assert second.items[0].code == codes[1]
+    for filters, expected in [
+        (DemoFilters(tour="completed"), codes[:1]),
+        (DemoFilters(tour="started", min_tour_step=6), codes[1:2]),
+        (DemoFilters(tour="skipped"), codes[2:3]),
+        (DemoFilters(returns="sessions"), codes[1:2]),
+        (DemoFilters(returns="days"), codes[:1]),
+    ]:
+        rows = await manager.list_demos(1, 30, "", filters)
+        assert [item.code for item in rows.items] == expected
+        stats = await DemoAdminAnalyticsManager(db, load_catalog()).read(
+            DemoAdminStatsQuery(**filters.model_dump())
+        )
+        selected = await selection_rows(db, DemoSelection(filters=filters), catalog=load_catalog())
+        assert stats.totals.total == rows.total == len(selected) == 1
+    stats = await DemoAdminAnalyticsManager(db, load_catalog()).read(DemoAdminStatsQuery(days=7))
+    assert (stats.measured_sessions, stats.reopened_demos, stats.multi_day_demos) == (3, 1, 1)
+    assert (stats.period_reopened_demos, stats.period_multi_day_demos) == (1, 1)
+    assert [row.demos for row in stats.tour_reach] == [4, 3, 3, 3, 3, 2, 2, 2]
+    returns = await manager.list_demos(1, 4, "", sort=DemoSort.RETURNS)
+    assert [item.code for item in returns.items][:2] == codes[:2]
+    assert returns.items[2].measured_sessions == 0  # Historical totals never fill gaps.
+    await db.rollback()
+
+
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("rbac_baseline")
 async def test_stats_permission_signed_read_only_channel_and_validation(
     activity_db: AsyncSession,

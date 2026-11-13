@@ -33,6 +33,7 @@ from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.security import hash_password
 from src.demo_sandbox.catalog import DemoCatalog, DemoRecord
 from src.demo_sandbox.draft import build_record, journey_source, preview_journey
+from src.demo_sandbox.engagement import DemoEngagementRepository, measured_count, tour_step
 from src.demo_sandbox.lifecycle import (
     erase_demos,
     history_csv,
@@ -116,6 +117,21 @@ class DemoControlManager:
             ordering = [last_opened.desc().nulls_last(), *ordering]
         elif sort == DemoSort.VISITS:
             ordering = [visits.desc(), last_opened.desc().nulls_last(), *ordering]
+        elif sort == DemoSort.TOUR:
+            completed = Agency.settings["sandbox_tour"]["completed_at"].astext.is_not(None)
+            ordering = [
+                completed.desc(),
+                tour_step().desc(),
+                last_opened.desc().nulls_last(),
+                *ordering,
+            ]
+        elif sort == DemoSort.RETURNS:
+            ordering = [
+                measured_count(days=True).desc(),
+                measured_count().desc(),
+                last_opened.desc().nulls_last(),
+                *ordering,
+            ]
         total = (
             await self.db.scalar(select(func.count()).select_from(Agency).where(*conditions)) or 0
         )
@@ -128,8 +144,12 @@ class DemoControlManager:
                 .limit(page_size)
             )
         ).all()
+        items = [self.read(agency) for agency in rows]
+        engagement = await DemoEngagementRepository(self.db).for_codes(
+            [item.code for item in items]
+        )
         return DemoListResponse(
-            items=[self.read(agency) for agency in rows],
+            items=[item.model_copy(update=engagement.get(item.code, {})) for item in items],
             total=total,
             page=page,
             page_size=page_size,

@@ -5,7 +5,9 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Query
 
-from src.admin.admin_router import AgentDep
+from src.admin.admin_router import AgentDep, DbDep
+from src.admin.demo_adoption_manager import DemoAdoptionManager
+from src.admin.demo_adoption_schema import DemoAdoptionQuery, DemoAdoptionResponse
 from src.admin.demo_import_schema import (
     DemoImportExport,
     DemoImportList,
@@ -41,6 +43,7 @@ BINDINGS = [
     for method, path in (
         ("GET", "/admin/demos"),
         ("GET", "/admin/demos/stats"),
+        ("GET", "/admin/demos/adoption"),
         ("POST", "/admin/demos/imports"),
         ("GET", "/admin/demos/imports"),
         ("GET", "/admin/demos/imports/batch-export"),
@@ -61,22 +64,42 @@ BINDINGS = [
 @router.get("", response_model=DemoListResponse)
 async def list_demos(
     agent: AgentDep,
+    db: DbDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     search: str = Query("", max_length=200),
     batch: str = Query("", max_length=100),
     status: Literal["all", "active", "disabled", "expired"] = "all",
     opened: Literal["all", "opened", "unopened"] = "all",
+    tour: Literal["all", "not_started", "started", "completed", "skipped"] = "all",
+    min_tour_step: int = Query(0, ge=0, le=8),
+    returns: Literal["all", "sessions", "days"] = "all",
     sort: DemoSort = DemoSort.RECENT,
 ) -> DemoListResponse:
-    return await AdminDemoManager().list_demos(
+    result = await AdminDemoManager().list_demos(
         agent.id,
         page,
         page_size,
         search,
-        DemoFilters(search=search, batch=batch, status=status, opened=opened),
+        DemoFilters(
+            search=search,
+            batch=batch,
+            status=status,
+            opened=opened,
+            tour=tour,
+            min_tour_step=min_tour_step,
+            returns=returns,
+        ),
         sort,
     )
+    return await DemoAdoptionManager(db).enrich(result)
+
+
+@router.get("/adoption", response_model=DemoAdoptionResponse)
+async def demo_adoption(
+    agent: AgentDep, db: DbDep, query: Annotated[DemoAdoptionQuery, Query()]
+) -> DemoAdoptionResponse:
+    return await DemoAdoptionManager(db).read(query)
 
 
 @router.get("/stats", response_model=DemoAdminStats)

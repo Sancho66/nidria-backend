@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from src.admin.demo_adoption_schema import DemoAdoptionSummary
 from src.core.i18n import Language
 from src.journeys.journeys_schema import JourneyImportRequest
 
@@ -83,6 +84,9 @@ class DemoRead(BaseModel):
     tour_last_step: int = 0
     tour_started_at: datetime | None = None
     tour_completed_at: datetime | None = None
+    measured_sessions: int | None = None
+    active_days: int | None = None
+    adoption: DemoAdoptionSummary | None = None
 
 
 class AgencyDemoInput(BaseModel):
@@ -173,12 +177,17 @@ class DemoFilters(BaseModel):
     batch: str = Field(default="", max_length=100)
     status: Literal["all", "active", "disabled", "expired"] = "all"
     opened: Literal["all", "opened", "unopened"] = "all"
+    tour: Literal["all", "not_started", "started", "completed", "skipped"] = "all"
+    min_tour_step: int = Field(default=0, ge=0, le=8)
+    returns: Literal["all", "sessions", "days"] = "all"
 
 
 class DemoSort(StrEnum):
     RECENT = "recent"
     VISITS = "visits"
     CREATED = "created"
+    TOUR = "tour"
+    RETURNS = "returns"
 
 
 class DemoAdminStatsQuery(DemoFilters):
@@ -214,6 +223,11 @@ class DemoBatchActivity(DemoActivityCounts):
     batch: str
 
 
+class DemoTourReach(BaseModel):
+    step: int
+    demos: int
+
+
 class DemoAdminStats(BaseModel):
     generated_at: datetime
     timezone: Literal["Europe/Paris"] = "Europe/Paris"
@@ -229,6 +243,12 @@ class DemoAdminStats(BaseModel):
     historical_unqualified: bool
     daily: list[DemoActivityDay]
     batches: list[DemoBatchActivity]
+    reopened_demos: int = 0
+    multi_day_demos: int = 0
+    measured_sessions: int = 0
+    period_reopened_demos: int = 0
+    period_multi_day_demos: int = 0
+    tour_reach: list[DemoTourReach] = Field(default_factory=list)
 
 
 class DemoSelection(BaseModel):
