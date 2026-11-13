@@ -6,7 +6,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import DateTime, Integer, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -25,6 +25,7 @@ from src.admin.demo_schema import (
     DemoListResponse,
     DemoRead,
     DemoSelection,
+    DemoSort,
     DemoTemplateRead,
 )
 from src.core.enums import ActorType
@@ -34,8 +35,8 @@ from src.demo_sandbox.catalog import DemoCatalog, DemoRecord
 from src.demo_sandbox.draft import build_record, journey_source, preview_journey
 from src.demo_sandbox.lifecycle import (
     erase_demos,
-    filter_conditions,
     history_csv,
+    search_conditions,
     selection_rows,
     selection_token,
     verify_selection,
@@ -95,28 +96,26 @@ class DemoControlManager:
         )
 
     async def list_demos(
-        self, page: int, page_size: int, search: str, filters: DemoFilters | None = None
+        self,
+        page: int,
+        page_size: int,
+        search: str,
+        filters: DemoFilters | None = None,
+        sort: DemoSort = DemoSort.RECENT,
     ) -> DemoListResponse:
-        conditions = filter_conditions(filters or DemoFilters())
-        if search.strip():
-            query = search.strip()
-            legacy_ids = [
-                record.id
-                for record in self.catalog.records
-                if query.casefold() in record.promised_journey.casefold()
-            ]
-            conditions.append(
-                or_(
-                    Agency.name.icontains(query, autoescape=True),
-                    Agency.settings["sandbox_full_demo"]["email"].astext.icontains(
-                        query, autoescape=True
-                    ),
-                    Agency.settings["sandbox_dynamic_entry"]["promised_journey"].astext.icontains(
-                        query, autoescape=True
-                    ),
-                    Agency.settings["sandbox_record"].astext.in_(legacy_ids),
-                )
-            )
+        filters = (filters or DemoFilters()).model_copy(update={"search": search})
+        conditions = search_conditions(filters, self.catalog)
+        visits = cast(
+            func.coalesce(Agency.settings["sandbox_visits"]["count"].astext, "0"), Integer
+        )
+        last_opened = cast(
+            Agency.settings["sandbox_visits"]["last"].astext, DateTime(timezone=True)
+        )
+        ordering = [Agency.created_at.desc(), Agency.id]
+        if sort == DemoSort.RECENT:
+            ordering = [last_opened.desc().nulls_last(), *ordering]
+        elif sort == DemoSort.VISITS:
+            ordering = [visits.desc(), last_opened.desc().nulls_last(), *ordering]
         total = (
             await self.db.scalar(select(func.count()).select_from(Agency).where(*conditions)) or 0
         )
@@ -124,7 +123,7 @@ class DemoControlManager:
             await self.db.scalars(
                 select(Agency)
                 .where(*conditions)
-                .order_by(Agency.created_at.desc(), Agency.id)
+                .order_by(*ordering)
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )

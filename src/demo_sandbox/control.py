@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
+    DemoAdminStatsQuery,
     DemoArchiveRequest,
     DemoBulkRequest,
     DemoControlEnvelope,
@@ -24,6 +25,7 @@ from src.admin.demo_schema import (
     DemoFilters,
     DemoJourneyInput,
     DemoSelection,
+    DemoSort,
 )
 from src.admin.demo_transport import (
     CONTROL_PATH,
@@ -41,6 +43,7 @@ from src.demo_sandbox.guards import SANDBOX_DB_HOSTS, SANDBOX_DB_NAME, assert_is
 
 
 class ListInput(DemoFilters):
+    sort: DemoSort = DemoSort.RECENT
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=30, ge=1, le=100)
 
@@ -138,6 +141,12 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
         from src.demo_reporting.schema import DemoStatsQuery
         from src.demo_sandbox.stats import DemoStatsManager
 
+        if envelope.operation == "admin_stats":
+            from src.demo_sandbox.admin_analytics import DemoAdminAnalyticsManager
+
+            return await DemoAdminAnalyticsManager(db, catalog).read(
+                DemoAdminStatsQuery.model_validate(envelope.payload)
+            )
         if envelope.operation != "stats":
             raise ForbiddenError("This channel only reads demo statistics.")
         return await DemoStatsManager(db).read(DemoStatsQuery.model_validate(envelope.payload))
@@ -185,7 +194,9 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
                 )
             case "list":
                 query = ListInput.model_validate(payload)
-                return await manager.list_demos(query.page, query.page_size, query.search, query)
+                return await manager.list_demos(
+                    query.page, query.page_size, query.search, query, query.sort
+                )
             case "export":
                 return await manager.export_selection(actor, DemoSelection.model_validate(payload))
             case "bulk":

@@ -44,7 +44,7 @@ class DemoTransport:
         ).encode()
         if len(body) > (MAX_IMPORT_BODY_BYTES if operation == "import_start" else MAX_BODY_BYTES):
             raise UpstreamError("Demo input is too large.", code="demo.input_too_large")
-        path = STATS_PATH if operation == "stats" else CONTROL_PATH
+        path = STATS_PATH if operation in {"stats", "admin_stats"} else CONTROL_PATH
         timestamp, actor = str(int(time.time())), str(actor_id)
         headers = {
             "Content-Type": "application/json",

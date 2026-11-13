@@ -1,7 +1,8 @@
 """The superadmin's demo tool; no production dossier identifiers are accepted."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -172,6 +173,62 @@ class DemoFilters(BaseModel):
     batch: str = Field(default="", max_length=100)
     status: Literal["all", "active", "disabled", "expired"] = "all"
     opened: Literal["all", "opened", "unopened"] = "all"
+
+
+class DemoSort(StrEnum):
+    RECENT = "recent"
+    VISITS = "visits"
+    CREATED = "created"
+
+
+class DemoAdminStatsQuery(DemoFilters):
+    days: Literal[7, 30, 90] = 30
+
+    @field_validator("days", mode="before")
+    @classmethod
+    def parse_query_days(cls, value: Any) -> Any:
+        # Query parameters arrive as text, unlike the signed JSON payload.
+        return (
+            int(value)
+            if isinstance(value, str) and value.isascii() and value.isdecimal()
+            else value
+        )
+
+
+class DemoActivityCounts(BaseModel):
+    total: int = 0
+    opened: int = 0
+    visits: int = 0
+    tour_started: int = 0
+    tour_completed: int = 0
+
+
+class DemoActivityDay(BaseModel):
+    date: date
+    visits: int = 0
+    opened: int = 0
+    complete: bool
+
+
+class DemoBatchActivity(DemoActivityCounts):
+    batch: str
+
+
+class DemoAdminStats(BaseModel):
+    generated_at: datetime
+    timezone: Literal["Europe/Paris"] = "Europe/Paris"
+    days: int
+    totals: DemoActivityCounts
+    active: int
+    disabled: int
+    expired: int
+    period_visits: int
+    period_opened: int
+    period_trial_clicked: int
+    detailed_since: datetime
+    historical_unqualified: bool
+    daily: list[DemoActivityDay]
+    batches: list[DemoBatchActivity]
 
 
 class DemoSelection(BaseModel):

@@ -11,6 +11,8 @@ from src.admin.demo_import_schema import (
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
     AgencyDemoBatchResponse,
+    DemoAdminStats,
+    DemoAdminStatsQuery,
     DemoBulkRequest,
     DemoBulkResponse,
     DemoCreateRequest,
@@ -21,6 +23,7 @@ from src.admin.demo_schema import (
     DemoListResponse,
     DemoRead,
     DemoSelection,
+    DemoSort,
     DemoTemplateRead,
 )
 from src.admin.demo_transport import DemoTransport
@@ -71,6 +74,7 @@ class AdminDemoManager:
         page_size: int,
         search: str,
         filters: DemoFilters | None = None,
+        sort: DemoSort = DemoSort.RECENT,
     ) -> DemoListResponse:
         result = await self.transport.call(
             actor_id,
@@ -80,9 +84,15 @@ class AdminDemoManager:
                 "page": page,
                 "page_size": page_size,
                 "search": search,
+                "sort": sort,
             },
         )
         return DemoListResponse.model_validate(result)
+
+    async def stats(self, actor_id: uuid.UUID, query: DemoAdminStatsQuery) -> DemoAdminStats:
+        return DemoAdminStats.model_validate(
+            await self.transport.call(actor_id, "admin_stats", query.model_dump(mode="json"))
+        )
 
     async def export_selection(
         self, actor_id: uuid.UUID, payload: DemoSelection

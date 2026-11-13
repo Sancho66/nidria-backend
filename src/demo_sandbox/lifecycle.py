@@ -99,6 +99,35 @@ def filter_conditions(filters: DemoFilters) -> list[Any]:
     return conditions
 
 
+def search_conditions(filters: DemoFilters, catalog: Any) -> list[Any]:
+    """Share the population between the list, aggregates and bulk selection."""
+    conditions = filter_conditions(filters)
+    query = filters.search.strip()
+    if query:
+        legacy_ids = (
+            [
+                record.id
+                for record in catalog.records
+                if query.casefold() in record.promised_journey.casefold()
+            ]
+            if catalog
+            else []
+        )
+        conditions.append(
+            or_(
+                Agency.name.icontains(query, autoescape=True),
+                Agency.settings["sandbox_dynamic_entry"]["promised_journey"].astext.icontains(
+                    query, autoescape=True
+                ),
+                Agency.settings["sandbox_full_demo"]["email"].astext.icontains(
+                    query, autoescape=True
+                ),
+                Agency.settings["sandbox_record"].astext.in_(legacy_ids),
+            )
+        )
+    return conditions
+
+
 def history_csv(rows: list[dict[str, Any]]) -> str:
     output = io.StringIO(newline="")
     fields = [
@@ -168,35 +197,12 @@ def verify_selection(payload: DemoBulkRequest, rows: list[DemoRead], actor_id: u
 async def selection_rows(
     db: AsyncSession, selection: DemoSelection, *, lock: bool = False, catalog: Any = None
 ) -> list[Agency]:
-    conditions = filter_conditions(selection.filters or DemoFilters())
+    conditions = search_conditions(selection.filters or DemoFilters(), catalog)
     if selection.codes is not None:
         conditions.append(Agency.slug.in_([f"demo-sandbox-{code}" for code in selection.codes]))
     if selection.excluded_codes:
         conditions.append(
             ~Agency.slug.in_([f"demo-sandbox-{code}" for code in selection.excluded_codes])
-        )
-    if selection.filters and selection.filters.search:
-        query = selection.filters.search
-        legacy_ids = (
-            [
-                record.id
-                for record in catalog.records
-                if query.casefold() in record.promised_journey.casefold()
-            ]
-            if catalog
-            else []
-        )
-        conditions.append(
-            or_(
-                Agency.name.icontains(query, autoescape=True),
-                Agency.settings["sandbox_dynamic_entry"]["promised_journey"].astext.icontains(
-                    query, autoescape=True
-                ),
-                Agency.settings["sandbox_full_demo"]["email"].astext.icontains(
-                    query, autoescape=True
-                ),
-                Agency.settings["sandbox_record"].astext.in_(legacy_ids),
-            )
         )
     statement = select(Agency).where(*conditions).order_by(Agency.id).limit(5001)
     if lock:
