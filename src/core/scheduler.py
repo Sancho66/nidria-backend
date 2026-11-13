@@ -25,6 +25,7 @@ from src.agencies.agencies_jobs import expire_agent_invitations
 from src.agencies.onboarding_email_job import send_onboarding_emails
 from src.cases.activation_jobs import send_activation_reminders
 from src.core.config import get_settings
+from src.core.database_pool import POOL_RECYCLE_SECONDS, SCHEDULER_POOL_SIZE
 from src.core.enums import JobTriggeredBy
 from src.core.job_wrapper import Pipeline, run_job
 from src.digest.digest_job import run_notification_digest
@@ -55,7 +56,13 @@ JOB_REGISTRY: dict[str, Pipeline] = {
 
 
 def make_session_local() -> sessionmaker[Session]:
-    engine = create_engine(get_settings().database_url_sync, pool_pre_ping=True)
+    engine = create_engine(
+        get_settings().database_url_sync,
+        pool_pre_ping=True,
+        pool_recycle=POOL_RECYCLE_SECONDS,
+        pool_size=SCHEDULER_POOL_SIZE,
+        max_overflow=0,
+    )
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 

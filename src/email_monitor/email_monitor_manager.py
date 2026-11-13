@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from shared.models.platform_task import PlatformTask
 from src.core.config import Settings, get_settings
+from src.core.database_pool import EMAIL_MONITOR_POOL_SIZE, POOL_RECYCLE_SECONDS
 from src.email_monitor.email_monitor_repository import EmailMonitorRepository
 from src.email_monitor.email_monitor_schema import EmailQuotaResponse, EmailUsageResponse
 
@@ -44,7 +45,13 @@ def _used(headers: dict[str, str], kind: str) -> int | None:
 
 @lru_cache(maxsize=1)
 def session_factory() -> sessionmaker[Session]:
-    engine = create_engine(get_settings().database_url_sync, pool_pre_ping=True)
+    engine = create_engine(
+        get_settings().database_url_sync,
+        pool_pre_ping=True,
+        pool_recycle=POOL_RECYCLE_SECONDS,
+        pool_size=EMAIL_MONITOR_POOL_SIZE,
+        max_overflow=0,
+    )
     return sessionmaker(engine, expire_on_commit=False)
 
 
