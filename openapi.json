@@ -2954,6 +2954,15 @@
               "default": "all",
               "title": "Opened"
             }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/DemoSort",
+              "default": "recent"
+            }
           }
         ],
         "responses": {
@@ -3007,6 +3016,112 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DemoRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/demos/stats": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Demo Stats",
+        "operationId": "demo_stats_admin_demos_stats_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Search"
+            }
+          },
+          {
+            "name": "batch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Batch"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "active",
+                "disabled",
+                "expired"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "opened",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "opened",
+                "unopened"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Opened"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                7,
+                30,
+                90
+              ],
+              "type": "integer",
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoAdminStats"
                 }
               }
             }
@@ -31162,6 +31277,190 @@
         "title": "DeliveryWebhookAck",
         "description": "Always 200 for a VERIFIED event (Svix stops re-delivering); `status`\nsays what happened: processed | duplicate | ignored — the Paddle ack\ndoctrine, verbatim."
       },
+      "DemoActivityCounts": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened",
+            "default": 0
+          },
+          "visits": {
+            "type": "integer",
+            "title": "Visits",
+            "default": 0
+          },
+          "tour_started": {
+            "type": "integer",
+            "title": "Tour Started",
+            "default": 0
+          },
+          "tour_completed": {
+            "type": "integer",
+            "title": "Tour Completed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DemoActivityCounts"
+      },
+      "DemoActivityDay": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "visits": {
+            "type": "integer",
+            "title": "Visits",
+            "default": 0
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened",
+            "default": 0
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "complete"
+        ],
+        "title": "DemoActivityDay"
+      },
+      "DemoAdminStats": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "timezone": {
+            "type": "string",
+            "const": "Europe/Paris",
+            "title": "Timezone",
+            "default": "Europe/Paris"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DemoActivityCounts"
+          },
+          "active": {
+            "type": "integer",
+            "title": "Active"
+          },
+          "disabled": {
+            "type": "integer",
+            "title": "Disabled"
+          },
+          "expired": {
+            "type": "integer",
+            "title": "Expired"
+          },
+          "period_visits": {
+            "type": "integer",
+            "title": "Period Visits"
+          },
+          "period_opened": {
+            "type": "integer",
+            "title": "Period Opened"
+          },
+          "period_trial_clicked": {
+            "type": "integer",
+            "title": "Period Trial Clicked"
+          },
+          "detailed_since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Detailed Since"
+          },
+          "historical_unqualified": {
+            "type": "boolean",
+            "title": "Historical Unqualified"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/DemoActivityDay"
+            },
+            "type": "array",
+            "title": "Daily"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/DemoBatchActivity"
+            },
+            "type": "array",
+            "title": "Batches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "days",
+          "totals",
+          "active",
+          "disabled",
+          "expired",
+          "period_visits",
+          "period_opened",
+          "period_trial_clicked",
+          "detailed_since",
+          "historical_unqualified",
+          "daily",
+          "batches"
+        ],
+        "title": "DemoAdminStats"
+      },
+      "DemoBatchActivity": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "opened": {
+            "type": "integer",
+            "title": "Opened",
+            "default": 0
+          },
+          "visits": {
+            "type": "integer",
+            "title": "Visits",
+            "default": 0
+          },
+          "tour_started": {
+            "type": "integer",
+            "title": "Tour Started",
+            "default": 0
+          },
+          "tour_completed": {
+            "type": "integer",
+            "title": "Tour Completed",
+            "default": 0
+          },
+          "batch": {
+            "type": "string",
+            "title": "Batch"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch"
+        ],
+        "title": "DemoBatchActivity"
+      },
       "DemoBulkRequest": {
         "properties": {
           "selection": {
@@ -32014,6 +32313,15 @@
         "additionalProperties": false,
         "type": "object",
         "title": "DemoSelection"
+      },
+      "DemoSort": {
+        "type": "string",
+        "enum": [
+          "recent",
+          "visits",
+          "created"
+        ],
+        "title": "DemoSort"
       },
       "DemoStatsCoverage": {
         "properties": {

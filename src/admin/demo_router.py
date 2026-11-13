@@ -16,6 +16,8 @@ from src.admin.demo_manager import AdminDemoManager
 from src.admin.demo_schema import (
     AgencyDemoBatchRequest,
     AgencyDemoBatchResponse,
+    DemoAdminStats,
+    DemoAdminStatsQuery,
     DemoBulkRequest,
     DemoBulkResponse,
     DemoCreateRequest,
@@ -26,6 +28,7 @@ from src.admin.demo_schema import (
     DemoListResponse,
     DemoRead,
     DemoSelection,
+    DemoSort,
     DemoTemplateRead,
 )
 from src.core.enums import Audience
@@ -37,6 +40,7 @@ BINDINGS = [
     RouteBinding(method, path, Audience.AGENT, Permission.AGENCY_CREATE)
     for method, path in (
         ("GET", "/admin/demos"),
+        ("GET", "/admin/demos/stats"),
         ("POST", "/admin/demos/imports"),
         ("GET", "/admin/demos/imports"),
         ("GET", "/admin/demos/imports/batch-export"),
@@ -63,6 +67,7 @@ async def list_demos(
     batch: str = Query("", max_length=100),
     status: Literal["all", "active", "disabled", "expired"] = "all",
     opened: Literal["all", "opened", "unopened"] = "all",
+    sort: DemoSort = DemoSort.RECENT,
 ) -> DemoListResponse:
     return await AdminDemoManager().list_demos(
         agent.id,
@@ -70,7 +75,15 @@ async def list_demos(
         page_size,
         search,
         DemoFilters(search=search, batch=batch, status=status, opened=opened),
+        sort,
     )
+
+
+@router.get("/stats", response_model=DemoAdminStats)
+async def demo_stats(
+    agent: AgentDep, query: Annotated[DemoAdminStatsQuery, Query()]
+) -> DemoAdminStats:
+    return await AdminDemoManager().stats(agent.id, query)
 
 
 @router.post("/imports", response_model=DemoImportRead, status_code=202)
