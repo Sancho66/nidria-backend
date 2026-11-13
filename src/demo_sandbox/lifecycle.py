@@ -96,6 +96,16 @@ def filter_conditions(filters: DemoFilters) -> list[Any]:
         conditions.append(visits > 0)
     elif filters.opened == "unopened":
         conditions.append(visits == 0)
+    from src.demo_sandbox.engagement import measured_count, tour_status, tour_step
+
+    if filters.tour != "all" or filters.min_tour_step:
+        conditions.append(Agency.settings["sandbox_full_demo"].astext.is_not(None))
+    if filters.tour != "all":
+        conditions.append(tour_status() == filters.tour)
+    if filters.min_tour_step:
+        conditions.append(tour_step() >= filters.min_tour_step)
+    if filters.returns != "all":
+        conditions.append(measured_count(days=filters.returns == "days") >= 2)
     return conditions
 
 

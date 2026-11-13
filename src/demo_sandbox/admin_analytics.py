@@ -17,6 +17,7 @@ from src.admin.demo_schema import (
     DemoBatchActivity,
 )
 from src.demo_sandbox.catalog import DemoCatalog
+from src.demo_sandbox.engagement import rollup, tour_step
 from src.demo_sandbox.lifecycle import expiry_expression, search_conditions
 from src.demo_sandbox.measurement import paris_window
 from src.demo_sandbox.stats import DemoStatsRepository
@@ -120,12 +121,63 @@ class DemoAdminAnalyticsRepository:
             .mappings()
             .one()
         )
+        sessions = rollup()
+        engagement = (
+            (
+                await self.db.execute(
+                    select(
+                        func.count().filter(sessions.c.sessions >= 2).label("reopened_demos"),
+                        func.count().filter(sessions.c.days >= 2).label("multi_day_demos"),
+                        func.coalesce(func.sum(sessions.c.sessions), 0).label("measured_sessions"),
+                    )
+                    .select_from(Agency)
+                    .outerjoin(sessions, Agency.slug == "demo-sandbox-" + sessions.c.code)
+                    .where(*conditions)
+                )
+            )
+            .mappings()
+            .one()
+        )
+        period_sessions = (
+            select(
+                visits.c.code,
+                func.count(func.distinct(visits.c.visit_hash)).label("sessions"),
+                func.count(func.distinct(visits.c.day)).label("days"),
+            )
+            .select_from(accepted)
+            .where(*event_conditions)
+            .group_by(visits.c.code)
+            .subquery()
+        )
+        returning = (
+            await self.db.execute(
+                select(
+                    func.count().filter(period_sessions.c.sessions >= 2).label("sessions"),
+                    func.count().filter(period_sessions.c.days >= 2).label("days"),
+                ).select_from(period_sessions)
+            )
+        ).one()
+        reach = (
+            await self.db.execute(
+                select(
+                    *[
+                        func.count().filter(tour_step() >= step).label(f"step_{step}")
+                        for step in range(1, 9)
+                    ]
+                )
+                .select_from(Agency)
+                .where(*conditions, Agency.settings["sandbox_full_demo"].astext.is_not(None))
+            )
+        ).one()
         return {
             "totals": dict(totals),
             "batches": batches,
             "daily": daily,
             "period": period,
             "first_day": first_day,
+            "engagement": dict(engagement),
+            "returning": returning,
+            "tour_reach": [{"step": step, "demos": reach[step - 1]} for step in range(1, 9)],
         }
 
 
@@ -167,4 +219,8 @@ class DemoAdminAnalyticsManager:
             historical_unqualified=totals["historical"] > 0,
             daily=days,
             batches=[DemoBatchActivity.model_validate(row) for row in source["batches"]],
+            **source["engagement"],
+            period_reopened_demos=source["returning"].sessions,
+            period_multi_day_demos=source["returning"].days,
+            tour_reach=source["tour_reach"],
         )

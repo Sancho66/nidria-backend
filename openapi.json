@@ -2956,6 +2956,50 @@
             }
           },
           {
+            "name": "tour",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "not_started",
+                "started",
+                "completed",
+                "skipped"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Tour"
+            }
+          },
+          {
+            "name": "min_tour_step",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 8,
+              "minimum": 0,
+              "default": 0,
+              "title": "Min Tour Step"
+            }
+          },
+          {
+            "name": "returns",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "sessions",
+                "days"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Returns"
+            }
+          },
+          {
             "name": "sort",
             "in": "query",
             "required": false,
@@ -3016,6 +3060,140 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DemoRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/demos/adoption": {
+      "get": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Demo Adoption",
+        "operationId": "demo_adoption_admin_demos_adoption_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Search"
+            }
+          },
+          {
+            "name": "batch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Batch"
+            }
+          },
+          {
+            "name": "demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Demo"
+            }
+          },
+          {
+            "name": "activity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "none",
+                "journeys",
+                "clients",
+                "cases"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Activity"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "recent",
+                "activity",
+                "journeys",
+                "clients",
+                "cases"
+              ],
+              "type": "string",
+              "default": "recent",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoAdoptionResponse"
                 }
               }
             }
@@ -3097,6 +3275,50 @@
               "type": "string",
               "default": "all",
               "title": "Opened"
+            }
+          },
+          {
+            "name": "tour",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "not_started",
+                "started",
+                "completed",
+                "skipped"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Tour"
+            }
+          },
+          {
+            "name": "min_tour_step",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 8,
+              "minimum": 0,
+              "default": 0,
+              "title": "Min Tour Step"
+            }
+          },
+          {
+            "name": "returns",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "sessions",
+                "days"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Returns"
             }
           },
           {
@@ -31403,6 +31625,38 @@
             },
             "type": "array",
             "title": "Batches"
+          },
+          "reopened_demos": {
+            "type": "integer",
+            "title": "Reopened Demos",
+            "default": 0
+          },
+          "multi_day_demos": {
+            "type": "integer",
+            "title": "Multi Day Demos",
+            "default": 0
+          },
+          "measured_sessions": {
+            "type": "integer",
+            "title": "Measured Sessions",
+            "default": 0
+          },
+          "period_reopened_demos": {
+            "type": "integer",
+            "title": "Period Reopened Demos",
+            "default": 0
+          },
+          "period_multi_day_demos": {
+            "type": "integer",
+            "title": "Period Multi Day Demos",
+            "default": 0
+          },
+          "tour_reach": {
+            "items": {
+              "$ref": "#/components/schemas/DemoTourReach"
+            },
+            "type": "array",
+            "title": "Tour Reach"
           }
         },
         "type": "object",
@@ -31422,6 +31676,182 @@
           "batches"
         ],
         "title": "DemoAdminStats"
+      },
+      "DemoAdoptionRead": {
+        "properties": {
+          "accounts": {
+            "type": "integer",
+            "title": "Accounts",
+            "default": 0
+          },
+          "journeys": {
+            "type": "integer",
+            "title": "Journeys",
+            "default": 0
+          },
+          "clients": {
+            "type": "integer",
+            "title": "Clients",
+            "default": 0
+          },
+          "cases": {
+            "type": "integer",
+            "title": "Cases",
+            "default": 0
+          },
+          "agency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agency Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "batch": {
+            "type": "string",
+            "title": "Batch"
+          },
+          "registered_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Registered At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "last_creation_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Creation At"
+          },
+          "has_demo_reference": {
+            "type": "boolean",
+            "title": "Has Demo Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agency_id",
+          "name",
+          "batch",
+          "registered_at",
+          "last_login_at",
+          "last_creation_at",
+          "has_demo_reference"
+        ],
+        "title": "DemoAdoptionRead"
+      },
+      "DemoAdoptionResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DemoAdoptionRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DemoAdoptionTotals"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "totals",
+          "generated_at"
+        ],
+        "title": "DemoAdoptionResponse"
+      },
+      "DemoAdoptionSummary": {
+        "properties": {
+          "accounts": {
+            "type": "integer",
+            "title": "Accounts",
+            "default": 0
+          },
+          "journeys": {
+            "type": "integer",
+            "title": "Journeys",
+            "default": 0
+          },
+          "clients": {
+            "type": "integer",
+            "title": "Clients",
+            "default": 0
+          },
+          "cases": {
+            "type": "integer",
+            "title": "Cases",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DemoAdoptionSummary"
+      },
+      "DemoAdoptionTotals": {
+        "properties": {
+          "accounts": {
+            "type": "integer",
+            "title": "Accounts"
+          },
+          "with_journeys": {
+            "type": "integer",
+            "title": "With Journeys"
+          },
+          "with_clients": {
+            "type": "integer",
+            "title": "With Clients"
+          },
+          "with_cases": {
+            "type": "integer",
+            "title": "With Cases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accounts",
+          "with_journeys",
+          "with_clients",
+          "with_cases"
+        ],
+        "title": "DemoAdoptionTotals"
       },
       "DemoBatchActivity": {
         "properties": {
@@ -31705,6 +32135,35 @@
               "unopened"
             ],
             "title": "Opened",
+            "default": "all"
+          },
+          "tour": {
+            "type": "string",
+            "enum": [
+              "all",
+              "not_started",
+              "started",
+              "completed",
+              "skipped"
+            ],
+            "title": "Tour",
+            "default": "all"
+          },
+          "min_tour_step": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Min Tour Step",
+            "default": 0
+          },
+          "returns": {
+            "type": "string",
+            "enum": [
+              "all",
+              "sessions",
+              "days"
+            ],
+            "title": "Returns",
             "default": "all"
           }
         },
@@ -32256,6 +32715,38 @@
               }
             ],
             "title": "Tour Completed At"
+          },
+          "measured_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Sessions"
+          },
+          "active_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Days"
+          },
+          "adoption": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DemoAdoptionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -32319,7 +32810,9 @@
         "enum": [
           "recent",
           "visits",
-          "created"
+          "created",
+          "tour",
+          "returns"
         ],
         "title": "DemoSort"
       },
@@ -32610,6 +33103,24 @@
           "steps"
         ],
         "title": "DemoTemplateRead"
+      },
+      "DemoTourReach": {
+        "properties": {
+          "step": {
+            "type": "integer",
+            "title": "Step"
+          },
+          "demos": {
+            "type": "integer",
+            "title": "Demos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "step",
+          "demos"
+        ],
+        "title": "DemoTourReach"
       },
       "DeprecatedToken": {
         "properties": {
