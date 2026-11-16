@@ -40,11 +40,10 @@ logger = logging.getLogger(__name__)
 # write endpoint is born locked without developer action. The ONLY
 # exceptions live in IMPERSONATION_WRITE_ALLOWLIST.
 #
-# AGENT face (member debugging, superadmin agency switcher): read-write
-# by design ("enter agency" administers the target agency), with
-# targeted denials where acting under someone else's name poisons
-# attribution: session lifecycle of the target, impersonation chaining,
-# and identity/permission structure mutations.
+# AGENT face (own-agency member debugging): targeted denials prevent
+# actions that poison attribution. Platform operators and their agency
+# switcher have an additional fail-closed boundary in support_access.policy,
+# evaluated before these rules; they never inherit the target's data access.
 
 # EXPAT-face write exceptions under impersonation. Keep this to what the
 # mode cannot function without; justify every entry.
@@ -123,6 +122,10 @@ CONSENT_EXEMPT: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/auth/agent/logout"),
         ("GET", "/consents/agent/pending"),
         ("POST", "/consents/agent/accept"),
+        # Withdrawing support consent must remain possible even while a
+        # newer legal document is pending. Agency/admin scope still applies.
+        ("GET", "/cases/{case_id}/support-access"),
+        ("DELETE", "/cases/{case_id}/support-access/{grant_id}"),
         # expat face
         ("GET", "/auth/expat/me"),
         ("POST", "/auth/expat/logout"),
@@ -201,6 +204,8 @@ BILLING_LOCK_WRITE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/auth/agent/2fa/disable"),
         # The legal gate stays passable (the consent gate runs first).
         ("POST", "/consents/agent/accept"),
+        # A billing hold must never prevent withdrawal of a data-access grant.
+        ("DELETE", "/cases/{case_id}/support-access/{grant_id}"),
     }
 )
 
@@ -544,6 +549,9 @@ async def enforce(
         agent, payload = await _resolve_agent(request, db)
         impersonator_id = payload.get("impersonator_id")
         request.state.impersonator_id = impersonator_id
+        from src.support_access.policy import enforce_support
+
+        await enforce_support(request, db, agent, payload, method, path)
         await authorize_agent(
             db, agent, method, path, binding=binding, impersonator_id=impersonator_id
         )
@@ -551,6 +559,9 @@ async def enforce(
         return
 
     expat, payload = await _resolve_expat(request, db)
+    from src.support_access.policy import enforce_support
+
+    await enforce_support(request, db, None, payload, method, path)
     _enforce_expat_impersonation(request, payload, method, path)
     await _enforce_consent(
         db,

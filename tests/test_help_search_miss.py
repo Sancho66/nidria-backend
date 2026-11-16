@@ -1,16 +1,19 @@
 """POST /help/search-miss + GET /admin/help/search-misses — the journal
 of help searches that found nothing (the corpus-improvement engine).
 
-Covers: the round trip (POST → visible in the superadmin listing, newest
-first), the superadmin gate (agency admin → 403), auth (no token → 401),
+Covers: ingestion and newest-first storage, the privacy boundary (raw
+queries are unavailable even to platform operators), auth (no token → 401),
 extra="forbid" and the 200-char cap, the per-agent burst guard, and the
 response_model render pinned key by key."""
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agent import Agent
 from shared.models.rbac import Role
+from src.help.help_repository import HelpRepository
+from src.help.help_schema import HelpSearchMissListResponse, HelpSearchMissRead
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline")
@@ -23,11 +26,12 @@ async def superadmin(make_agent: MakeAgent, system_roles: dict[str, Role]) -> Ag
     return await make_agent(role=system_roles["superadmin"], email="root@platform.io")
 
 
-async def test_post_then_visible_in_superadmin_listing_newest_first(
+async def test_posts_are_stored_but_raw_queries_are_private(
     client: AsyncClient,
     agent: Agent,
     superadmin: Agent,
     agent_headers: AuthHeaders,
+    db_session: AsyncSession,
 ) -> None:
     h = agent_headers(agent)
     first = await client.post("/help/search-miss", headers=h, json=_BODY)
@@ -38,13 +42,14 @@ async def test_post_then_visible_in_superadmin_listing_newest_first(
     assert second.status_code == 201
 
     listed = await client.get("/admin/help/search-misses", headers=agent_headers(superadmin))
-    assert listed.status_code == 200, listed.text
-    body = listed.json()
-    assert body["total"] == 2 and body["page"] == 1
-    queries = [item["query"] for item in body["items"]]
+    assert listed.status_code == 403, listed.text
+    assert listed.json()["code"] == "support.restricted"
+    rows, total = await HelpRepository(db_session).list_misses(page=1, page_size=25)
+    assert total == 2
+    queries = [item.query for item in rows]
     assert queries == ["relance whatsapp", "comment exporter un dossier"]  # newest first
-    assert body["items"][0]["agency_id"] == str(agent.agency_id)
-    assert body["items"][0]["agent_id"] == str(agent.id)
+    assert rows[0].agency_id == agent.agency_id
+    assert rows[0].agent_id == agent.id
 
 
 async def test_listing_is_superadmin_only_and_post_needs_a_token(
@@ -93,13 +98,21 @@ async def test_response_models_render_with_their_exact_keys(
     agent: Agent,
     superadmin: Agent,
     agent_headers: AuthHeaders,
+    db_session: AsyncSession,
 ) -> None:
     created = await client.post("/help/search-miss", headers=agent_headers(agent), json=_BODY)
     posted = created.json()
     assert set(posted) == {"id", "agency_id", "agent_id", "query", "route", "lang", "created_at"}
 
-    listed = (
-        await client.get("/admin/help/search-misses", headers=agent_headers(superadmin))
-    ).json()
+    refused = await client.get("/admin/help/search-misses", headers=agent_headers(superadmin))
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "support.restricted"
+    rows, total = await HelpRepository(db_session).list_misses(page=1, page_size=25)
+    listed = HelpSearchMissListResponse(
+        items=[HelpSearchMissRead.model_validate(row) for row in rows],
+        total=total,
+        page=1,
+        page_size=25,
+    ).model_dump(mode="json")
     assert set(listed) == {"items", "total", "page", "page_size"}
     assert set(listed["items"][0]) == set(posted)

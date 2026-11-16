@@ -44,8 +44,9 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentTemplatesManager:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: AsyncSession, *, case_id: uuid.UUID | None = None) -> None:
         self.db = db
+        self.case_id = case_id
         self.repo = DocumentTemplatesRepository(db)
 
     async def _guard_enabled(self, agent: Agent) -> None:
@@ -57,7 +58,9 @@ class DocumentTemplatesManager:
             )
 
     async def _get(self, agent: Agent, template_id: uuid.UUID) -> DocumentTemplate:
-        template = await self.repo.get_for_agency(agent.agency_id, template_id)
+        template = await self.repo.get_for_agency(
+            agent.agency_id, template_id, case_id=self.case_id
+        )
         if template is None:
             raise NotFoundError("Document template not found.", code="document_template.not_found")
         return template
@@ -83,6 +86,8 @@ class DocumentTemplatesManager:
         content: bytes,
         content_type: str | None,
         agency_countersigns: bool = False,
+        progress_id: uuid.UUID | None = None,
+        person_id: uuid.UUID | None = None,
     ) -> DocumentTemplate:
         """PDF stocké chez nous + template provider (sans champs) dans la
         même transaction — un échec provider annule tout (et nettoie le
@@ -127,6 +132,9 @@ class DocumentTemplatesManager:
             filename=filename,
             provider_template_ref=provider_ref,
             agency_countersigns=agency_countersigns,
+            case_id=self.case_id,
+            case_step_progress_id=progress_id,
+            person_id=person_id,
         )
         self.db.add(template)
         await self.db.commit()

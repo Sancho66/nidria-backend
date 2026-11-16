@@ -29,16 +29,19 @@ class DocumentTemplatesRepository:
             .where(
                 DocumentTemplate.agency_id == agency_id,
                 DocumentTemplate.state == DocumentTemplateState.ACTIVE.value,
+                DocumentTemplate.case_id.is_(None),
             )
             .order_by(DocumentTemplate.created_at)
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def get_for_agency(
-        self, agency_id: uuid.UUID, template_id: uuid.UUID
+        self, agency_id: uuid.UUID, template_id: uuid.UUID, *, case_id: uuid.UUID | None = None
     ) -> DocumentTemplate | None:
         stmt = select(DocumentTemplate).where(
-            DocumentTemplate.id == template_id, DocumentTemplate.agency_id == agency_id
+            DocumentTemplate.id == template_id,
+            DocumentTemplate.agency_id == agency_id,
+            DocumentTemplate.case_id == case_id,
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

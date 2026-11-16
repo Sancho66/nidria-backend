@@ -1775,6 +1775,12 @@ class ProgressManager:
         )
         return lang, agency_default
 
+    async def notify_requirement_added(self, case: ClientCase, row: CaseStepProgress) -> None:
+        """Notify after the caller committed a new case-specific requirement."""
+        mail = await self._client_step_mail_for_row(case, row, reopened=False)
+        if mail is not None:
+            await self.send_pending([mail])
+
     async def _client_step_mail_for_row(
         self, case: ClientCase, row: CaseStepProgress, *, reopened: bool
     ) -> PendingMail | None:

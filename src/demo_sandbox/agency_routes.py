@@ -34,6 +34,7 @@ from src.external.external_router import agency_router as providers_router
 from src.journeys.import_manager import JourneyImportManager
 from src.journeys.journeys_router import router as journeys_router
 from src.journeys.journeys_schema import JourneyImportReport
+from src.one_off_signatures.router import router as one_off_signatures_router
 from src.progress.progress_router import router as progress_router
 from src.reminders.reminders_router import router as reminders_router
 from src.roles.roles_router import router as roles_router
@@ -70,6 +71,7 @@ AGENT_READ_ROUTES = frozenset(
         "/cases/{case_id}/notes",
         "/cases/{case_id}/activity",
         "/cases/{case_id}/documents",
+        "/cases/{case_id}/signature-drafts",
         "/cases/{case_id}/documents/{document_id}/download",
         "/cases/{case_id}/steps",
         "/cases/{case_id}/costs",
@@ -143,6 +145,7 @@ def agency_read_router() -> APIRouter:
         documents_router,
         providers_router,
         journeys_router,
+        one_off_signatures_router,
         progress_router,
         reminders_router,
         roles_router,

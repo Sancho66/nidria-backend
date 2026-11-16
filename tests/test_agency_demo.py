@@ -137,6 +137,7 @@ async def test_full_agency_and_old_client_links(
             f"/cases/{case_id}",
             f"/cases/{case_id}/steps",
             f"/cases/{case_id}/documents",
+            f"/cases/{case_id}/signature-drafts",
             f"/cases/{case_id}/activity",
             f"/cases/{case_id}/costs",
         ]:
@@ -144,6 +145,9 @@ async def test_full_agency_and_old_client_links(
             assert response.status_code == 200, f"{path}: {response.text}"
         second = (await client.post("/demo/session", json={"code": created.items[1].code})).json()
         assert (await client.get(f"/cases/{second['case_id']}", headers=headers)).status_code == 404
+        assert (
+            await client.get(f"/cases/{second['case_id']}/signature-drafts", headers=headers)
+        ).status_code == 404
         assert (await client.get("/admin/demos", headers=headers)).status_code == 404
         assert (await client.get(f"/cases/{case_id}/export", headers=headers)).status_code == 404
         for path in [
@@ -152,6 +156,7 @@ async def test_full_agency_and_old_client_links(
             "/agencies/me/invitations",
             "/billing/checkout",
             "/journeys/import",
+            f"/cases/{case_id}/signature-drafts",
         ]:
             assert (await client.post(path, headers=headers, json={})).status_code == 403
         client_session = await client.post(

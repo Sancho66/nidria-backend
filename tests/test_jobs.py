@@ -348,6 +348,44 @@ async def test_run_listing_and_detail_with_log(
     assert isinstance(detail.json()["log_output"], str)
 
 
+async def test_historical_job_logs_and_provider_details_are_redacted(
+    jobs_client: AsyncClient,
+    superadmin: Agent,
+    db_session: AsyncSession,
+    agent_headers: AuthHeaders,
+) -> None:
+    config = await db_session.scalar(select(JobConfig).where(JobConfig.job_id == "auto_reminders"))
+    assert config is not None
+    run = JobRun(
+        job_config_id=config.id,
+        job_id=config.job_id,
+        status="error",
+        triggered_by="scheduled",
+        stats={
+            "created": 2,
+            "sent": "private@example.test",
+            "error_messages": ["PrivateClient"],
+            "PrivateClient": 1,
+        },
+        error="Provider rejected private@example.test",
+        log_output="PrivateClient private@example.test private document.pdf",
+    )
+    db_session.add(run)
+    await db_session.commit()
+    headers = agent_headers(superadmin)
+    for path in ("/jobs/auto_reminders/runs", f"/jobs/auto_reminders/runs/{run.id}"):
+        response = await jobs_client.get(path, headers=headers)
+        assert response.status_code == 200, response.text
+        assert "PrivateClient" not in response.text and "private@" not in response.text
+        body = response.json()[0] if isinstance(response.json(), list) else response.json()
+        assert body["stats"] == {"created": 2}
+        assert body["error"] is None
+        assert body.get("log_output", "") == ""
+    # Redaction is an API projection, never destruction of the original audit.
+    await db_session.refresh(run)
+    assert "PrivateClient" in run.log_output
+
+
 # --- seed -----------------------------------------------------------------------------------
 
 

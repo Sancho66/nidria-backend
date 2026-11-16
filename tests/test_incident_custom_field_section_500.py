@@ -9,8 +9,8 @@ while a section key may be 50 (asyncpg « value too long for type character
 varying(20) »). Two witnesses:
 
 (a) the EXACT request, section created through the product route, admin
-    AND superadmin → 201, the definition sits in its section, listed under
-    it; the company surface too (same column width, same fix);
+    gets 201, the definition sits in its section, listed under it; the
+    company surface too. Platform operators are now restricted to reads;
 (b) the second defect: an unhandled exception must never leave as a bare
     text/plain 500 — the JSON envelope, the stable code `internal_error`,
     the request id (Fly's header echoed, minted otherwise) in params and in
@@ -81,6 +81,14 @@ async def test_incident_payload_creates_the_field_in_a_21_char_section(
 ) -> None:
     assert len(SECTION_KEY) == 21
     headers = agent_headers(superadmin if actor == "superadmin" else admin)
+    if actor == "superadmin":
+        refused = await client.post(
+            "/agencies/me/custom-fields", headers=headers, json=INCIDENT_PAYLOAD
+        )
+        assert refused.status_code == 403
+        assert refused.json()["code"] == "support.restricted"
+        assert (await client.get("/agencies/me/custom-fields", headers=headers)).json() == []
+        return
     await _create_section(client, headers, "person")
 
     created = await client.post(

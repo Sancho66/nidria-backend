@@ -245,16 +245,20 @@ async def test_superadmin_is_exempt_from_both_walls(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    """Le superadmin écrit sur une agence en essai expiré ET sur une
-    agence annulée — c'est la main qui répare, elle ne se verrouille
-    jamais dehors."""
+    """Billing never locks platform operations; support privacy still applies."""
     superadmin = await make_agent(role=system_roles["superadmin"])
     headers = agent_headers(superadmin)
 
     await _expire_trial(db_session, superadmin.agency_id)
     on_trial = await client.post("/journeys", headers=headers, json={"name": "Essai expiré"})
-    assert on_trial.status_code == 201, on_trial.text
+    assert on_trial.status_code == 403, on_trial.text
+    assert on_trial.json()["code"] == "support.restricted"
+    task = await client.post("/admin/tasks", headers=headers, json={"title": "Platform support"})
+    assert task.status_code == 201, task.text
 
     await _cancel(db_session, superadmin.agency_id)
     on_canceled = await client.post("/journeys", headers=headers, json={"name": "Annulée"})
-    assert on_canceled.status_code == 201, on_canceled.text
+    assert on_canceled.status_code == 403, on_canceled.text
+    assert on_canceled.json()["code"] == "support.restricted"
+    task = await client.post("/admin/tasks", headers=headers, json={"title": "Platform support"})
+    assert task.status_code == 201, task.text

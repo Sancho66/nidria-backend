@@ -11,8 +11,9 @@ sans zones, ni plus de signataires que de rôles configurés (constat sonde :
 DocuSeal accepte un rôle inconnu sans broncher — la garde est chez nous)."""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,6 +22,27 @@ from src.core.enums import DocumentTemplateState
 
 class DocumentTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "document_template"
+    __table_args__ = (
+        CheckConstraint(
+            "(case_id IS NULL AND case_step_progress_id IS NULL"
+            " AND person_id IS NULL AND submitted_at IS NULL)"
+            " OR (case_id IS NOT NULL AND case_step_progress_id IS NOT NULL"
+            " AND person_id IS NOT NULL)",
+            name="one_off_scope_complete",
+        ),
+    )
+
+    # Private, case-specific PDFs never belong to the reusable library.
+    case_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("client_case.id", ondelete="CASCADE"), index=True
+    )
+    case_step_progress_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("case_step_progress.id", ondelete="CASCADE")
+    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("case_person.id", ondelete="CASCADE")
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     agency_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agency.id", ondelete="CASCADE"), index=True, nullable=False

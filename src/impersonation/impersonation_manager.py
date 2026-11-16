@@ -89,10 +89,13 @@ class ImpersonationManager:
         target_id: uuid.UUID,
     ) -> ImpersonationTokenResponse:
         minutes = get_settings().impersonation_token_expires_minutes
+        claims = {"impersonator_id": str(actor.id), "impersonation_scope": "agency"}
+        if is_platform_role(actor.role):
+            claims["support_operator_id"] = str(actor.id)
         token = create_access_token(
             str(target_id),
             audience,
-            extra_claims={"impersonator_id": str(actor.id)},
+            extra_claims=claims,
             expires_minutes=minutes,
         )
         self.repo.add_log(

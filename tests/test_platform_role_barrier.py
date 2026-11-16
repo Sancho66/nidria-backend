@@ -174,6 +174,9 @@ async def test_the_clone_the_probe_left_opens_no_invitation(
         )
         status, body = await _invite(barrier_client, agent_headers(actor), clone.id)
         assert status == 403, body
+        if actor.id == operator.id:
+            assert body["code"] == "support.restricted"
+            continue
         assert body == {
             "detail": "Beyond your permission ceiling: agency.create, "
             f"{also_missing}job.manage, platform.task_manage.",
@@ -209,8 +212,16 @@ async def test_the_platform_role_answers_like_an_unknown_role_on_every_role_door
         unknown = await barrier_client.request(
             method, template.format(id=uuid.uuid4()), headers=headers, json=body
         )
-        assert (platform.status_code, unknown.status_code) == (404, 404), (method, platform.text)
-        assert platform.json() == unknown.json() == ROLE_NOT_FOUND
+        expected = 403 if actor_role == "superadmin" and method != "GET" else 404
+        assert (platform.status_code, unknown.status_code) == (expected, expected), (
+            method,
+            platform.text,
+        )
+        assert platform.json() == unknown.json()
+        if expected == 403:
+            assert platform.json()["code"] == "support.restricted"
+        else:
+            assert platform.json() == ROLE_NOT_FOUND
 
     clones = await db_session.execute(
         select(Role.id).where(Role.cloned_from_role_id == superadmin.id)
@@ -241,15 +252,20 @@ async def test_the_platform_role_is_neither_assignable_nor_invitable(
         url, headers=headers, json={"role_id": str(system_roles["superadmin"].id)}
     )
     unknown = await barrier_client.put(url, headers=headers, json={"role_id": str(uuid.uuid4())})
-    assert (platform.status_code, unknown.status_code) == (422, 422), platform.text
+    expected = 403 if actor_role == "superadmin" else 422
+    assert (platform.status_code, unknown.status_code) == (expected, expected), platform.text
     assert platform.json() == unknown.json()
-    assert platform.json()["code"] == "role.not_found"
+    assert platform.json()["code"] == (
+        "support.restricted" if expected == 403 else "role.not_found"
+    )
 
     invite_platform = await _invite(barrier_client, headers, system_roles["superadmin"].id)
     invite_unknown = await _invite(barrier_client, headers, uuid.uuid4())
     assert invite_platform == invite_unknown
-    assert invite_platform[0] == 422
-    assert invite_platform[1]["code"] == "invitation.role_invalid"
+    assert invite_platform[0] == expected
+    assert invite_platform[1]["code"] == (
+        "support.restricted" if expected == 403 else "invitation.role_invalid"
+    )
 
 
 async def test_an_agency_role_named_superadmin_is_an_ordinary_role(
@@ -353,8 +369,7 @@ async def test_an_operator_hands_out_no_platform_permission_in_its_agency(
         )
         for response in (create, edit):
             assert response.status_code == 403, response.text
-            assert response.json()["code"] == "role.beyond_ceiling"
-            assert response.json()["detail"] == f"Beyond your permission ceiling: {key}."
+            assert response.json()["code"] == "support.restricted"
 
     duplicate = await barrier_client.post(
         f"/agencies/me/roles/{clone.id}/duplicate", headers=headers, json={"name": "Copie"}
@@ -366,7 +381,7 @@ async def test_an_operator_hands_out_no_platform_permission_in_its_agency(
     )
     for response in (duplicate, assign):
         assert response.status_code == 403, response.text
-        assert response.json()["code"] == "role.beyond_ceiling"
+        assert response.json()["code"] == "support.restricted"
 
     assert await _keys_of(db_session, own.id) == {"case.view"}
     agency_roles = await db_session.execute(
@@ -554,10 +569,8 @@ async def test_the_legitimate_impersonations_still_work(
     system_roles: dict[str, Role],
     agent_headers: AuthHeaders,
 ) -> None:
-    """The operator check reads the TARGET only: the operator's "Enter" (the
-    agency switcher) still lands on the target agency's admin, an agency
-    admin still impersonates an ordinary colleague, and an operator still
-    impersonates an ordinary member of its home agency."""
+    """Support uses the restricted agency switcher. Ordinary agency admins
+    can still preview their own colleague; platform member masks are closed."""
     target_agency = await make_agency()
     target_admin = await make_agent(agency_id=target_agency.id, role=system_roles["admin"])
     colleague = await make_agent(agency_id=target_agency.id, role=system_roles["member"])
@@ -581,6 +594,7 @@ async def test_the_legitimate_impersonations_still_work(
     )
     assert entered["id"] == str(target_admin.id)
     assert entered["agency_id"] == str(target_agency.id)
+    assert entered["support_mode"] is True
     assert entered["impersonator"] == {
         "agent_id": str(operator.id),
         "first_name": operator.first_name,
@@ -595,15 +609,14 @@ async def test_the_legitimate_impersonations_still_work(
     )
     assert as_colleague["id"] == str(colleague.id)
     assert as_colleague["impersonator"]["agent_id"] == str(target_admin.id)
+    assert as_colleague["support_mode"] is False
 
-    as_home_member = await _me_through(
-        await barrier_client.post(
-            f"/agencies/me/members/{home_member.id}/impersonate",
-            headers=agent_headers(operator),
-        )
+    as_home_member = await barrier_client.post(
+        f"/agencies/me/members/{home_member.id}/impersonate",
+        headers=agent_headers(operator),
     )
-    assert as_home_member["id"] == str(home_member.id)
-    assert as_home_member["impersonator"]["agent_id"] == str(operator.id)
+    assert as_home_member.status_code == 403
+    assert as_home_member.json()["code"] == "support.restricted"
 
 
 async def test_an_admin_still_manages_its_roles_clones_and_invitations(

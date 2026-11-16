@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.agent import Agent
 from shared.models.case_step_progress import CaseStepProgress
 from shared.models.client_case import ClientCase
+from shared.models.document_template import DocumentTemplate
 from shared.models.external_contact import ExternalContact
 from shared.models.journey import (
     JourneySection,
@@ -26,6 +27,19 @@ from shared.models.step_requirement import StepRequirement
 class JourneysRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def has_one_off_reference(self, step_id: uuid.UUID, reference: str) -> bool:
+        result = await self.db.execute(
+            select(DocumentTemplate.id)
+            .join(CaseStepProgress, CaseStepProgress.id == DocumentTemplate.case_step_progress_id)
+            .where(
+                CaseStepProgress.template_step_id == step_id,
+                DocumentTemplate.name == reference,
+                DocumentTemplate.submitted_at.is_not(None),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
 
     # --- templates -------------------------------------------------------------
 

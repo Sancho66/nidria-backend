@@ -650,7 +650,10 @@ async def test_no_agency_door_adds_an_email_key(
     )
     for response in (create, edit):
         assert response.status_code == 403, response.text
-        assert response.json() == _refused_by_the_platform("email.view")
+        if actor.role.is_system and actor.role.name == "superadmin":
+            assert response.json()["code"] == "support.restricted"
+        else:
+            assert response.json() == _refused_by_the_platform("email.view")
     assert await _keys_of(db_session, own.id) == {"case.view"}
     named = await db_session.execute(
         select(Role.id).where(Role.agency_id == agency_id, Role.name == "Prospection")
@@ -686,7 +689,10 @@ async def test_no_agency_door_withdraws_an_email_key(
     ):
         response = await client.put(url, headers=headers, json={"permission_ids": asked})
         assert response.status_code == 403, response.text
-        assert response.json() == _refused_by_the_platform(*changed)
+        if actor.role.is_system and actor.role.name == "superadmin":
+            assert response.json()["code"] == "support.restricted"
+        else:
+            assert response.json() == _refused_by_the_platform(*changed)
     assert await _keys_of(db_session, own_id) == {"case.view", "email.view", "email.sync"}
 
     kept = await client.put(
@@ -694,6 +700,11 @@ async def test_no_agency_door_withdraws_an_email_key(
         headers=headers,
         json={"permission_ids": ids("case.view", "case.edit", "email.view", "email.sync")},
     )
+    if actor.role.is_system and actor.role.name == "superadmin":
+        assert kept.status_code == 403
+        assert kept.json()["code"] == "support.restricted"
+        assert await _keys_of(db_session, own_id) == {"case.view", "email.view", "email.sync"}
+        return
     assert kept.status_code == 200, kept.text
     keys = {"case.view", "case.edit", "email.view", "email.sync"}
     assert {p["key"] for p in kept.json()["permissions"]} == keys
@@ -718,6 +729,17 @@ async def test_a_duplicate_leaves_the_email_keys_behind(
     duplicate = await client.post(
         f"/agencies/me/roles/{source_id}/duplicate", headers=headers, json={"name": "Copie"}
     )
+    if actor.role.is_system and actor.role.name == "superadmin":
+        assert duplicate.status_code == 403
+        assert duplicate.json()["code"] == "support.restricted"
+        assert await _keys_of(db_session, source_id) == {"case.view", *EMAIL_KEYS}
+        assert (
+            await db_session.scalar(
+                select(Role.id).where(Role.agency_id == agency_id, Role.name == "Copie")
+            )
+            is None
+        )
+        return
     assert duplicate.status_code == 201, duplicate.text
     assert {p["key"] for p in duplicate.json()["permissions"]} == {"case.view"}
     assert await _keys_of(db_session, uuid.UUID(duplicate.json()["id"])) == {"case.view"}
@@ -909,9 +931,8 @@ async def test_entering_an_agency_gives_its_admins_email_keys_and_no_more(
     root: dict[str, str],
     role_ids: dict[str, uuid.UUID],
 ) -> None:
-    """The operator's "Enter" impersonates the agency's admin: the mask holds
-    the admin's rights, so no Email key until the platform granted them to
-    the admin role, and never the platform's own routes."""
+    """The mask reports the target's matrix but never grants access to its
+    private Email content, even after a platform-managed permission grant."""
     office = await make_office()
     entered = await client.post(f"/agencies/{office.agency_id}/enter", headers=root)
     assert entered.status_code == 200, entered.text
@@ -921,13 +942,16 @@ async def test_entering_an_agency_gives_its_admins_email_keys_and_no_more(
     assert await _email_keys_of(client, mask) == []
     refused = await client.get("/email/meta", headers=mask)
     assert refused.status_code == 403, refused.text
-    assert refused.json()["params"] == {"permission": "email.view"}
+    assert refused.json()["code"] == "support.restricted"
     under_mask = await _grant(client, mask, office.agency_id, role_ids["admin"], EMAIL_KEYS)
     assert under_mask.status_code == 403, under_mask.text
-    assert under_mask.json()["params"] == {"permission": "agency.create"}
+    assert under_mask.json()["code"] == "support.restricted"
 
     granted = await _grant(client, root, office.agency_id, role_ids["admin"], ["email.view"])
     assert granted.status_code == 200, granted.text
     assert await _email_keys_of(client, mask) == ["email.view"]
     meta = await client.get("/email/meta", headers=mask)
-    assert meta.status_code == 200, meta.text
+    assert meta.status_code == 403, meta.text
+    assert meta.json()["code"] == "support.restricted"
+    # The real agency administrator still receives the platform grant.
+    assert (await client.get("/email/meta", headers=office.admin)).status_code == 200
