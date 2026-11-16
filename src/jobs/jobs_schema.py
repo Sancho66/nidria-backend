@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from src.jobs.run_privacy import safe_statistics
 
 
 class JobConfigResponse(BaseModel):
@@ -34,6 +36,8 @@ class JobTriggerRequest(BaseModel):
 
 
 class JobRunResponse(BaseModel):
+    """Operational metadata only: private logs and error details are redacted."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -47,6 +51,17 @@ class JobRunResponse(BaseModel):
     triggered_by: str
     triggered_by_agent_id: uuid.UUID | None
 
+    @model_validator(mode="after")
+    def remove_private_details(self) -> Self:
+        self.stats = safe_statistics(self.stats)
+        self.error = None
+        return self
+
 
 class JobRunDetailResponse(JobRunResponse):
     log_output: str
+
+    @field_validator("log_output")
+    @classmethod
+    def hide_private_log(cls, value: str) -> str:
+        return ""

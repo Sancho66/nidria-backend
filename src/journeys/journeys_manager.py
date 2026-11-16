@@ -1184,6 +1184,13 @@ class JourneysManager:
         await self._get_template(agent, template_id)
         await self._get_step(template_id, step_id)
         await self._validate_reference(agent, payload.kind, payload.reference)
+        if payload.kind is StepRequirementKind.DOCUMENT and await self.repo.has_one_off_reference(
+            step_id, payload.reference
+        ):
+            raise ConflictError(
+                "A case-specific document already uses this name on the step.",
+                code="signatures.document_name_exists",
+            )
         # E-signature (méga-lot 28/07) : la signature ne se demande que sur
         # un DOCUMENT, et seul le niveau SES a une implémentation — les
         # niveaux aes/qes restent dans l'enum (socle) mais sont refusés ici

@@ -178,6 +178,15 @@ async def agent_me(
     agent: Annotated[Agent, Depends(get_current_agent)],
     db: DbDep,
 ) -> AgentMeResponse:
+    from src.core.rbac.consent_gate import is_agency_admin
+
+    support_mode = getattr(request.state, "support_operator_id", None) is not None
+    can_authorize = (
+        not support_mode
+        and getattr(request.state, "impersonator_id", None) is None
+        and not agent.is_external
+        and await is_agency_admin(db, agent)
+    )
     return AgentMeResponse(
         id=agent.id,
         first_name=agent.first_name,
@@ -186,6 +195,8 @@ async def agent_me(
         agency_id=agent.agency_id,
         role=agent.role.name,
         is_external=agent.is_external,
+        support_mode=support_mode,
+        can_authorize_support=can_authorize,
         effective_permissions=sorted(effective_permissions(agent)),
         has_avatar=agent.avatar_path is not None,
         notification_prefs=effective_agent_prefs(agent),

@@ -20,12 +20,14 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
 from shared.models.case_person import CasePerson
+from shared.models.case_step_requirement import CaseStepRequirement
+from shared.models.document_template import DocumentTemplate
 from shared.models.expat_user import ExpatUser
 from shared.models.signature import SignatureRequest, SignatureSigner
 from src.core.config import get_settings
@@ -181,7 +183,16 @@ async def my_signatures(
                 # Orphelines exclues (défense) : une demande dont
                 # l'exigence source a disparu ne montre pas de tâche —
                 # même doctrine que les demandes mortes.
-                SignatureRequest.step_requirement_id.is_not(None),
+                or_(
+                    SignatureRequest.step_requirement_id.is_not(None),
+                    # An explicitly submitted case-specific PDF has no journey definition.
+                    exists().where(
+                        CaseStepRequirement.id == SignatureSigner.case_step_requirement_id,
+                        CaseStepRequirement.document_template_id == DocumentTemplate.id,
+                        DocumentTemplate.case_id == case.id,
+                        DocumentTemplate.submitted_at.is_not(None),
+                    ),
+                ),
             )
             .order_by(SignatureRequest.created_at)
         )

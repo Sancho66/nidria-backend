@@ -23,3 +23,16 @@ non-email steps, completed/sent steps and held or ended recipients, and are not 
 promise that all remaining steps will be sent. The existing dated native estimates
 are unchanged. Recovery and sync use provider reads only; no launch, pause, resume
 or lead import is performed at Lemlist by this repair.
+
+## 2026-11-16: platform support needs agency-authorized case access
+
+The platform role and its masks are not agency customer-data permissions.
+Support has a closed metadata boundary and a separate, read-only consultation
+authorized by the real agency administrator for one operator, case and limited
+duration. Each content read is audited; revocation and expiry are checked server-side.
+Scheduled-job output exposes only reviewed aggregate counters, never free-form logs.
+
+One-off signatures use private case-scoped provider templates and concrete case
+requirements. They share the existing signature/credit/reminder circuit but never
+enter the reusable template library. Details, migrations, tests and rollout limits:
+[support access and one-off signatures](support-access-and-one-off-signatures.md).

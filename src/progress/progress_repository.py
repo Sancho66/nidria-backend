@@ -119,8 +119,10 @@ class ProgressRepository:
     async def get_progress_in_case(
         self, case_id: uuid.UUID, progress_id: uuid.UUID
     ) -> CaseStepProgress | None:
-        stmt = select(CaseStepProgress).where(
-            CaseStepProgress.id == progress_id, CaseStepProgress.case_id == case_id
+        stmt = (
+            select(CaseStepProgress)
+            .where(CaseStepProgress.id == progress_id, CaseStepProgress.case_id == case_id)
+            .with_for_update()
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

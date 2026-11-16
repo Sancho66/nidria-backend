@@ -58,6 +58,8 @@ class AgentMeResponse(BaseModel):
     # l'etat reel du reglage personnel.
     notification_prefs: dict[str, str] = {}
     impersonator: ImpersonatorInfo | None = None
+    support_mode: bool = False
+    can_authorize_support: bool = False
 
 
 class ExpatMeResponse(BaseModel):

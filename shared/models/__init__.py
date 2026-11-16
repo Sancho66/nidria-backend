@@ -163,3 +163,7 @@ __all__ = [
     "NurtureSend",
     "UsageEvent",
 ]
+
+from shared.models.support_access import SupportAccessEvent, SupportAccessGrant
+
+__all__ += ["SupportAccessEvent", "SupportAccessGrant"]

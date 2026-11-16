@@ -315,7 +315,8 @@ async def test_pre_cost_admin_clone_receives_cost_permissions_and_sees_costs(
     detail = (await client.get(f"/journeys/{tid}", headers=h)).json()
     assert len(detail["steps"][0]["planned_costs"]) == 1  # the section appears
 
-    # ...and so does Alexandre UNDER IMPERSONATION (the target's permissions).
+    # The agency admin keeps the repaired cost rights, but the platform
+    # operator no longer inherits private case access through its mask.
     # Reload the role: the boot expired the fixture's ORM objects.
     superadmin_role = (
         await db_session.execute(
@@ -330,5 +331,6 @@ async def test_pre_cost_admin_clone_receives_cost_permissions_and_sees_costs(
         )
     }
     seen = await client.get(f"/cases/{case_id}/costs", headers=impersonation)
-    assert seen.status_code == 200, seen.text
-    assert seen.json()["lines"][0]["label"] == "Timbre"
+    assert seen.status_code == 403, seen.text
+    assert seen.json()["code"] == "support.restricted"
+    assert "Timbre" not in seen.text

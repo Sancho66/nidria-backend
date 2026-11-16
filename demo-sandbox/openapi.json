@@ -3282,6 +3282,58 @@
         }
       }
     },
+    "/cases/{case_id}/signature-drafts": {
+      "get": {
+        "tags": [
+          "one-off-signatures"
+        ],
+        "summary": "List Drafts",
+        "operationId": "list_drafts_cases__case_id__signature_drafts_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OneOffSignatureResponse"
+                  },
+                  "title": "Response List Drafts Cases  Case Id  Signature Drafts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/steps": {
       "get": {
         "tags": [
@@ -4616,6 +4668,16 @@
                 "type": "null"
               }
             ]
+          },
+          "support_mode": {
+            "type": "boolean",
+            "title": "Support Mode",
+            "default": false
+          },
+          "can_authorize_support": {
+            "type": "boolean",
+            "title": "Can Authorize Support",
+            "default": false
           }
         },
         "type": "object",
@@ -9484,6 +9546,84 @@
         ],
         "title": "OnboardingStepState",
         "description": "One activation gesture: create_journey | open_case |\nview_as_client."
+      },
+      "OneOffSignatureResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "progress_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Progress Id"
+          },
+          "person_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Person Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "fields_configured": {
+            "type": "boolean",
+            "title": "Fields Configured"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "case_id",
+          "progress_id",
+          "person_id",
+          "name",
+          "filename",
+          "fields_configured",
+          "submitted_at",
+          "request_id",
+          "status"
+        ],
+        "title": "OneOffSignatureResponse"
       },
       "PendingDocumentResponse": {
         "properties": {

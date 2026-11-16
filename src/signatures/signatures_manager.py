@@ -47,7 +47,7 @@ from src.core.enums import (
     SignatureRequestStatus,
     SignatureSignerStatus,
 )
-from src.core.exceptions import ValidationError
+from src.core.exceptions import ConflictError, ValidationError
 from src.signatures.flags import signatures_effectively_enabled
 from src.signatures.provider import AGENCY_ROLE, ProviderSigner, get_provider
 from src.signatures.signatures_repository import SignaturesRepository
@@ -171,6 +171,12 @@ class SignaturesManager:
             sent += 1
         return sent
 
+    async def send_one_off(
+        self, case: ClientCase, row: CaseStepProgress, requirement: CaseStepRequirement
+    ) -> SignatureRequest:
+        """Send exactly the confirmed case-specific document, using the standard ledger."""
+        return await self._send_one(case, row, requirement.reference, [requirement])
+
     async def _send_one(
         self,
         case: ClientCase,
@@ -183,6 +189,13 @@ class SignaturesManager:
         """Crée la demande (draft) + ses signataires, débite (lot 2) puis
         appelle le port — refs opaques posées, statut SENT. Dans la
         transaction de l'appelant : tout échec annule tout."""
+        if len({requirement.document_template_id for requirement in req_rows}) != 1:
+            # A coinciding human label must never send one person's private
+            # PDF to another signer, including concurrent journey edits.
+            raise ConflictError(
+                "Different documents use the same name on this step.",
+                code="signatures.document_name_exists",
+            )
         settings = get_settings()
         definition_id = next(
             (r.step_requirement_id for r in req_rows if r.step_requirement_id), None

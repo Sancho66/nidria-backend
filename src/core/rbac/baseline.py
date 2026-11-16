@@ -231,16 +231,20 @@ def collect_bindings() -> list[RouteBinding]:
     from src.imports.imports_router import BINDINGS as imports_bindings
     from src.jobs.jobs_router import BINDINGS as jobs_bindings
     from src.journeys.journeys_router import BINDINGS as journeys_bindings
+    from src.one_off_signatures.router import BINDINGS as one_off_signature_bindings
     from src.profile.profile_router import BINDINGS as profile_bindings
     from src.progress.progress_router import BINDINGS as progress_bindings
     from src.reminders.reminders_router import BINDINGS as reminders_bindings
     from src.roles.roles_router import BINDINGS as roles_bindings
     from src.signatures.signatures_router import BINDINGS as signatures_bindings
     from src.signup.signup_router import BINDINGS as signup_bindings
+    from src.support_access.router import BINDINGS as support_bindings
     from src.views.views_router import BINDINGS as views_bindings
 
     return [
         *auth_bindings,
+        *support_bindings,
+        *one_off_signature_bindings,
         *profile_sections_bindings,
         *signup_bindings,
         *billing_bindings,
