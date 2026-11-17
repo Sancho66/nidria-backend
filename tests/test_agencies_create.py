@@ -164,10 +164,10 @@ async def test_admin_email_already_agent_conflicts(
     assert resp.status_code == 409
 
 
-# --- (d) platform operations never imply access to customer cases ----------
+# --- (d) full rights in its OWN agency, still no cross-agency access ----------
 
 
-async def test_superadmin_keeps_platform_operations_without_case_access(
+async def test_superadmin_has_full_rights_but_no_cross_agency(
     agencies_client: AsyncClient,
     make_agent: MakeAgent,
     agent_headers: AuthHeaders,
@@ -179,11 +179,13 @@ async def test_superadmin_keeps_platform_operations_without_case_access(
         "/agencies", json=_body(), headers=agent_headers(superadmin)
     )
     assert created.status_code == 201
-    # The support boundary is independent of the role's permission matrix,
-    # including in the operator's home agency.
+    # ...and the platform-owner role now carries EVERY internal permission, so
+    # reading dossiers is allowed (case.view) — no longer 403. The reads stay
+    # scoped to the superadmin's OWN agency (the token's agency_id), so the
+    # agency it just created is unreachable from this token: no cross-agency
+    # access is introduced (that frontier is the separate Phase 2).
     own = await agencies_client.get("/cases", headers=agent_headers(superadmin))
-    assert own.status_code == 403
-    assert own.json()["code"] == "support.restricted"
+    assert own.status_code == 200
 
 
 # --- (e) platform agency switcher: list all agencies + enter one --------------

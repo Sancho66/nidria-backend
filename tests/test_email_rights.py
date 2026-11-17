@@ -650,10 +650,7 @@ async def test_no_agency_door_adds_an_email_key(
     )
     for response in (create, edit):
         assert response.status_code == 403, response.text
-        if actor.role.is_system and actor.role.name == "superadmin":
-            assert response.json()["code"] == "support.restricted"
-        else:
-            assert response.json() == _refused_by_the_platform("email.view")
+        assert response.json() == _refused_by_the_platform("email.view")
     assert await _keys_of(db_session, own.id) == {"case.view"}
     named = await db_session.execute(
         select(Role.id).where(Role.agency_id == agency_id, Role.name == "Prospection")
@@ -689,10 +686,7 @@ async def test_no_agency_door_withdraws_an_email_key(
     ):
         response = await client.put(url, headers=headers, json={"permission_ids": asked})
         assert response.status_code == 403, response.text
-        if actor.role.is_system and actor.role.name == "superadmin":
-            assert response.json()["code"] == "support.restricted"
-        else:
-            assert response.json() == _refused_by_the_platform(*changed)
+        assert response.json() == _refused_by_the_platform(*changed)
     assert await _keys_of(db_session, own_id) == {"case.view", "email.view", "email.sync"}
 
     kept = await client.put(
@@ -700,11 +694,6 @@ async def test_no_agency_door_withdraws_an_email_key(
         headers=headers,
         json={"permission_ids": ids("case.view", "case.edit", "email.view", "email.sync")},
     )
-    if actor.role.is_system and actor.role.name == "superadmin":
-        assert kept.status_code == 403
-        assert kept.json()["code"] == "support.restricted"
-        assert await _keys_of(db_session, own_id) == {"case.view", "email.view", "email.sync"}
-        return
     assert kept.status_code == 200, kept.text
     keys = {"case.view", "case.edit", "email.view", "email.sync"}
     assert {p["key"] for p in kept.json()["permissions"]} == keys
@@ -729,17 +718,6 @@ async def test_a_duplicate_leaves_the_email_keys_behind(
     duplicate = await client.post(
         f"/agencies/me/roles/{source_id}/duplicate", headers=headers, json={"name": "Copie"}
     )
-    if actor.role.is_system and actor.role.name == "superadmin":
-        assert duplicate.status_code == 403
-        assert duplicate.json()["code"] == "support.restricted"
-        assert await _keys_of(db_session, source_id) == {"case.view", *EMAIL_KEYS}
-        assert (
-            await db_session.scalar(
-                select(Role.id).where(Role.agency_id == agency_id, Role.name == "Copie")
-            )
-            is None
-        )
-        return
     assert duplicate.status_code == 201, duplicate.text
     assert {p["key"] for p in duplicate.json()["permissions"]} == {"case.view"}
     assert await _keys_of(db_session, uuid.UUID(duplicate.json()["id"])) == {"case.view"}

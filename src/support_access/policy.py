@@ -3,7 +3,8 @@
 Platform operators never inherit client-data access by switching agency.
 Only reviewed metadata routes and the dedicated, audited consultation can
 pass. Old impersonation tokens are covered by resolving their original actor.
-Agency staff viewing their own clients keeps its existing ownership policy.
+An operator's original session keeps normal agency access, scoped to the
+operator's own agency by the existing managers, just like other staff.
 """
 
 import uuid
@@ -142,8 +143,6 @@ async def support_operator(
 ) -> uuid.UUID | None:
     from src.core.rbac.delegation import is_platform_role
 
-    if agent is not None and is_platform_role(agent.role):
-        return agent.id
     original = payload.get("impersonator_id")
     if original is None:
         return None
@@ -159,6 +158,15 @@ async def support_operator(
     if payload.get("support_operator_id") is not None or is_platform_role(operator.role):
         if not is_platform_role(operator.role):
             raise UnauthorizedError("Support session expired.", code="auth.session_expired")
+        # An ordinary colleague preview in the operator's own agency does
+        # not enter a customer's workspace. Check live membership, never
+        # a caller-supplied agency id or the target role alone.
+        if (
+            agent is not None
+            and agent.agency_id == operator.agency_id
+            and payload.get("impersonation_scope") == "agency"
+        ):
+            return None
         return operator.id
     # Legacy masks have no immutable origin scope. Do not let a demoted
     # former platform operator regain agency powers via an old token.
@@ -177,21 +185,32 @@ async def enforce_support(
     method: str,
     path: str,
 ) -> None:
+    from src.core.rbac.delegation import is_platform_role
+
     operator_id = await support_operator(db, agent, payload)
     request.state.support_operator_id = operator_id
     if operator_id is None:
+        if agent is not None and is_platform_role(agent.role):
+            # Platform-wide surfaces still require the reviewed allowlist:
+            # help search logs can contain customer data from other agencies.
+            # Client previews also remain closed because an expat identity
+            # may expose cases belonging to several agencies.
+            platform_surface = (
+                path == "/agencies"
+                or path == "/jobs"
+                or path.startswith(("/admin/", "/jobs/", "/agencies/{agency_id}"))
+                or path == "/expat-users/{expat_user_id}/impersonate"
+            )
+            if platform_surface and (method, path) not in PLATFORM_OPERATIONS:
+                raise ForbiddenError(
+                    "Client data is private. Use agency-authorized support access for one case.",
+                    code="support.restricted",
+                )
         return
     if agent is not None and (method, path) in SUPPORT_METADATA:
         return
-    # The original platform session may administer the platform, never an
-    # impersonated target. Neither exception opens case lists, exports,
-    # signatures, logs, personal profiles, imports or storage credentials.
-    if (
-        agent is not None
-        and payload.get("impersonator_id") is None
-        and (method, path) in PLATFORM_OPERATIONS
-    ):
-        return
+    # A support mask never inherits platform administration or the target's
+    # case, export, signature, profile, import or storage capabilities.
     raise ForbiddenError(
         "Client data is private. Use agency-authorized support access for one case.",
         code="support.restricted",
