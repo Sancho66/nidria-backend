@@ -1,7 +1,8 @@
 # Support privacy and one-off signatures
 
-Prepared on 2026-11-16 for the two product tasks created that day. This document
-describes the implementation, not a production deployment.
+Prepared on 2026-11-16 for the two product tasks created that day. Updated on
+2026-11-17 to correct the operator's home-workspace regression. This document
+describes the implementation; deployment evidence is recorded separately.
 
 ## Support boundary
 
@@ -11,16 +12,26 @@ access to customer content by entering an agency. Current and legacy masks resol
 their original actor; deactivation or demotion invalidates the support session.
 Ordinary agency administrators can still preview their own members and clients.
 
-The policy is an explicit method/path allowlist, closed for new routes by default.
+For a support session, the policy is an explicit method/path allowlist, closed for
+new routes by default.
 It allows reviewed agency metadata (configuration, members, reusable journeys and
 templates, billing), anonymous case counts and step statuses. Case/profile lists,
 exports, messages, notes, documents, signing capabilities, client previews and
 free-text search journals are inaccessible through their ordinary routes.
 
-This also restricts a platform account in its own home agency, including the Email
-module. Ordinary agency accounts keep their existing permissions. No internal-agency
-exception is implicit. Platform administration of tasks, demos, subscriptions,
-email-module rights and scheduled jobs remains available in the original session.
+An operator's original session is not a support session: normal pages and API
+operations, including Email, remain available within the operator's own agency,
+under existing permissions and tenant scoping. The frontend receives
+`support_mode=false` and refreshes even a cached identity on page reload. A current
+member preview within that same agency also keeps normal agency behavior; live
+membership is checked for both actors. A switch to a different agency remains
+restricted support, including with legacy tokens. Platform-issued client previews
+stay closed because an expat identity can span several agencies.
+
+Platform-wide routes retain the reviewed allowlist, so restoring the home workspace
+does not reopen customer search journals. Platform administration of tasks, demos,
+subscriptions, email-module rights and scheduled jobs remains available in the
+original session.
 Job responses retain reviewed aggregate counters and statuses; historical log
 text, exception messages, nested provider payloads and unknown statistic keys are
 redacted on serialization. Stored audit rows are not destroyed. Demo adoption uses

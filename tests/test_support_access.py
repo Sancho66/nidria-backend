@@ -22,6 +22,7 @@ from src.core.enums import Audience
 from src.core.security import create_access_token
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeCaseNote, MakeClientCase
+from tests.plugins.email_plugin import MakeAgencyEmailModule
 from tests.plugins.expat_plugin import MakeExpatUser
 
 
@@ -120,15 +121,66 @@ async def _grant(client: AsyncClient, scene: Scene, headers: AuthHeaders) -> str
         "/admin/help/search-misses",
     ],
 )
-async def test_support_denies_raw_content(
-    client: AsyncClient, scene: Scene, agent_headers: AuthHeaders, route: str
-) -> None:
+async def test_support_denies_raw_content(client: AsyncClient, scene: Scene, route: str) -> None:
     path = route.format(case_id=scene.case.id, document_id=scene.document.id)
-    for headers in (scene.support, agent_headers(scene.operator)):
+    response = await client.get(path, headers=scene.support)
+    assert response.status_code == 403, (path, response.status_code, response.text)
+    assert response.json()["code"] == "support.restricted"
+    assert "sentinel" not in response.text
+
+
+@pytest.mark.usefixtures("signatures_enabled")
+async def test_operator_keeps_own_workspace_without_foreign_customer_access(
+    client: AsyncClient,
+    scene: Scene,
+    agent_headers: AuthHeaders,
+    make_client_case: MakeClientCase,
+    email_module_on: None,
+    make_agency_email_module: MakeAgencyEmailModule,
+) -> None:
+    own_case = await make_client_case(agency_id=scene.operator.agency_id)
+    await make_agency_email_module(agency_id=scene.operator.agency_id)
+    headers = agent_headers(scene.operator)
+    me = await client.get("/auth/agent/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["support_mode"] is False
+    assert me.json()["can_authorize_support"] is False
+    for path in (
+        "/cases",
+        "/client-profiles",
+        "/company-profiles",
+        "/dashboard",
+        "/reminders",
+        "/journeys",
+        "/document-templates",
+        "/email/campaigns",
+        "/email/hot-leads",
+        f"/cases/{own_case.id}",
+        f"/cases/{own_case.id}/documents",
+        f"/cases/{own_case.id}/signature-drafts",
+    ):
         response = await client.get(path, headers=headers)
-        assert response.status_code == 403, (path, response.status_code, response.text)
-        assert response.json()["code"] == "support.restricted"
+        assert response.status_code == 200, (path, response.status_code, response.text)
+        assert "PrivateSentinel" not in response.text
+    created = await client.post("/journeys", headers=headers, json={"name": "Own workspace"})
+    assert created.status_code == 201, created.text
+    for path in (
+        f"/cases/{scene.case.id}",
+        f"/cases/{scene.case.id}/documents",
+        f"/cases/{scene.case.id}/signature-drafts",
+        f"/cases/{scene.case.id}/documents/{scene.document.id}/download",
+    ):
+        response = await client.get(path, headers=headers)
+        assert response.status_code == 404, (path, response.status_code, response.text)
         assert "sentinel" not in response.text
+    # Home access does not reopen platform-wide search logs or customer masks.
+    for method, path in (
+        ("GET", "/admin/help/search-misses"),
+        ("POST", f"/expat-users/{scene.case.principal_expat_user_id}/impersonate"),
+    ):
+        response = await client.request(method, path, headers=headers)
+        assert response.status_code == 403
+        assert response.json()["code"] == "support.restricted"
 
 
 async def test_legacy_tokens_and_expat_mask_are_closed(client: AsyncClient, scene: Scene) -> None:
