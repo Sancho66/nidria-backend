@@ -20,23 +20,21 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
 from shared.models.agent import Agent
-from shared.models.case_person import CasePerson
-from shared.models.case_step_requirement import CaseStepRequirement
-from shared.models.document_template import DocumentTemplate
 from shared.models.expat_user import ExpatUser
 from shared.models.signature import SignatureRequest, SignatureSigner
 from src.core.config import get_settings
 from src.core.dependencies import get_current_agent, get_current_expat, get_db
-from src.core.enums import Audience, CasePersonKind, SignatureRequestStatus, StepStatus
+from src.core.enums import Audience, StepStatus
 from src.core.exceptions import UnauthorizedError
 from src.core.rbac.baseline import RouteBinding
 from src.core.rbac.permissions import Permission
 from src.signatures.signatures_manager import SignaturesWebhookManager
+from src.signatures.signatures_repository import SignaturesRepository
 from src.signatures.signatures_schema import (
     ExpatSignatureResponse,
     SignatureCreditEntriesResponse,
@@ -143,58 +141,14 @@ async def my_signatures(
     from src.expat.expat_manager import ExpatPortalManager
     from src.signatures.flags import signatures_effectively_enabled
 
-    # Le harnais d'accès existant : principal OU membre du dossier, 404
-    # non-révélateur sinon. viewing_person est None pour le PRINCIPAL —
-    # on résout alors SA case_person : le slug est PERSONNEL, personne ne
-    # voit ni n'obtient la ligne d'un autre (le principal inclus).
     case, agency, viewing_person = await ExpatPortalManager(db)._get_viewing_case(expat, case_id)
     if not signatures_effectively_enabled(agency):
         return []  # sous-interrupteur agence coupé : la face client se tait
-    person_id = viewing_person.id if viewing_person is not None else None
-    if person_id is None:
-        person_id = (
-            await db.execute(
-                select(CasePerson.id).where(
-                    CasePerson.case_id == case.id,
-                    CasePerson.kind == CasePersonKind.PRINCIPAL.value,
-                    CasePerson.expat_user_id == expat.id,
-                )
-            )
-        ).scalar_one_or_none()
-    if person_id is None:
-        return []
     rows = (
         await db.execute(
-            select(SignatureSigner, SignatureRequest)
-            .join(SignatureRequest, SignatureRequest.id == SignatureSigner.signature_request_id)
-            .where(
-                SignatureRequest.case_id == case.id,
-                SignatureSigner.case_person_id == person_id,
-                # DURCISSEMENT : les demandes MORTES (cancelled/expired) ne
-                # sortent jamais à l'état brut côté client. Les complétées
-                # restent : le front affiche « Signé » et le n/m final.
-                SignatureRequest.status.in_(
-                    (
-                        SignatureRequestStatus.SENT.value,
-                        SignatureRequestStatus.PARTIALLY_SIGNED.value,
-                        SignatureRequestStatus.COMPLETED.value,
-                    )
-                ),
-                # Orphelines exclues (défense) : une demande dont
-                # l'exigence source a disparu ne montre pas de tâche —
-                # même doctrine que les demandes mortes.
-                or_(
-                    SignatureRequest.step_requirement_id.is_not(None),
-                    # An explicitly submitted case-specific PDF has no journey definition.
-                    exists().where(
-                        CaseStepRequirement.id == SignatureSigner.case_step_requirement_id,
-                        CaseStepRequirement.document_template_id == DocumentTemplate.id,
-                        DocumentTemplate.case_id == case.id,
-                        DocumentTemplate.submitted_at.is_not(None),
-                    ),
-                ),
+            SignaturesRepository.client_signatures(case.id, expat.id, viewing_person).order_by(
+                SignatureRequest.created_at
             )
-            .order_by(SignatureRequest.created_at)
         )
     ).all()
     # LOT 6 (point 3) : le « Signé n/m » de chaque demande — le principal

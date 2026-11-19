@@ -769,6 +769,8 @@ class ProgressManager:
         case: ClientCase,
         lang: str = DEFAULT_LANG,
         viewer_agent_id: uuid.UUID | None = None,
+        *,
+        client_one_off_ids: frozenset[uuid.UUID] = frozenset(),
     ) -> list[StepProgressResponse]:
         rows = await self.repo.list_progress_for_case(case.id)
         if not rows:
@@ -842,14 +844,10 @@ class ProgressManager:
         )
         signature_counts: dict[uuid.UUID, list[int]] = defaultdict(lambda: [0, 0])
         for req in concrete:
-            # Defense in depth: an orphaned instance (step_requirement_id NULL —
-            # its template definition was deleted) is NEVER projected, on any of
-            # the 3 faces (all delegate here). The filter lives HERE, at the
-            # display fold, and NOT in list_case_requirements_for_progress_ids:
-            # that query also feeds _sync_missing_requirements' dedup, which must
-            # keep SEEING the orphan or it would re-materialize it and collide on
-            # uq_case_step_requirement.
-            if req.step_requirement_id is None:
+            # A one-off signature has no journey definition. Its signer can see it
+            # once issued. Other rows without a definition stay out of the timeline.
+            # Keep them in the unfiltered repository read used for materialization.
+            if req.step_requirement_id is None and req.id not in client_one_off_ids:
                 continue
             person = persons_by_id.get(req.person_id)
             provided = is_provided(req, person) if person is not None else False
