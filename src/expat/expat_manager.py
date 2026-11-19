@@ -50,6 +50,8 @@ from src.journeys.journeys_repository import JourneysRepository
 from src.progress.progress_manager import ProgressManager
 from src.progress.progress_repository import ProgressRepository
 from src.progress.progress_schema import StepParticipantResponse, StepProgressResponse
+from src.signatures.flags import signatures_effectively_enabled
+from src.signatures.signatures_repository import SignaturesRepository
 
 # The refusals a client reads on their own space (point 9): a stable code
 # + params, the English `detail` kept as the fallback. A field is named by
@@ -207,7 +209,14 @@ class ExpatPortalManager:
 
         # The agency timeline (projected statuses) re-shaped for the
         # client: names instead of ids everywhere.
-        internal_timeline = await ProgressManager(self.db).timeline_for_case(case, lang)
+        one_off_ids: frozenset[uuid.UUID] = frozenset()
+        if signatures_effectively_enabled(agency):
+            one_off_ids = await SignaturesRepository(self.db).client_one_off_requirement_ids(
+                case.id, expat.id, viewing_person
+            )
+        internal_timeline = await ProgressManager(self.db).timeline_for_case(
+            case, lang, client_one_off_ids=one_off_ids
+        )
         timeline = [
             ExpatTimelineStepResponse(
                 progress_id=step.id,

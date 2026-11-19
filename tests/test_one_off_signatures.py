@@ -23,7 +23,7 @@ from src.core.config import get_settings
 from src.signatures import ledger
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 from tests.plugins.case_plugin import MakeClientCase
-from tests.plugins.expat_plugin import MakeExpatUser
+from tests.plugins.expat_plugin import DEFAULT_PASSWORD, MakeExpatUser
 from tests.plugins.signature_plugin import SOURCE_PDF, FakeProvider
 
 pytestmark = pytest.mark.usefixtures("rbac_baseline", "signatures_enabled")
@@ -81,12 +81,21 @@ async def scene(
 
 
 async def draft(
-    client: AsyncClient, scene: Scene, *, sync: bool = True, name: str = "Individual agreement"
+    client: AsyncClient,
+    scene: Scene,
+    *,
+    sync: bool = True,
+    name: str = "Individual agreement",
+    person_id: str | None = None,
 ) -> dict:
     response = await client.post(
         f"/cases/{scene.case_id}/signature-drafts",
         headers=scene.headers,
-        data={"name": name, "progress_id": scene.progress_id, "person_id": scene.person_id},
+        data={
+            "name": name,
+            "progress_id": scene.progress_id,
+            "person_id": person_id or scene.person_id,
+        },
         files={"file": ("private.pdf", SOURCE_PDF, "application/pdf")},
     )
     assert response.status_code == 201, response.text
@@ -110,6 +119,58 @@ async def activate(client: AsyncClient, scene: Scene) -> None:
     assert response.status_code == 200, response.text
 
 
+async def client_step_requirements(client: AsyncClient, scene: Scene, headers: dict[str, str]):
+    detail = await client.get(f"/expat/cases/{scene.case_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    step = next(s for s in detail.json()["timeline"] if s["progress_id"] == scene.progress_id)
+    return step["requirements"]
+
+
+async def test_member_sees_their_issued_one_off_in_the_step_after_client_login(
+    client: AsyncClient,
+    scene: Scene,
+    make_expat_user: MakeExpatUser,
+    expat_headers: AuthHeaders,
+    give_credits,
+    db_session: AsyncSession,
+    fake_provider: FakeProvider,
+) -> None:
+    member = await make_expat_user(activated=True, email="member-signature@example.com")
+    person = await client.post(
+        f"/cases/{scene.case_id}/persons",
+        headers=scene.headers,
+        json={"full_name": "Alex Example", "relationship": "spouse", "email": member.email},
+    )
+    assert person.status_code == 201, person.text
+    await activate(client, scene)
+    await give_credits(scene.admin.agency_id, 1)
+    row = await draft(client, scene, person_id=person.json()["id"])
+    sent = await client.post(
+        f"/cases/{scene.case_id}/signature-drafts/{row['id']}/submit", headers=scene.headers
+    )
+    assert sent.status_code == 200, sent.text
+    login = await client.post(
+        "/auth/expat/login", json={"email": member.email, "password": DEFAULT_PASSWORD}
+    )
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+    (visible,) = await client_step_requirements(client, scene, headers)
+    tasks = await client.get(f"/expat/cases/{scene.case_id}/signatures", headers=headers)
+    assert tasks.status_code == 200
+    assert [task["requirement_id"] for task in tasks.json()] == [visible["id"]]
+    assert visible["signature_required"] and visible["reference"] == row["name"]
+    assert await client_step_requirements(client, scene, expat_headers(scene.expat)) == []
+    assert await ledger.balance(db_session, scene.admin.agency_id) == (0, 1)
+    assert len(fake_provider.create_calls) == 1
+
+    cancelled = await client.post(
+        f"/cases/{scene.case_id}/signature-requests/{sent.json()['request_id']}/cancel",
+        headers=scene.headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert await client_step_requirements(client, scene, headers) == []
+
+
 async def test_one_off_full_cycle_and_no_reusable_template(
     client: AsyncClient,
     scene: Scene,
@@ -123,6 +184,8 @@ async def test_one_off_full_cycle_and_no_reusable_template(
     await activate(client, scene)
     row = await draft(client, scene)
     assert row["status"] == "draft"
+    signer_headers = expat_headers(scene.expat)
+    assert await client_step_requirements(client, scene, signer_headers) == []
     assert fake_provider.create_calls == []
     assert (await client.get("/document-templates", headers=scene.headers)).json() == []
     assert (
@@ -147,6 +210,9 @@ async def test_one_off_full_cycle_and_no_reusable_template(
     assert client_tasks.status_code == 200, client_tasks.text
     assert [task["reference"] for task in client_tasks.json()] == ["Individual agreement"]
     assert client_tasks.json()[0]["embed_slug"]
+    visible = await client_step_requirements(client, scene, signer_headers)
+    assert [req["id"] for req in visible] == [client_tasks.json()[0]["requirement_id"]]
+    assert visible[0]["signature_required"] and visible[0]["status"] == "pending"
     signer_id = client_tasks.json()[0]["signer_id"]
     monkeypatch.setenv("DOCUSEAL_WEBHOOK_SECRET", "test-oneoff-webhook")
     get_settings.cache_clear()
@@ -167,6 +233,8 @@ async def test_one_off_full_cycle_and_no_reusable_template(
     )
     assert requirement is not None and requirement.status == "provided"
     assert requirement.document_id is not None
+    (signed,) = await client_step_requirements(client, scene, signer_headers)
+    assert signed["status"] == "provided" and signed["document_id"] == str(requirement.document_id)
     assert (
         len(
             list(
@@ -192,6 +260,7 @@ async def test_future_step_queues_then_sends_on_activation(
     assert result.status_code == 200, result.text
     assert result.json()["status"] == "queued"
     assert fake_provider.create_calls == []
+    assert await client_step_requirements(client, scene, expat_headers(scene.expat)) == []
     assert (
         await client.get(
             f"/expat/cases/{scene.case_id}/signatures", headers=expat_headers(scene.expat)
@@ -199,6 +268,8 @@ async def test_future_step_queues_then_sends_on_activation(
     ).json() == []
     await activate(client, scene)
     assert len(fake_provider.create_calls) == 1
+    (visible,) = await client_step_requirements(client, scene, expat_headers(scene.expat))
+    assert visible["signature_required"] and visible["status"] == "pending"
     assert (
         len(
             (

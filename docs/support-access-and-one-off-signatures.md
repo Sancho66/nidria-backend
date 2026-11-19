@@ -92,6 +92,11 @@ sends immediately; a future step queues until normal activation. A completed ste
 must first be reopened. Duplicate document labels on the step are rejected, and the
 signing engine rejects any group that would mix different PDFs under one label.
 
+The signer's client timeline and signature list use the same case, person and
+request status to decide what appears. A sent one-off appears on its selected
+step even though it has no reusable journey requirement. A completed one-off
+keeps its signed document there. A queued one-off appears after dispatch.
+
 The sandbox mounts only the new GET list through its existing case-scoped read
 router. No mutation or provider route is added. The agency consent controls are
 hidden in the public sandbox.
