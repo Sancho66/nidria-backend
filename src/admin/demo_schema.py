@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from src.admin.demo_adoption_schema import DemoAdoptionSummary
+from src.core.countries import normalize as normalize_country
 from src.core.i18n import Language
 from src.journeys.journeys_schema import JourneyImportRequest
 
@@ -89,6 +90,9 @@ class DemoRead(BaseModel):
     adoption: DemoAdoptionSummary | None = None
 
 
+PacketLanguage = Literal["en", "fr", "es"]
+
+
 class AgencyDemoInput(BaseModel):
     """One approved prospect row; never a real client or production identifier."""
 
@@ -97,9 +101,9 @@ class AgencyDemoInput(BaseModel):
     email: EmailStr
     company_name: str = Field(min_length=1, max_length=200)
     first_name: str = Field(default="", max_length=100)
-    language: Literal["en", "fr"] = "en"
+    language: PacketLanguage = "en"
     profession: Literal["accountant", "lawyer", "formation", "relocation"]
-    country: Literal["GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"]
+    country: str = Field(min_length=2, max_length=2, description="ISO 3166-1 alpha-2 country code")
     city: str = Field(default="", max_length=150)
     steps: list[str] = Field(min_length=6, max_length=6)
     step_titles: list[str] = Field(default_factory=list, max_length=6)
@@ -107,6 +111,14 @@ class AgencyDemoInput(BaseModel):
     documents: list[str] = Field(default_factory=list, max_length=60)
     persona: Literal["client", "director", "employer", "couple", "family", "employee"]
     logo_data_url: str | None = Field(default=None, max_length=350_000)
+
+    @field_validator("country")
+    @classmethod
+    def iso_country(cls, value: str) -> str:
+        code = normalize_country(value)
+        if code is None:
+            raise ValueError("Use an assigned ISO 3166-1 alpha-2 country code")
+        return code
 
     @field_validator("first_name")
     @classmethod

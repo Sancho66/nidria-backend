@@ -1,0 +1,94 @@
+{
+  "journeys": {
+    "accountant": "Comptabilité et déclaration fiscale",
+    "lawyer": "Dossier d'immigration",
+    "formation": "Création d'entreprise",
+    "relocation": "Accompagnement à l'installation"
+  },
+  "documents": {
+    "accountant": [
+      "Pièce d'identité",
+      "Relevés bancaires",
+      "Justificatif de revenus",
+      "Justificatifs de dépenses",
+      "Projet de comptes",
+      "Lettre de mission"
+    ],
+    "lawyer": [
+      "Passeport",
+      "Justificatif de domicile",
+      "Attestation d'emploi",
+      "Preuves de la relation",
+      "Liste des pièces du dossier",
+      "Lettre de mission"
+    ],
+    "formation": [
+      "Pièce d'identité du dirigeant",
+      "Adresse du siège social",
+      "Statuts de la société",
+      "Liste des associés",
+      "Formulaire d'immatriculation",
+      "Lettre de mission"
+    ],
+    "relocation": [
+      "Passeport",
+      "Critères de recherche de logement",
+      "Attestation d'emploi",
+      "Bail de location",
+      "État des lieux",
+      "Contrat de prestation"
+    ]
+  },
+  "step_titles": {
+    "accountant": [
+      "Lettre de mission",
+      "Collecte des pièces",
+      "Relances automatiques",
+      "Préparation des comptes",
+      "Vérification et signature",
+      "Dépôt et suivi"
+    ],
+    "lawyer": [
+      "Premier entretien",
+      "Collecte des pièces",
+      "Relances automatiques",
+      "Préparation du dossier",
+      "Signature et dépôt",
+      "Suivi du dossier"
+    ],
+    "formation": [
+      "Confirmation du projet",
+      "Collecte des pièces",
+      "Relances automatiques",
+      "Préparation des documents",
+      "Vérification et signature",
+      "Suivi de l'immatriculation"
+    ],
+    "relocation": [
+      "Premier entretien",
+      "Collecte des pièces",
+      "Relances automatiques",
+      "Préparation du départ",
+      "Organisation de l'arrivée",
+      "Suivi de l'installation"
+    ]
+  },
+  "labels": {
+    "sample": "Exemple fictif",
+    "priorities": "Vos priorités",
+    "spouse": "Conjoint",
+    "child": "Enfant",
+    "consultant": "Consultant",
+    "company": "Atelier Horizon",
+    "address": "1 rue de l'Exemple",
+    "profile_note": "Données fictives. Le client a confirmé ses priorités et les prochaines pièces à transmettre.",
+    "agent_comment": "Nous avons vérifié les premières pièces. La liste des éléments restants est à jour.",
+    "client_comment": "Merci, je vais préparer les documents restants.",
+    "cost": "Frais de traduction, exemple",
+    "reminder": "Exemple fictif. Les pièces restantes sont indiquées dans votre espace client.",
+    "awaiting": "Pièces en attente",
+    "missing": "Pièces manquantes",
+    "template_message": "Bonjour {client_name}, les pièces à transmettre sont indiquées dans votre espace.",
+    "template_title": "Lettre de mission, exemple"
+  }
+}

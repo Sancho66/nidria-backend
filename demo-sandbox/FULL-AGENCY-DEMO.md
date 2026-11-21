@@ -49,8 +49,8 @@ montre ses zones fictives sans charger DocuSeal.
 
 `POST /admin/demos/agency-batch`, permission `agency.create`, utilise le canal HMAC
 existant. Le corps contient un UUID `request_id` et de un à cinq `items` :
-`email`, `company_name`, `language` (en/fr), `profession` (accountant/lawyer/formation/relocation),
-`country`, `city`, `persona`, six `steps` et éventuellement `logo_data_url`.
+`email`, `company_name`, `language` (en/fr/es), `profession` (accountant/lawyer/formation/relocation),
+`country` (code pays ISO 3166-1 alpha-2), `city`, `persona`, six `steps` et éventuellement `logo_data_url`.
 Le logo est une image encodée validée ; aucune URL externe n’est téléchargée.
 L’interface accepte les colonnes CSV `m2_s1` à `m2_s6` et restitue `email;demo_link`.
 La phrase complète reste dans la note de l’étape (« Given to the client »).

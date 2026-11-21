@@ -8,6 +8,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
+import pycountry
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError as PydanticValidationError
@@ -19,7 +20,9 @@ from shared.models.agent import Agent
 from shared.models.client_case import ClientCase
 from shared.models.demo_import import jobs, rows
 from shared.models.expat_user import ExpatUser
+from shared.models.message_template import MessageTemplate
 from src.admin.demo_import_schema import DemoImportRequest
+from src.admin.demo_schema import AgencyDemoInput
 from src.admin.demo_transport import DemoTransport
 from src.core.config import get_settings
 from src.core.enums import Audience
@@ -33,6 +36,7 @@ from src.demo_sandbox.control import control_db
 from src.demo_sandbox.import_csv import parse_import
 from src.demo_sandbox.import_manager import DemoImportManager, import_tick
 from src.demo_sandbox.import_repository import prepare_imports
+from src.demo_sandbox.people import fictional_people
 from src.demo_sandbox.prepare_management import prepare_agency_permissions
 from tests.test_demo_admin import signed
 
@@ -115,6 +119,58 @@ def test_packet_bounds_headers_and_invalid_row_column_count() -> None:
             parse_import(value)
     parsed = parse_import(csv_text(row()) + "short;row\n")
     assert parsed[-1].errors[0].column == "CSV"
+
+
+def test_packet_countries_use_the_iso_catalog_and_keep_errors_on_their_row() -> None:
+    countries = sorted(country.alpha_2 for country in pycountry.countries)
+    parsed = parse_import(csv_text(*(row(country=code.lower()) for code in countries)))
+    assert [item.data["country"] for item in parsed] == countries
+    for item in parsed:
+        assert not item.errors
+        people = fictional_people(AgencyDemoInput.model_validate(item.data))
+        assert len(set(people.clients + people.team)) == 14
+    invalid = parse_import(csv_text(*(row(country=code) for code in ("ZZ", "XX", "UK", "ESP", ""))))
+    assert all([issue.column for issue in item.errors] == ["country"] for item in invalid)
+
+
+@pytest.mark.asyncio
+async def test_international_packet_creates_localized_demos_and_reuses_the_links(queue):
+    catalog = load_catalog()
+    cases = [("es", "CO"), ("en", "AE"), ("fr", "CH")]
+    items = [
+        row(f"{country.lower()}@example.com", language=lang, country=country, persona="family")
+        for lang, country in cases
+    ]
+    job = await start(queue, request(*items))
+    for _ in items:
+        assert await import_tick(catalog, queue)
+    result = await progress(queue, job.id)
+    assert (result.status, result.created, result.failed) == ("completed", 3, 0)
+    async with queue() as db:
+        agencies = list(await db.scalars(select(Agency)))
+        assert {(a.default_language, a.country) for a in agencies} == set(cases)
+        for agency in agencies:
+            assert agency.settings["sandbox_full_demo"]["country"] == agency.country
+            countries = set(
+                await db.scalars(
+                    select(ClientCase.dest_country).where(ClientCase.agency_id == agency.id)
+                )
+            )
+            assert countries == {agency.country}
+        spanish = next(a for a in agencies if a.default_language == "es")
+        template = (
+            await db.scalars(select(MessageTemplate).where(MessageTemplate.agency_id == spanish.id))
+        ).one()
+        assert (template.language, template.name) == ("es", "Documentos que faltan")
+        links = await DemoImportManager(db).export(job.id, "links")
+        assert links.count == 3
+    retry = await start(queue, request(*items))
+    for _ in items:
+        assert await import_tick(catalog, queue)
+    second = await progress(queue, retry.id)
+    assert (second.created, second.reused, second.failed) == (0, 3, 0)
+    async with queue() as db:
+        assert (await DemoImportManager(db).export(retry.id, "links")).csv == links.csv
 
 
 @pytest.fixture

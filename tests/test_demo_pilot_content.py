@@ -18,22 +18,25 @@ from shared.models.step_requirement import StepRequirement
 from src.admin.demo_schema import AgencyDemoBatchRequest, AgencyDemoInput
 from src.core.rbac.baseline import seed_rbac_baseline
 from src.demo_sandbox.agency_control import AgencyDemoControlManager
-from src.demo_sandbox.agency_draft import STEP_TITLES, agency_record
+from src.demo_sandbox.agency_draft import agency_record
 from src.demo_sandbox.agency_manager import AgencyDemoManager
 from src.demo_sandbox.catalog import load_catalog
+from src.demo_sandbox.fixture_copy import fixture_copy
 from src.demo_sandbox.people import fictional_people
 from src.demo_sandbox.schema import DemoSessionRequest
 from tests.test_agency_demo import pilot
 
 
-@pytest.mark.parametrize("language", ["en", "fr"])
+@pytest.mark.parametrize("language", ["en", "fr", "es"])
 @pytest.mark.parametrize("profession", ["accountant", "lawyer", "formation", "relocation"])
 def test_short_fallback_titles_preserve_full_descriptions(language: str, profession: str) -> None:
     data = pilot().model_dump()
     data.update(language=language, profession=profession, steps=["A complete sentence " * 20] * 6)
     record = agency_record(AgencyDemoInput.model_validate(data), "a" * 32, load_catalog())
     steps = record.journey_import["parcours"]["etapes"]
-    assert [step["nom"][language] for step in steps] == STEP_TITLES[language][profession]
+    assert [step["nom"][language] for step in steps] == fixture_copy(language)["step_titles"][
+        profession
+    ]
     assert all(2 <= len(step["nom"][language].split()) <= 5 for step in steps)
     assert all("…" not in step["nom"][language] for step in steps)
     assert [step["informations_fournies"]["note"][language] for step in steps] == [
@@ -67,7 +70,8 @@ def test_optional_titles_journey_and_documents_are_authoritative() -> None:
     steps = record.journey_import["parcours"]["etapes"]
     assert record.promised_journey == data["journey_name"]
     assert [step["nom"]["en"] for step in steps] == [
-        title or STEP_TITLES["en"]["lawyer"][i] for i, title in enumerate(data["step_titles"])
+        title or fixture_copy("en")["step_titles"]["lawyer"][i]
+        for i, title in enumerate(data["step_titles"])
     ]
     assert {doc["label"] for doc in record.state["documents"]} == set(data["documents"])
     assert {doc["status"] for doc in record.state["documents"]} == {"validated", "requested"}
