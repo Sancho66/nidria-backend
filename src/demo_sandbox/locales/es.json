@@ -1,0 +1,94 @@
+{
+  "journeys": {
+    "accountant": "Contabilidad y declaración de impuestos",
+    "lawyer": "Solicitud de inmigración",
+    "formation": "Constitución de sociedades",
+    "relocation": "Asistencia para la mudanza"
+  },
+  "documents": {
+    "accountant": [
+      "Documento de identidad",
+      "Extractos bancarios",
+      "Justificante de ingresos",
+      "Justificantes de gastos",
+      "Borrador de las cuentas",
+      "Hoja de encargo"
+    ],
+    "lawyer": [
+      "Pasaporte",
+      "Justificante de domicilio",
+      "Certificado de empleo",
+      "Prueba del vínculo familiar",
+      "Lista de documentos para la solicitud",
+      "Hoja de encargo"
+    ],
+    "formation": [
+      "Documento de identidad del administrador",
+      "Domicilio social",
+      "Estatutos sociales",
+      "Datos de los socios",
+      "Formulario de inscripción",
+      "Hoja de encargo"
+    ],
+    "relocation": [
+      "Pasaporte",
+      "Preferencias de vivienda",
+      "Certificado de empleo",
+      "Contrato de arrendamiento",
+      "Inventario de entrada",
+      "Contrato de servicios"
+    ]
+  },
+  "step_titles": {
+    "accountant": [
+      "Hoja de encargo",
+      "Recopilación de documentos",
+      "Recordatorios automáticos",
+      "Preparación de las cuentas",
+      "Revisión y firma",
+      "Presentación y seguimiento"
+    ],
+    "lawyer": [
+      "Primera consulta",
+      "Recopilación de documentos",
+      "Recordatorios automáticos",
+      "Preparación de la solicitud",
+      "Firma y presentación",
+      "Seguimiento de la solicitud"
+    ],
+    "formation": [
+      "Confirmación del proyecto",
+      "Recopilación de documentos",
+      "Recordatorios automáticos",
+      "Preparación de documentos",
+      "Revisión y firma",
+      "Seguimiento de la inscripción"
+    ],
+    "relocation": [
+      "Primera consulta",
+      "Recopilación de documentos",
+      "Recordatorios automáticos",
+      "Preparación de la mudanza",
+      "Organización de la llegada",
+      "Instalación en destino"
+    ]
+  },
+  "labels": {
+    "sample": "Datos ficticios",
+    "priorities": "Sus prioridades",
+    "spouse": "Pareja",
+    "child": "Hijo/a",
+    "consultant": "Consultor",
+    "company": "Estudio Horizonte",
+    "address": "Calle del Ejemplo 1",
+    "profile_note": "Datos ficticios. El cliente ha confirmado sus prioridades y qué documentos presentará a continuación.",
+    "agent_comment": "Hemos revisado los primeros documentos. Ya está actualizada la lista de lo que falta.",
+    "client_comment": "Gracias, prepararé los documentos que faltan.",
+    "cost": "Gastos de traducción de ejemplo",
+    "reminder": "Mensaje de ejemplo. En su portal puede consultar qué documentos faltan.",
+    "awaiting": "Documentos pendientes",
+    "missing": "Documentos que faltan",
+    "template_message": "Hola, {client_name}. En su portal puede consultar qué documentos faltan.",
+    "template_title": "Modelo de hoja de encargo"
+  }
+}

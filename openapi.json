@@ -24943,7 +24943,8 @@
             "type": "string",
             "enum": [
               "en",
-              "fr"
+              "fr",
+              "es"
             ],
             "title": "Language",
             "default": "en"
@@ -24960,17 +24961,10 @@
           },
           "country": {
             "type": "string",
-            "enum": [
-              "GB",
-              "US",
-              "IE",
-              "CA",
-              "AU",
-              "NZ",
-              "FR",
-              "BE"
-            ],
-            "title": "Country"
+            "maxLength": 2,
+            "minLength": 2,
+            "title": "Country",
+            "description": "ISO 3166-1 alpha-2 country code"
           },
           "city": {
             "type": "string",

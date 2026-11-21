@@ -1,0 +1,94 @@
+{
+  "journeys": {
+    "accountant": "Accounts and tax return",
+    "lawyer": "Immigration application",
+    "formation": "Company formation",
+    "relocation": "Relocation support"
+  },
+  "documents": {
+    "accountant": [
+      "Proof of identity",
+      "Bank statements",
+      "Income statement",
+      "Expense receipts",
+      "Draft accounts",
+      "Engagement letter"
+    ],
+    "lawyer": [
+      "Passport",
+      "Proof of address",
+      "Employment letter",
+      "Proof of relationship",
+      "Application checklist",
+      "Engagement letter"
+    ],
+    "formation": [
+      "Director's identity document",
+      "Registered office address",
+      "Articles of association",
+      "Shareholder details",
+      "Registration form",
+      "Engagement letter"
+    ],
+    "relocation": [
+      "Passport",
+      "Housing preferences",
+      "Employment letter",
+      "Tenancy agreement",
+      "Move-in inventory",
+      "Service agreement"
+    ]
+  },
+  "step_titles": {
+    "accountant": [
+      "Engagement letter",
+      "Document collection",
+      "Automatic reminders",
+      "Accounts preparation",
+      "Review and signature",
+      "Filing and follow-up"
+    ],
+    "lawyer": [
+      "Initial consultation",
+      "Document collection",
+      "Automatic reminders",
+      "Application preparation",
+      "Signature and filing",
+      "Application follow-up"
+    ],
+    "formation": [
+      "Project confirmation",
+      "Document collection",
+      "Automatic reminders",
+      "Document preparation",
+      "Review and signature",
+      "Registration follow-up"
+    ],
+    "relocation": [
+      "Initial consultation",
+      "Document collection",
+      "Automatic reminders",
+      "Move preparation",
+      "Arrival arrangements",
+      "Settling in"
+    ]
+  },
+  "labels": {
+    "sample": "Sample data",
+    "priorities": "Your priorities",
+    "spouse": "Partner",
+    "child": "Child",
+    "consultant": "Consultant",
+    "company": "Willow Studio",
+    "address": "1 Example Street",
+    "profile_note": "Sample data. The client has confirmed their priorities and the next documents to provide.",
+    "agent_comment": "We have checked the first documents. The list of outstanding items is up to date.",
+    "client_comment": "Thank you, I will prepare the remaining documents.",
+    "cost": "Translation fee, sample",
+    "reminder": "Sample message. Your client space lists the documents still needed.",
+    "awaiting": "Awaiting documents",
+    "missing": "Missing documents",
+    "template_message": "Hello {client_name}, your client space lists the documents we still need.",
+    "template_title": "Engagement letter, sample"
+  }
+}

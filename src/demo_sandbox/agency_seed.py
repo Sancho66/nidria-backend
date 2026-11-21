@@ -33,6 +33,7 @@ from src.agencies.profile_sections_manager import list_sections
 from src.company_profiles.company_catalog import materialize_company_definitions
 from src.core.security import hash_password
 from src.demo_sandbox.catalog import DemoRecord
+from src.demo_sandbox.fixture_copy import fixture_copy
 from src.demo_sandbox.people import fictional_email, fictional_people
 from src.demo_sandbox.seed import seed_case
 from src.demo_sandbox.storage import document_path
@@ -67,7 +68,7 @@ async def populate_agency(
     db: AsyncSession, agency: Agency, record: DemoRecord, payload: AgencyDemoInput, domain: str
 ) -> dict[str, object]:
     now = datetime.now(UTC)
-    fr = payload.language == "fr"
+    labels = fixture_copy(payload.language)["labels"]
     owner = (await db.scalars(select(Agent).where(Agent.agency_id == agency.id))).one()
     first = (await db.scalars(select(ClientCase).where(ClientCase.agency_id == agency.id))).one()
     assert first.journey_template_id is not None
@@ -81,10 +82,15 @@ async def populate_agency(
     journey.country = payload.country
     agency.country, agency.city = payload.country, payload.city or None
     agency.legal_name = payload.company_name
-    agency.legal_form = "SAS" if fr else "LLC" if payload.country == "US" else "Ltd"
+    if payload.country == "ES":
+        agency.legal_form = "SL"
+    elif payload.country in {"GB", "US", "IE", "CA", "AU", "NZ", "FR", "BE"}:
+        agency.legal_form = (
+            "SAS" if payload.language == "fr" else "LLC" if payload.country == "US" else "Ltd"
+        )
     agency.registration_number = "DEMO-000001"
-    agency.address = "1 rue de l'Exemple" if fr else "1 Example Street"
-    agency.postal_code = "69000" if fr else "00000"
+    agency.address = labels["address"]
+    agency.postal_code = "69000" if payload.country == "FR" else "00000"
     agency.contact_email = f"office@{domain}"
     agency.contact_phone = "+00 000 000 000"
     agency.currency = {"GB": "GBP", "US": "USD", "CA": "CAD", "AU": "AUD", "NZ": "NZD"}.get(
@@ -165,8 +171,8 @@ async def populate_agency(
         case.dest_country = payload.country
         case.dest_city = payload.city or None
         case.reference = f"{now.year}-{index + 1:03}"
-        case.tags = ["Exemple fictif" if fr else "Sample data"]
-        case.source = "Exemple fictif" if fr else "Sample data"
+        case.tags = [labels["sample"]]
+        case.source = labels["sample"]
         if payload.persona in {"couple", "family"}:
             db.add(
                 CasePerson(
@@ -174,17 +180,18 @@ async def populate_agency(
                     kind="family",
                     full_name=f"Alex {client.last_name}",
                     relationship_kind="spouse",
-                    relationship="Conjoint" if fr else "Partner",
+                    relationship=labels["spouse"],
                 )
             )
             if payload.persona == "family":
+                child_name = "Lou" if payload.language == "fr" else "Sam"
                 db.add(
                     CasePerson(
                         case_id=case.id,
                         kind="family",
-                        full_name=f"{'Lou' if fr else 'Sam'} {client.last_name}",
+                        full_name=f"{child_name} {client.last_name}",
                         relationship_kind="child",
-                        relationship="Enfant" if fr else "Child",
+                        relationship=labels["child"],
                     )
                 )
         case.created_at = now - timedelta(days=2 + index * 3)
@@ -207,11 +214,11 @@ async def populate_agency(
             client.last_name,
             client.email,
         )
-        profile.tags = ["Exemple fictif" if fr else "Sample data"]
-        profile.source = "Exemple fictif" if fr else "Sample data"
-        profile.profession = "Consultant"
+        profile.tags = [labels["sample"]]
+        profile.source = labels["sample"]
+        profile.profession = labels["consultant"]
         profile.nationality = payload.country
-        profile.employer = "Atelier Horizon" if fr else "Willow Studio"
+        profile.employer = labels["company"]
         profile.place_of_birth = payload.city or None
         principal = (
             await db.scalars(
@@ -229,15 +236,7 @@ async def populate_agency(
             ClientProfileNote(
                 profile_id=profile.id,
                 author_agent_id=owner.id,
-                body=(
-                    "Données fictives. Le client a confirmé ses priorités "
-                    "et les prochaines pièces à transmettre."
-                )
-                if fr
-                else (
-                    "Sample data. The client has confirmed their priorities "
-                    "and the next documents to provide."
-                ),
+                body=labels["profile_note"],
             )
         )
         rows = list(
@@ -282,15 +281,7 @@ async def populate_agency(
                 case_step_progress_id=current.id,
                 author_type="agent",
                 author_id=owner.id,
-                body=(
-                    "Nous avons vérifié les premières pièces. "
-                    "La liste des éléments restants est à jour."
-                )
-                if fr
-                else (
-                    "We have checked the first documents. "
-                    "The list of outstanding items is up to date."
-                ),
+                body=labels["agent_comment"],
             )
         )
         db.add(
@@ -298,9 +289,7 @@ async def populate_agency(
                 case_step_progress_id=current.id,
                 author_type="expat",
                 author_id=client.id,
-                body="Merci, je vais préparer les documents restants."
-                if fr
-                else "Thank you, I will prepare the remaining documents.",
+                body=labels["client_comment"],
             )
         )
         db.add(
@@ -310,7 +299,7 @@ async def populate_agency(
                 planned_currency=agency.currency,
                 planned_amount=Decimal("45.00"),
                 amount=Decimal("45.00") if index % 2 else None,
-                label="Frais de traduction, exemple" if fr else "Translation fee, sample",
+                label=labels["cost"],
                 author_agent_id=owner.id,
             )
         )
@@ -323,12 +312,7 @@ async def populate_agency(
                     recipient_type="expat",
                     status="to_approve" if index % 2 else "approved",
                     scheduled_at=now + timedelta(days=index % 5 + 1),
-                    message_body=(
-                        "Exemple fictif. Les pièces restantes sont indiquées "
-                        "dans votre espace client."
-                    )
-                    if fr
-                    else "Sample message. Your client space lists the documents still needed.",
+                    message_body=labels["reminder"],
                 )
             )
         db.add(
@@ -345,9 +329,9 @@ async def populate_agency(
         if index < 3:
             company = CompanyProfile(
                 agency_id=agency.id,
-                name=(f"Atelier Horizon {index + 1}" if fr else f"Willow Studio {index + 1}"),
-                source="Exemple fictif" if fr else "Sample data",
-                tags=["Exemple fictif" if fr else "Sample data"],
+                name=f"{labels['company']} {index + 1}",
+                source=labels["sample"],
+                tags=[labels["sample"]],
             )
             db.add(company)
             await db.flush()
@@ -361,7 +345,7 @@ async def populate_agency(
         SavedView(
             agency_id=agency.id,
             agent_id=owner.id,
-            name="Pièces en attente" if fr else "Awaiting documents",
+            name=labels["awaiting"],
             entity="cases",
             filters={
                 "advanced_filters": [
@@ -374,22 +358,22 @@ async def populate_agency(
     db.add(
         MessageTemplate(
             agency_id=agency.id,
-            name="Pièces manquantes" if fr else "Missing documents",
+            name=labels["missing"],
             language=payload.language,
             channel="mail",
-            body="Bonjour {client_name}, les pièces à transmettre sont indiquées dans votre espace."
-            if fr
-            else "Hello {client_name}, your client space lists the documents we still need.",
+            body=labels["template_message"],
         )
     )
     db.add(
         DocumentTemplate(
             agency_id=agency.id,
-            name="Lettre de mission, exemple" if fr else "Engagement letter, sample",
+            name=labels["template_title"],
             storage_path=document_path(
                 record.id, sum(doc["status"] == "validated" for doc in record.state["documents"])
             ),
-            filename="engagement-letter-sample.pdf",
+            filename="hoja-de-encargo.pdf"
+            if payload.language == "es"
+            else "engagement-letter-sample.pdf",
             provider="mock",
             provider_template_ref=f"fictional-{record.public_code}",
             fields_configured=True,

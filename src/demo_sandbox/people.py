@@ -14,6 +14,18 @@ from src.admin.demo_schema import AgencyDemoInput
 Name = tuple[str, str]
 
 CLIENTS: dict[str, tuple[Name, ...]] = {
+    "ES": (
+        ("Lucía", "Vega"),
+        ("Mateo", "Ríos"),
+        ("Elena", "Soto"),
+        ("Pablo", "Mesa"),
+        ("Irene", "Solís"),
+        ("Bruno", "Luna"),
+        ("Alba", "Vidal"),
+        ("Leo", "Mora"),
+        ("Sara", "Prado"),
+        ("Omar", "León"),
+    ),
     "GB": (
         ("Jamie", "Hawthorne"),
         ("Amelia", "Bennett"),
@@ -137,6 +149,12 @@ CLIENTS: dict[str, tuple[Name, ...]] = {
     ),
 }
 TEAMS: dict[str, tuple[Name, ...]] = {
+    "ES": (
+        ("Marta", "Cano"),
+        ("Álvaro", "Ruiz"),
+        ("Clara", "Gil"),
+        ("Iván", "Sanz"),
+    ),
     "GB": (
         ("Sarah", "Mitchell"),
         ("James", "Cooper"),
@@ -204,7 +222,14 @@ class FictionalPeople:
 
 def fictional_people(payload: AgencyDemoInput) -> FictionalPeople:
     seed = hashlib.sha256(f"{payload.country}:{payload.company_name}".encode()).digest()
-    clients, team = CLIENTS[payload.country], TEAMS[payload.country]
+    # An unlisted country uses fictional names in the packet language.
+    # The actual country remains on the agency, cases and journey.
+    pool = (
+        payload.country
+        if payload.country in CLIENTS
+        else {"fr": "FR", "en": "GB", "es": "ES"}[payload.language]
+    )
+    clients, team = CLIENTS[pool], TEAMS[pool]
     # Rotate stable, country-specific pools. The full US immigration pool has
     # diverse origins; no nationality is inferred from a person's name.
     offset = int.from_bytes(seed[:2], "big") % len(clients)
