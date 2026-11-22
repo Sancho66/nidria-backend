@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, insert, select, text, update
+from sqlalchemy import case, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -62,7 +62,16 @@ class DemoImportRepository:
 
     async def get(self, job_id: uuid.UUID) -> Any:
         result = (
-            (await self.db.execute(select(jobs).where(jobs.c.id == job_id)))
+            (
+                await self.db.execute(
+                    select(
+                        jobs,
+                        (func.current_setting("transaction_read_only") == "on").label(
+                            "storage_read_only"
+                        ),
+                    ).where(jobs.c.id == job_id)
+                )
+            )
             .mappings()
             .one_or_none()
         )
@@ -104,6 +113,7 @@ class DemoImportRepository:
             reused=reused,
             failed=failed,
             processed=created + reused + failed,
+            storage_read_only=job["storage_read_only"],
             errors=[DemoImportIssue.model_validate(issue) for group in errors for issue in group][
                 :20
             ],
@@ -114,6 +124,14 @@ class DemoImportRepository:
             await self.db.scalars(select(jobs.c.id).order_by(jobs.c.created_at.desc()).limit(20))
         )
         return [await self.summary(identifier) for identifier in identifiers]
+
+    async def set_paused(self, job_id: uuid.UUID, paused: bool) -> None:
+        eligible = ("queued", "running") if paused else ("paused",)
+        await self.db.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id, jobs.c.status.in_(eligible))
+            .values(status="paused" if paused else "queued", updated_at=datetime.now(UTC))
+        )
 
     async def next_row(self) -> Any:
         locked = await self.db.scalar(
@@ -173,7 +191,10 @@ class DemoImportRepository:
             update(jobs)
             .where(jobs.c.id == job_id)
             .values(
-                status="running" if pending else "completed",
+                # An operator may pause after this worker claimed its one row.
+                status=case((jobs.c.status == "paused", "paused"), else_="running")
+                if pending
+                else "completed",
                 updated_at=datetime.now(UTC),
             )
         )
@@ -217,7 +238,7 @@ class DemoImportRepository:
         return bool(
             await self.db.scalar(
                 select(jobs.c.id)
-                .where(jobs.c.batch == batch, jobs.c.status != "completed")
+                .where(jobs.c.batch == batch, jobs.c.status.in_(("queued", "running")))
                 .limit(1)
             )
         )

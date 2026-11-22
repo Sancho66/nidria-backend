@@ -110,6 +110,11 @@ class TooManyRequestsError(NidriaError):
     code = "too_many_requests"
 
 
+class ServiceUnavailableError(NidriaError):
+    status_code = 503
+    code = "service_unavailable"
+
+
 class UpstreamError(NidriaError):
     """A dependent external service failed or is unconfigured (AI...)."""
 

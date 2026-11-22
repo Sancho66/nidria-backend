@@ -165,17 +165,25 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
         match envelope.operation:
             case (
                 "import_start"
+                | "import_control"
                 | "import_list"
                 | "import_get"
                 | "import_export"
                 | "import_export_batch"
             ):
-                from src.admin.demo_import_schema import DemoImportLookup, DemoImportRequest
+                from src.admin.demo_import_schema import (
+                    DemoImportControlInput,
+                    DemoImportLookup,
+                    DemoImportRequest,
+                )
                 from src.demo_sandbox.import_manager import DemoImportManager
 
                 imports = DemoImportManager(db)
                 if envelope.operation == "import_start":
                     return await imports.start(actor, DemoImportRequest.model_validate(payload))
+                if envelope.operation == "import_control":
+                    command = DemoImportControlInput.model_validate(payload)
+                    return await imports.set_paused(command.job_id, command.paused)
                 if envelope.operation == "import_list":
                     return await imports.recent()
                 if envelope.operation == "import_export_batch":
@@ -184,7 +192,9 @@ def control_application(catalog: DemoCatalog) -> FastAPI:
                     )
                 import_query = DemoImportLookup.model_validate(payload)
                 if envelope.operation == "import_export":
-                    return await imports.export(import_query.job_id, import_query.kind)
+                    return await imports.export(
+                        import_query.job_id, import_query.kind, partial=import_query.partial
+                    )
                 return await imports.read(import_query.job_id)
             case "agency_batch":
                 from src.demo_sandbox.agency_control import AgencyDemoControlManager

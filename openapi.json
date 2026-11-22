@@ -4232,6 +4232,62 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "admin-demos"
+        ],
+        "summary": "Set Demo Import Paused",
+        "operationId": "set_demo_import_paused_admin_demos_imports__job_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoImportControl"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoImportRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/admin/demos/imports/{job_id}/export": {
@@ -4269,6 +4325,16 @@
               "type": "string",
               "default": "links",
               "title": "Kind"
+            }
+          },
+          {
+            "name": "partial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Partial"
             }
           }
         ],
@@ -32914,6 +32980,20 @@
         "type": "object",
         "title": "DemoFilters"
       },
+      "DemoImportControl": {
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paused"
+        ],
+        "title": "DemoImportControl"
+      },
       "DemoImportExport": {
         "properties": {
           "csv": {
@@ -32991,6 +33071,7 @@
             "enum": [
               "queued",
               "running",
+              "paused",
               "completed"
             ],
             "title": "Status"
@@ -33002,6 +33083,11 @@
           "processed": {
             "type": "integer",
             "title": "Processed"
+          },
+          "storage_read_only": {
+            "type": "boolean",
+            "title": "Storage Read Only",
+            "default": false
           },
           "created": {
             "type": "integer",

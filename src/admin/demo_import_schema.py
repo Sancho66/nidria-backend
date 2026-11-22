@@ -45,9 +45,10 @@ class DemoImportRead(BaseModel):
     id: uuid.UUID
     batch: str
     lifetime_days: int
-    status: Literal["queued", "running", "completed"]
+    status: Literal["queued", "running", "paused", "completed"]
     total: int
     processed: int
+    storage_read_only: bool = False
     created: int
     reused: int
     failed: int
@@ -60,10 +61,20 @@ class DemoImportList(BaseModel):
     items: list[DemoImportRead]
 
 
+class DemoImportControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paused: bool
+
+
+class DemoImportControlInput(DemoImportControl):
+    job_id: uuid.UUID
+
+
 class DemoImportLookup(BaseModel):
     model_config = ConfigDict(extra="forbid")
     job_id: uuid.UUID
     kind: Literal["links", "errors"] = "links"
+    partial: bool = False
 
 
 class DemoImportExport(BaseModel):

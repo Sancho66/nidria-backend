@@ -41,17 +41,28 @@ class AdminDemoManager:
     async def list_imports(self, actor_id: uuid.UUID) -> DemoImportList:
         return DemoImportList.model_validate(await self.transport.call(actor_id, "import_list", {}))
 
+    async def set_import_paused(
+        self, actor_id: uuid.UUID, job_id: uuid.UUID, paused: bool
+    ) -> DemoImportRead:
+        return DemoImportRead.model_validate(
+            await self.transport.call(
+                actor_id, "import_control", {"job_id": str(job_id), "paused": paused}
+            )
+        )
+
     async def read_import(self, actor_id: uuid.UUID, job_id: uuid.UUID) -> DemoImportRead:
         return DemoImportRead.model_validate(
             await self.transport.call(actor_id, "import_get", {"job_id": str(job_id)})
         )
 
     async def export_import(
-        self, actor_id: uuid.UUID, job_id: uuid.UUID, kind: str
+        self, actor_id: uuid.UUID, job_id: uuid.UUID, kind: str, partial: bool = False
     ) -> DemoImportExport:
         return DemoImportExport.model_validate(
             await self.transport.call(
-                actor_id, "import_export", {"job_id": str(job_id), "kind": kind}
+                actor_id,
+                "import_export",
+                {"job_id": str(job_id), "kind": kind, **({"partial": True} if partial else {})},
             )
         )
 
