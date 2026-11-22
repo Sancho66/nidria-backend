@@ -9,6 +9,7 @@ from src.admin.admin_router import AgentDep, DbDep
 from src.admin.demo_adoption_manager import DemoAdoptionManager
 from src.admin.demo_adoption_schema import DemoAdoptionQuery, DemoAdoptionResponse
 from src.admin.demo_import_schema import (
+    DemoImportControl,
     DemoImportExport,
     DemoImportList,
     DemoImportRead,
@@ -48,6 +49,7 @@ BINDINGS = [
         ("GET", "/admin/demos/imports"),
         ("GET", "/admin/demos/imports/batch-export"),
         ("GET", "/admin/demos/imports/{job_id}"),
+        ("PATCH", "/admin/demos/imports/{job_id}"),
         ("GET", "/admin/demos/imports/{job_id}/export"),
         ("POST", "/admin/demos"),
         ("POST", "/admin/demos/agency-batch"),
@@ -131,11 +133,21 @@ async def read_demo_import(job_id: uuid.UUID, agent: AgentDep) -> DemoImportRead
     return await AdminDemoManager().read_import(agent.id, job_id)
 
 
+@router.patch("/imports/{job_id}", response_model=DemoImportRead)
+async def set_demo_import_paused(
+    job_id: uuid.UUID, payload: DemoImportControl, agent: AgentDep
+) -> DemoImportRead:
+    return await AdminDemoManager().set_import_paused(agent.id, job_id, payload.paused)
+
+
 @router.get("/imports/{job_id}/export", response_model=DemoImportExport)
 async def export_demo_import(
-    job_id: uuid.UUID, agent: AgentDep, kind: Literal["links", "errors"] = "links"
+    job_id: uuid.UUID,
+    agent: AgentDep,
+    kind: Literal["links", "errors"] = "links",
+    partial: bool = False,
 ) -> DemoImportExport:
-    return await AdminDemoManager().export_import(agent.id, job_id, kind)
+    return await AdminDemoManager().export_import(agent.id, job_id, kind, partial)
 
 
 @router.post("/export", response_model=DemoExportResponse)

@@ -12,7 +12,8 @@ import pycountry
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.agency import Agency
@@ -26,7 +27,7 @@ from src.admin.demo_schema import AgencyDemoInput
 from src.admin.demo_transport import DemoTransport
 from src.core.config import get_settings
 from src.core.enums import Audience
-from src.core.exceptions import ConflictError, ValidationError
+from src.core.exceptions import ConflictError, ServiceUnavailableError, ValidationError
 from src.core.security import create_access_token
 from src.demo_sandbox import agency_control, agency_seed
 from src.demo_sandbox.agency_repository import AgencyDemoRepository
@@ -387,6 +388,144 @@ async def test_500_row_packet_is_persisted_without_creating_any_agency(
 
 
 @pytest.mark.asyncio
+async def test_pause_during_creation_and_resume_only_pending_rows(queue, monkeypatch):
+    catalog = load_catalog()
+    job = await start(queue, request(row(), row("two@example.com")))
+    entered, finish = asyncio.Event(), asyncio.Event()
+    original = agency_control.populate_agency
+
+    async def waiting(*args, **kwargs):
+        entered.set()
+        await finish.wait()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(agency_control, "populate_agency", waiting)
+    worker = asyncio.create_task(import_tick(catalog, queue))
+    try:
+        await asyncio.wait_for(entered.wait(), 15)
+        async with queue() as db:
+            manager = DemoImportManager(db)
+            assert (await manager.set_paused(job.id, True)).status == "paused"
+            assert (await manager.set_paused(job.id, True)).status == "paused"
+    finally:
+        finish.set()
+        await worker
+    state = await progress(queue, job.id)
+    assert (state.status, state.created, state.processed) == ("paused", 1, 1)
+    assert not await import_tick(catalog, queue)
+    async with queue() as db:
+        manager = DemoImportManager(db)
+        partial = await manager.export(job.id, "links")
+        assert partial.count == 1 and (await manager.export_batch(job.batch)).count == 1
+        assert (await manager.set_paused(job.id, False)).status == "queued"
+        assert (await manager.set_paused(job.id, False)).status == "queued"
+        assert (await manager.export(job.id, "links", partial=True)).csv == partial.csv
+        with pytest.raises(ConflictError):
+            await manager.export(job.id, "links")
+        with pytest.raises(ConflictError):
+            await manager.export(job.id, "errors", partial=True)
+    assert await import_tick(catalog, queue)
+    assert not await import_tick(catalog, queue)
+    async with queue() as db:
+        manager = DemoImportManager(db)
+        state = await manager.set_paused(job.id, True)
+        assert (state.status, state.created, state.reused, state.failed) == ("completed", 2, 0, 0)
+        full = await manager.export(job.id, "links")
+        assert full.count == 2 and full.csv.startswith(partial.csv)
+
+
+@pytest.mark.asyncio
+async def test_read_only_database_returns_retryable_error_and_recovers(queue, async_engine):
+    payload = request(row())
+    async with async_engine.connect() as con, con.begin():
+        await con.execute(text("SET TRANSACTION READ ONLY"))
+        async with AsyncSession(bind=con, join_transaction_mode="create_savepoint") as db:
+            with pytest.raises(ServiceUnavailableError) as caught:
+                await DemoImportManager(db).start(uuid.uuid4(), payload)
+            assert caught.value.status_code == 503
+            assert caught.value.code == "demo.import_storage_unavailable"
+    job = await start(queue, payload)
+    assert (await start(queue, payload)).id == job.id
+    assert await import_tick(load_catalog(), queue)
+    assert (await progress(queue, job.id)).created == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_reports_storage_outage_and_accepts_the_same_request_after_recovery(
+    client, make_agent, system_roles, agent_headers, queue, async_engine, monkeypatch
+):
+    import httpx
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "demo_admin_enabled", True)
+    monkeypatch.setattr(settings, "demo_control_secret", "s" * 64)
+    monkeypatch.setattr(settings, "demo_control_url", "https://nidria-demo-api.fly.dev")
+    sandbox = create_sandbox_app(load_catalog())
+    control = next(
+        route.app for route in sandbox.routes if getattr(route, "path", None) == "/_control"
+    )
+    read_only = True
+
+    async def writer():
+        async with async_engine.connect() as connection, connection.begin():
+            if read_only:
+                await connection.execute(text("SET TRANSACTION READ ONLY"))
+            async with AsyncSession(
+                bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+            ) as db:
+                yield db
+                await db.commit()
+
+    control.dependency_overrides[control_db] = writer
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=ASGITransport(app=sandbox), **kwargs),
+    )
+    operator = await make_agent(role=system_roles["superadmin"])
+    headers = agent_headers(operator)
+    path = "/admin/demos/imports"
+    input_data = request(row()).model_dump(mode="json")
+    previous = await start(queue, request(row("existing@example.com")))
+    state = await client.get(f"{path}/{previous.id}", headers=headers)
+    assert state.status_code == 200 and state.json()["storage_read_only"] is True
+    failure = await client.post(path, json=input_data, headers=headers)
+    assert (
+        failure.status_code == 503 and failure.json()["code"] == "demo.import_storage_unavailable"
+    )
+    read_only = False
+    created = await client.post(path, json=input_data, headers=headers)
+    assert created.status_code == 202 and created.json()["storage_read_only"] is False
+    assert (await client.post(path, json=input_data, headers=headers)).json()[
+        "id"
+    ] == created.json()["id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sqlstate", ["25006", "53100"])
+async def test_storage_interruption_during_fixture_creation_leaves_work_pending(
+    queue, monkeypatch, sqlstate
+):
+    job = await start(queue, request(row()))
+
+    class StorageError(Exception):
+        pass
+
+    cause = StorageError("Storage temporarily unavailable")
+    cause.sqlstate = sqlstate
+
+    async def unavailable(*args, **kwargs):
+        raise DBAPIError(None, None, cause, False)
+
+    monkeypatch.setattr(agency_control, "populate_agency", unavailable)
+    with pytest.raises(DBAPIError):
+        await import_tick(load_catalog(), queue)
+    state = await progress(queue, job.id)
+    assert (state.processed, state.failed, state.created) == (0, 0, 0)
+
+
+@pytest.mark.asyncio
 async def test_worker_lock_prevents_concurrent_creation(queue, db_session, monkeypatch):
     catalog = load_catalog()
     await start(queue, request(row()))
@@ -449,6 +588,7 @@ async def test_import_endpoints_are_superadmin_only(
         ("POST", "/admin/demos/imports", request(row()).model_dump(mode="json")),
         ("GET", "/admin/demos/imports", None),
         ("GET", f"/admin/demos/imports/{identifier}", None),
+        ("PATCH", f"/admin/demos/imports/{identifier}", {"paused": True}),
         ("GET", f"/admin/demos/imports/{identifier}/export?kind=errors", None),
         ("GET", "/admin/demos/imports/batch-export?batch=QA", None),
     ]
@@ -462,4 +602,4 @@ async def test_import_endpoints_are_superadmin_only(
     for method, path, body in endpoints:
         response = await client.request(method, path, json=body, headers=agent_headers(root))
         assert response.status_code == (202 if method == "POST" else 200), response.text
-    assert len(calls) == 5 and all(actor == root.id for actor, _ in calls)
+    assert len(calls) == len(endpoints) and all(actor == root.id for actor, _ in calls)

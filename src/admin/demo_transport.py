@@ -63,7 +63,7 @@ class DemoTransport:
             raise UpstreamError(
                 "The demo service is unavailable.", code="demo.unavailable"
             ) from exc
-        if response.status_code in {400, 404, 409, 422}:
+        if response.status_code in {400, 404, 409, 422, 503}:
             try:
                 error = response.json()
             except ValueError as exc:
@@ -74,6 +74,8 @@ class DemoTransport:
             if not isinstance(error, dict):
                 raise UpstreamError("Invalid demo service response.", code="demo.unavailable")
             code = error.get("code", "demo.invalid_input")
+            if response.status_code == 503 and code != "demo.import_storage_unavailable":
+                raise UpstreamError("The demo service is unavailable.", code="demo.unavailable")
             if not isinstance(code, str) or not code.startswith(("demo.", "import_ai.")):
                 code = "demo.invalid_input"
             rejected = NidriaError(

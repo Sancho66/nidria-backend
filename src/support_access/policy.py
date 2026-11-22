@@ -100,6 +100,7 @@ PLATFORM_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/admin/demos/imports"),
         ("GET", "/admin/demos/imports/batch-export"),
         ("GET", "/admin/demos/imports/{job_id}"),
+        ("PATCH", "/admin/demos/imports/{job_id}"),
         ("GET", "/admin/demos/imports/{job_id}/export"),
         ("POST", "/admin/demos/export"),
         ("POST", "/admin/demos/bulk"),

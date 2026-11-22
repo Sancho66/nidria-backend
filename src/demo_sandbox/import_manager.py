@@ -5,11 +5,11 @@ import hashlib
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, aclosing, asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, aclosing, asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.admin.demo_import_schema import (
@@ -20,11 +20,28 @@ from src.admin.demo_import_schema import (
     DemoImportRequest,
 )
 from src.admin.demo_schema import AgencyDemoBatchRequest, AgencyDemoInput
-from src.core.exceptions import ConflictError
+from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.demo_sandbox.agency_control import AgencyDemoControlManager
 from src.demo_sandbox.catalog import DemoCatalog
 from src.demo_sandbox.import_csv import export_csv, parse_import
 from src.demo_sandbox.import_repository import DemoImportRepository
+
+
+def storage_unavailable(exc: DBAPIError) -> bool:
+    return getattr(exc.orig, "sqlstate", None) in {"25006", "53100"}
+
+
+@contextmanager
+def translate_storage_error() -> Iterator[None]:
+    try:
+        yield
+    except DBAPIError as exc:
+        if not storage_unavailable(exc):
+            raise
+        raise ServiceUnavailableError(
+            "Demo storage is temporarily unavailable for writes. Retry the same operation.",
+            code="demo.import_storage_unavailable",
+        ) from exc
 
 
 class DemoImportManager:
@@ -48,21 +65,27 @@ class DemoImportManager:
         if len(parsed) != payload.expected_count:
             raise ConflictError("Confirm the exact row count again.", code="demo.import_count")
         now, identifier = datetime.now(UTC), uuid.uuid4()
-        await self.repo.insert(
-            {
-                "id": identifier,
-                "request_id": payload.request_id,
-                "actor_id": actor_id,
-                "fingerprint": fingerprint,
-                "batch": payload.batch,
-                "lifetime_days": payload.lifetime_days,
-                "status": "queued" if any(not row.errors for row in parsed) else "completed",
-                "total": len(parsed),
-                "created_at": now,
-                "updated_at": now,
-            },
-            parsed,
-        )
+        with translate_storage_error():
+            await self.repo.insert(
+                {
+                    "id": identifier,
+                    "request_id": payload.request_id,
+                    "actor_id": actor_id,
+                    "fingerprint": fingerprint,
+                    "batch": payload.batch,
+                    "lifetime_days": payload.lifetime_days,
+                    "status": "queued" if any(not row.errors for row in parsed) else "completed",
+                    "total": len(parsed),
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                parsed,
+            )
+        return await self.repo.summary(identifier)
+
+    async def set_paused(self, identifier: uuid.UUID, paused: bool) -> DemoImportRead:
+        with translate_storage_error():
+            await self.repo.set_paused(identifier, paused)
         return await self.repo.summary(identifier)
 
     async def recent(self) -> DemoImportList:
@@ -90,9 +113,11 @@ class DemoImportManager:
         ]
         return DemoImportExport(csv=export_csv(fields, values), count=len(values))
 
-    async def export(self, identifier: uuid.UUID, kind: str) -> DemoImportExport:
+    async def export(
+        self, identifier: uuid.UUID, kind: str, *, partial: bool = False
+    ) -> DemoImportExport:
         job = await self.repo.get(identifier)
-        if job["status"] != "completed":
+        if job["status"] in {"queued", "running"} and not (partial and kind == "links"):
             raise ConflictError("The import is still running.", code="demo.import_running")
         output = await self.repo.output(identifier, "succeeded" if kind == "links" else "error")
         if kind == "links":
@@ -161,6 +186,10 @@ async def import_tick(
                 # A lost connection is retried after reconnect/restart, never
                 # converted into a permanent row error with a partial fixture.
                 raise
+            except DBAPIError as exc:
+                if storage_unavailable(exc):
+                    raise
+                raise RowCreationFailed(row["job_id"], row["row_number"]) from exc
             except Exception as exc:
                 raise RowCreationFailed(row["job_id"], row["row_number"]) from exc
         return True
