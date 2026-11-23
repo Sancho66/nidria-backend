@@ -5,6 +5,8 @@ conditions de NIDRIA (juridiquement intenable). Désormais : un modèle au
 nom de l'agence, pré-rempli, publié immédiatement (le repli Nidria meurt),
 avec marqueurs visibles pour ce qui manque, et un geste de validation."""
 
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -15,7 +17,8 @@ from shared.models.agency import Agency
 from shared.models.consent import ConsentDocument
 from shared.models.rbac import Role
 from src.agencies.agencies_manager import AgenciesManager
-from src.consents.agency_template import RESPONSIBILITY_DISCLAIMER, generate_client_terms
+from src.consents.agency_template import generate_client_privacy, generate_client_terms
+from src.consents.client_templates import TEMPLATES
 from src.consents.consents_seed import ensure_agency_default_terms
 from tests.plugins.agent_plugin import AuthHeaders, MakeAgent
 
@@ -121,7 +124,7 @@ async def test_legacy_bracketed_doc_is_regenerated_bracket_free(
     await publish_if_changed(
         db_session,
         "client_terms",
-        "# Conditions\n\nCet espace est édité par [Votre dénomination légale].\n",
+        (Path(__file__).parent / "fixtures" / "client_terms_august.md").read_text(),
         agency_id=agency.id,
     )
     await db_session.commit()
@@ -153,10 +156,10 @@ async def test_patch_publishes_privacy_and_validate_sets_the_flag(
     assert body["client_terms_md"] == "Mes conditions à moi"
     assert body["client_privacy_md"] == "Ma note RGPD"
     assert body["client_terms_reviewed_at"] is None  # published ≠ validated
-    assert body["client_terms_disclaimer"] == RESPONSIBILITY_DISCLAIMER  # edition-only
+    assert body["client_terms_disclaimer"] == TEMPLATES["fr"]["disclaimer"]
 
     # The disclaimer is NEVER inside the client-facing text.
-    assert RESPONSIBILITY_DISCLAIMER not in body["client_terms_md"]
+    assert body["client_terms_disclaimer"] not in body["client_terms_md"]
 
     # Onboarding shows the review step, not done yet.
     onb = (await client.get("/agencies/me/onboarding", headers=headers)).json()
@@ -367,3 +370,74 @@ async def test_the_served_documents_and_the_preview_show_the_country_name(
     assert preview.status_code == 200, preview.text
     assert preview.json()["rendered"] == "Notre siège est au Paraguay."
     assert preview.json()["unfilled_tokens"] == []
+
+
+@pytest.mark.parametrize("lang", ["fr", "en", "es", "ru", "pt", "it", "hu"])
+def test_client_models_exclude_operator_identity_in_every_language(lang: str) -> None:
+    from src.consents.agency_tokens import resolve
+    from src.core.i18n import SUPPORTED_LANGUAGES
+
+    assert set(TEMPLATES) == set(SUPPORTED_LANGUAGES)
+    agency = Agency(
+        name="Example Firm",
+        slug="example",
+        default_language=lang,
+        legal_name="BETTERSOFT",
+        legal_form="LLC",
+        registration_number="232344242",
+        city="Orlando",
+        address="1317 Edgewater Drive",
+        contact_email="contact@nidria.com",
+    )
+    for kind, generate in (("terms", generate_client_terms), ("privacy", generate_client_privacy)):
+        body = generate(agency)
+        assert body.startswith(TEMPLATES[lang][kind][0])
+        rendered = resolve(body, agency, lang, client_document=True)
+        assert "Example Firm" in rendered
+        assert all(
+            x not in rendered.casefold()
+            for x in ("bettersoft", "nidria", "llc", "232344242", "orlando", "edgewater")
+        )
+        assert "{" not in rendered
+    assert resolve("{legal_name}|{address}|{city}", agency, lang, client_document=True) == "||"
+    agency.name = "BETTERSOFT LLC"
+    assert resolve("{agency_name}", agency, lang, client_document=True) == TEMPLATES[lang]["firm"]
+    assert resolve("{agency_name}", agency) == "BETTERSOFT LLC"  # platform counterparty
+
+
+async def test_locale_change_republishes_only_the_unedited_default(db_session, admin) -> None:
+    from src.agencies.agencies_schema import AgencyUpdateRequest
+    from src.consents.consents_seed import publish_if_changed
+
+    agency = await _agency(db_session, admin.agency_id)
+    await ensure_agency_default_terms(db_session, agency)
+    await publish_if_changed(db_session, "client_privacy", "Our own privacy clause.", agency.id)
+    await db_session.commit()
+    await db_session.refresh(admin)
+    manager = AgenciesManager(db_session)
+    await manager.update_my_agency(admin, AgencyUpdateRequest(default_language="es"))
+    assert (await manager.own_client_terms(agency)).startswith(TEMPLATES["es"]["terms"][0])
+    assert await manager.own_client_privacy(agency) == "Our own privacy clause."
+    assert not await ensure_agency_default_terms(db_session, agency)
+
+
+def test_common_city_and_legal_form_are_preserved_for_independent_firms() -> None:
+    agency = Agency(
+        name="Orange Grove",
+        slug="orange-grove",
+        default_language="en",
+        legal_name="Orange Grove LLC",
+        legal_form="LLC",
+        city="Orlando",
+    )
+    body = generate_client_terms(agency)
+    assert "Orange Grove LLC" in body and "Orlando" in body
+
+
+def test_custom_clauses_with_old_template_phrasing_are_not_replaced() -> None:
+    from src.consents.consents_seed import is_legacy_client_model
+
+    old = (Path(__file__).parent / "fixtures" / "client_terms_august.md").read_text()
+    assert is_legacy_client_model("client_terms", old)
+    assert not is_legacy_client_model("client_terms", old + "\nOur additional client clause.\n")
+    assert not is_legacy_client_model("client_terms", "Texte du cabinet [Votre section].")

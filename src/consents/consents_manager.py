@@ -8,6 +8,7 @@ from shared.models.agent import Agent
 from shared.models.consent import ConsentDocument
 from shared.models.expat_user import ExpatUser
 from src.consents.agency_tokens import resolve
+from src.consents.client_templates import document_language
 from src.consents.consents_repository import ConsentsRepository
 from src.consents.consents_schema import (
     ConsentAcceptRequest,
@@ -39,10 +40,16 @@ def _resolve(doc: ConsentDocument, agency: Agency | None) -> PendingDocumentResp
     identity included), not just {agency_name}. The hash stays that of the
     RAW text (what the acceptance copies), and an unknown token survives
     verbatim: `resolve` only touches the names it knows."""
+    content = doc.content_md
+    if agency is not None:
+        if doc.type in EXPAT_CONSENT_TYPES:
+            content = resolve(content, agency, document_language(agency), client_document=True)
+        else:
+            content = resolve(content, agency)
     return PendingDocumentResponse(
         type=doc.type,
         version=doc.version,
-        content=resolve(doc.content_md, agency) if agency is not None else doc.content_md,
+        content=content,
         content_hash=doc.content_hash,
     )
 
@@ -107,10 +114,15 @@ class ConsentsManager:
         out: list[ExpatAgencyPendingResponse] = []
         for agency_id, docs in grouped.items():
             agency = agencies.get(agency_id)
+            name = agency.name if agency else ""
+            if agency and docs[0].type in EXPAT_CONSENT_TYPES:
+                name = resolve(
+                    "{agency_name}", agency, document_language(agency), client_document=True
+                )
             out.append(
                 ExpatAgencyPendingResponse(
                     agency_id=agency_id,
-                    agency_name=agency.name if agency is not None else "",
+                    agency_name=name,
                     documents=[_resolve(doc, agency) for doc in docs],
                 )
             )

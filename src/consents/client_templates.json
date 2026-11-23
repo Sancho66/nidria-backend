@@ -1,0 +1,177 @@
+{
+  "fr": {
+    "firm": "votre cabinet",
+    "name": "dénommée {}",
+    "form": "de forme {}",
+    "registration": "immatriculée sous le numéro {}",
+    "address": "dont le siège est situé {}",
+    "email": "joignable à {}",
+    "phone": "joignable au {}",
+    "both": "joignable à {} et au {}",
+    "disclaimer": "Ce modèle est à adapter à votre activité. Vérifiez vos coordonnées et les clauses que vous publiez pour vos clients.",
+    "terms": [
+      "# Conditions d'utilisation de l'espace client",
+      "Cet espace est édité par {identity}. Vous pouvez y suivre votre dossier, échanger avec {agency_name} et transmettre les pièces demandées. Son utilisation est gratuite pour vous.",
+      "Vos identifiants sont personnels. Gardez-les confidentiels et signalez toute utilisation inhabituelle à {agency_name}.",
+      "Les informations et documents transmis doivent être exacts, à jour et utiles à votre dossier. Vous vous engagez à utiliser cet espace conformément à la loi.",
+      "Pour toute question sur le suivi de votre dossier, contactez {agency_name}. Votre accès peut prendre fin à la clôture du dossier ou à la fin de votre relation avec le cabinet. Vous pouvez demander une copie des documents que vous avez déposés."
+    ],
+    "privacy": [
+      "# Note d'information sur vos données",
+      "Le responsable du traitement des données de votre dossier est {identity}.",
+      "Le cabinet utilise vos coordonnées, vos échanges et les documents que vous fournissez pour suivre votre dossier et communiquer avec vous. Les personnes habilitées à traiter le dossier et les prestataires techniques agissant sur instruction du cabinet peuvent y avoir accès pour accomplir leur mission.",
+      "Les données de cet espace sont hébergées dans l’Union européenne. Le cabinet les conserve pour le suivi de votre dossier, puis pendant les durées requises par ses obligations légales.",
+      "Pour demander l’accès à vos données, leur rectification, leur effacement, la limitation de leur traitement ou leur portabilité, ou exercer votre droit d’opposition, contactez {agency_name}. Ces droits s’exercent selon la réglementation applicable. Vous pouvez aussi saisir l’autorité de contrôle compétente."
+    ]
+  },
+  "en": {
+    "firm": "your firm",
+    "name": "registered name {}",
+    "form": "legal form {}",
+    "registration": "registration number {}",
+    "address": "registered office at {}",
+    "email": "email {}",
+    "phone": "telephone {}",
+    "both": "email {} and telephone {}",
+    "disclaimer": "Adapt this template to your services. Check your contact details and the clauses you publish for your clients.",
+    "terms": [
+      "# Client portal terms of use",
+      "This portal is provided by {identity}. You can use it free of charge to follow your case, communicate with {agency_name} and send requested documents.",
+      "Your login details are personal. Keep them confidential and report any unusual use to {agency_name}.",
+      "The information and documents you submit must be accurate, up to date and relevant to your case. Use the portal lawfully.",
+      "Contact {agency_name} with questions about your case. Your access may end when your case closes or your relationship with the firm ends. You may request a copy of the documents you submitted."
+    ],
+    "privacy": [
+      "# Client portal privacy notice",
+      "The controller of the personal data in your case is {identity}.",
+      "The firm uses your contact details, messages and documents to manage your case and communicate with you. Staff authorised to work on the case and technical service providers acting on the firm’s instructions may access the data to carry out their duties.",
+      "Portal data is hosted in the European Union. The firm retains it to manage your case and then for any period required by its legal obligations.",
+      "Contact {agency_name} to request access, correction, erasure, restriction or portability of your data, or to object to processing. These rights are subject to applicable law. You may also lodge a complaint with the relevant supervisory authority."
+    ]
+  },
+  "es": {
+    "firm": "su despacho",
+    "name": "con la denominación social {}",
+    "form": "forma jurídica {}",
+    "registration": "número de registro {}",
+    "address": "con domicilio social en {}",
+    "email": "correo electrónico {}",
+    "phone": "teléfono {}",
+    "both": "correo electrónico {} y teléfono {}",
+    "disclaimer": "Adapte este modelo a sus servicios. Revise los datos de contacto y las cláusulas que publica para sus clientes.",
+    "terms": [
+      "# Condiciones de uso del portal de clientes",
+      "Este portal está gestionado por {identity}. Puede utilizarlo gratuitamente para consultar su expediente, comunicarse con {agency_name} y enviar los documentos solicitados.",
+      "Sus credenciales son personales. Manténgalas en secreto y comunique cualquier uso inusual a {agency_name}.",
+      "La información y los documentos que envíe deben ser exactos, estar actualizados y guardar relación con su expediente. Utilice el portal de acuerdo con la ley.",
+      "Si tiene preguntas sobre su expediente, contacte con {agency_name}. Su acceso puede finalizar cuando se cierre el expediente o termine su relación con el despacho. Puede solicitar una copia de los documentos que haya enviado."
+    ],
+    "privacy": [
+      "# Aviso de privacidad del portal de clientes",
+      "El responsable del tratamiento de los datos personales de su expediente es {identity}.",
+      "El despacho utiliza sus datos de contacto, mensajes y documentos para gestionar el expediente y comunicarse con usted. El personal autorizado y los proveedores técnicos que actúen por cuenta del despacho pueden acceder a estos datos para desempeñar sus funciones.",
+      "Los datos del portal se alojan en la Unión Europea. El despacho los conserva para tramitar su expediente y, posteriormente, durante los plazos que exijan sus obligaciones legales.",
+      "Para solicitar el acceso, la rectificación, la supresión, la limitación del tratamiento o la portabilidad de sus datos, o para oponerse al tratamiento, contacte con {agency_name}. Estos derechos se ejercen conforme a la normativa aplicable. También puede presentar una reclamación ante la autoridad de control competente."
+    ]
+  },
+  "pt": {
+    "firm": "o seu escritório",
+    "name": "com a denominação social {}",
+    "form": "forma jurídica {}",
+    "registration": "número de registo {}",
+    "address": "com sede em {}",
+    "email": "email {}",
+    "phone": "telefone {}",
+    "both": "email {} e telefone {}",
+    "disclaimer": "Adapte este modelo aos seus serviços. Verifique os contactos e as cláusulas que publica para os seus clientes.",
+    "terms": [
+      "# Condições de utilização do portal de clientes",
+      "Este portal é disponibilizado por {identity}. Pode utilizá-lo gratuitamente para acompanhar o seu processo, comunicar com {agency_name} e enviar os documentos solicitados.",
+      "As suas credenciais são pessoais. Mantenha-as confidenciais e comunique qualquer utilização invulgar a {agency_name}.",
+      "As informações e os documentos enviados devem ser exatos, atuais e pertinentes para o seu processo. Utilize o portal de acordo com a lei.",
+      "Se tiver dúvidas sobre o processo, contacte {agency_name}. O acesso pode terminar quando o processo for encerrado ou a sua relação com o escritório terminar. Pode pedir uma cópia dos documentos que enviou."
+    ],
+    "privacy": [
+      "# Aviso de privacidade do portal de clientes",
+      "A entidade responsável pelo tratamento dos dados pessoais do seu processo é {identity}.",
+      "O escritório utiliza os seus contactos, mensagens e documentos para acompanhar o processo e comunicar consigo. O pessoal autorizado e os prestadores técnicos que atuam sob instruções do escritório podem aceder aos dados para cumprir as suas funções.",
+      "Os dados do portal são alojados na União Europeia. O escritório conserva-os para acompanhar o processo e, posteriormente, pelos prazos exigidos pelas suas obrigações legais.",
+      "Para pedir o acesso, a retificação, o apagamento, a limitação do tratamento ou a portabilidade dos seus dados, ou para se opor ao tratamento, contacte {agency_name}. Estes direitos são exercidos nos termos da legislação aplicável. Pode também apresentar uma reclamação à autoridade de controlo competente."
+    ]
+  },
+  "it": {
+    "firm": "lo studio",
+    "name": "denominazione sociale {}",
+    "form": "forma giuridica {}",
+    "registration": "numero di registrazione {}",
+    "address": "con sede legale in {}",
+    "email": "email {}",
+    "phone": "telefono {}",
+    "both": "email {} e telefono {}",
+    "disclaimer": "Adatta questo modello ai servizi dello studio. Verifica i recapiti e le clausole che pubblichi per i clienti.",
+    "terms": [
+      "# Condizioni d’uso del portale clienti",
+      "Il portale è gestito da {identity}. Puoi utilizzarlo gratuitamente per seguire la tua pratica, comunicare con {agency_name} e inviare i documenti richiesti.",
+      "Le credenziali sono personali. Mantienile riservate e segnala ogni utilizzo insolito a {agency_name}.",
+      "Le informazioni e i documenti inviati devono essere corretti, aggiornati e pertinenti alla pratica. Utilizza il portale nel rispetto della legge.",
+      "Per domande sulla pratica, contatta {agency_name}. L’accesso può terminare alla chiusura della pratica o alla fine del rapporto con lo studio. Puoi richiedere una copia dei documenti che hai inviato."
+    ],
+    "privacy": [
+      "# Informativa sulla privacy del portale clienti",
+      "Il titolare del trattamento dei dati personali relativi alla tua pratica è {identity}.",
+      "Lo studio utilizza i tuoi recapiti, i messaggi e i documenti per gestire la pratica e comunicare con te. Il personale autorizzato e i fornitori tecnici che operano su istruzione dello studio possono accedere ai dati per svolgere le loro mansioni.",
+      "I dati del portale sono ospitati nell’Unione europea. Lo studio li conserva per gestire la pratica e, successivamente, per i periodi richiesti dagli obblighi di legge.",
+      "Per chiedere l’accesso, la rettifica, la cancellazione, la limitazione del trattamento o la portabilità dei dati, o per opporti al trattamento, contatta {agency_name}. Questi diritti si esercitano secondo la normativa applicabile. Puoi anche presentare reclamo all’autorità di controllo competente."
+    ]
+  },
+  "hu": {
+    "firm": "az iroda",
+    "name": "bejegyzett név {}",
+    "form": "jogi forma {}",
+    "registration": "nyilvántartási szám {}",
+    "address": "székhely {}",
+    "email": "e-mail {}",
+    "phone": "telefon {}",
+    "both": "e-mail {}, telefon {}",
+    "disclaimer": "Igazítsa a mintát az iroda szolgáltatásaihoz. Ellenőrizze az elérhetőségeket és az ügyfeleknek közzétett feltételeket.",
+    "terms": [
+      "# Az ügyfélportál használati feltételei",
+      "A portál üzemeltetője {identity}. A portálon díjmentesen követheti ügye állását, kapcsolatot tarthat az irodával és elküldheti a kért dokumentumokat.",
+      "Belépési adatai személyre szólnak. Kezelje őket bizalmasan, és jelezze az irodának, ha szokatlan használatot észlel.",
+      "Pontos, naprakész és az ügyéhez tartozó adatokat és dokumentumokat küldjön. A portált a jogszabályok betartásával használja.",
+      "Az ügyével kapcsolatos kérdésekkel az irodához fordulhat. Hozzáférése az ügy lezárásakor vagy az irodával fennálló kapcsolat megszűnésekor véget érhet. Az elküldött dokumentumokról másolatot kérhet."
+    ],
+    "privacy": [
+      "# Az ügyfélportál adatkezelési tájékoztatója",
+      "Az ügyéhez kapcsolódó személyes adatok adatkezelője {identity}.",
+      "Az iroda az Ön elérhetőségeit, üzeneteit és dokumentumait az ügy intézésére és kapcsolattartásra használja. A jogosult munkatársak és az iroda utasításai szerint eljáró technikai szolgáltatók a feladataik ellátásához férhetnek hozzá az adatokhoz.",
+      "A portál adatait az Európai Unióban tárolják. Az iroda az adatokat az ügy intézéséig, majd a jogszabályokban előírt ideig őrzi meg.",
+      "Az irodától kérhet hozzáférést, helyesbítést, törlést, az adatkezelés korlátozását vagy adathordozhatóságot, illetve tiltakozhat az adatkezelés ellen. Ezek a jogok az alkalmazandó jogszabályok szerint gyakorolhatók. Panaszt tehet az illetékes felügyeleti hatóságnál is."
+    ]
+  },
+  "ru": {
+    "firm": "ваша организация",
+    "name": "зарегистрированное наименование {}",
+    "form": "правовая форма {}",
+    "registration": "регистрационный номер {}",
+    "address": "юридический адрес {}",
+    "email": "электронная почта {}",
+    "phone": "телефон {}",
+    "both": "электронная почта {}, телефон {}",
+    "disclaimer": "Адаптируйте этот образец к услугам вашей организации. Проверьте контактные данные и условия перед публикацией для клиентов.",
+    "terms": [
+      "# Условия использования клиентского портала",
+      "Портал предоставляет {identity}. Вы можете бесплатно следить за ходом своего дела, связываться с организацией и передавать запрошенные документы.",
+      "Данные для входа предназначены только для вас. Храните их в тайне и сообщайте организации о любом необычном использовании учётной записи.",
+      "Предоставляйте точные и актуальные сведения и документы, относящиеся к вашему делу. При использовании портала соблюдайте законодательство.",
+      "По вопросам о ходе дела обращайтесь в организацию. Доступ может быть закрыт после завершения дела или прекращения ваших отношений с организацией. Вы можете запросить копию переданных вами документов."
+    ],
+    "privacy": [
+      "# Уведомление о конфиденциальности клиентского портала",
+      "За обработку персональных данных по вашему делу отвечает {identity}.",
+      "Организация использует ваши контактные данные, сообщения и документы для ведения дела и связи с вами. Доступ могут получать уполномоченные сотрудники и технические исполнители, действующие по указанию организации, в пределах своих обязанностей.",
+      "Данные портала размещаются в Европейском союзе. Организация хранит их в течение срока ведения дела, а затем в течение сроков, предусмотренных законодательством.",
+      "Вы можете обратиться в организацию, чтобы получить доступ к данным, запросить их исправление, удаление, ограничение обработки или перенос, а также возразить против обработки. Эти права осуществляются согласно применимому законодательству. Вы также можете обратиться с жалобой в компетентный надзорный орган."
+    ]
+  }
+}
