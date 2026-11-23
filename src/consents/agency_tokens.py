@@ -30,15 +30,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from shared.models.agency import Agency
+from src.consents.client_templates import (
+    TEMPLATES,
+    document_language,
+    has_operator_identity,
+    is_operator_value,
+)
 from src.core.countries import country_name
 from src.core.i18n import DEFAULT_LANG
 
-# THE language the client documents are WRITTEN IN — the canonical Nidria
-# texts (consents_texts) and the generated agency model (agency_template) are
-# both French prose. It is what a rendered value is localized into: a country
-# name inside a French sentence is French. The day those texts come in several
-# languages, this is the knob the renderers take from their document instead
-# of from here — hence the `lang` parameter carried down to `_value`.
+# The canonical platform contracts are written in French.
 DOCUMENT_LANG = DEFAULT_LANG
 
 # What a token LOOKS like when we hunt one to SIGNAL: anything brace-wrapped
@@ -101,16 +102,21 @@ def _value(spec: TokenSpec, agency: Agency, lang: str = DOCUMENT_LANG) -> str | 
     return value
 
 
-def resolve(content: str, agency: Agency, lang: str = DOCUMENT_LANG) -> str:
-    """Every KNOWN token replaced by its current value; everything else left
-    exactly as written. THE read-time resolution — the client screen, the
-    pending payloads and the edition preview all go through here, so they
-    can never render differently."""
-    for spec in CATALOGUE:
-        placeholder = "{" + spec.name + "}"
-        if placeholder in content:
-            content = content.replace(placeholder, _value(spec, agency, lang) or "")
-    return content
+def _values(agency: Agency, lang: str, client_document: bool) -> dict[str, str | None]:
+    if client_document and has_operator_identity(agency):
+        name = TEMPLATES[lang]["firm"] if is_operator_value(agency.name) else agency.name
+        return {spec.name: name if spec.name == "agency_name" else None for spec in CATALOGUE}
+    return {spec.name: _value(spec, agency, lang) for spec in CATALOGUE}
+
+
+def resolve(
+    content: str, agency: Agency, lang: str = DOCUMENT_LANG, *, client_document: bool = False
+) -> str:
+    """Resolve only tokens supplied by the author, never recursively expand profile values."""
+    values = _values(agency, lang, client_document)
+    return _TOKEN_PATTERN.sub(
+        lambda match: (values[match[1]] or "") if match[1] in values else match[0], content
+    )
 
 
 def _used(contents: tuple[str | None, ...]) -> list[str]:
@@ -137,11 +143,8 @@ def unfilled_tokens(agency: Agency, *contents: str | None) -> list[str]:
     a leaked token) and from `missing_legal_fields` (which names every empty
     field, used or not) — this one is the subset the text actually depends
     on."""
-    return [
-        "{" + name + "}"
-        for name in _used(contents)
-        if name in _BY_NAME and _value(_BY_NAME[name], agency) is None
-    ]
+    values = _values(agency, document_language(agency), True)
+    return ["{" + name + "}" for name in _used(contents) if name in values and values[name] is None]
 
 
 def token_values(agency: Agency, lang: str = DOCUMENT_LANG) -> list[tuple[str, str, str | None]]:
@@ -149,4 +152,5 @@ def token_values(agency: Agency, lang: str = DOCUMENT_LANG) -> list[tuple[str, s
     serves so the front guesses no list. None = « non renseigné ». The value
     is the RENDERED one (the country as its name), because the point of the
     list is to show the agency what its clients read."""
-    return [(spec.name, spec.label, _value(spec, agency, lang)) for spec in CATALOGUE]
+    values = _values(agency, lang, True)
+    return [(spec.name, spec.label, values[spec.name]) for spec in CATALOGUE]

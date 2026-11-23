@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.models.agency import Agency
 from src.activity.activity_router import router as activity_router
 from src.activity.activity_router import stats_router
 from src.agencies.agencies_router import AgentDep, DbDep, get_my_agency
@@ -18,6 +19,9 @@ from src.cases.cases_router import router as cases_router
 from src.client_profiles.client_profiles_router import router as profiles_router
 from src.comments.comments_router import agent_router as comments_router
 from src.company_profiles.company_profiles_router import router as companies_router
+from src.consents.agency_template import generate_client_privacy, generate_client_terms
+from src.consents.agency_tokens import resolve
+from src.consents.client_templates import document_language
 from src.consents.consents_router import router as consents_router
 from src.core.database import get_db
 from src.core.dependencies import get_agent_token_payload
@@ -170,6 +174,22 @@ def agency_read_router() -> APIRouter:
     @router.get("/agencies/me", response_model=AgencyResponse)
     async def agency_identity(agent: AgentDep, db: DbDep) -> AgencyResponse:
         response = await get_my_agency(agent, db)
+        agency = await db.get_one(Agency, agent.agency_id)
+        lang = document_language(agency)
+        # The demo is read-only: render the firm's models without publishing
+        # consent rows or asking the prospect to accept a contract.
+        response.client_terms_md = resolve(
+            response.client_terms_md or generate_client_terms(agency),
+            agency,
+            lang,
+            client_document=True,
+        )
+        response.client_privacy_md = resolve(
+            response.client_privacy_md or generate_client_privacy(agency),
+            agency,
+            lang,
+            client_document=True,
+        )
         # Management metadata contains the prospect email and opaque access code;
         # it belongs only in the authenticated platform operator's demo tool.
         response.email_enabled = False

@@ -127,6 +127,11 @@ async def test_full_agency_and_old_client_links(
         )
         assert outreach.status_code == 404, outreach.text
         assert responses["/agencies/me"]["email_enabled"] is False
+        for field in ("client_terms_md", "client_privacy_md"):
+            document = responses["/agencies/me"][field]
+            assert responses["/agencies/me"]["name"] in document
+            assert "{agency_name}" not in document
+            assert all(operator not in document.lower() for operator in ("bettersoft", "nidria"))
         assert not any(key.startswith("sandbox_") for key in responses["/agencies/me"]["settings"])
         preview = await client.get("/demo/ai-preview", headers=headers)
         assert preview.status_code == 200, preview.text

@@ -15,7 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.consent import ConsentDocument
@@ -27,6 +27,14 @@ if TYPE_CHECKING:
 
 def content_sha256(content_md: str) -> str:
     return hashlib.sha256(content_md.encode("utf-8")).hexdigest()
+
+
+async def lock_document(db: AsyncSession, doc_type: str, agency_id: uuid.UUID | None) -> None:
+    """Serialize publication, including when this owner's first version does not yet exist."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"consent:{agency_id}:{doc_type}"},
+    )
 
 
 async def publish_if_changed(
@@ -42,11 +50,14 @@ async def publish_if_changed(
     the caller owns the transaction. Versions are numbered per owner, and
     a published version is never modified — the acceptance trace and its
     content_hash stay evidentiary."""
+    await lock_document(db, doc_type, agency_id)
     content_hash = content_sha256(content)
     rows = list(
         (
             await db.execute(
-                select(ConsentDocument).where(
+                select(ConsentDocument)
+                .execution_options(populate_existing=True)
+                .where(
                     ConsentDocument.type == doc_type,
                     (
                         ConsentDocument.agency_id.is_(None)
@@ -82,6 +93,7 @@ async def withdraw_agency_document(db: AsyncSession, doc_type: str, agency_id: u
     back to the canonical Nidria text at their next request. The rows are
     kept (never deleted) — past acceptances point at them and must stay
     resolvable. Does NOT commit."""
+    await lock_document(db, doc_type, agency_id)
     actives = [
         row
         for row in (
@@ -113,20 +125,54 @@ async def _own_active_doc(
     ).scalar_one_or_none()
 
 
-# Signature of the OLD bracketed template (lot du 13/08 matin) — a doc still
-# carrying it is an untouched auto-generated one, safe to regenerate. An
-# agency's hand-written text would not contain our exact marker.
-_LEGACY_BRACKET_MARKER = "[Votre "
+# The immutable French templates from the August publications. Mask just the
+# identity that was interpolated; a single customised clause changes the digest.
+_LEGACY_MODELS = {
+    "client_terms": (
+        (
+            "Cet espace est édité par ",
+            ".\n\n1.",
+            "525978836549cd94067334ac45146e9ee13ed5b4662f3c20e1d494a7be4f10d4",
+        ),
+        (
+            "Éditeur de l'espace : ",
+            "\n\n1.",
+            "d1e791f493fcc1380e806b37fce675af919fa5b326f71af301bcd2ddc669c700",
+        ),
+    ),
+    "client_privacy": (
+        (
+            "le cadre de votre dossier, est ",
+            ".\n2.",
+            "e8ec580c75cf3d09def7661cd98aa418c61e02fece8aa091bcde2e9b85b432e2",
+        ),
+        (
+            "{agency_name} \u2014 ",
+            " \u2014 est responsable",
+            "eb85e6435ac9821f130f70b615202a7b55e535123f63b4bfadd450da5d38d4aa",
+        ),
+    ),
+}
+_OLD_CANONICAL = {
+    "client_terms": "6b98577327ff51f7a3cfadf97ef546b6d00cf3c5584a9be2d32f18d19545c034",
+    "client_privacy": "322b2e4ff887158e6336074a281023000375e94b9a59bff12e793d6bbe3287fb",
+}
+
+
+def is_legacy_client_model(doc_type: str, content: str) -> bool:
+    """Match previously shipped bodies outside the one interpolated profile segment."""
+    if content_sha256(content) == _OLD_CANONICAL[doc_type]:
+        return True
+    for prefix, suffix, expected in _LEGACY_MODELS[doc_type]:
+        left, start, rest = content.partition(prefix)
+        _, end, right = rest.partition(suffix)
+        if start and end and content_sha256(left + start + "IDENTITY" + end + right) == expected:
+            return True
+    return False
 
 
 async def ensure_agency_default_terms(db: AsyncSession, agency: "Agency") -> bool:
-    """Generate and publish the agency's OWN client_terms + client_privacy.
-    Publishes when the agency has none yet (the death of the Nidria fallback,
-    lot 13/08). ALSO regenerates a doc still carrying the OLD bracketed
-    template (omission-by-segment lot) — a one-shot bracket removal for the
-    agencies seeded before it. NEVER clobbers a doc the agency hand-wrote
-    (no legacy marker → left alone). Called at boot seed and at creation.
-    Does NOT commit."""
+    """Install missing defaults and replace only known, previously shipped client templates."""
     from src.consents.agency_template import generate_client_privacy, generate_client_terms
     from src.core.enums import ConsentDocumentType
 
@@ -135,10 +181,9 @@ async def ensure_agency_default_terms(db: AsyncSession, agency: "Agency") -> boo
         (ConsentDocumentType.CLIENT_TERMS.value, generate_client_terms),
         (ConsentDocumentType.CLIENT_PRIVACY.value, generate_client_privacy),
     ):
+        await lock_document(db, doc_type, agency.id)
         existing = await _own_active_doc(db, doc_type, agency.id)
-        # None → first generation. Legacy bracketed → regenerate bracket-free.
-        # Hand-written (no legacy marker) → leave untouched.
-        if existing is not None and _LEGACY_BRACKET_MARKER not in existing.content_md:
+        if existing is not None and not is_legacy_client_model(doc_type, existing.content_md):
             continue
         if await publish_if_changed(db, doc_type, generator(agency), agency_id=agency.id):
             changed = True
@@ -163,7 +208,7 @@ async def seed_agency_default_terms(db: AsyncSession) -> None:
     AFTER the canonical seed."""
     from shared.models.agency import Agency
 
-    agencies = (await db.execute(select(Agency))).scalars().all()
+    agencies = (await db.execute(select(Agency).order_by(Agency.id))).scalars().all()
     changed = False
     for agency in agencies:
         if await ensure_agency_default_terms(db, agency):

@@ -46,6 +46,7 @@ from src.ai import quota
 from src.auth.auth_schema import MessageResponse, TokenPairResponse
 from src.consents.agency_template import missing_legal_fields
 from src.consents.agency_tokens import token_values, unfilled_tokens, unknown_tokens
+from src.consents.client_templates import TEMPLATES, document_language
 from src.core.dependencies import get_current_agent, get_db
 from src.core.email import send_email
 from src.core.enums import Audience
@@ -343,10 +344,12 @@ async def _fill_client_documents(
     None."""
     response.client_terms_md = await manager.own_client_terms(agency)
     response.client_privacy_md = await manager.own_client_privacy(agency)
+    lang = document_language(agency)
+    response.client_terms_disclaimer = TEMPLATES[lang]["disclaimer"]
     response.missing_legal_fields = missing_legal_fields(agency)
     response.client_terms_tokens = [
         AgencyTokenInfo(token="{" + name + "}", name=name, label=label, value=value)
-        for name, label, value in token_values(agency)
+        for name, label, value in token_values(agency, lang)
     ]
     # The two signals go to the EDITOR, never to the client screen.
     texts = (response.client_terms_md, response.client_privacy_md)

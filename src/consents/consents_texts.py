@@ -10,6 +10,8 @@ every concerned actor. {agency_name} is resolved at read time.
 Lawyer review recommended before the first paying agency (CGV art. 9
 and 12 first)."""
 
+from src.consents.client_templates import render_template
+
 _AGENCY_TERMS = """# Conditions générales de vente Nidria
 
 ### 1. Objet
@@ -241,42 +243,6 @@ servies depuis l'UE ; ISO 27001, SOC 2, CCT/DPF). Resend, Inc. (envoi d'emails t
 dossiers ; États-Unis ; CCT/DPF).
 """
 
-_CLIENT_TERMS = """# Conditions d'utilisation de l'espace client
-
-1. Cet espace vous est fourni par {agency_name}, avec l'outil Nidria, pour suivre l'avancement de
-   votre dossier, échanger avec {agency_name} et transmettre les informations et documents demandés.
-   Il est gratuit pour vous.
-2. Vos identifiants sont personnels ; vous êtes responsable de leur confidentialité et de
-   l'usage de votre compte.
-3. Les informations et documents que vous déposez doivent être exacts, à jour et concerner
-   votre dossier. Vous vous interdisez tout contenu illicite.
-4. {agency_name} reste votre interlocuteur pour toute question relative à votre dossier, aux délais
-   et aux décisions qui le concernent. Nidria fournit l'outil et n'intervient pas dans votre
-   dossier.
-5. Votre accès peut être fermé par {agency_name} à la clôture de votre dossier ou à la fin de sa
-   relation avec vous. Vous pouvez demander à {agency_name} une copie des documents que vous avez
-   déposés.
-"""
-
-_CLIENT_PRIVACY = """# Note d'information sur vos données
-
-1. Responsable de traitement : {agency_name} est responsable du traitement de vos données
-   personnelles dans le cadre de votre dossier.
-2. Sous-traitant : Nidria (BETTERSOFT LLC) héberge et traite ces données pour le compte de
-   {agency_name}, en qualité de sous-traitant au sens du RGPD, dans le cadre d'un accord de
-   traitement des données.
-3. Données traitées : votre identité et vos coordonnées, les documents que vous déposez et vos
-   échanges avec {agency_name} dans cet espace.
-4. Hébergement : vos données sont hébergées dans l'Union européenne (Paris, France). Elles ne
-   sont ni vendues, ni utilisées pour entraîner des modèles d'intelligence artificielle.
-5. Durée : vos données sont conservées pendant la durée de votre dossier et de la relation avec
-   {agency_name}, puis selon les obligations légales qui s'imposent à {agency_name}.
-6. Vos droits : vous disposez des droits d'accès, de rectification, d'effacement, de limitation,
-   d'opposition et de portabilité. Pour les exercer, adressez-vous à {agency_name}, votre
-   interlocuteur unique ; Nidria l'assiste techniquement dans le traitement de vos demandes.
-   Vous pouvez également saisir l'autorité de contrôle compétente (en France, la CNIL).
-"""
-
 _EXTERNAL_TERMS = """# Conditions d'accès prestataire
 
 [TEXTE PROVISOIRE : version de travail, à remplacer par le texte définitif fourni par Eric,
@@ -302,7 +268,7 @@ consentement aux prestataires concernés.]
 CANONICAL_DOCUMENTS: dict[str, str] = {
     "agency_terms": _AGENCY_TERMS,
     "agency_dpa": _AGENCY_DPA,
-    "client_terms": _CLIENT_TERMS,
-    "client_privacy": _CLIENT_PRIVACY,
+    "client_terms": render_template("terms", "fr", "{agency_name}", "{agency_name}"),
+    "client_privacy": render_template("privacy", "fr", "{agency_name}", "{agency_name}"),
     "external_terms": _EXTERNAL_TERMS,
 }

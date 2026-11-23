@@ -46,9 +46,11 @@ from src.auth.auth_schema import TokenPairResponse
 from src.billing.catalog import MONTHLY_CENTS
 from src.consents.agency_template import generate_client_privacy, generate_client_terms
 from src.consents.agency_tokens import resolve, unfilled_tokens, unknown_tokens
+from src.consents.client_templates import document_language
 from src.consents.consents_seed import (
     content_sha256,
     ensure_agency_default_terms,
+    lock_document,
     publish_if_changed,
 )
 from src.core import storage
@@ -1103,6 +1105,7 @@ class AgenciesManager:
         the current one is still the untouched generated template (its hash
         matches what generation produced from the OLD profile). An agency
         that edited its text keeps it — the profile no longer overwrites."""
+        await lock_document(self.db, doc_type, agency.id)
         active = await active_documents_by_type(self.db, frozenset({doc_type}), agency.id)
         doc = active.get(doc_type)
         edited = (
@@ -1124,7 +1127,7 @@ class AgenciesManager:
         costs nothing and caught later costs a round of re-consent."""
         agency = await self.get_my_agency(agent)
         return ClientTermsPreviewResponse(
-            rendered=resolve(content, agency),
+            rendered=resolve(content, agency, document_language(agency), client_document=True),
             unknown_tokens=unknown_tokens(content),
             unfilled_tokens=unfilled_tokens(agency, content),
         )
@@ -1142,6 +1145,9 @@ class AgenciesManager:
 
     async def update_my_agency(self, agent: Agent, payload: AgencyUpdateRequest) -> Agency:
         agency = await self.get_my_agency(agent)
+        old_terms = generate_client_terms(agency)
+        old_privacy = generate_client_privacy(agency)
+        old_language, old_name = agency.default_language, agency.name
         if payload.name is not None:
             agency.name = payload.name
         if payload.sectors is not None:
@@ -1189,9 +1195,7 @@ class AgenciesManager:
         # Legal identity (lot 13/08). Capture what the template WOULD produce
         # from the current profile BEFORE mutating — so regeneration can tell
         # an untouched template from an edited one. None = leave untouched.
-        old_terms = generate_client_terms(agency)
-        old_privacy = generate_client_privacy(agency)
-        legal_changed = False
+        legal_changed = agency.default_language != old_language or agency.name != old_name
         for field in (
             "legal_name",
             "legal_form",
