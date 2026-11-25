@@ -1816,7 +1816,11 @@ class EmailRepository:
                 EmailCampaign.provider_campaign_id == provider_campaign_id,
                 real_provider_campaign(),
             )
-            .order_by(EmailCampaign.created_at, EmailCampaign.id)
+            .order_by(
+                EmailCampaign.last_provider_sync_at.asc().nulls_first(),
+                EmailCampaign.created_at,
+                EmailCampaign.id,
+            )
             .execution_options(populate_existing=True)
         )
         return (await self.db.execute(stmt)).scalars().first()

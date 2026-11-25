@@ -87,3 +87,20 @@ def test_background_checkout_waits_then_reuses_returned_connection(pool_engines,
     finally:
         for connection in connections:
             connection.close()
+
+
+def test_production_worker_shares_the_five_background_slots(pool_engines, monkeypatch):
+    settings, _, _ = pool_engines
+    monkeypatch.setattr(settings, "email_sync_worker_enabled", True)
+    web = scheduler.make_session_local().kw["bind"]
+    worker = scheduler.make_session_local(email_worker=True).kw["bind"]
+    try:
+        with ExitStack() as stack:
+            for engine, size in ((web, 3), (worker, 2)):
+                assert engine.pool.size() == size
+                for _ in range(size):
+                    stack.enter_context(engine.connect())
+                assert engine.pool.overflow() == 0
+    finally:
+        web.dispose()
+        worker.dispose()

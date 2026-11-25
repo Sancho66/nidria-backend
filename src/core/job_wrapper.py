@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.models.job import JobConfig, JobRun
+from src.core.config import get_settings
 from src.core.enums import JobRunStatus, JobTriggeredBy
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,13 @@ def run_job(
     triggered_by: JobTriggeredBy,
     triggered_by_agent_id: uuid.UUID | None = None,
     dry_run: bool = False,
+    queued_run: JobRun | None = None,
 ) -> JobRun:
-    config = db.execute(select(JobConfig).where(JobConfig.job_id == job_id)).scalar_one_or_none()
+    enqueue = (
+        job_id == "email_sync" and get_settings().email_sync_worker_enabled and queued_run is None
+    )
+    lookup = select(JobConfig).where(JobConfig.job_id == job_id)
+    config = db.execute(lookup.with_for_update() if enqueue else lookup).scalar_one_or_none()
     if config is None:
         raise LookupError(f"Unknown job: {job_id}")
 
@@ -54,7 +60,7 @@ def run_job(
     elif config.ends_at is not None and now > config.ends_at:
         skip_reason = "after ends_at window"
 
-    run = JobRun(
+    run = queued_run or JobRun(
         job_config_id=config.id,
         job_id=job_id,
         status=JobRunStatus.RUNNING.value,
@@ -74,6 +80,28 @@ def run_job(
         db.commit()
         return run
 
+    if enqueue:
+        if triggered_by == JobTriggeredBy.SCHEDULER:
+            existing = db.scalar(
+                select(JobRun)
+                .where(
+                    JobRun.job_config_id == config.id,
+                    JobRun.status == "queued",
+                    JobRun.triggered_by == triggered_by.value,
+                )
+                .order_by(JobRun.started_at)
+                .limit(1)
+            )
+            if existing is not None:
+                db.commit()
+                return existing
+        run.status = "queued"
+        run.stats = {"worker_dispatch": True, "dry_run": dry_run}
+        db.add(run)
+        db.commit()
+        return run
+
+    run.status = JobRunStatus.RUNNING.value
     db.add(run)
     db.commit()
     db.refresh(run)

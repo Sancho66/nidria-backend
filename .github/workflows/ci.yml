@@ -145,7 +145,7 @@ jobs:
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only -a nidria-api
+        run: flyctl deploy --remote-only -a nidria-api --ha=false
 
       - name: Healthcheck
         run: |

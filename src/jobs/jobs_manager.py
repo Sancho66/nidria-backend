@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from datetime import datetime
+from time import monotonic
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -15,6 +16,8 @@ from src.core.job_wrapper import run_job
 from src.core.scheduler import JOB_REGISTRY, schedule_job
 from src.jobs.jobs_repository import JobsRepository
 from src.jobs.jobs_schema import JobConfigUpdateRequest
+
+MANUAL_WORKER_WAIT_SECONDS = 60
 
 
 class JobsManager:
@@ -96,7 +99,27 @@ class JobsManager:
                     dry_run=dry_run,
                 )
 
-        return await asyncio.to_thread(_run_sync)
+        run = await asyncio.to_thread(_run_sync)
+        if run.status != "queued":
+            return run
+        # Keep the usual synchronous manual result when the worker finishes
+        # promptly. Release the request's DB checkout during the wait. A busy
+        # or unavailable worker still yields the durable run ID within a minute.
+        await self.db.commit()
+        run_id = run.id
+
+        def read_progress() -> JobRun:
+            with session_local() as db:
+                current = db.get(JobRun, run_id)
+                if current is None:
+                    raise NotFoundError("Job run not found.")
+                return current
+
+        deadline = monotonic() + MANUAL_WORKER_WAIT_SECONDS
+        while run.status in ("queued", "running") and monotonic() < deadline:
+            await asyncio.sleep(1)
+            run = await asyncio.to_thread(read_progress)
+        return run
 
     async def list_runs(self, job_id: str, limit: int) -> list[JobRun]:
         config = await self._get_config(job_id)
