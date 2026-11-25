@@ -8,5 +8,6 @@ migrations and diagnostics. Revisit this budget before adding API replicas.
 
 API_POOL_SIZE = 5
 SCHEDULER_POOL_SIZE = 5
+SYNC_WORKER_POOL_SIZE = 2
 EMAIL_MONITOR_POOL_SIZE = 1
 POOL_RECYCLE_SECONDS = 300

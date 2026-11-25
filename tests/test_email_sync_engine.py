@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -35,6 +36,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from shared.models.agency_email_module import AgencyEmailModule
+from shared.models.agent import Agent
 from shared.models.client_profile import ClientProfile
 from shared.models.email_campaign import (
     EmailCampaign,
@@ -44,11 +46,12 @@ from shared.models.email_campaign import (
 )
 from shared.models.job import JobConfig, JobRun
 from shared.models.rbac import Role
+from src.core.config import get_settings
 from src.core.enums import JobTriggeredBy
 from src.core.exceptions import NotFoundError
 from src.core.job_wrapper import run_job
 from src.core.scheduler import JOB_REGISTRY, build_scheduler
-from src.email_campaigns import email_sync, sync_job
+from src.email_campaigns import email_sync, read_deadline, sync_job
 from src.email_campaigns.email_manager import EmailManager
 from src.email_campaigns.email_sync import EmailSyncManager, activity_since
 from src.email_campaigns.providers.base import (
@@ -59,7 +62,9 @@ from src.email_campaigns.providers.base import (
     ProviderEvent,
     ProviderMessage,
 )
+from src.email_campaigns.sync_worker import consume_one
 from src.jobs.jobs_baseline import DEFAULT_JOB_CONFIGS, seed_job_configs
+from src.jobs.jobs_manager import JobsManager
 from tests import network_guard
 from tests.email_fakes import FakeProvider
 from tests.plugins.agency_plugin import MakeAgency
@@ -428,6 +433,131 @@ async def test_job_mirrors_imported_campaign_state_and_name_only(
     detail = await client.get(f"/email/campaigns/{cid}", headers=live.world.headers)
     assert detail.status_code == 200, detail.text
     assert (detail.json()["status"], detail.json()["name"]) == (expected_status, expected_name)
+
+
+async def test_worker_coalesces_ticks_resumes_its_run_and_keeps_manual_dry_runs_separate(
+    live: Live,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "email_sync_worker_enabled", True)
+
+    def enqueue(scheduled: bool) -> uuid.UUID:
+        with live.sessions() as db:
+            run = run_job(
+                db,
+                job_id="email_sync",
+                pipeline=lambda *_a, **_kw: pytest.fail("web ran Lemlist"),
+                triggered_by=JobTriggeredBy.SCHEDULER if scheduled else JobTriggeredBy.MANUAL,
+                dry_run=True,
+            )
+            assert run.status == "queued"
+            return run.id
+
+    scheduled = enqueue(True)
+    assert enqueue(True) == scheduled
+    manual = enqueue(False)
+    assert manual != scheduled
+    with live.sessions() as db:
+        run = db.get(JobRun, scheduled)
+        assert run is not None
+        run.status = "running"
+        db.commit()
+    engine = live.sessions.kw["bind"]
+    assert await asyncio.to_thread(consume_one, engine)
+    assert await asyncio.to_thread(consume_one, engine)
+    assert not await asyncio.to_thread(consume_one, engine)
+    with live.sessions() as db:
+        runs = db.scalars(select(JobRun).where(JobRun.id.in_((manual, scheduled)))).all()
+        assert len(runs) == 2 and all(
+            r.status == "success" and r.stats.get("skipped") for r in runs
+        )
+    assert not live.provider.ops
+
+
+async def test_manual_trigger_returns_the_dedicated_workers_result(db_session, live, monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_sync_worker_enabled", True)
+    agent = await db_session.get(Agent, live.world.admin_id)
+
+    async def worker():
+        async with asyncio.timeout(8):
+            while not await asyncio.to_thread(consume_one, live.sessions.kw["bind"]):
+                await asyncio.sleep(0.05)
+
+    result, _ = await asyncio.gather(
+        JobsManager(db_session).trigger_job(agent, "email_sync", True, live.sessions), worker()
+    )
+    assert result.status == "success" and result.stats["skipped"] is True
+    assert result.triggered_by_agent_id == live.world.admin_id and not live.provider.ops
+
+
+def test_slow_provider_body_and_backoff_both_obey_the_campaign_deadline(monkeypatch):
+    tick = [100.0]
+    monkeypatch.setattr(read_deadline.time, "monotonic", lambda: tick[0])
+
+    class SlowStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"first"
+            tick[0] += 2
+            yield b"late"
+
+    with read_deadline.campaign_deadline(1):
+        with pytest.raises(TimeoutError):
+            read_deadline.wait_before_retry(2)
+        response = httpx.Response(200, stream=SlowStream())
+        read_deadline.bound_response(response)
+        with pytest.raises(TimeoutError):
+            response.read()
+        response.close()
+    assert read_deadline.remaining() is None
+
+
+async def test_campaign_timeout_preserves_checkpoint_then_next_run_recovers(
+    db_session: AsyncSession,
+    live: Live,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint = datetime.now(UTC) - timedelta(hours=3)
+    campaigns = [
+        EmailCampaign(
+            agency_id=live.world.agency_id,
+            name=name,
+            origin="LEMLIST_IMPORT",
+            status="PAUSED",
+            provider_campaign_id=name,
+            provider_metadata={"team_id": TEAM_A},
+            last_activity_sync_at=checkpoint,
+        )
+        for name in ("cam_slow", "cam_next")
+    ]
+    db_session.add_all(campaigns)
+    await db_session.commit()
+    slow_id, next_id = (str(c.id) for c in campaigns)
+    for row in campaigns:
+        ref = row.provider_campaign_id
+        live.provider.remote[ref] = ProviderCampaign(
+            ref, exists=True, status="running", metadata={}
+        )
+    original = EmailSyncManager.reconcile_campaign
+
+    async def stalled(self, campaign_id, agency_id, **kwargs):
+        if str(campaign_id) == slow_id:
+            row = await self.repo.campaign(agency_id, campaign_id, lock=True)
+            row.last_activity_sync_at = datetime.now(UTC)
+            await self.db.flush()
+            await asyncio.Event().wait()
+        return await original(self, campaign_id, agency_id, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(email_sync, "CAMPAIGN_READ_SECONDS", 1)
+        patch.setattr(EmailSyncManager, "reconcile_campaign", stalled)
+        first = await _run(live.sessions)
+    assert first.stats["campaigns_failed"] == 1
+    assert (await _campaign(db_session, slow_id)).last_activity_sync_at == checkpoint
+    assert (await _campaign(db_session, next_id)).last_activity_sync_at > checkpoint
+    second = await _run(live.sessions)
+    assert second.stats["campaigns_failed"] == 0
+    assert (await _campaign(db_session, slow_id)).last_activity_sync_at > checkpoint
+    assert {op for op, _ in live.provider.ops} <= READS | {"export_leads"}
 
 
 async def test_imported_campaign_state_rolls_back_when_provider_read_fails(

@@ -140,6 +140,7 @@ class Settings(BaseSettings):
     # Scheduler (reminder dispatch). Job crons live in DATA (job_config);
     # only the auto-follow-up thresholds are global config.
     scheduler_enabled: bool = False
+    email_sync_worker_enabled: bool = False
     auto_reminder_thresholds_days: list[int] = [20, 30]
 
     # Global mock toggle. When True (default, for safety), all external

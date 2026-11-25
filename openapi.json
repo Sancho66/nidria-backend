@@ -24132,7 +24132,7 @@
     "/health": {
       "get": {
         "summary": "Health",
-        "description": "Readiness probe for fly.io's HTTP healthcheck.\n\nActively touches the DB (single `SELECT 1`) so a frozen pool or a\ndead Supabase connection surfaces as 503 instead of a 200 from a\nprocess that can't actually serve requests. Fly removes the\nmachine from the LB on sustained failures and restarts it.",
+        "description": "Readiness probe for fly.io's HTTP healthcheck.\n\nActively touches the DB (single `SELECT 1`) so a frozen pool or a\ndead Supabase connection surfaces as 503 instead of a 200 from a\nprocess that cannot serve requests. Fly removes an unready machine\nfrom routing. Recovery is supervised independently of this check.",
         "operationId": "health_health_get",
         "responses": {
           "200": {

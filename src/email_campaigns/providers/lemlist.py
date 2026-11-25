@@ -133,6 +133,7 @@ from src.email_campaigns.providers.base import (
     StepContent,
     StepSpec,
 )
+from src.email_campaigns.read_deadline import bound_response, remaining, wait_before_retry
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +278,7 @@ class _Throttle:
             while self._calls and now - self._calls[0] > _RATE_WINDOW:
                 self._calls.popleft()
             if len(self._calls) >= _RATE_LIMIT:
-                time.sleep(_RATE_WINDOW - (now - self._calls[0]) + 0.05)
+                wait_before_retry(_RATE_WINDOW - (now - self._calls[0]) + 0.05)
             self._calls.append(time.monotonic())
 
 
@@ -403,22 +404,35 @@ class LemlistEmailProvider:
         reads_left = _READ_RETRIES if method == "GET" else 0
         rate_limits_left = _MAX_429_RETRIES
         while True:
+            remaining()
             _THROTTLE.wait()
+            left = remaining()
+            timeout = (
+                self._timeout
+                if left is None
+                else httpx.Timeout(
+                    min(left, self._timeout.read or left),
+                    connect=min(left, self._timeout.connect or left),
+                )
+            )
             try:
                 with httpx.Client(
-                    timeout=self._timeout, auth=self._auth, transport=self._transport
+                    timeout=timeout,
+                    auth=self._auth,
+                    transport=self._transport,
+                    event_hooks={"response": [bound_response]} if left is not None else None,
                 ) as client:
                     response = client.request(method, url, params=params, json=json)
             except httpx.TimeoutException as exc:
                 if reads_left:
                     reads_left -= 1
-                    time.sleep(1.0)
+                    wait_before_retry(1.0)
                     continue
                 raise ProviderError("Lemlist did not answer in time.", code="TIMEOUT") from exc
             except httpx.HTTPError as exc:
                 if reads_left:
                     reads_left -= 1
-                    time.sleep(1.0)
+                    wait_before_retry(1.0)
                     continue
                 raise ProviderError("Lemlist could not be reached.", code="UNREACHABLE") from exc
             if response.status_code == 429:
@@ -429,11 +443,11 @@ class LemlistEmailProvider:
                 rate_limits_left -= 1
                 wait = _retry_after(response)
                 logger.info("Lemlist rate limit, retrying in %.1fs", wait)
-                time.sleep(wait)
+                wait_before_retry(wait)
                 continue
             if response.status_code >= 500 and reads_left:
                 reads_left -= 1
-                time.sleep(1.0)
+                wait_before_retry(1.0)
                 continue
             if response.is_success or response.status_code in ok_codes:
                 return response

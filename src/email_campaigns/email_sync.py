@@ -200,6 +200,7 @@ from src.email_campaigns.providers.base import (
 )
 from src.email_campaigns.providers.dry_run import is_dry_run_id
 from src.email_campaigns.providers.lemlist import CONTACT_ACTIVITY_TYPES, normalize_activity
+from src.email_campaigns.read_deadline import campaign_deadline
 from src.email_campaigns.readiness import (
     ARCHIVED,
     EXTERNAL_EFFECTS_OFF,
@@ -264,6 +265,7 @@ VARIABLE_UNSUBSCRIBED = "VARIABLE_UNSUBSCRIBED"
 #: not missed, and storing is idempotent (Prism's values).
 ACTIVITY_OVERLAP = timedelta(hours=1)
 DAILY_OVERLAP = timedelta(days=1)
+CAMPAIGN_READ_SECONDS = 90
 #: Events about one step's email, aggregated on its OUTBOUND message.
 _OUTBOUND_EVENTS = frozenset({"SENT", "OPENED", "CLICKED", "BOUNCED", "REPLIED"})
 #: An outbound message keeps its furthest state (QUEUED is never stored).
@@ -1232,9 +1234,20 @@ class EmailSyncManager:
         await self.db.rollback()
         for campaign_id in campaign_ids:
             try:
-                done = await self.reconcile_campaign(
-                    campaign_id, agency_id, provider=provider, key_team=key_team, read_sent=True
-                )
+                with campaign_deadline(CAMPAIGN_READ_SECONDS):
+                    async with asyncio.timeout(CAMPAIGN_READ_SECONDS):
+                        done = await self.reconcile_campaign(
+                            campaign_id,
+                            agency_id,
+                            provider=provider,
+                            key_team=key_team,
+                            read_sent=True,
+                        )
+            except TimeoutError:
+                await self.db.rollback()
+                done = CampaignReconcile(campaign_id, failed=True, errors=["email.sync_timeout"])
+                # No new lock or checkpoint on the timeout path. A cancellation
+                # after the main commit preserves its already confirmed events.
             except Exception:  # noqa: BLE001 (one campaign never stops the others)
                 logger.exception("email sync of campaign %s failed", campaign_id)
                 await self.db.rollback()

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -273,14 +274,15 @@ async def health(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
 
     Actively touches the DB (single `SELECT 1`) so a frozen pool or a
     dead Supabase connection surfaces as 503 instead of a 200 from a
-    process that can't actually serve requests. Fly removes the
-    machine from the LB on sustained failures and restarts it.
+    process that cannot serve requests. Fly removes an unready machine
+    from routing. Recovery is supervised independently of this check.
     """
     try:
-        await db.execute(text("SELECT 1"))
-    except Exception as exc:  # noqa: BLE001 — boundary, want the message in the 503 body
+        async with asyncio.timeout(3):
+            await db.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "db": str(exc)[:200]},
+            content={"status": "unhealthy", "db": "unavailable"},
         )
     return JSONResponse(content={"status": "ok", "db": "ok"})

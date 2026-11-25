@@ -25,4 +25,7 @@ echo "[start.sh] Ensuring platform superadmins..."
 python scripts/migrate_superadmins.py
 
 echo "[start.sh] Starting Nidria API..."
+if [ "${API_SUPERVISION_ENABLED:-false}" = "true" ] && [ -n "${API_WATCHDOG_KEY:-}" ] && [ -n "${FLY_PRIVATE_IP:-}" ]; then
+    exec python -m src.ops.supervise_api
+fi
 exec uvicorn src.main:app --host 0.0.0.0 --port 8000
